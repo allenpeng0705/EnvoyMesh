@@ -661,13 +661,11 @@ class _ActiveChainDetailScreenState
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Assigner offline',
+                              l10n.chainsAssignerStrandedTitle,
                               style: theme.textTheme.titleMedium,
                             ),
                             const SizedBox(height: 8),
-                            const Text(
-                              'The computer running this team job stopped responding. Cancel the job, or continue it on this home (starts a new run of the same goal).',
-                            ),
+                            Text(l10n.chainsAssignerStrandedBody),
                             const SizedBox(height: 12),
                             Wrap(
                               spacing: 8,
@@ -689,12 +687,27 @@ class _ActiveChainDetailScreenState
                                                 setState(() {
                                                   _actionError =
                                                       (r['reason'] as String?) ??
-                                                          'Could not continue here';
+                                                          l10n
+                                                              .chainsAssignerStrandedFailed;
                                                   _busy = false;
                                                 });
                                                 return;
                                               }
                                               setState(() => _busy = false);
+                                              final mode =
+                                                  r['mode'] as String?;
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    mode == 'restart'
+                                                        ? l10n
+                                                            .chainsAssignerStrandedRestarted
+                                                        : l10n
+                                                            .chainsAssignerStrandedReclaimed,
+                                                  ),
+                                                ),
+                                              );
                                               await _refresh();
                                             } catch (e) {
                                               if (!mounted) return;
@@ -704,7 +717,8 @@ class _ActiveChainDetailScreenState
                                               });
                                             }
                                           },
-                                    child: const Text('Continue here'),
+                                    child: Text(
+                                        l10n.chainsAssignerStrandedReclaim),
                                   ),
                                 if (st.assignerStrandedCanCancel)
                                   TextButton(
@@ -725,12 +739,20 @@ class _ActiveChainDetailScreenState
                                                 setState(() {
                                                   _actionError =
                                                       (r['reason'] as String?) ??
-                                                          'Could not cancel';
+                                                          l10n
+                                                              .chainsAssignerStrandedFailed;
                                                   _busy = false;
                                                 });
                                                 return;
                                               }
                                               setState(() => _busy = false);
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(l10n
+                                                      .chainsAssignerStrandedCancelled),
+                                                ),
+                                              );
                                               await _refresh();
                                             } catch (e) {
                                               if (!mounted) return;
@@ -740,7 +762,8 @@ class _ActiveChainDetailScreenState
                                               });
                                             }
                                           },
-                                    child: const Text('Cancel job'),
+                                    child: Text(
+                                        l10n.chainsAssignerStrandedCancel),
                                   ),
                               ],
                             ),

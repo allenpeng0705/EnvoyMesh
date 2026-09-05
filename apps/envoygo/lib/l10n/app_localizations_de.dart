@@ -2775,6 +2775,34 @@ class AppLocalizationsDe extends AppLocalizations {
       'Dieser Schritt konnte nicht gelöst werden';
 
   @override
+  String get chainsAssignerStrandedTitle => 'Assigner offline';
+
+  @override
+  String get chainsAssignerStrandedBody =>
+      'Der Computer, der diesen Team-Job ausführt, reagiert nicht mehr. Brechen Sie den Job ab, oder setzen Sie ihn auf diesem Heimknoten fort (startet einen neuen Lauf mit demselben Ziel).';
+
+  @override
+  String get chainsAssignerStrandedReclaim => 'Hier fortsetzen';
+
+  @override
+  String get chainsAssignerStrandedCancel => 'Job abbrechen';
+
+  @override
+  String get chainsAssignerStrandedReclaimed =>
+      'Job auf diesem Heimknoten fortgesetzt.';
+
+  @override
+  String get chainsAssignerStrandedRestarted =>
+      'Kein Zwischenspeicher vorhanden — neuer Lauf auf diesem Heimknoten gestartet.';
+
+  @override
+  String get chainsAssignerStrandedCancelled => 'Team-Job abgebrochen.';
+
+  @override
+  String get chainsAssignerStrandedFailed =>
+      'Dieser Job konnte nicht aktualisiert werden';
+
+  @override
   String get chainsSpeculationRolePrimary => 'Primär';
 
   @override

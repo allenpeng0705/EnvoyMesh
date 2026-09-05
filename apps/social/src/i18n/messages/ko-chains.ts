@@ -87,6 +87,16 @@ export const koChainsMessages = {
     recovering: "재시작 후 복구 중 — 계속하기 전에 워커 진행 상황을 확인합니다",
     recoveringHonesty:
       "복구 중에는 워커를 다시 배정하지 않습니다. 늦은 최종 결과는 유지하고 중복은 버립니다.",
+    assignerStrandedTitle: "배정자 오프라인",
+    assignerStrandedBody:
+      "이 팀 작업을 실행하던 컴퓨터가 응답하지 않습니다. 작업을 취소하거나 이 컴퓨터에서 계속할 수 있습니다(같은 목표로 새 실행을 시작합니다).",
+    assignerStrandedReclaim: "여기서 계속",
+    assignerStrandedCancel: "작업 취소",
+    assignerStrandedReclaimed: "이 컴퓨터에서 작업을 재개했습니다.",
+    assignerStrandedRestarted:
+      "중간 스냅샷이 없습니다 — 이 컴퓨터에서 새 실행을 시작했습니다.",
+    assignerStrandedCancelled: "팀 작업이 취소되었습니다.",
+    assignerStrandedFailed: "이 작업을 업데이트할 수 없습니다",
     speculationReviewTitle: "작업 결과가 일치하지 않음",
     speculationReviewDisagree:
       "두 팀원이 이 단계를 서로 다른 결과로 마쳤습니다. 계속하려면 하나를 고르거나 단계를 다시 배정하세요.",

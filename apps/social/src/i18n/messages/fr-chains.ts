@@ -87,6 +87,16 @@ export const frChainsMessages = {
     recovering: "Récupération après redémarrage — confirmation de la progression des travailleurs avant de continuer",
     recoveringHonesty:
       "Les travailleurs ne sont pas réattribués pendant la récupération. Les finals tardifs sont conservés ; les doublons sont ignorés.",
+    assignerStrandedTitle: "Assignateur hors ligne",
+    assignerStrandedBody:
+      "L'ordinateur qui exécute cette mission d'équipe ne répond plus. Vous pouvez annuler la mission, ou la reprendre sur cet ordinateur (un nouveau parcours avec le même objectif).",
+    assignerStrandedReclaim: "Continuer ici",
+    assignerStrandedCancel: "Annuler la mission",
+    assignerStrandedReclaimed: "Mission reprise sur cet ordinateur.",
+    assignerStrandedRestarted:
+      "Pas d'instantané en cours — nouveau parcours démarré sur cet ordinateur.",
+    assignerStrandedCancelled: "Mission d'équipe annulée.",
+    assignerStrandedFailed: "Impossible de mettre à jour cette mission",
     speculationReviewTitle: "Les résultats ne correspondent pas",
     speculationReviewDisagree:
       "Deux membres de l'équipe ont terminé cette étape avec des résultats différents. Choisissez-en un pour continuer, ou réassignez l'étape.",

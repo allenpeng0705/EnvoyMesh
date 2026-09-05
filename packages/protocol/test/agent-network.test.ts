@@ -293,6 +293,14 @@ describe("ChainMandate", () => {
     expect(UnsignedChainMandateSchema.parse(m).allowDepth4).toBe(true);
   });
 
+  it("defaults allowDepth4 to false when omitted (Phase 65A)", () => {
+    const m = unsignedMandate({ allowDepth3: true });
+    expect(m).not.toHaveProperty("allowDepth4");
+    const parsed = UnsignedChainMandateSchema.parse(m);
+    expect(parsed.allowDepth4).toBe(false);
+    expect(parsed.allowDepth3).toBe(true);
+  });
+
   it("parseChainMandate round-trip", () => {
     const m = signedMandate();
     expect(parseChainMandate(m)).toEqual(m);

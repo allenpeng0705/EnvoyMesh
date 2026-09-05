@@ -4290,7 +4290,7 @@ export function SettingsAITab() {
        * (Knowledge base / RAG setup lives under Knowledge, not this tab.)
        * ============================================================ */}
 
-      <section className="settings-section">
+    <section className="settings-section">
         <ModelProviderSettings nodeConfig={nodeConfig} refreshNodeConfig={refreshNodeConfig} />
       </section>
 
@@ -4887,12 +4887,12 @@ export function SettingsAITab() {
       <section className="settings-section settings-section--compact">
         <h4>{t("settings.ai.chat.heading")}</h4>
         <p className="section-desc">{t("settings.ai.chat.sectionDesc")}</p>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
             <strong>{t("settings.ai.chat.chatAssist")}</strong>
             <span className="toggle-desc">{t("settings.ai.chat.chatAssistDesc")}</span>
-          </div>
-          <label className="toggle-switch">
+        </div>
+        <label className="toggle-switch">
             <input type="checkbox" checked={chatAssistToggle.checked} onChange={chatAssistToggle.onCheckboxChange} />
             <span className="slider" />
           </label>
@@ -4958,15 +4958,15 @@ export function SettingsAITab() {
             <input
               type="checkbox"
               checked={disclosure.showAgentBadges}
-              onChange={async (e) => {
-                await updateAiSettings({
+            onChange={async (e) => {
+              await updateAiSettings({
                   disclosure: { ...disclosure, showAgentBadges: e.target.checked },
-                });
+              });
               }}
             />
             <span>{t("settings.ai.identity.showAgentBadges")}</span>
-          </label>
-        </div>
+        </label>
+      </div>
         <div className="settings-field">
           <label className="settings-checkbox-row">
             <input
@@ -5094,17 +5094,17 @@ export function SettingsAITab() {
 
       <section className="settings-section">
         <h4>{t("settings.ai.presence.heading")}</h4>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
             <strong>{t("settings.ai.presence.onlineAssistant")}</strong>
             <span className="toggle-desc">{t("settings.ai.presence.onlineAssistantDesc")}</span>
-          </div>
-          <label className="toggle-switch">
+        </div>
+        <label className="toggle-switch">
             <input type="checkbox" checked={onlineAssistantToggle.checked}
               onChange={onlineAssistantToggle.onCheckboxChange} />
             <span className="slider" />
-          </label>
-        </div>
+        </label>
+      </div>
 
         <div className="settings-toggle-row">
           <div className="toggle-info">
@@ -5120,15 +5120,15 @@ export function SettingsAITab() {
 
         <h5>{t("settings.ai.presence.detectionHeading")}</h5>
         <p className="field-desc">{t("settings.ai.presence.detectionDesc")}</p>
-        <div className="settings-radio-group">
-          {(["automatic", "manual"] as const).map((mode) => (
-            <label key={mode} className={`settings-radio-option ${currentStatus.statusMode === mode ? "active" : ""}`}>
-              <input type="radio" name="status-mode" value={mode}
-                checked={currentStatus.statusMode === mode}
-                onChange={async () => {
-                  await updateAiSettings({ status: { ...currentStatus, statusMode: mode } });
-                }} />
-              <div className="radio-content">
+      <div className="settings-radio-group">
+        {(["automatic", "manual"] as const).map((mode) => (
+          <label key={mode} className={`settings-radio-option ${currentStatus.statusMode === mode ? "active" : ""}`}>
+            <input type="radio" name="status-mode" value={mode}
+              checked={currentStatus.statusMode === mode}
+              onChange={async () => {
+                await updateAiSettings({ status: { ...currentStatus, statusMode: mode } });
+              }} />
+            <div className="radio-content">
                 <strong>
                   {mode === "automatic"
                     ? t("settings.ai.presence.modeAutomatic")
@@ -5139,39 +5139,39 @@ export function SettingsAITab() {
                     ? t("settings.ai.presence.modeAutomaticDesc")
                     : t("settings.ai.presence.modeManualDesc")}
                 </span>
-              </div>
-            </label>
-          ))}
-        </div>
-          {currentStatus.statusMode === "manual" && (
-            <div className="settings-toggle-row" style={{ marginTop: "0.75rem" }}>
-              <div className="toggle-info">
+            </div>
+          </label>
+        ))}
+      </div>
+      {currentStatus.statusMode === "manual" && (
+        <div className="settings-toggle-row" style={{ marginTop: "0.75rem" }}>
+          <div className="toggle-info">
                 <strong>{t("settings.ai.presence.currentStatus")}</strong>
                 <span className="toggle-desc">{t("settings.ai.presence.currentStatusDesc")}</span>
-              </div>
-              <label className="toggle-switch">
+          </div>
+          <label className="toggle-switch">
                 <input type="checkbox" checked={manualStatusToggle.checked}
                   onChange={manualStatusToggle.onCheckboxChange} />
                 <span className="slider" />
-              </label>
-            </div>
-          )}
+          </label>
+        </div>
+      )}
       </section>
 
       <section className="settings-section">
         <h4>{t("settings.ai.rules.heading")}</h4>
         <p className="section-desc">{t("settings.ai.rules.sectionDesc")}</p>
 
-        {/* Rules List */}
-        {aiSettings.rules.length > 0 ? (
-          <div className="rules-list">
-            {aiSettings.rules.map((rule) => (
-              <div key={rule.id} className="rule-item">
-                <div className="rule-item-header">
-                  <span className="rule-item-name">{rule.name}</span>
-                  <span className="rule-item-category">{rule.category}</span>
-                </div>
-                <div className="rule-item-triggers">
+      {/* Rules List */}
+      {aiSettings.rules.length > 0 ? (
+        <div className="rules-list">
+          {aiSettings.rules.map((rule) => (
+            <div key={rule.id} className="rule-item">
+              <div className="rule-item-header">
+                <span className="rule-item-name">{rule.name}</span>
+                <span className="rule-item-category">{rule.category}</span>
+              </div>
+              <div className="rule-item-triggers">
                   {rule.trigger.isGreeting && `${t("settings.ai.rules.listGreetings")} `}
                   {rule.trigger.keywords && rule.trigger.keywords.length > 0
                     && `${t("settings.ai.rules.listKeywordsPrefix")} ${rule.trigger.keywords.join(", ")} `}
@@ -5180,96 +5180,96 @@ export function SettingsAITab() {
                   {rule.trigger.contactAiAccessLevel && rule.trigger.contactAiAccessLevel.length > 0
                     && ` ${t("settings.ai.rules.listAccessPrefix")} ${rule.trigger.contactAiAccessLevel.join(", ")}`}
                   {!rule.trigger.isGreeting && (!rule.trigger.keywords || rule.trigger.keywords.length === 0) && !rule.trigger.messageContains && t("settings.ai.rules.listNoTriggers")}
-                </div>
-                <div className="rule-item-actions">
+              </div>
+              <div className="rule-item-actions">
                   {t("settings.ai.rules.listActionPrefix")} {rule.action.type}
-                  {rule.action.template && ` — "${rule.action.template.slice(0, 50)}${rule.action.template.length > 50 ? "..." : ""}"`}
+                {rule.action.template && ` — "${rule.action.template.slice(0, 50)}${rule.action.template.length > 50 ? "..." : ""}"`}
                   {rule.action.aiIdentityOverride
                     && ` | ${t("settings.ai.rules.listIdentityPrefix")} ${rule.action.aiIdentityOverride}`}
-                </div>
-                <div className="rule-item-controls">
-                  <button type="button" className="settings-button" onClick={() => handleDeleteRule(rule.id)}>{t("settings.ai.rules.delete")}</button>
-                </div>
               </div>
-            ))}
-          </div>
-        ) : (
+              <div className="rule-item-controls">
+                  <button type="button" className="settings-button" onClick={() => handleDeleteRule(rule.id)}>{t("settings.ai.rules.delete")}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
           <p className="field-desc" style={{ marginBottom: "1rem" }}>{t("settings.ai.rules.empty")}</p>
-        )}
+      )}
 
-        {/* Add Rule Form — fully controlled */}
-        <div className="add-rule-form">
+      {/* Add Rule Form — fully controlled */}
+      <div className="add-rule-form">
           <h5>{t("settings.ai.rules.addHeading")}</h5>
-          <div className="form-group">
+        <div className="form-group">
             <label>{t("settings.ai.rules.nameLabel")}</label>
             <input type="text" className="settings-input" placeholder={t("settings.ai.rules.namePlaceholder")}
-              value={ruleForm.name}
-              onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })} />
-          </div>
-          <div className="form-row">
-            <div className="form-group">
+            value={ruleForm.name}
+            onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })} />
+        </div>
+        <div className="form-row">
+          <div className="form-group">
               <label>{t("settings.ai.rules.categoryLabel")}</label>
               <select className="settings-input" value={ruleForm.category}
-                onChange={(e) => setRuleForm({ ...ruleForm, category: e.target.value as AiRuleCategory })}>
+              onChange={(e) => setRuleForm({ ...ruleForm, category: e.target.value as AiRuleCategory })}>
                 <option value="availability">{t("settings.ai.rules.categoryAvailability")}</option>
                 <option value="capability">{t("settings.ai.rules.categoryCapability")}</option>
                 <option value="catch_all">{t("settings.ai.rules.categoryCatchAll")}</option>
-              </select>
-            </div>
-            <div className="form-group">
+            </select>
+          </div>
+          <div className="form-group">
               <label>{t("settings.ai.rules.priorityLabel")}</label>
               <input type="number" className="settings-input" value={ruleForm.priority} min={1} max={100}
-                onChange={(e) => setRuleForm({ ...ruleForm, priority: parseInt(e.target.value) || 1 })} />
-            </div>
+              onChange={(e) => setRuleForm({ ...ruleForm, priority: parseInt(e.target.value) || 1 })} />
           </div>
-          <div className="form-row">
-            <div className="form-group">
+        </div>
+        <div className="form-row">
+          <div className="form-group">
               <label>{t("settings.ai.rules.triggerKeywords")}</label>
               <input type="text" className="settings-input" placeholder={t("settings.ai.rules.triggerKeywordsPlaceholder")}
-                value={ruleForm.keywords}
-                onChange={(e) => setRuleForm({ ...ruleForm, keywords: e.target.value })} />
-            </div>
-            <div className="form-group">
+              value={ruleForm.keywords}
+              onChange={(e) => setRuleForm({ ...ruleForm, keywords: e.target.value })} />
+          </div>
+          <div className="form-group">
               <label>{t("settings.ai.rules.triggerRegex")}</label>
               <input type="text" className="settings-input" placeholder={t("settings.ai.rules.triggerRegexPlaceholder")}
-                value={ruleForm.regex}
-                onChange={(e) => setRuleForm({ ...ruleForm, regex: e.target.value })} />
-            </div>
+              value={ruleForm.regex}
+              onChange={(e) => setRuleForm({ ...ruleForm, regex: e.target.value })} />
           </div>
-          <div className="form-row">
-            <div className="form-group">
+        </div>
+        <div className="form-row">
+          <div className="form-group">
               <label>{t("settings.ai.rules.triggerGreeting")}</label>
               <select className="settings-input" value={ruleForm.isGreeting ? "true" : ""}
-                onChange={(e) => setRuleForm({ ...ruleForm, isGreeting: e.target.value === "true" })}>
+              onChange={(e) => setRuleForm({ ...ruleForm, isGreeting: e.target.value === "true" })}>
                 <option value="">{t("settings.ai.rules.triggerGreetingAny")}</option>
                 <option value="true">{t("settings.ai.rules.triggerGreetingYes")}</option>
-              </select>
-            </div>
-            <div className="form-group">
+            </select>
+          </div>
+          <div className="form-group">
               <label>{t("settings.ai.rules.triggerAccessLevel")}</label>
               <select className="settings-input" value={ruleForm.accessLevel}
-                onChange={(e) => setRuleForm({ ...ruleForm, accessLevel: e.target.value as "" | "full" | "assistant_only" })}>
+              onChange={(e) => setRuleForm({ ...ruleForm, accessLevel: e.target.value as "" | "full" | "assistant_only" })}>
                 <option value="">{t("settings.ai.rules.triggerAccessAny")}</option>
                 <option value="full">{t("settings.ai.rules.triggerAccessFull")}</option>
                 <option value="assistant_only">{t("settings.ai.rules.triggerAccessAssistantOnly")}</option>
-              </select>
-            </div>
+            </select>
           </div>
-          <div className="form-row">
-            <div className="form-group">
+        </div>
+        <div className="form-row">
+          <div className="form-group">
               <label>{t("settings.ai.rules.actionType")}</label>
               <select className="settings-input" value={ruleForm.actionType}
-                onChange={(e) => setRuleForm({ ...ruleForm, actionType: e.target.value as AiRuleActionType })}>
+              onChange={(e) => setRuleForm({ ...ruleForm, actionType: e.target.value as AiRuleActionType })}>
                 <option value="draft">{t("settings.ai.rules.actionDraft")}</option>
                 <option value="auto_send">{t("settings.ai.rules.actionAutoSend")}</option>
                 <option value="gatekeep">{t("settings.ai.rules.actionGatekeep")}</option>
                 <option value="defer">{t("settings.ai.rules.actionDefer")}</option>
-              </select>
-            </div>
-            <div className="form-group">
+            </select>
+          </div>
+          <div className="form-group">
               <label>{t("settings.ai.rules.identityOverride")}</label>
               <select className="settings-input" value={ruleForm.identityOverride}
-                onChange={(e) => setRuleForm({ ...ruleForm, identityOverride: e.target.value as "" | AiIdentityMode })}>
+              onChange={(e) => setRuleForm({ ...ruleForm, identityOverride: e.target.value as "" | AiIdentityMode })}>
               <option value="">{t("settings.ai.rules.identityUseDefault")}</option>
               <option value="invisible">{t("settings.ai.rules.identityInvisible")}</option>
               <option value="transparent">{t("settings.ai.rules.identityTransparent")}</option>
@@ -5286,8 +5286,8 @@ export function SettingsAITab() {
         <div className="settings-buttons">
           <button type="button" className="settings-save-btn" onClick={handleAddRule}>{t("settings.ai.rules.addButton")}</button>
         </div>
-        </div>
-      </section>
+      </div>
+    </section>
 
       <section className="settings-section">
         <AgentIdentityEditor />

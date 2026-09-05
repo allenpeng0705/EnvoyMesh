@@ -2771,6 +2771,34 @@ class AppLocalizationsIt extends AppLocalizations {
       'Impossibile risolvere questo passaggio';
 
   @override
+  String get chainsAssignerStrandedTitle => 'Assigner offline';
+
+  @override
+  String get chainsAssignerStrandedBody =>
+      'Il computer che esegue questo lavoro di team non risponde più. Annulla il lavoro, oppure continua su questo nodo di casa (avvia una nuova esecuzione con lo stesso obiettivo).';
+
+  @override
+  String get chainsAssignerStrandedReclaim => 'Continua qui';
+
+  @override
+  String get chainsAssignerStrandedCancel => 'Annulla lavoro';
+
+  @override
+  String get chainsAssignerStrandedReclaimed =>
+      'Lavoro ripreso su questo nodo di casa.';
+
+  @override
+  String get chainsAssignerStrandedRestarted =>
+      'Nessuno snapshot a metà — avviata una nuova esecuzione su questo nodo di casa.';
+
+  @override
+  String get chainsAssignerStrandedCancelled => 'Lavoro di team annullato.';
+
+  @override
+  String get chainsAssignerStrandedFailed =>
+      'Impossibile aggiornare questo lavoro';
+
+  @override
   String get chainsSpeculationRolePrimary => 'Primario';
 
   @override

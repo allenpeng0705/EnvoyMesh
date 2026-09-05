@@ -87,6 +87,16 @@ export const deChainsMessages = {
     recovering: "Wiederherstellung nach Neustart — Worker-Fortschritt wird bestätigt, bevor es weitergeht",
     recoveringHonesty:
       "Während der Wiederherstellung werden Worker nicht neu vergeben. Späte Finals bleiben erhalten; Duplikate werden verworfen.",
+    assignerStrandedTitle: "Assigner offline",
+    assignerStrandedBody:
+      "Der Computer, der diesen Team-Job ausführt, reagiert nicht mehr. Sie können den Job abbrechen oder ihn auf diesem Computer fortsetzen (startet einen neuen Lauf mit demselben Ziel).",
+    assignerStrandedReclaim: "Hier fortsetzen",
+    assignerStrandedCancel: "Job abbrechen",
+    assignerStrandedReclaimed: "Job auf diesem Computer fortgesetzt.",
+    assignerStrandedRestarted:
+      "Kein Zwischenspeicher vorhanden — neuer Lauf auf diesem Computer gestartet.",
+    assignerStrandedCancelled: "Team-Job abgebrochen.",
+    assignerStrandedFailed: "Dieser Job konnte nicht aktualisiert werden",
     speculationReviewTitle: "Arbeitsergebnisse stimmen nicht überein",
     speculationReviewDisagree:
       "Zwei Teammitglieder haben diesen Schritt mit unterschiedlichen Ergebnissen beendet. Wählen Sie eines, um fortzufahren, oder weisen Sie den Schritt neu zu.",

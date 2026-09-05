@@ -2644,6 +2644,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chainsSpeculationReviewFailed => '无法处理此步骤';
 
   @override
+  String get chainsAssignerStrandedTitle => '编排机已离线';
+
+  @override
+  String get chainsAssignerStrandedBody =>
+      '正在运行此团队任务的电脑没有响应。你可以取消任务，或在本家庭节点继续（会用同一目标重新开始一次）。';
+
+  @override
+  String get chainsAssignerStrandedReclaim => '在本机继续';
+
+  @override
+  String get chainsAssignerStrandedCancel => '取消任务';
+
+  @override
+  String get chainsAssignerStrandedReclaimed => '已在本家庭节点恢复任务。';
+
+  @override
+  String get chainsAssignerStrandedRestarted => '没有可恢复的进度快照 — 已在本家庭节点重新开始。';
+
+  @override
+  String get chainsAssignerStrandedCancelled => '团队任务已取消。';
+
+  @override
+  String get chainsAssignerStrandedFailed => '无法更新此任务';
+
+  @override
   String get chainsSpeculationRolePrimary => '主运行';
 
   @override

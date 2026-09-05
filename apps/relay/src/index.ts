@@ -232,7 +232,7 @@ if (args.advertiseAddrs.length > 0) {
   console.log(`[relay] Advertise (append to libp2p announce): ${args.advertiseAddrs.join(", ")}`);
 }
 if (args.httpPort) {
-    console.log(`[relay] HTTP info endpoint: enabled (port ${args.httpPort})`);
+  console.log(`[relay] HTTP info endpoint: enabled (port ${args.httpPort})`);
     console.log(`[relay] WebSocket endpoints: /ws (mobile client-proxy), /ws/home (home node tunnel), /ws/client (direct client)`);
     if (adminCreds) {
       const usingDefaults =
@@ -258,9 +258,9 @@ if (args.httpPort) {
     console.log(`[relay] libp2p stack: circuit-relay-v2=${version.circuitRelayV2 ?? "?"} identify=${version.identify ?? "?"} kad-dht=${version.kadDht ?? "?"} libp2p=${version.libp2p ?? "?"}`);
     console.log(`[relay] @envoymesh stack: network=${version.network ?? "?"} protocol=${version.protocol ?? "?"} identity=${version.identity ?? "?"}`);
     console.log(`[relay] runtime: node=${version.node} platform=${version.platform}`);
-  } else {
-    console.log(`[relay] HTTP info endpoint: disabled`);
-  }
+} else {
+  console.log(`[relay] HTTP info endpoint: disabled`);
+}
 
 // Resolve the circuit-relay-v2 server config: public-mode preset fills in
 // production values, then any individual override (CLI / env var) wins.
@@ -557,7 +557,7 @@ function markMessageSeen(messageId: string): void {
     let anyExpired = false;
     for (const [id, ts] of seenMessageIds) {
       if (now - ts > SEEN_MESSAGE_ID_TTL_MS) {
-        seenMessageIds.delete(id);
+      seenMessageIds.delete(id);
         anyExpired = true;
       }
     }
@@ -786,8 +786,8 @@ async function restartLibp2pForHealth(reason: string): Promise<void> {
       await mesh.stop();
       started = false;
     }
-    await mesh.start();
-    started = true;
+  await mesh.start();
+  started = true;
     // Give the control plane a fresh stall window after a repair; otherwise
     // the still-stalled gossip counter would immediately re-trigger restart
     // escalation before gossip has had a chance to recover (tick every 90s).
@@ -1328,16 +1328,16 @@ try {
         }
 
         if (pathname === "/info") {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              peerId: mesh.peerId,
-              addrs: mesh.multiaddrs,
-              rendezvous: args.enableRendezvous,
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            peerId: mesh.peerId,
+            addrs: mesh.multiaddrs,
+            rendezvous: args.enableRendezvous,
               clientProxy: true,
               rosterSize: relayRoster.size(),
-            }),
-          );
+          }),
+        );
         } else if (pathname === "/version") {
           // Resolved libp2p + @envoymesh/* package versions + node + platform.
           // Operators rely on this to verify a redeploy actually picked up
@@ -1439,7 +1439,7 @@ try {
           if (!args.a2aBridgeEnabled) {
             res.writeHead(404);
             res.end();
-          } else {
+      } else {
             // SECURITY: do NOT fall back to req.headers.host for the
             // gateway URL — a malicious Host header would otherwise
             // cause the published card to point clients at attacker-
@@ -1479,8 +1479,8 @@ try {
           // `/a2a/jsonrpc` (bearer preserved). Returns 502/504 when the
           // home peer has no live tunnel.
           if (!args.a2aBridgeEnabled) {
-            res.writeHead(404);
-            res.end();
+        res.writeHead(404);
+        res.end();
             return;
           }
           await handleA2AJsonRpcProxy(req, res, {

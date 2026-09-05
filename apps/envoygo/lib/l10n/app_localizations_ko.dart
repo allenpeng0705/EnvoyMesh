@@ -2662,6 +2662,32 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsSpeculationReviewFailed => '이 단계를 처리할 수 없습니다';
 
   @override
+  String get chainsAssignerStrandedTitle => '배정자 오프라인';
+
+  @override
+  String get chainsAssignerStrandedBody =>
+      '이 팀 작업을 실행하던 컴퓨터가 응답하지 않습니다. 작업을 취소하거나 이 홈에서 계속할 수 있습니다(같은 목표로 새 실행을 시작합니다).';
+
+  @override
+  String get chainsAssignerStrandedReclaim => '여기서 계속';
+
+  @override
+  String get chainsAssignerStrandedCancel => '작업 취소';
+
+  @override
+  String get chainsAssignerStrandedReclaimed => '이 홈에서 작업을 재개했습니다.';
+
+  @override
+  String get chainsAssignerStrandedRestarted =>
+      '중간 스냅샷이 없습니다 — 이 홈에서 새 실행을 시작했습니다.';
+
+  @override
+  String get chainsAssignerStrandedCancelled => '팀 작업이 취소되었습니다.';
+
+  @override
+  String get chainsAssignerStrandedFailed => '이 작업을 업데이트할 수 없습니다';
+
+  @override
   String get chainsSpeculationRolePrimary => '기본';
 
   @override

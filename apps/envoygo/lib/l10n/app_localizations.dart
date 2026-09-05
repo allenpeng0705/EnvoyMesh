@@ -5094,6 +5094,54 @@ abstract class AppLocalizations {
   /// **'Could not resolve this step'**
   String get chainsSpeculationReviewFailed;
 
+  /// No description provided for @chainsAssignerStrandedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Assigner offline'**
+  String get chainsAssignerStrandedTitle;
+
+  /// No description provided for @chainsAssignerStrandedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The computer running this team job stopped responding. Cancel the job, or continue it on this home (starts a new run of the same goal).'**
+  String get chainsAssignerStrandedBody;
+
+  /// No description provided for @chainsAssignerStrandedReclaim.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue here'**
+  String get chainsAssignerStrandedReclaim;
+
+  /// No description provided for @chainsAssignerStrandedCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel job'**
+  String get chainsAssignerStrandedCancel;
+
+  /// No description provided for @chainsAssignerStrandedReclaimed.
+  ///
+  /// In en, this message translates to:
+  /// **'Job resumed on this home.'**
+  String get chainsAssignerStrandedReclaimed;
+
+  /// No description provided for @chainsAssignerStrandedRestarted.
+  ///
+  /// In en, this message translates to:
+  /// **'No mid-flight snapshot — started a new run on this home.'**
+  String get chainsAssignerStrandedRestarted;
+
+  /// No description provided for @chainsAssignerStrandedCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Team job cancelled.'**
+  String get chainsAssignerStrandedCancelled;
+
+  /// No description provided for @chainsAssignerStrandedFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not update this job'**
+  String get chainsAssignerStrandedFailed;
+
   /// No description provided for @chainsSpeculationRolePrimary.
   ///
   /// In en, this message translates to:

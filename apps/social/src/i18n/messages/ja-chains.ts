@@ -87,6 +87,16 @@ export const jaChainsMessages = {
     recovering: "再起動後の復旧中 — 続行前にワーカーの進捗を確認しています",
     recoveringHonesty:
       "復旧中はワーカーを再割当しません。遅い最終結果は保持し、重複は破棄します。",
+    assignerStrandedTitle: "Assigner がオフライン",
+    assignerStrandedBody:
+      "このチームジョブを実行していたパソコンが応答しません。ジョブをキャンセルするか、このパソコンで続行できます（同じ目標で新しい実行を開始します）。",
+    assignerStrandedReclaim: "ここで続行",
+    assignerStrandedCancel: "ジョブをキャンセル",
+    assignerStrandedReclaimed: "このパソコンでジョブを再開しました。",
+    assignerStrandedRestarted:
+      "途中のスナップショットがありません — このパソコンで新しい実行を開始しました。",
+    assignerStrandedCancelled: "チームジョブをキャンセルしました。",
+    assignerStrandedFailed: "このジョブを更新できませんでした",
     speculationReviewTitle: "作業結果が一致しません",
     speculationReviewDisagree:
       "2 つのチームメンバーがこのステップで異なる結果を出しました。続行するには一方を選ぶか、ステップを再割当してください。",

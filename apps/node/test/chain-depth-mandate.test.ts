@@ -27,6 +27,10 @@ describe("chain-depth-mandate (Phase 65A)", () => {
     expect(resolveAllowedChainDepth({ allowDepth3: true, allowDepth4: true })).toBe(4);
   });
 
+  it("omitted allowDepth4 keeps depth-3 when only allowDepth3 is set", () => {
+    expect(resolveAllowedChainDepth({ allowDepth3: true })).toBe(3);
+  });
+
   it("never exceeds protocol CHAIN_MAX_DEPTH", () => {
     expect(CHAIN_MAX_DEPTH).toBe(4);
     expect(resolveAllowedChainDepth({ allowDepth4: true })).toBeLessThanOrEqual(CHAIN_MAX_DEPTH);

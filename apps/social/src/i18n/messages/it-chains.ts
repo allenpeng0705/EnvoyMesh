@@ -87,6 +87,16 @@ export const itChainsMessages = {
     recovering: "Ripristino dopo il riavvio — conferma dei progressi dei worker prima di continuare",
     recoveringHonesty:
       "Durante il ripristino i worker non vengono riassegnati. I finali in ritardo vengono conservati; i duplicati vengono scartati.",
+    assignerStrandedTitle: "Assigner offline",
+    assignerStrandedBody:
+      "Il computer che esegue questo lavoro di team non risponde più. Puoi annullare il lavoro oppure riprenderlo su questo computer (avvia una nuova esecuzione con lo stesso obiettivo).",
+    assignerStrandedReclaim: "Continua qui",
+    assignerStrandedCancel: "Annulla lavoro",
+    assignerStrandedReclaimed: "Lavoro ripreso su questo computer.",
+    assignerStrandedRestarted:
+      "Nessuno snapshot a metà — avviata una nuova esecuzione su questo computer.",
+    assignerStrandedCancelled: "Lavoro di team annullato.",
+    assignerStrandedFailed: "Impossibile aggiornare questo lavoro",
     speculationReviewTitle: "I risultati non coincidono",
     speculationReviewDisagree:
       "Due membri del team hanno completato questo passaggio con risultati diversi. Scegline uno per continuare, oppure riassegna il passaggio.",

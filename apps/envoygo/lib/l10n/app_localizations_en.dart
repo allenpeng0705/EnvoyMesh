@@ -2740,6 +2740,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chainsSpeculationReviewFailed => 'Could not resolve this step';
 
   @override
+  String get chainsAssignerStrandedTitle => 'Assigner offline';
+
+  @override
+  String get chainsAssignerStrandedBody =>
+      'The computer running this team job stopped responding. Cancel the job, or continue it on this home (starts a new run of the same goal).';
+
+  @override
+  String get chainsAssignerStrandedReclaim => 'Continue here';
+
+  @override
+  String get chainsAssignerStrandedCancel => 'Cancel job';
+
+  @override
+  String get chainsAssignerStrandedReclaimed => 'Job resumed on this home.';
+
+  @override
+  String get chainsAssignerStrandedRestarted =>
+      'No mid-flight snapshot — started a new run on this home.';
+
+  @override
+  String get chainsAssignerStrandedCancelled => 'Team job cancelled.';
+
+  @override
+  String get chainsAssignerStrandedFailed => 'Could not update this job';
+
+  @override
   String get chainsSpeculationRolePrimary => 'Primary';
 
   @override

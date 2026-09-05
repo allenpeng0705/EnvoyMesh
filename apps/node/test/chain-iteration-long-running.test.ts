@@ -172,6 +172,31 @@ describe("Phase 65B checkpoint restores iteration across ChainStore restart", ()
         hedgeAfterMs: 1000,
         scheduledAtMs: 1,
       });
+      state.attempts.set("attempt_65b", {
+        attemptId: "attempt_65b",
+        chainId: "chain_65b",
+        subtaskId: "subtask_65b",
+        workerPeerId: "w1",
+        role: "primary",
+        state: "running",
+        attemptNumber: 1,
+        acceptedCostUsd: 1,
+        createdAt: "2030-01-01T00:00:00.000Z",
+        updatedAt: "2030-01-01T00:00:00.000Z",
+      });
+      state.selectedAttemptBySubtask.set("subtask_65b", "attempt_65b");
+      state.partialsByAttempt.set("attempt_65b", {
+        partial: {
+          version: "0.1",
+          subtaskId: "subtask_65b",
+          chainId: "chain_65b",
+          workerPeerId: "w1",
+          seq: 1,
+          isFinal: false,
+          note: "checkpoint partial",
+          createdAt: "2030-01-01T00:00:00.000Z",
+        },
+      } as never);
       first.setRuntime(state.chainId, {
         state,
         bidStrategy: {
@@ -194,6 +219,13 @@ describe("Phase 65B checkpoint restores iteration across ChainStore restart", ()
       expect(restored?.drafts[0]?.summary).toBe("draft one");
       expect(restoredRt?.state.verifyOnlyBlockedSubtasks.has("blocked-sub")).toBe(true);
       expect(restoredRt?.state.hedgeSchedule.has("hedge-sub")).toBe(true);
+      expect(restoredRt?.state.attempts.get("attempt_65b")?.state).toBe("running");
+      expect(restoredRt?.state.selectedAttemptBySubtask.get("subtask_65b")).toBe(
+        "attempt_65b",
+      );
+      expect(restoredRt?.state.partialsByAttempt.get("attempt_65b")?.partial.note).toBe(
+        "checkpoint partial",
+      );
       second.close();
     } finally {
       await rm(dir, { recursive: true, force: true });

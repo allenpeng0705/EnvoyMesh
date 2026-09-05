@@ -2665,6 +2665,32 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chainsSpeculationReviewFailed => 'このステップを解決できませんでした';
 
   @override
+  String get chainsAssignerStrandedTitle => 'Assigner がオフライン';
+
+  @override
+  String get chainsAssignerStrandedBody =>
+      'このチームジョブを実行していたパソコンが応答しません。ジョブをキャンセルするか、このホームで続行できます（同じ目標で新しい実行を開始します）。';
+
+  @override
+  String get chainsAssignerStrandedReclaim => 'ここで続行';
+
+  @override
+  String get chainsAssignerStrandedCancel => 'ジョブをキャンセル';
+
+  @override
+  String get chainsAssignerStrandedReclaimed => 'このホームでジョブを再開しました。';
+
+  @override
+  String get chainsAssignerStrandedRestarted =>
+      '途中のスナップショットがありません — このホームで新しい実行を開始しました。';
+
+  @override
+  String get chainsAssignerStrandedCancelled => 'チームジョブをキャンセルしました。';
+
+  @override
+  String get chainsAssignerStrandedFailed => 'このジョブを更新できませんでした';
+
+  @override
   String get chainsSpeculationRolePrimary => 'プライマリ';
 
   @override

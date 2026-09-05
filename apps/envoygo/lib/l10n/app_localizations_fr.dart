@@ -2777,6 +2777,34 @@ class AppLocalizationsFr extends AppLocalizations {
       'Impossible de résoudre cette étape';
 
   @override
+  String get chainsAssignerStrandedTitle => 'Assignateur hors ligne';
+
+  @override
+  String get chainsAssignerStrandedBody =>
+      'L\'ordinateur qui exécute cette mission d\'équipe ne répond plus. Annulez la mission, ou continuez-la sur ce nœud domicile (démarre un nouveau parcours avec le même objectif).';
+
+  @override
+  String get chainsAssignerStrandedReclaim => 'Continuer ici';
+
+  @override
+  String get chainsAssignerStrandedCancel => 'Annuler la mission';
+
+  @override
+  String get chainsAssignerStrandedReclaimed =>
+      'Mission reprise sur ce nœud domicile.';
+
+  @override
+  String get chainsAssignerStrandedRestarted =>
+      'Pas d\'instantané en cours — nouveau parcours démarré sur ce nœud domicile.';
+
+  @override
+  String get chainsAssignerStrandedCancelled => 'Mission d\'équipe annulée.';
+
+  @override
+  String get chainsAssignerStrandedFailed =>
+      'Impossible de mettre à jour cette mission';
+
+  @override
   String get chainsSpeculationRolePrimary => 'Principal';
 
   @override
