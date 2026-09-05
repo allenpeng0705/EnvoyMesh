@@ -134,10 +134,63 @@ export interface ListFamilyProfilesResult {
   profiles: FamilyProfile[]
 }
 
+/**
+ * EM-F1 — descriptor for a family attachment already stored in
+ * `family-media/` (see `uploadFamilyAttachment`). `contentHash` is sha256
+ * (hex) of the stored bytes when known.
+ */
+export interface FamilyAttachmentDescriptor {
+  id: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  contentHash?: string
+}
+
+/** EM-F1 — where a family attachment lives: a DM pair or a family room. */
+export type FamilyAttachmentScope =
+  | { dm: { toProfileId: string } }
+  | { room: { roomId: string } }
+
+/** EM-F1 — upload bytes into the caller's family-media area (local only). */
+export interface FamilyAttachmentUploadParams {
+  scope: FamilyAttachmentScope
+  filename: string
+  mimeType: string
+  /** Base64 (no data: prefix). Bytes are capped at 25 MiB. */
+  contentBase64: string
+}
+
+export interface FamilyAttachmentUploadResult {
+  id: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  contentHash: string
+}
+
+/** EM-F1 — sliced read of a stored family attachment (max 1 MiB per slice). */
+export interface FamilyAttachmentReadParams {
+  id: string
+  offset?: number
+  maxBytes?: number
+}
+
+export interface FamilyAttachmentReadResult {
+  contentBase64: string
+  sizeBytes: number
+  truncated: boolean
+}
+
 /** Phase 51C — local family DM (never leaves the home node). */
 export interface SendFamilyMessageParams {
   toProfileId: string
-  text: string
+  text?: string
+  /**
+   * EM-F1 — attachment ids previously uploaded with `uploadFamilyAttachment`
+   * scoped to this DM pair. Each id must exist in this pair's media area.
+   */
+  attachments?: FamilyAttachmentDescriptor[]
 }
 
 export interface SendFamilyMessageResult {
@@ -173,7 +226,12 @@ export interface ListFamilyRoomsResult {
 
 export interface SendFamilyRoomMessageParams {
   roomId: string
-  text: string
+  text?: string
+  /**
+   * EM-F1 — attachment ids previously uploaded with `uploadFamilyAttachment`
+   * scoped to this room. Each id must exist in this room's media area.
+   */
+  attachments?: FamilyAttachmentDescriptor[]
 }
 
 export interface SendFamilyRoomMessageResult {

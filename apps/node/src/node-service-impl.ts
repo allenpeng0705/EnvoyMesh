@@ -408,6 +408,12 @@ import {
 } from "./node-service-family.js";
 import { revokeThinClientViaRuntime } from "./node-service-revoke-thin-client.js";
 import {
+  uploadFamilyAttachmentViaRuntime,
+  readFamilyAttachmentViaRuntime,
+  resolveFamilyMessageAttachmentsViaRuntime,
+  type FamilyMediaDeps,
+} from "./family-media.js";
+import {
   shopGetProfileViaRuntime,
   shopUpdateProfileViaRuntime,
   shopListListingsViaRuntime,
@@ -14647,7 +14653,6 @@ class NodeServiceImpl implements NodeService {
     const toProfileId = params.toProfileId?.trim() ?? "";
     const text = params.text?.trim() ?? "";
     if (!toProfileId) throw new Error("toProfileId is required");
-    if (!text) throw new Error("text is required");
     if (toProfileId === fromProfileId) {
       throw new Error(
         fromProfileId === OWNER_FAMILY_PROFILE_ID
@@ -14670,6 +14675,16 @@ class NodeServiceImpl implements NodeService {
     // they appear offline and get push if a token is registered.
 
     const threadKey = familyThreadKey(fromProfileId, toProfileId);
+    // EM-F1 — attachment ids must exist in THIS DM pair's media area
+    // (`dm:family:<sortedA>:<sortedB>`), then descriptors ride the message.
+    const attachments = await resolveFamilyMessageAttachmentsViaRuntime(
+      this._familyMediaContext(),
+      `dm:${threadKey}`,
+      params.attachments,
+    );
+    if (!text && attachments.length === 0) {
+      throw new Error("text or attachments are required");
+    }
     const messageId = crypto.randomUUID();
     const now = new Date().toISOString();
     const meshPeerId = this._mesh?.peerId ?? "";
@@ -14686,7 +14701,10 @@ class NodeServiceImpl implements NodeService {
         ownerId: threadKey,
         displayName: toProfile.name,
       },
-      content: { text },
+      content: {
+        text,
+        ...(attachments.length > 0 ? { attachments } : {}),
+      },
       metadata: {
         timestamp: now,
         deliveryReceipt: "delivered",
@@ -14784,7 +14802,6 @@ class NodeServiceImpl implements NodeService {
     const roomId = params.roomId?.trim() ?? "";
     const text = params.text?.trim() ?? "";
     if (!roomId) throw new Error("roomId is required");
-    if (!text) throw new Error("text is required");
     const profileId = this._callerFamilyProfileId();
     const profile = await this._familyProfileStore.get(profileId);
     if (!profile || profile.active === false) {
@@ -14799,6 +14816,16 @@ class NodeServiceImpl implements NodeService {
     }
 
     const threadKey = `room:${room.roomId}`;
+    // EM-F1 — attachment ids must exist in THIS room's media area
+    // (`room:<roomId>`), then descriptors ride the message.
+    const attachments = await resolveFamilyMessageAttachmentsViaRuntime(
+      this._familyMediaContext(),
+      threadKey,
+      params.attachments,
+    );
+    if (!text && attachments.length === 0) {
+      throw new Error("text or attachments are required");
+    }
     const messageId = crypto.randomUUID();
     const now = new Date().toISOString();
     const meshPeerId = this._mesh?.peerId ?? "";
@@ -14815,7 +14842,10 @@ class NodeServiceImpl implements NodeService {
         ownerId: threadKey,
         displayName: room.title,
       },
-      content: { text },
+      content: {
+        text,
+        ...(attachments.length > 0 ? { attachments } : {}),
+      },
       metadata: {
         timestamp: now,
         deliveryReceipt: "delivered",
@@ -14841,7 +14871,7 @@ class NodeServiceImpl implements NodeService {
         void pushNotificationService
           .dispatchChatPush({
             senderName: profile.name,
-            messagePreview: text.slice(0, 120),
+            messagePreview: (text || "[attachment]").slice(0, 120),
             targetOwnerId: homeOwnerId,
             targetProfileId: memberId,
             messageId,
@@ -14863,6 +14893,43 @@ class NodeServiceImpl implements NodeService {
     }
 
     return { messageId, threadKey };
+  }
+
+  /** EM-F1 — deps bundle for the family-media runtime (bytes stay local). */
+  private _familyMediaContext(): FamilyMediaDeps {
+    return {
+      profileDir: this._profileDir,
+      familyProfileStore: this._familyProfileStore,
+      familyRoomStore: this._familyRoomStore,
+    };
+  }
+
+  /**
+   * EM-F1 — store family attachment bytes (DM pair / room scope, local only).
+   * Never owner-only: family members upload to their own DM pairs / rooms.
+   */
+  async uploadFamilyAttachment(
+    params: import("@envoymesh/api").FamilyAttachmentUploadParams,
+  ): Promise<import("@envoymesh/api").FamilyAttachmentUploadResult> {
+    await this._ensureFamilyOwnerMigrated();
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("Family media is not available on this node");
+    }
+    return uploadFamilyAttachmentViaRuntime(this._familyMediaContext(), params);
+  }
+
+  /**
+   * EM-F1 — sliced read of a family attachment. Gated by DM pair membership /
+   * family-room membership / owner session inside the runtime.
+   */
+  async readFamilyAttachment(
+    params: import("@envoymesh/api").FamilyAttachmentReadParams,
+  ): Promise<import("@envoymesh/api").FamilyAttachmentReadResult> {
+    await this._ensureFamilyOwnerMigrated();
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("Family media is not available on this node");
+    }
+    return readFamilyAttachmentViaRuntime(this._familyMediaContext(), params);
   }
 
   /** Phase 51 — best-effort presence stamp for a family profile. */

@@ -373,6 +373,8 @@ export type RpcMethods =
   | "listFamilyProfiles"
   | "generateFamilyInviteToken"
   | "sendFamilyMessage"
+  | "uploadFamilyAttachment"
+  | "readFamilyAttachment"
   | "listFamilyRooms"
   | "createFamilyRoom"
   | "sendFamilyRoomMessage"

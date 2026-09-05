@@ -124,6 +124,12 @@ import type {
   ListFamilyProfilesResult,
   SendFamilyMessageParams,
   SendFamilyMessageResult,
+  FamilyAttachmentDescriptor,
+  FamilyAttachmentScope,
+  FamilyAttachmentUploadParams,
+  FamilyAttachmentUploadResult,
+  FamilyAttachmentReadParams,
+  FamilyAttachmentReadResult,
   FamilyRoom,
   CreateFamilyRoomParams,
   CreateFamilyRoomResult,
@@ -172,6 +178,12 @@ export type {
   ListFamilyProfilesResult,
   SendFamilyMessageParams,
   SendFamilyMessageResult,
+  FamilyAttachmentDescriptor,
+  FamilyAttachmentScope,
+  FamilyAttachmentUploadParams,
+  FamilyAttachmentUploadResult,
+  FamilyAttachmentReadParams,
+  FamilyAttachmentReadResult,
   FamilyRoom,
   CreateFamilyRoomParams,
   CreateFamilyRoomResult,
@@ -3397,6 +3409,24 @@ export interface NodeService {
   sendFamilyRoomMessage(
     params: SendFamilyRoomMessageParams,
   ): Promise<SendFamilyRoomMessageResult>;
+
+  /**
+   * EM-F1 — store attachment bytes under `<profileDir>/family-media/` scoped
+   * to the caller's DM pair or family room. Local only; never the mesh.
+   * Cap: 25 MiB per file. Caller/scope resolved server-side via
+   * `getRpcCaller()`.
+   */
+  uploadFamilyAttachment(
+    params: FamilyAttachmentUploadParams,
+  ): Promise<FamilyAttachmentUploadResult>;
+
+  /**
+   * EM-F1 — sliced read of a stored family attachment (default/max 1 MiB per
+   * slice). Gated by DM pair membership / family-room membership / owner.
+   */
+  readFamilyAttachment(
+    params: FamilyAttachmentReadParams,
+  ): Promise<FamilyAttachmentReadResult>;
 
   /**
    * Phase 63A — Envoy Market local shop (home node only; no mesh publish yet).

@@ -1220,8 +1220,22 @@ export async function routeRpcMethod(
     case "sendFamilyMessage":
       return ns.sendFamilyMessage({
         toProfileId: String(params.toProfileId ?? ""),
-        text: String(params.text ?? ""),
+        text: typeof params.text === "string" ? params.text : "",
+        ...(Array.isArray(params.attachments)
+          ? {
+              attachments:
+                params.attachments as import("@envoymesh/api").FamilyAttachmentDescriptor[],
+            }
+          : {}),
       });
+    case "uploadFamilyAttachment":
+      return ns.uploadFamilyAttachment(
+        params as unknown as import("@envoymesh/api").FamilyAttachmentUploadParams,
+      );
+    case "readFamilyAttachment":
+      return ns.readFamilyAttachment(
+        params as unknown as import("@envoymesh/api").FamilyAttachmentReadParams,
+      );
     case "listFamilyRooms":
       return ns.listFamilyRooms();
     case "createFamilyRoom":
@@ -1234,7 +1248,13 @@ export async function routeRpcMethod(
     case "sendFamilyRoomMessage":
       return ns.sendFamilyRoomMessage({
         roomId: String(params.roomId ?? ""),
-        text: String(params.text ?? ""),
+        text: typeof params.text === "string" ? params.text : "",
+        ...(Array.isArray(params.attachments)
+          ? {
+              attachments:
+                params.attachments as import("@envoymesh/api").FamilyAttachmentDescriptor[],
+            }
+          : {}),
       });
     case "syncPairingKioskFromConfig":
       return ns.syncPairingKioskFromConfig();
