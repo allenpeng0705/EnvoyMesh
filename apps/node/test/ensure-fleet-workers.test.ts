@@ -45,6 +45,23 @@ describe("ensureFleetWorkersReadyViaRuntime", () => {
     expect(result.peers.map((p) => p.actions[0])).toEqual(["skipped_public", "skipped_blocked"]);
   });
 
+  it("mixed roster: bonded peer gets lease.request, stranger does not", async () => {
+    const deps = makeDeps({
+      getBonds: async () => [
+        { peerOwnerId: "envoy:owner:bob", displayName: "Bob", level: "direct" },
+        { peerOwnerId: "envoy:owner:stranger", displayName: "Cafe", level: "public" },
+      ],
+    });
+    const result = await ensureFleetWorkersReadyViaRuntime(deps);
+    expect(deps.sendEnvelope).toHaveBeenCalledTimes(1);
+    const bob = result.peers.find((p) => p.ownerId === "envoy:owner:bob");
+    const stranger = result.peers.find((p) => p.ownerId === "envoy:owner:stranger");
+    expect(bob?.ok).toBe(true);
+    expect(bob?.actions).toContain("lease_request_sent");
+    expect(stranger?.actions).toEqual(["skipped_public"]);
+    expect(stranger?.ok).toBe(false);
+  });
+
   it("sends lease.request to a direct bonded peer", async () => {
     const deps = makeDeps({
       getBonds: async () => [

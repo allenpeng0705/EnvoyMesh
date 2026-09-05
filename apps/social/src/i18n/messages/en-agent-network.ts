@@ -162,6 +162,9 @@ export const agentNetworkSettingsMessages = {
     ensureJoinLease: "Ensure Join and leases",
     ensureBusy: "Ensuring…",
     ensureDone: "Join and leases requested",
+    ensureJoinTitle:
+      "Turn Join on here, publish this home’s worker lease, and ask bonded peers to republish theirs.",
+    ensureFailed: "Could not ensure Join and leases",
     joinOffAfterLan:
       "Bonded on LAN but not recruitable — Join Agent Network or use Office LAN preset.",
   },

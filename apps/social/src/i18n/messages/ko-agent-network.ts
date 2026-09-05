@@ -52,6 +52,9 @@ export const koAgentNetworkSettingsMessages = {
     ensureJoinLease: "가입과 리스 확보",
     ensureBusy: "처리 중…",
     ensureDone: "가입과 리스를 요청했습니다",
+    ensureJoinTitle:
+      "여기서 가입을 켜고 이 홈의 워커 리스를 게시하며, 본드된 피어에게 리스 재게시를 요청합니다.",
+    ensureFailed: "가입과 리스를 확보할 수 없습니다",
     joinOffAfterLan:
       "LAN에서 바인딩되었지만 모집할 수 없습니다 — 에이전트 네트워크에 참가하거나 사무실 LAN 프리셋을 사용하세요.",
   },

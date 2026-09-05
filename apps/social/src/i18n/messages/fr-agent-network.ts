@@ -52,6 +52,9 @@ export const frAgentNetworkSettingsMessages = {
     ensureJoinLease: "Assurer Join et baux",
     ensureBusy: "En cours…",
     ensureDone: "Join et baux demandés",
+    ensureJoinTitle:
+      "Activer Join ici, publier le bail de ce nœud domicile, et demander aux pairs liés de republier le leur.",
+    ensureFailed: "Impossible d'assurer Join et baux",
     joinOffAfterLan:
       "Lié en LAN mais non recrutable — rejoignez le réseau d'agents ou utilisez le préréglage LAN de bureau.",
   },

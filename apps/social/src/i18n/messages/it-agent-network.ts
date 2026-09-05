@@ -52,6 +52,9 @@ export const itAgentNetworkSettingsMessages = {
     ensureJoinLease: "Assicura Join e lease",
     ensureBusy: "In corso…",
     ensureDone: "Join e lease richiesti",
+    ensureJoinTitle:
+      "Attiva Join qui, pubblica il lease di questo nodo di casa e chiedi ai peer collegati di ripubblicare i loro.",
+    ensureFailed: "Impossibile assicurare Join e lease",
     joinOffAfterLan:
       "Collegato in LAN ma non reclutabile — unisciti alla rete agenti o usa il preset LAN ufficio.",
   },

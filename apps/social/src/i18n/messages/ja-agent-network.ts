@@ -52,6 +52,9 @@ export const jaAgentNetworkSettingsMessages = {
     ensureJoinLease: "参加とリースを確保",
     ensureBusy: "処理中…",
     ensureDone: "参加とリースを要求しました",
+    ensureJoinTitle:
+      "ここで参加を有効にし、このホームのワーカーリースを公開し、ボンド済みピアに再公開を依頼します。",
+    ensureFailed: "参加とリースを確保できませんでした",
     joinOffAfterLan:
       "LAN でバンディング済みですが募集不可です — エージェントネットワークに参加するかオフィス LAN プリセットを使ってください。",
   },

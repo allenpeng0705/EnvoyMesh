@@ -275,13 +275,25 @@ export function wireChainInboundHandler(node: Phase13TestNode): void {
 /**
  * Phase 60.1 — stub OpenClaw ready + sync replies so libp2p smokes can reach
  * execute→report without a real gateway (mock modelProviders should already be set).
+ *
+ * Phase 66 review / Phase 62 follow-up: also stub start/stop/reload so
+ * `updateNodeConfig({ modelProviders })` → `reloadOpenClawConfig` does **not**
+ * spawn a gateway on :18789 (EADDRINUSE when `node:dev` already holds the port).
  */
 export function wireMockTeamJobEngine(node: Phase13TestNode, mockText?: string): void {
   const text =
     mockText?.trim() ||
     "E2E mock team job result for Agent Network smoke.";
-  node.service.isOpenClawReady = () => true;
-  node.service.askOpenClaw = async () => text;
+  const svc = node.service as NodeServiceImpl & {
+    startOpenClaw: () => Promise<boolean>;
+    stopOpenClaw: () => Promise<void>;
+    reloadOpenClawConfig: () => Promise<void>;
+  };
+  svc.isOpenClawReady = () => true;
+  svc.askOpenClaw = async () => text;
+  svc.startOpenClaw = async () => true;
+  svc.stopOpenClaw = async () => undefined;
+  svc.reloadOpenClawConfig = async () => undefined;
 }
 
 /**
@@ -296,8 +308,13 @@ export function wireGatedMockTeamJobEngine(
   const text =
     mockText?.trim() ||
     "E2E mock team job result for Agent Network recovery chaos.";
-  node.service.isOpenClawReady = () => true;
-  node.service.askOpenClaw = async () => {
+  const svc = node.service as NodeServiceImpl & {
+    startOpenClaw: () => Promise<boolean>;
+    stopOpenClaw: () => Promise<void>;
+    reloadOpenClawConfig: () => Promise<void>;
+  };
+  svc.isOpenClawReady = () => true;
+  svc.askOpenClaw = async () => {
     // Avoid TOCTOU hang: release() may flip `released` between the check
     // and waiters.push. Always re-check after registering the waiter.
     if (released) return text;
@@ -307,6 +324,9 @@ export function wireGatedMockTeamJobEngine(
     });
     return text;
   };
+  svc.startOpenClaw = async () => true;
+  svc.stopOpenClaw = async () => undefined;
+  svc.reloadOpenClawConfig = async () => undefined;
   return {
     release: () => {
       released = true;

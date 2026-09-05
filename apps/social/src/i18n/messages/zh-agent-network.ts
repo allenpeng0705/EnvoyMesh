@@ -155,6 +155,8 @@ export const zhAgentNetworkSettingsMessages = {
     ensureJoinLease: "确保加入并发布租约",
     ensureBusy: "处理中…",
     ensureDone: "已请求加入并发布租约",
+    ensureJoinTitle: "在本机开启加入、发布工作节点租约，并请已绑定节点重新发布租约。",
+    ensureFailed: "无法确保加入并发布租约",
     joinOffAfterLan: "已在局域网绑定，但尚未可被征用 — 请加入智能体网络或使用办公局域网预设。",
   },
   quickReference: {

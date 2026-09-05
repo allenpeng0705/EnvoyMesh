@@ -415,6 +415,7 @@ export function WorkersStatusSection() {
   const [refreshed, setRefreshed] = useState(false);
   const [ensuring, setEnsuring] = useState(false);
   const [ensured, setEnsured] = useState(false);
+  const [ensureError, setEnsureError] = useState<string | null>(null);
 
   const joinOn = nodeConfig?.capabilityProviderEnabled === true;
   const lanOn = nodeConfig?.lanAutoBondEnabled === true;
@@ -489,19 +490,27 @@ export function WorkersStatusSection() {
     if (typeof nodeService.ensureFleetWorkersJoinAndLease !== "function") return;
     setEnsuring(true);
     setEnsured(false);
+    setEnsureError(null);
     try {
       await nodeService.ensureFleetWorkersJoinAndLease();
       await loadStatus();
       setEnsured(true);
       window.setTimeout(() => setEnsured(false), 4000);
+    } catch (err) {
+      setEnsureError(
+        err instanceof Error ? err.message : t("settings.agentNetwork.workersStatus.ensureFailed"),
+      );
     } finally {
       setEnsuring(false);
     }
-  }, [loadStatus, nodeService]);
+  }, [loadStatus, nodeService, t]);
 
   return (
     <section className="settings-section" data-testid="agent-network-workers-status">
       <h4>{t("settings.agentNetwork.workersStatus.heading")}</h4>
+      <p className="section-desc" data-testid="workers-status-ensure-title">
+        {t("settings.agentNetwork.workersStatus.ensureJoinTitle")}
+      </p>
       <p className="section-desc" data-testid="workers-status-strip">
         {t("settings.agentNetwork.workersStatus.bonded", { count: String(bondedCount) })}
         {" · "}
@@ -542,6 +551,7 @@ export function WorkersStatusSection() {
           type="button"
           className="settings-button"
           data-testid="ensure-fleet-workers"
+          title={t("settings.agentNetwork.workersStatus.ensureJoinTitle")}
           onClick={() => {
             void handleEnsure();
           }}
@@ -552,7 +562,17 @@ export function WorkersStatusSection() {
             : t("settings.agentNetwork.workersStatus.ensureJoinLease")}
         </button>
         {ensured ? (
-          <span className="settings-hint">{t("settings.agentNetwork.workersStatus.ensureDone")}</span>
+          <span className="settings-hint" data-testid="ensure-fleet-done">
+            {t("settings.agentNetwork.workersStatus.ensureDone")}
+          </span>
+        ) : null}
+        {ensureError ? (
+          <span className="library-view-error" data-testid="ensure-fleet-failed">
+            {t("settings.agentNetwork.workersStatus.ensureFailed")}
+            {ensureError !== t("settings.agentNetwork.workersStatus.ensureFailed")
+              ? `: ${ensureError}`
+              : null}
+          </span>
         ) : null}
       </div>
       {lanBondWithoutJoin ? (

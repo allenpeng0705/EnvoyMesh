@@ -52,6 +52,9 @@ export const deAgentNetworkSettingsMessages = {
     ensureJoinLease: "Beitritt und Leases sicherstellen",
     ensureBusy: "Wird sichergestellt…",
     ensureDone: "Beitritt und Leases angefordert",
+    ensureJoinTitle:
+      "Beitritt hier aktivieren, Lease dieses Heimknotens veröffentlichen und gebundene Peers bitten, ihres neu zu veröffentlichen.",
+    ensureFailed: "Beitritt und Leases konnten nicht sichergestellt werden",
     joinOffAfterLan:
       "Im LAN gebunden, aber nicht rekrutierbar — Agentennetzwerk beitreten oder Büro-LAN-Preset nutzen.",
   },
