@@ -15,6 +15,7 @@ import type {
   BondRecord,
   CachedAgentCardSummary,
   ChainGetStateResult,
+  ChainListRecipesResult,
   ChainListReportsResult,
   ChainObservedStatus,
   ChainWorkerReachability,
@@ -383,11 +384,14 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
   // goal composer; the preview+launch reuses ChainStartDialog.
   const [newChainGoal, setNewChainGoal] = useState<string | null>(null);
   const [newChainDisplayGoal, setNewChainDisplayGoal] = useState<string>("");
+  const [newChainTemplateId, setNewChainTemplateId] = useState<string | undefined>(undefined);
   const [newChainAttachments, setNewChainAttachments] = useState<
     Array<{ fileName: string; relativePath: string; label?: string }>
   >([]);
   const [composing, setComposing] = useState(false);
   const [goalDraft, setGoalDraft] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>(undefined);
+  const [recipes, setRecipes] = useState<ChainListRecipesResult["recipes"]>([]);
   const [composerAssignmentMode, setComposerAssignmentMode] = useState<"skill" | "role">("skill");
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
   const [composerBatchId, setComposerBatchId] = useState(() => `tj_${Date.now().toString(36)}`);
@@ -593,25 +597,97 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
     [nodeService, showToast, t],
   );
 
-  // Quick-start goal templates — mirror the Phase 43B RPC defaults so a new
-  // user has one-tap on-ramps without having to author a goal from scratch.
-  const goalTemplates: { label: string; goal: string }[] = [
-    { label: t("chains.start.template.research"), goal: t("chains.start.template.researchGoal") },
-    { label: t("chains.start.template.summarize"), goal: t("chains.start.template.summarizeGoal") },
-    { label: t("chains.start.template.askNetwork"), goal: t("chains.start.template.askNetworkGoal") },
-    {
-      label: t("chains.start.template.engineerBrief"),
-      goal: t("chains.start.template.engineerBriefGoal"),
+  const loadRecipes = useCallback(async () => {
+    try {
+      const result = await nodeService.chainListRecipes();
+      setRecipes(result.recipes ?? []);
+    } catch (err) {
+      console.error("[ChainsView] chainListRecipes failed:", err);
+      setRecipes([]);
+    }
+  }, [nodeService]);
+
+  // Quick-start goal templates — Phase 67A: load from chainListRecipes
+  // (saved local + built-ins) instead of hardcoded i18n-only chips.
+  const savedRecipes = useMemo(
+    () => recipes.filter((r) => r.saved === true),
+    [recipes],
+  );
+  const builtinRecipes = useMemo(
+    () => recipes.filter((r) => r.saved !== true),
+    [recipes],
+  );
+
+  const recipeChipLabel = useCallback(
+    (recipe: ChainListRecipesResult["recipes"][number]) => {
+      if (recipe.saved) return recipe.label;
+      if (recipe.id === "research") return t("chains.start.template.research");
+      if (recipe.id === "summarize") return t("chains.start.template.summarize");
+      if (recipe.id === "network") return t("chains.start.template.askNetwork");
+      return recipe.label;
     },
-  ];
+    [t],
+  );
+
+  const applyRecipe = useCallback((recipe: ChainListRecipesResult["recipes"][number]) => {
+    setGoalDraft(recipe.goal);
+    setSelectedTemplateId(recipe.id);
+  }, []);
+
+  const deleteRecipe = useCallback(
+    async (id: string) => {
+      try {
+        const result = await nodeService.chainDeleteRecipe({ id });
+        if (!result.ok || !result.deleted) {
+          showToast(t("chains.recipes.deleteFailed"), "error");
+          return;
+        }
+        showToast(t("chains.recipes.deleted"), "success");
+        if (selectedTemplateId === id) setSelectedTemplateId(undefined);
+        await loadRecipes();
+      } catch (err) {
+        console.error("[ChainsView] chainDeleteRecipe failed:", err);
+        showToast(t("chains.recipes.deleteFailed"), "error");
+      }
+    },
+    [loadRecipes, nodeService, selectedTemplateId, showToast, t],
+  );
+
+  const saveReportAsTemplate = useCallback(
+    async (goal: string | undefined) => {
+      const trimmed = goal?.trim();
+      if (!trimmed || trimmed.length < 8) {
+        showToast(t("chains.recipes.saveFailed"), "error");
+        return;
+      }
+      try {
+        const result = await nodeService.chainSaveRecipe({
+          label: trimmed.slice(0, 48),
+          goal: trimmed,
+        });
+        if (!result.ok) {
+          showToast(t("chains.recipes.saveFailed"), "error");
+          return;
+        }
+        showToast(t("chains.recipes.saved"), "success");
+        await loadRecipes();
+      } catch (err) {
+        console.error("[ChainsView] chainSaveRecipe failed:", err);
+        showToast(t("chains.recipes.saveFailed"), "error");
+      }
+    },
+    [loadRecipes, nodeService, showToast, t],
+  );
 
   const openComposer = useCallback(
     (initialGoal?: string) => {
       setGoalDraft(initialGoal ?? "");
+      setSelectedTemplateId(undefined);
       setComposerAttachments([]);
       setComposerBatchId(`tj_${Date.now().toString(36)}`);
       setComposerAssignmentMode("skill");
       setComposing(true);
+      void loadRecipes();
       void nodeService
         .chainGetDefaults?.({})
         .then((r) => {
@@ -619,12 +695,13 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
         })
         .catch(() => undefined);
     },
-    [nodeService],
+    [loadRecipes, nodeService],
   );
 
   const closeComposer = useCallback(() => {
     setComposing(false);
     setComposerAttachments([]);
+    setSelectedTemplateId(undefined);
   }, []);
 
   const uploadComposerFile = useCallback(
@@ -739,15 +816,19 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
     setComposerAttachments([]);
     setNewChainDisplayGoal(goal);
     setNewChainAttachments(readyAttachments);
+    setNewChainTemplateId(selectedTemplateId);
     setNewChainGoal(effective);
-  }, [attachmentsUploading, goalDraft, readyAttachments]);
+    setSelectedTemplateId(undefined);
+  }, [attachmentsUploading, goalDraft, readyAttachments, selectedTemplateId]);
 
   const handleStarted = useCallback(() => {
     setNewChainGoal(null);
     setNewChainDisplayGoal("");
     setNewChainAttachments([]);
+    setNewChainTemplateId(undefined);
     void loadChains();
-  }, [loadChains]);
+    void loadRecipes();
+  }, [loadChains, loadRecipes]);
 
   const reportIds = useMemo(() => new Set(reports.map((r) => r.chainId)), [reports]);
   const completedChains = useMemo(
@@ -1026,16 +1107,54 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
             ) : null}
           </div>
           <div className="chain-composer__templates">
-            {goalTemplates.map((tpl) => (
-              <button
-                key={tpl.label}
-                type="button"
-                className="topic-chip chain-composer__template"
-                onClick={() => setGoalDraft(tpl.goal)}
-              >
-                {tpl.label}
-              </button>
-            ))}
+            {savedRecipes.length > 0 ? (
+              <div className="chain-composer__template-group" data-testid="chain-saved-templates">
+                <span className="chain-composer__template-group-label muted">
+                  {t("chains.recipes.savedSection")}
+                </span>
+                {savedRecipes.map((tpl) => (
+                  <span key={tpl.id} className="chain-composer__template-row">
+                    <button
+                      type="button"
+                      className={`topic-chip chain-composer__template${
+                        selectedTemplateId === tpl.id ? " chain-composer__template--selected" : ""
+                      }`}
+                      onClick={() => applyRecipe(tpl)}
+                    >
+                      {recipeChipLabel(tpl)}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-sm chain-composer__template-delete"
+                      aria-label={t("chains.recipes.delete")}
+                      title={t("chains.recipes.delete")}
+                      onClick={() => void deleteRecipe(tpl.id)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {builtinRecipes.length > 0 ? (
+              <div className="chain-composer__template-group" data-testid="chain-builtin-templates">
+                <span className="chain-composer__template-group-label muted">
+                  {t("chains.recipes.builtinSection")}
+                </span>
+                {builtinRecipes.map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    className={`topic-chip chain-composer__template${
+                      selectedTemplateId === tpl.id ? " chain-composer__template--selected" : ""
+                    }`}
+                    onClick={() => applyRecipe(tpl)}
+                  >
+                    {recipeChipLabel(tpl)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="chain-composer__actions">
             <button type="button" className="secondary btn-sm" onClick={closeComposer}>
@@ -1057,12 +1176,14 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
         <ChainStartDialog
           goal={newChainGoal}
           displayGoal={newChainDisplayGoal}
+          templateId={newChainTemplateId}
           attachments={newChainAttachments}
           assignmentMode={composerAssignmentMode}
           onClose={() => {
             setNewChainGoal(null);
             setNewChainDisplayGoal("");
             setNewChainAttachments([]);
+            setNewChainTemplateId(undefined);
           }}
           onStarted={handleStarted}
           onOpenDiscover={onOpenDiscover}
@@ -1444,6 +1565,14 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
                     {viewingReport === chainId
                       ? t("chains.reports.hideReport")
                       : t("chains.reports.viewReport")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-sm"
+                    data-testid="chain-report-save-template"
+                    onClick={() => void saveReportAsTemplate(goal)}
+                  >
+                    {t("chains.recipes.saveFromReport")}
                   </button>
                   <button
                     type="button"

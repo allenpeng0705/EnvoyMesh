@@ -2457,6 +2457,12 @@ class AppLocalizationsKo extends AppLocalizations {
       '플릿 설정·입찰·레시피는 홈 노드 Social UI에 있습니다. 취소·재조정·고정은 여기에서도 가능합니다.';
 
   @override
+  String get chainsStartTemplatesSaved => '저장된 템플릿';
+
+  @override
+  String get chainsStartTemplatesBuiltin => '빠른 시작';
+
+  @override
   String get chainsStartTitle => '팀 작업 시작';
 
   @override

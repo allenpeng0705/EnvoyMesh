@@ -42,6 +42,8 @@ export interface ChainStartDialogProps {
   goal: string;
   /** User-authored goal only; when set, shown instead of the effective goal string. */
   displayGoal?: string;
+  /** Phase 67A — built-in or saved recipe id for cost defaults / resolve. */
+  templateId?: string;
   /** Read-only files imported for this launch (shown below the goal). */
   attachments?: ChainStartAttachment[];
   onClose: () => void;
@@ -76,6 +78,7 @@ export interface ChainStartDialogProps {
 export function ChainStartDialog({
   goal,
   displayGoal,
+  templateId,
   attachments = [],
   onClose,
   onStarted,
@@ -338,6 +341,7 @@ export function ChainStartDialog({
     void nodeService
       .chainPreviewGoal({
         goal,
+        templateId,
         allowLlm: true,
         assignmentMode,
         teamStrategyId,
@@ -357,7 +361,7 @@ export function ChainStartDialog({
     return () => {
       cancelled = true;
     };
-  }, [goal, nodeService, assignmentMode, teamStrategyId, assignerSelection, assignerPeerId, defaultsReady, readiness.skipPreview]);
+  }, [goal, nodeService, templateId, assignmentMode, teamStrategyId, assignerSelection, assignerPeerId, defaultsReady, readiness.skipPreview]);
 
   const hasWorkers = useMemo(
     () => Boolean(preview?.ok && preview.subtasks.some((s) => s.workerCount > 0)),
@@ -422,6 +426,7 @@ export function ChainStartDialog({
     try {
       const result: ChainStartFromGoalResult = await nodeService.chainStartFromGoal({
         goal,
+        templateId,
         allowLlm: true,
         assignmentMode,
         teamStrategyId,
@@ -474,7 +479,7 @@ export function ChainStartDialog({
     } finally {
       setStarting(false);
     }
-  }, [assignmentMode, assignerPeerId, assignerSelection, criticality, engineReady, goal, hasWorkers, inputDeliveryScope, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, localJoinEnabled, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t, teamStrategyId]);
+  }, [assignmentMode, assignerPeerId, assignerSelection, criticality, engineReady, goal, hasWorkers, inputDeliveryScope, iterationMaxRounds, iterationJudgeMode, extendMaxStepsPerRound, localJoinEnabled, nodeService, onClose, onStarted, preview, selectedPeerIds, showToast, t, teamStrategyId, templateId]);
 
   const handleSaveRecipe = useCallback(async () => {
     setSavingRecipe(true);

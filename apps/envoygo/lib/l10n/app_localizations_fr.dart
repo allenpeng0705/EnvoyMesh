@@ -2560,6 +2560,12 @@ class AppLocalizationsFr extends AppLocalizations {
       'La configuration de flotte, les enchères et les recettes restent sur l’UI Social du nœud domicile. Annuler, rééquilibrer et épingler marchent aussi ici.';
 
   @override
+  String get chainsStartTemplatesSaved => 'Modèles enregistrés';
+
+  @override
+  String get chainsStartTemplatesBuiltin => 'Démarrages rapides';
+
+  @override
   String get chainsStartTitle => 'Démarrer un job d\'équipe';
 
   @override

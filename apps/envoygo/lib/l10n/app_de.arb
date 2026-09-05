@@ -526,6 +526,8 @@
   "chainsSubtasks": "Unteraufgaben",
   "chainsSynthesis": "Synthese",
   "chainsDuration": "Dauer",
+  "chainsStartTemplatesSaved": "Gespeicherte Vorlagen",
+  "chainsStartTemplatesBuiltin": "Schnellstarts",
   "chainsManageOnSocial": "Flotten-Setup, Gebote und Rezepte bleiben in der Social-UI des Heimknotens. Abbrechen, Rebalance und Anheften gehen auch hier.",
   "chainsPublished": "Veröffentlicht {date}",
   "chainsChainId": "Kette {id}",

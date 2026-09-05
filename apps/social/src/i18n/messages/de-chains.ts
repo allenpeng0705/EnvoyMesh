@@ -254,6 +254,12 @@ export const deChainsMessages = {
     saved: "Rezept gespeichert",
     saveFailed: "Rezept konnte nicht gespeichert werden",
     labelPlaceholder: "Rezeptname (optional)",
+    savedSection: "Gespeicherte Vorlagen",
+    builtinSection: "Schnellstarts",
+    delete: "Vorlage löschen",
+    deleted: "Vorlage gelöscht",
+    deleteFailed: "Vorlage konnte nicht gelöscht werden",
+    saveFromReport: "Als Vorlage speichern",
   },
   bondHealth: {
     ready: "Bereit für Ketten",

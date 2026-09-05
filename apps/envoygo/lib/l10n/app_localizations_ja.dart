@@ -2460,6 +2460,12 @@ class AppLocalizationsJa extends AppLocalizations {
       'フリート設定・入札・レシピはホームの Social UI のままです。キャンセル・再バランス・ピン留めはこちらでもできます。';
 
   @override
+  String get chainsStartTemplatesSaved => '保存したテンプレート';
+
+  @override
+  String get chainsStartTemplatesBuiltin => 'クイックスタート';
+
+  @override
   String get chainsStartTitle => 'チームジョブを開始';
 
   @override

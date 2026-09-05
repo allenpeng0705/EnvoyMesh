@@ -254,6 +254,12 @@ export const itChainsMessages = {
     saved: "Ricetta salvata",
     saveFailed: "Impossibile salvare la ricetta",
     labelPlaceholder: "Nome ricetta (opzionale)",
+    savedSection: "Modelli salvati",
+    builtinSection: "Avvii rapidi",
+    delete: "Elimina modello",
+    deleted: "Modello eliminato",
+    deleteFailed: "Impossibile eliminare il modello",
+    saveFromReport: "Salva come modello",
   },
   bondHealth: {
     ready: "Pronto per le catene",

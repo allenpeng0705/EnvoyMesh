@@ -1165,6 +1165,8 @@
   "chainsSynthesis": "Synthesis",
   "chainsDuration": "Duration",
   "chainsManageOnSocial": "Fleet setup, bidding, and recipes stay on the home-node Social UI. Cancel, rebalance, and pin work here too.",
+  "chainsStartTemplatesSaved": "Saved templates",
+  "chainsStartTemplatesBuiltin": "Quick starts",
   "chainsStartTitle": "Start team job",
   "chainsStartFab": "New team job",
   "chainsStartIntro": "Describe a goal. The home node plans subtasks and assigns bonded Agent Network workers.",

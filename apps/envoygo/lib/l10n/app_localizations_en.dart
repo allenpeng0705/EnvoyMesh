@@ -2526,6 +2526,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Fleet setup, bidding, and recipes stay on the home-node Social UI. Cancel, rebalance, and pin work here too.';
 
   @override
+  String get chainsStartTemplatesSaved => 'Saved templates';
+
+  @override
+  String get chainsStartTemplatesBuiltin => 'Quick starts';
+
+  @override
   String get chainsStartTitle => 'Start team job';
 
   @override

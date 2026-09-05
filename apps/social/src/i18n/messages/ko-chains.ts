@@ -254,6 +254,12 @@ export const koChainsMessages = {
     saved: "레시피 저장됨",
     saveFailed: "레시피를 저장할 수 없습니다",
     labelPlaceholder: "레시피 이름 (선택사항)",
+    savedSection: "저장된 템플릿",
+    builtinSection: "빠른 시작",
+    delete: "템플릿 삭제",
+    deleted: "템플릿이 삭제되었습니다",
+    deleteFailed: "템플릿을 삭제할 수 없습니다",
+    saveFromReport: "템플릿으로 저장",
   },
   bondHealth: {
     ready: "체인 준비됨",

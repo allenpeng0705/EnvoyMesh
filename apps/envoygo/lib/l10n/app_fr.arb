@@ -526,6 +526,8 @@
   "chainsSubtasks": "Sous-tâches",
   "chainsSynthesis": "Synthèse",
   "chainsDuration": "Durée",
+  "chainsStartTemplatesSaved": "Modèles enregistrés",
+  "chainsStartTemplatesBuiltin": "Démarrages rapides",
   "chainsManageOnSocial": "La configuration de flotte, les enchères et les recettes restent sur l’UI Social du nœud domicile. Annuler, rééquilibrer et épingler marchent aussi ici.",
   "chainsPublished": "Publié le {date}",
   "chainsChainId": "Chaîne {id}",

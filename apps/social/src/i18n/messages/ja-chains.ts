@@ -254,6 +254,12 @@ export const jaChainsMessages = {
     saved: "レシピを保存しました",
     saveFailed: "レシピを保存できません",
     labelPlaceholder: "レシピ名 (オプション)",
+    savedSection: "保存したテンプレート",
+    builtinSection: "クイックスタート",
+    delete: "テンプレートを削除",
+    deleted: "テンプレートを削除しました",
+    deleteFailed: "テンプレートを削除できませんでした",
+    saveFromReport: "テンプレートとして保存",
   },
   bondHealth: {
     ready: "チェーン準備完了",

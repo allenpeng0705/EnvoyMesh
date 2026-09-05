@@ -12992,8 +12992,26 @@ button:disabled {
 
 .chain-composer__templates {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--space-3);
+}
+
+.chain-composer__template-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.chain-composer__template-group-label {
+  width: 100%;
+  font-size: var(--text-xs);
+}
+
+.chain-composer__template-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .chain-composer__template {
@@ -13005,6 +13023,17 @@ button:disabled {
   border: 1px solid transparent;
   cursor: pointer;
   transition: all var(--transition-fast);
+}
+
+.chain-composer__template--selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.chain-composer__template-delete {
+  padding: 0 var(--space-2);
+  min-width: auto;
+  line-height: 1.2;
 }
 
 .chain-composer__template:hover {

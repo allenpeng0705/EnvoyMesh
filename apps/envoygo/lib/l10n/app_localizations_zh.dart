@@ -2438,6 +2438,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chainsManageOnSocial => '机群设置、竞标与配方仍在家庭节点的社交界面。取消、再平衡与置顶也可在此操作。';
 
   @override
+  String get chainsStartTemplatesSaved => '已保存的模板';
+
+  @override
+  String get chainsStartTemplatesBuiltin => '快速开始';
+
+  @override
   String get chainsStartTitle => '启动团队任务';
 
   @override

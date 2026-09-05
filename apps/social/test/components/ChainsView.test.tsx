@@ -13,6 +13,9 @@ export const chainListObserved = vi.fn();
 export const chainListReports = vi.fn();
 export const chainDeleteReport = vi.fn();
 export const chainCancel = vi.fn();
+export const chainListRecipes = vi.fn();
+export const chainDeleteRecipe = vi.fn();
+export const chainSaveRecipe = vi.fn();
 
 const chainGetDefaults = vi.fn(async () => ({
   defaults: { awardMode: "direct", showCostUi: false, iterationMaxRounds: 1, assignmentMode: "skill" },
@@ -24,6 +27,9 @@ const mockNodeService = {
   chainListReports,
   chainDeleteReport,
   chainCancel,
+  chainListRecipes,
+  chainDeleteRecipe,
+  chainSaveRecipe,
   chainGetDefaults,
   chainProbeReachability: vi.fn(async () => ({ rows: [] })),
   refreshAgentNetworkWorkers: vi.fn(async () => ({})),
@@ -39,6 +45,7 @@ vi.mock("../../src/components/ChainStartDialog.js", () => ({
   ChainStartDialog: (props: {
     goal: string;
     displayGoal?: string;
+    templateId?: string;
     assignmentMode?: "skill" | "role";
     attachments?: Array<{ fileName: string; relativePath: string; label?: string }>;
   }) => (
@@ -47,6 +54,7 @@ vi.mock("../../src/components/ChainStartDialog.js", () => ({
       data-assignment-mode={props.assignmentMode ?? ""}
       data-goal={props.goal}
       data-display-goal={props.displayGoal ?? ""}
+      data-template-id={props.templateId ?? ""}
       data-attachment-count={String(props.attachments?.length ?? 0)}
     />
   ),
@@ -86,6 +94,27 @@ describe("ChainsView", () => {
     chainListObserved.mockResolvedValue({ chains: [] });
     chainListReports.mockResolvedValue({ reports: [] });
     chainDeleteReport.mockResolvedValue({ chainId: "", deleted: false });
+    chainListRecipes.mockResolvedValue({
+      recipes: [
+        {
+          id: "recipe_saved_1",
+          label: "My brief",
+          goal: "Write a short brief with sources for the team.",
+          saved: true,
+        },
+        {
+          id: "research",
+          label: "Research a topic",
+          goal: "Research the topic and summarize key findings with sources.",
+          saved: false,
+        },
+      ],
+    });
+    chainDeleteRecipe.mockResolvedValue({ ok: true, deleted: true });
+    chainSaveRecipe.mockResolvedValue({
+      ok: true,
+      recipe: { id: "recipe_new", label: "x", goal: "y", saved: true },
+    });
   });
   afterEach(() => {
     cleanup();
@@ -397,6 +426,53 @@ describe("ChainsView", () => {
     await waitFor(() => {
       const dialog = screen.getByTestId("chain-start-dialog-stub");
       expect(dialog.getAttribute("data-assignment-mode")).toBe("role");
+    });
+  });
+
+  it("loads recipes and starts from a saved local template", async () => {
+    chainListActive.mockResolvedValueOnce({ chains: [] });
+    renderChainsView();
+    fireEvent.click(await screen.findByRole("button", { name: /^New team job$/i }));
+    await waitFor(() => {
+      expect(chainListRecipes).toHaveBeenCalled();
+      expect(screen.getByTestId("chain-saved-templates")).toBeDefined();
+      expect(screen.getByTestId("chain-builtin-templates")).toBeDefined();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^My brief$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Preview plan/i }));
+    await waitFor(() => {
+      const dialog = screen.getByTestId("chain-start-dialog-stub");
+      expect(dialog.getAttribute("data-template-id")).toBe("recipe_saved_1");
+      expect(dialog.getAttribute("data-display-goal")).toContain("short brief");
+    });
+  });
+
+  it("saves a completed report as a local template", async () => {
+    chainListActive.mockResolvedValueOnce({ chains: [] });
+    chainListReports.mockResolvedValueOnce({
+      reports: [
+        {
+          chainId: "chain_tpl",
+          chainMandateId: "mandate_tpl",
+          orchestratorOwnerId: "owner_a",
+          orchestratorPeerId: "peer_a",
+          pinned: false,
+          createdAt: "2026-01-01T12:30:00.000Z",
+          goal: "Produce a short brief on quantum entanglement",
+          chainSummary: { subtaskCount: 2, workerCount: 1, synthesisCostUsd: 0 },
+        },
+      ],
+    });
+    renderChainsView();
+    await waitFor(() => {
+      expect(screen.getByTestId("chain-report-save-template")).toBeDefined();
+    });
+    fireEvent.click(screen.getByTestId("chain-report-save-template"));
+    await waitFor(() => {
+      expect(chainSaveRecipe).toHaveBeenCalledWith({
+        label: "Produce a short brief on quantum entanglement",
+        goal: "Produce a short brief on quantum entanglement",
+      });
     });
   });
 

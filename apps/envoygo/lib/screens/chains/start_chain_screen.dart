@@ -90,6 +90,10 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
   String? _diagSummary;
   String? _diagError;
 
+  /// Phase 67A — local + built-in templates from home.
+  List<Map<String, dynamic>> _recipes = const [];
+  String? _selectedTemplateId;
+
   static const _minGoalLen = 8;
 
   static const _teamStrategyIds = <String>[
@@ -127,7 +131,10 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadDefaults());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadDefaults();
+      _loadRecipes();
+    });
   }
 
   @override
@@ -144,6 +151,38 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
     if (home == null || !home.isConnected) return null;
     return NodeServiceClient(home);
   }
+
+  Future<void> _loadRecipes() async {
+    final client = _clientOrNull();
+    if (client == null) return;
+    try {
+      final recipes = await client.chainListRecipes();
+      if (!mounted) return;
+      setState(() => _recipes = recipes);
+    } catch (_) {
+      /* best-effort — composer still works without chips */
+    }
+  }
+
+  void _applyRecipe(Map<String, dynamic> recipe) {
+    final goal = (recipe['goal'] as String?)?.trim() ?? '';
+    final id = (recipe['id'] as String?)?.trim();
+    if (goal.isEmpty) return;
+    setState(() {
+      _goalCtl.text = goal;
+      _selectedTemplateId = id;
+      _clearPreview();
+      _error = null;
+    });
+  }
+
+  List<Map<String, dynamic>> get _savedRecipes => _recipes
+      .where((r) => r['saved'] == true)
+      .toList(growable: false);
+
+  List<Map<String, dynamic>> get _builtinRecipes => _recipes
+      .where((r) => r['saved'] != true)
+      .toList(growable: false);
 
   Future<void> _loadDefaults() async {
     final client = _clientOrNull();
@@ -490,6 +529,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
     try {
       final result = await client.chainPreviewGoal(
         goal: _effectiveGoal,
+        templateId: _selectedTemplateId,
         assignmentMode: _assignmentMode,
         teamStrategyId: _teamStrategyId,
         assignerSelection: _assignerSelection,
@@ -566,6 +606,7 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
           .toList();
       final result = await client.chainStartFromGoal(
         goal: _effectiveGoal,
+        templateId: _selectedTemplateId,
         assignmentMode: _assignmentMode,
         teamStrategyId: _teamStrategyId,
         assignerSelection:
@@ -947,11 +988,70 @@ class _StartChainScreenState extends ConsumerState<StartChainScreen> {
                     border: const OutlineInputBorder(),
                   ),
                   onChanged: (_) {
-                    if (_preview != null) {
-                      setState(_clearPreview);
+                    if (_selectedTemplateId != null || _preview != null) {
+                      setState(() {
+                        _selectedTemplateId = null;
+                        if (_preview != null) _clearPreview();
+                      });
                     }
                   },
                 ),
+                if (_savedRecipes.isNotEmpty || _builtinRecipes.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  if (_savedRecipes.isNotEmpty) ...[
+                    Text(
+                      l10n.chainsStartTemplatesSaved,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final recipe in _savedRecipes)
+                          ChoiceChip(
+                            label: Text(
+                              (recipe['label'] as String?)?.trim().isNotEmpty ==
+                                      true
+                                  ? recipe['label'] as String
+                                  : (recipe['id'] as String? ?? 'template'),
+                            ),
+                            selected: _selectedTemplateId == recipe['id'],
+                            onSelected: busy
+                                ? null
+                                : (_) => _applyRecipe(recipe),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_builtinRecipes.isNotEmpty) ...[
+                    Text(
+                      l10n.chainsStartTemplatesBuiltin,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final recipe in _builtinRecipes)
+                          ChoiceChip(
+                            label: Text(
+                              (recipe['label'] as String?)?.trim().isNotEmpty ==
+                                      true
+                                  ? recipe['label'] as String
+                                  : (recipe['id'] as String? ?? 'template'),
+                            ),
+                            selected: _selectedTemplateId == recipe['id'],
+                            onSelected: busy
+                                ? null
+                                : (_) => _applyRecipe(recipe),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
                 const SizedBox(height: 16),
                 _buildAttachmentsSection(l10n, theme),
                 if (_error != null) ...[

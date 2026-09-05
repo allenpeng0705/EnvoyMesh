@@ -324,7 +324,6 @@ import {
   verifyInboundEnvelope,
   createAgentCredential,
   generateAgentIdentity,
-  signCanonicalPayload,
 } from "@envoymesh/identity";
 import {
   createAuditEvent,
@@ -1227,6 +1226,12 @@ import {
   buildChainProbeReachabilityDeps,
   chainProbeReachabilityViaRuntime,
 } from "./node-service-chain-probe-reachability.js";
+import {
+  bestEffortCancelRemoteAssignerViaRuntime,
+  chainCancelDelegatedViaRuntime,
+  chainReclaimAssignerViaRuntime,
+  scanDelegatedAssignersViaRuntime,
+} from "./node-service-chain-ownership.js";
 import { WorkerLeaseStore } from "./worker-lease-store.js";
 import { WorkerReliabilityStore } from "./worker-reliability-store.js";
 import { WorkerAttemptReceiptStore } from "./worker-attempt-receipt-store.js";
@@ -1563,18 +1568,10 @@ import {
   bumpOwnershipEpochForRestart,
   enrichChainGetStateWithOwnership,
   markOwnershipActive,
-  markOwnershipStranded,
   parseRemoteOwnership,
-  resolveCancelDelegated,
-  resolveReclaimAssigner,
-  shouldMarkAssignerStranded,
   syntheticDelegatedChainGetState,
 } from "./chain-remote-reclaim.js";
 import type { ChainRemoteOwnership } from "./chain-remote-reclaim.js";
-import {
-  buildReclaimMandate,
-  hydrateReclaimedChainState,
-} from "./chain-reclaim-hydrate.js";
 import { createTaskChainOwnershipPayload } from "@envoymesh/protocol";
 import {
   buildAllLocalFilesList,
@@ -16281,234 +16278,24 @@ class NodeServiceImpl implements NodeService {
   async chainReclaimAssigner(
     params: import("@envoymesh/api").ChainReclaimAssignerParams,
   ): Promise<import("@envoymesh/api").ChainReclaimAssignerResult> {
-    await this._scanDelegatedAssigners();
-    const side = this._chainOrchestrationContext().getChainSideState();
-    const ownership =
-      side.remoteOwnership.get(params.chainId) ??
-      this._delegatedChainStore.get(params.chainId);
-    const resolved = resolveReclaimAssigner({ chainId: params.chainId, ownership });
-    if (!resolved.ok) {
-      return { ok: false, chainId: resolved.chainId, reason: resolved.reason };
-    }
-
-    const profile = this.getProfile();
-    const ownerKey = profile?.owner?.privateKeyPem;
-    const unsignedMandate = buildReclaimMandate({
-      chainId: params.chainId,
-      issuerOwnerId: resolved.ownership.creatorOwnerId,
-      maxChainCostUsd: ownership?.maxChainCostUsd,
-      costCeilingUsd: ownership?.costCeilingUsd,
-      awardMode: ownership?.statusMirror?.awardMode,
-    });
-    const mandate = {
-      ...unsignedMandate,
-      signature: ownerKey
-        ? signCanonicalPayload(unsignedMandate, ownerKey)
-        : "stub",
-    };
-
-    const hydrated = hydrateReclaimedChainState({
-      ownership: {
-        ...resolved.ownership,
-        // Keep pre-reclaim mirror/goal from stranded record for hydrate decision.
-        ...(ownership?.statusMirror ? { statusMirror: ownership.statusMirror } : {}),
-        ...(ownership?.goal ? { goal: ownership.goal } : {}),
-        ...(typeof ownership?.maxChainCostUsd === "number"
-          ? { maxChainCostUsd: ownership.maxChainCostUsd }
-          : {}),
-        ...(typeof ownership?.costCeilingUsd === "number"
-          ? { costCeilingUsd: ownership.costCeilingUsd }
-          : {}),
-      },
-      mandate: mandate as import("@envoymesh/protocol").ChainMandate,
-    });
-    if (!hydrated.ok) {
-      return { ok: false, chainId: params.chainId, reason: hydrated.reason };
-    }
-
-    // Best-effort stop old Assigner without cancelling workers.
-    void this._bestEffortCancelRemoteAssigner(resolved.ownership).catch(() => undefined);
-
-    if (hydrated.mode === "fallback_restart") {
-      side.remoteOwnership.set(params.chainId, hydrated.ownership);
-      await this._delegatedChainStore.upsert(hydrated.ownership);
-      await this._appendChainAudit({
-        type: "chain.handoff.request_received",
-        outcome: "allow",
-        intent: "task.chain.ownership",
-        remotePeerId: resolved.ownership.assignerPeerId,
-        correlationId: params.chainId,
-        summary: `chain.reclaimed mode=restart reason=${hydrated.reason}`,
-      });
-      const restarted = await _runChainGoal(this._chainOrchestrationContext(), {
-        goal: hydrated.goal,
-      });
-      this._emitChainState(params.chainId);
-      if (!restarted.ok) {
-        return {
-          ok: false,
-          chainId: params.chainId,
-          reason: restarted.error ?? "reclaim_restart_failed",
-          mode: "restart",
-        };
-      }
-      return {
-        ok: true,
-        chainId: params.chainId,
-        mode: "restart",
-        newChainId: restarted.chainId,
-      };
-    }
-
-    // Mid-flight resume: same chainId, hydrate + reconcile workers.
-    side.remoteOwnership.set(params.chainId, hydrated.ownership);
-    await this._delegatedChainStore.upsert(hydrated.ownership);
-    this._chainStore.setOwnership(params.chainId, { ...hydrated.ownership });
-    this._chainStore.setRuntime(params.chainId, {
-      state: hydrated.state,
-      bidStrategy: {
-        baseCostUsd: 1,
-        capabilityLocalEtaMs: 60_000,
-        reputationDiscount: 1,
-        etaSlackMs: 60_000,
-      },
-    });
-    side.goals.set(params.chainId, hydrated.state.goal ?? resolved.goal);
-    side.awardModes.set(
-      params.chainId,
-      hydrated.state.awardMode === "competitive" ? "competitive" : "direct",
-    );
-    side.reclaimSeedChains.add(params.chainId);
-    side.orchestratorEpoch = createOrchestratorEpoch();
-    const recovery = beginChainRecovery({
-      state: hydrated.state,
-      orchestratorEpoch: side.orchestratorEpoch,
-    });
-    side.recovery.set(params.chainId, recovery);
-    hydrated.state.journalEvent?.("recovery.started", {
-      orchestratorEpoch: recovery.orchestratorEpoch,
-      peerCount: Object.keys(recovery.peers).length,
-      graceDeadlineAt: recovery.graceDeadlineAt,
-      reclaim: true,
-    });
-    await this._appendChainAudit({
-      type: "chain.handoff.request_received",
-      outcome: "allow",
-      intent: "task.chain.ownership",
-      remotePeerId: resolved.ownership.assignerPeerId,
-      correlationId: params.chainId,
-      summary: `chain.reclaimed mode=resume workers=${hydrated.workerPeerIds.length}`,
-    });
-    this._startChainTracking(params.chainId);
-    this._emitChainState(params.chainId);
-    if (isChainRecovering(recovery)) {
-      void this._runChainReconcile(params.chainId).catch((err: unknown) => {
-        console.warn(`[team-jobs] reclaim reconcile failed for ${params.chainId}:`, err);
-      });
-    }
-    return {
-      ok: true,
-      chainId: params.chainId,
-      mode: "resume",
-    };
+    return chainReclaimAssignerViaRuntime(this, params);
   }
 
   async chainCancelDelegated(
     params: import("@envoymesh/api").ChainCancelDelegatedParams,
   ): Promise<import("@envoymesh/api").ChainCancelDelegatedResult> {
-    const side = this._chainOrchestrationContext().getChainSideState();
-    const ownership =
-      side.remoteOwnership.get(params.chainId) ??
-      this._delegatedChainStore.get(params.chainId);
-    const resolved = resolveCancelDelegated({ chainId: params.chainId, ownership });
-    if (!resolved.ok) {
-      return { ok: false, chainId: resolved.chainId, reason: resolved.reason };
-    }
-    side.remoteOwnership.set(params.chainId, resolved.ownership);
-    await this._delegatedChainStore.upsert(resolved.ownership);
-    await this._appendChainAudit({
-      type: "chain.handoff.request_received",
-      outcome: "allow",
-      intent: "task.chain.ownership",
-      remotePeerId: resolved.ownership.assignerPeerId,
-      correlationId: params.chainId,
-      summary: `chain.stranded_cancelled reason=${params.reason ?? "owner"}`,
-    });
-    void this._bestEffortCancelRemoteAssigner(resolved.ownership).catch(() => undefined);
-    this._emitChainState(params.chainId);
-    return { ok: true, chainId: params.chainId };
+    return chainCancelDelegatedViaRuntime(this, params);
   }
 
   /** Phase 64B — mark unreachable remote Assigners as stranded. */
   private async _scanDelegatedAssigners(): Promise<void> {
-    const side = this._chainOrchestrationContext().getChainSideState();
-    const mesh = this._mesh ?? this._reachableMesh();
-    const connected = new Set(mesh?.getConnectedPeerIds?.() ?? []);
-    const candidates = [
-      ...side.remoteOwnership.values(),
-      ...this._delegatedChainStore.listActive(),
-    ];
-    const seen = new Set<string>();
-    for (const ownership of candidates) {
-      if (seen.has(ownership.chainId)) continue;
-      seen.add(ownership.chainId);
-      if (ownership.status === "assigner_stranded") continue;
-      const decision = shouldMarkAssignerStranded({
-        ownership,
-        assignerReachable: connected.has(ownership.assignerPeerId),
-      });
-      if (!decision.stranded) continue;
-      const stranded = markOwnershipStranded(ownership);
-      side.remoteOwnership.set(ownership.chainId, stranded);
-      await this._delegatedChainStore.upsert(stranded);
-      await this._appendChainAudit({
-        type: "chain.handoff.request_received",
-        outcome: "record",
-        intent: "task.chain.ownership",
-        remotePeerId: stranded.assignerPeerId,
-        correlationId: stranded.chainId,
-        summary: `chain.assigner_lost reason=${decision.reason ?? "unknown"}`,
-      });
-      this._emitChainState(stranded.chainId);
-    }
+    return scanDelegatedAssignersViaRuntime(this);
   }
 
   private async _bestEffortCancelRemoteAssigner(
     ownership: ChainRemoteOwnership,
   ): Promise<void> {
-    const agentIdentity = await this._ensureAgentIdentity();
-    const mesh = this._mesh;
-    if (!agentIdentity || !mesh) return;
-    try {
-      const { TaskChainCancelPayloadSchema } = await import("@envoymesh/protocol");
-      const payload = TaskChainCancelPayloadSchema.parse({
-        chainId: ownership.chainId,
-        reason: "creator_reclaim_or_cancel",
-        cancelledBy: "owner",
-        notifyWorkerPeerIds: [],
-        createdAt: new Date().toISOString(),
-      });
-      const unsigned = createUnsignedEnvelope({
-        senderPeerId: agentIdentity.agentPeerId,
-        senderPublicKey: agentIdentity.agentPublicKeyPem,
-        senderRole: "agent",
-        recipientPeerId: ownership.assignerPeerId,
-        recipientRole: "agent",
-        intent: "task.chain.cancel",
-        payload,
-        correlationId: ownership.chainId,
-      });
-      const envelope = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
-      const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
-      await sendEnvelopeWithRetry({
-        mesh: mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
-        transportPeerId: ownership.assignerPeerId,
-        envelope,
-        dialHints: [],
-      });
-    } catch {
-      /* best-effort */
-    }
+    return bestEffortCancelRemoteAssignerViaRuntime(this, ownership);
   }
 
   async chainResolveSpeculation(

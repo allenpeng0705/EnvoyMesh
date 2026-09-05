@@ -783,6 +783,8 @@
   "chainsSubtasks": "子任务",
   "chainsSynthesis": "汇总",
   "chainsDuration": "耗时",
+  "chainsStartTemplatesSaved": "已保存的模板",
+  "chainsStartTemplatesBuiltin": "快速开始",
   "chainsManageOnSocial": "机群设置、竞标与配方仍在家庭节点的社交界面。取消、再平衡与置顶也可在此操作。",
   "chainsStartTitle": "启动团队任务",
   "chainsStartFab": "新建团队任务",

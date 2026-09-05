@@ -2246,6 +2246,7 @@ class NodeServiceClient {
   /// Preview a plan for [goal] without launching (LLM may take a while).
   Future<Map<String, dynamic>> chainPreviewGoal({
     required String goal,
+    String? templateId,
     String? assignmentMode,
     String? teamStrategyId,
     String? assignerSelection,
@@ -2255,6 +2256,8 @@ class NodeServiceClient {
     return await _client.call('chainPreviewGoal', {
           'goal': goal,
           'allowLlm': allowLlm,
+          if (templateId != null && templateId.isNotEmpty)
+            'templateId': templateId,
           if (assignmentMode != null && assignmentMode.isNotEmpty)
             'assignmentMode': assignmentMode,
           if (teamStrategyId != null && teamStrategyId.isNotEmpty)
@@ -2271,6 +2274,7 @@ class NodeServiceClient {
   /// Launch a team job from [goal], optionally reusing a preview plan.
   Future<Map<String, dynamic>> chainStartFromGoal({
     required String goal,
+    String? templateId,
     String? assignmentMode,
     String? teamStrategyId,
     String? assignerSelection,
@@ -2290,6 +2294,8 @@ class NodeServiceClient {
     return await _client.call('chainStartFromGoal', {
           'goal': goal,
           'allowLlm': allowLlm,
+          if (templateId != null && templateId.isNotEmpty)
+            'templateId': templateId,
           if (assignmentMode != null && assignmentMode.isNotEmpty)
             'assignmentMode': assignmentMode,
           if (teamStrategyId != null && teamStrategyId.isNotEmpty)
@@ -2319,6 +2325,18 @@ class NodeServiceClient {
             'inputDeliveryScope': inputDeliveryScope,
         }, const Duration(seconds: 120))
         as Map<String, dynamic>;
+  }
+
+  /// Phase 67A — list saved local + built-in chain templates.
+  Future<List<Map<String, dynamic>>> chainListRecipes() async {
+    final result = await _client.call('chainListRecipes', {})
+        as Map<String, dynamic>;
+    final raw = result['recipes'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList(growable: false);
   }
 
   /// Phase 60F — no-spend Agent Network diagnostics snapshot.

@@ -446,6 +446,12 @@ export const chainsMessages = {
     saved: "Recipe saved",
     saveFailed: "Could not save recipe",
     labelPlaceholder: "Recipe name (optional)",
+    savedSection: "Saved templates",
+    builtinSection: "Quick starts",
+    delete: "Delete template",
+    deleted: "Template deleted",
+    deleteFailed: "Could not delete template",
+    saveFromReport: "Save as template",
   },
   bondHealth: {
     ready: "Ready for team jobs",

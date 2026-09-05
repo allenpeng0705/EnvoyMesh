@@ -526,6 +526,8 @@
   "chainsSubtasks": "サブタスク",
   "chainsSynthesis": "合成",
   "chainsDuration": "所要時間",
+  "chainsStartTemplatesSaved": "保存したテンプレート",
+  "chainsStartTemplatesBuiltin": "クイックスタート",
   "chainsManageOnSocial": "フリート設定・入札・レシピはホームの Social UI のままです。キャンセル・再バランス・ピン留めはこちらでもできます。",
   "chainsPublished": "{date} に公開",
   "chainsChainId": "チェーン {id}",

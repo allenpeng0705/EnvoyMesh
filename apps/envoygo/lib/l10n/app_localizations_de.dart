@@ -2559,6 +2559,12 @@ class AppLocalizationsDe extends AppLocalizations {
       'Flotten-Setup, Gebote und Rezepte bleiben in der Social-UI des Heimknotens. Abbrechen, Rebalance und Anheften gehen auch hier.';
 
   @override
+  String get chainsStartTemplatesSaved => 'Gespeicherte Vorlagen';
+
+  @override
+  String get chainsStartTemplatesBuiltin => 'Schnellstarts';
+
+  @override
   String get chainsStartTitle => 'Team-Job starten';
 
   @override

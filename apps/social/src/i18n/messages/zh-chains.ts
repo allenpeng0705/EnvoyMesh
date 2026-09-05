@@ -434,6 +434,12 @@ export const zhChainsMessages = {
     saved: "配方已保存",
     saveFailed: "无法保存配方",
     labelPlaceholder: "配方名称（可选）",
+    savedSection: "已保存的模板",
+    builtinSection: "快速开始",
+    delete: "删除模板",
+    deleted: "模板已删除",
+    deleteFailed: "无法删除模板",
+    saveFromReport: "保存为模板",
   },
   bondHealth: {
     ready: "可参与协作任务",

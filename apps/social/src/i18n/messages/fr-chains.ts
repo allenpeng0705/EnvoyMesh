@@ -254,6 +254,12 @@ export const frChainsMessages = {
     saved: "Recette enregistrée",
     saveFailed: "Impossible d'enregistrer la recette",
     labelPlaceholder: "Nom de la recette (optionnel)",
+    savedSection: "Modèles enregistrés",
+    builtinSection: "Démarrages rapides",
+    delete: "Supprimer le modèle",
+    deleted: "Modèle supprimé",
+    deleteFailed: "Impossible de supprimer le modèle",
+    saveFromReport: "Enregistrer comme modèle",
   },
   bondHealth: {
     ready: "Prêt pour les chaînes",

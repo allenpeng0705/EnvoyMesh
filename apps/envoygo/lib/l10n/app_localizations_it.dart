@@ -2554,6 +2554,12 @@ class AppLocalizationsIt extends AppLocalizations {
       'Setup flotta, offerte e ricette restano sull’UI Social del nodo home. Annulla, ribilancia e pin funzionano anche qui.';
 
   @override
+  String get chainsStartTemplatesSaved => 'Modelli salvati';
+
+  @override
+  String get chainsStartTemplatesBuiltin => 'Avvii rapidi';
+
+  @override
   String get chainsStartTitle => 'Avvia un job di team';
 
   @override

@@ -1160,6 +1160,48 @@ export async function chainSetDefaultsViaRuntime(
 
 /* ---------- chainExportCosts / chainListRecipes / chainSaveRecipe / chainDeleteRecipe ---------- */
 
+export type ResolvedChainRecipe = {
+  id: string;
+  label: string;
+  goal: string;
+  maxChainCostUsd?: number;
+  costCeilingUsd?: number;
+  saved: boolean;
+};
+
+/** Phase 67A — resolve saved recipes first, then built-in CHAIN_GOAL_TEMPLATES. */
+export async function resolveChainRecipeViaRuntime(
+  ctx: ChainContext,
+  templateId: string | undefined,
+): Promise<ResolvedChainRecipe | undefined> {
+  const id = templateId?.trim();
+  if (!id) return undefined;
+  if (ctx.listChainRecipes) {
+    const saved = await ctx.listChainRecipes();
+    const hit = saved.find((r) => r.id === id);
+    if (hit) {
+      return {
+        id: hit.id,
+        label: hit.label,
+        goal: hit.goal,
+        maxChainCostUsd: hit.maxChainCostUsd,
+        costCeilingUsd: hit.costCeilingUsd,
+        saved: true,
+      };
+    }
+  }
+  const builtin = CHAIN_GOAL_TEMPLATES.find((r: { id: string }) => r.id === id);
+  if (!builtin) return undefined;
+  return {
+    id: builtin.id,
+    label: builtin.label,
+    goal: builtin.goal,
+    maxChainCostUsd: builtin.maxChainCostUsd,
+    costCeilingUsd: builtin.costCeilingUsd,
+    saved: false,
+  };
+}
+
 export function chainExportCostsViaRuntime(
   ctx: ChainContext,
   params: ChainExportCostsParams,
@@ -1369,9 +1411,7 @@ export async function chainPreviewGoalViaRuntime(
   ctx: ChainContext,
   params: ChainPreviewGoalParams,
 ): Promise<ChainPreviewGoalResult> {
-  const template = params.templateId
-    ? CHAIN_GOAL_TEMPLATES.find((r: { id: string }) => r.id === params.templateId)
-    : undefined;
+  const template = await resolveChainRecipeViaRuntime(ctx, params.templateId);
   const goal = params.goal.trim() || template?.goal || "";
   if (!goal) {
     return { ok: false, subtasks: [], reason: "no_goal" };
@@ -1592,9 +1632,7 @@ export async function chainStartFromGoalViaRuntime(
   ctx: ChainContext,
   params: ChainStartFromGoalParams,
 ): Promise<ChainStartFromGoalResult> {
-  const template = params.templateId
-    ? CHAIN_GOAL_TEMPLATES.find((r: { id: string }) => r.id === params.templateId)
-    : undefined;
+  const template = await resolveChainRecipeViaRuntime(ctx, params.templateId);
   const goal = params.goal.trim() || template?.goal || "";
   if (!goal) {
     return { ok: false, error: "no_goal" };

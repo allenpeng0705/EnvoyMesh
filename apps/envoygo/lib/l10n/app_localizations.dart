@@ -4716,6 +4716,18 @@ abstract class AppLocalizations {
   /// **'Fleet setup, bidding, and recipes stay on the home-node Social UI. Cancel, rebalance, and pin work here too.'**
   String get chainsManageOnSocial;
 
+  /// No description provided for @chainsStartTemplatesSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved templates'**
+  String get chainsStartTemplatesSaved;
+
+  /// No description provided for @chainsStartTemplatesBuiltin.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick starts'**
+  String get chainsStartTemplatesBuiltin;
+
   /// No description provided for @chainsStartTitle.
   ///
   /// In en, this message translates to:

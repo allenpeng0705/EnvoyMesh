@@ -526,6 +526,8 @@
   "chainsSubtasks": "Sottoattività",
   "chainsSynthesis": "Sintesi",
   "chainsDuration": "Durata",
+  "chainsStartTemplatesSaved": "Modelli salvati",
+  "chainsStartTemplatesBuiltin": "Avvii rapidi",
   "chainsManageOnSocial": "Setup flotta, offerte e ricette restano sull’UI Social del nodo home. Annulla, ribilancia e pin funzionano anche qui.",
   "chainsPublished": "Pubblicato {date}",
   "chainsChainId": "Catena {id}",

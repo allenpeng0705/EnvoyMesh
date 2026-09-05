@@ -22,6 +22,7 @@ import {
   chainGetStepProvenanceViaRuntime,
   chainListRecipesViaRuntime,
   chainSaveRecipeViaRuntime,
+  resolveChainRecipeViaRuntime,
   chainSetBidStrategyViaRuntime,
   ChainStore,
   type ChainContext,
@@ -474,6 +475,60 @@ describe("chainListRecipesViaRuntime", () => {
     expect(out.recipes.length).toBeGreaterThan(0);
     expect(out.recipes.every((r) => r.saved === false)).toBe(true);
   });
+
+  it("merges saved recipes ahead of built-ins", async () => {
+    const store = new ChainStore();
+    const ctx = makeContext(store);
+    ctx.listChainRecipes = async () => [
+      {
+        id: "recipe_saved_1",
+        label: "My brief",
+        goal: "Write a short brief with sources.",
+        maxChainCostUsd: 12,
+      },
+    ];
+    const out = await chainListRecipesViaRuntime(ctx);
+    expect(out.recipes[0]).toMatchObject({
+      id: "recipe_saved_1",
+      saved: true,
+    });
+    expect(out.recipes.some((r) => r.saved === false)).toBe(true);
+  });
+});
+
+describe("resolveChainRecipeViaRuntime", () => {
+  it("resolves built-in template ids", async () => {
+    const store = new ChainStore();
+    const hit = await resolveChainRecipeViaRuntime(makeContext(store), "research");
+    expect(hit?.id).toBe("research");
+    expect(hit?.saved).toBe(false);
+    expect(hit?.goal.length).toBeGreaterThan(0);
+  });
+
+  it("prefers saved recipes over built-ins with the same id", async () => {
+    const store = new ChainStore();
+    const ctx = makeContext(store);
+    ctx.listChainRecipes = async () => [
+      {
+        id: "research",
+        label: "Custom research",
+        goal: "Custom owner research goal that is long enough.",
+        maxChainCostUsd: 9,
+      },
+    ];
+    const hit = await resolveChainRecipeViaRuntime(ctx, "research");
+    expect(hit).toMatchObject({
+      id: "research",
+      saved: true,
+      goal: "Custom owner research goal that is long enough.",
+    });
+  });
+
+  it("returns undefined for unknown ids", async () => {
+    const store = new ChainStore();
+    const hit = await resolveChainRecipeViaRuntime(makeContext(store), "nope");
+    expect(hit).toBeUndefined();
+  });
 });
 
 describe("chainSaveRecipeViaRuntime", () => {
@@ -501,6 +556,22 @@ describe("chainDeleteRecipeViaRuntime", () => {
     const store = new ChainStore();
     const out = await chainDeleteRecipeViaRuntime(makeContext(store), { id: "x" });
     expect(out).toEqual({ ok: false, deleted: false });
+  });
+
+  it("deletes a saved recipe and refuses built-in ids when delete returns false", async () => {
+    const store = new ChainStore();
+    const ctx = makeContext(store);
+    ctx.hasTaskStore = () => true;
+    let deletedId: string | undefined;
+    ctx.deleteChainRecipe = async (id) => {
+      deletedId = id;
+      return id.startsWith("recipe_");
+    };
+    const saved = await chainDeleteRecipeViaRuntime(ctx, { id: "recipe_x" });
+    expect(saved).toEqual({ ok: true, deleted: true });
+    expect(deletedId).toBe("recipe_x");
+    const builtin = await chainDeleteRecipeViaRuntime(ctx, { id: "research" });
+    expect(builtin).toEqual({ ok: false, deleted: false });
   });
 });
 
