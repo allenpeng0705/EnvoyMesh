@@ -446,14 +446,29 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   /// Phase 51C — send a local family DM.
-  Future<void> sendFamilyMessage(String toProfileId, String text) async {
+  ///
+  /// v0.3 (§3.1): optional [attachments] are metadata descriptors `{id,
+  /// filename, mimeType, sizeBytes, contentHash?}` whose bytes were already
+  /// uploaded to the family-media area (via
+  /// `NodeServiceClient.uploadFamilyAttachment`); [text] may be empty when
+  /// attachments are present. Mirror of the mesh [sendMessage] contract —
+  /// descriptors are forwarded verbatim into `sendFamilyMessage`.
+  Future<void> sendFamilyMessage(
+    String toProfileId,
+    String? text, {
+    List<Map<String, dynamic>>? attachments,
+  }) async {
     final nodeService = _liveNodeService();
     final nodeState = _ref.read(nodeProvider);
     if (nodeService == null || nodeState.activeNode == null) {
       throw StateError('Not connected to home node');
     }
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    final trimmed = (text ?? '').trim();
+    final attModels = attachments
+        ?.map((a) => ChatAttachment.fromJson(a))
+        .toList();
+    final hasAttachments = attModels != null && attModels.isNotEmpty;
+    if (trimmed.isEmpty && !hasAttachments) return;
     final myProfileId = nodeState.effectiveFamilyProfileId;
     final toId = toProfileId.trim();
     if (toId.isEmpty) {
@@ -478,11 +493,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
-      text: trimmed,
+      text: trimmed.isEmpty ? null : trimmed,
       createdAt: now,
       isOutbound: true,
       senderDisplayName: 'You',
       senderOwnerId: myProfileId,
+      attachments: hasAttachments ? attModels : null,
     );
     _localDb.insertMessage(tempMsg.toJson());
     state = state.copyWith(
@@ -505,7 +521,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
       type: ChatThreadType.family,
       displayName: displayName,
       contactOwnerId: toId,
-      lastMessageText: trimmed,
+      lastMessageText: trimmed.isNotEmpty
+          ? trimmed
+          : (hasAttachments ? MessageBodySentinels.sentFile : trimmed),
       lastMessageAt: DateTime.tryParse(now),
     );
 
@@ -523,7 +541,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
 
     try {
-      await nodeService.sendFamilyMessage(toProfileId: toId, text: trimmed);
+      await nodeService.sendFamilyMessage(
+        toProfileId: toId,
+        text: trimmed.isEmpty ? null : trimmed,
+        attachments: hasAttachments ? attachments : null,
+      );
     } catch (e) {
       final err = e.toString();
       final looksLikeSelf = err.contains('yourself') ||
@@ -539,7 +561,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
           final live = _liveNodeService();
           if (live != null) {
             try {
-              await live.sendFamilyMessage(toProfileId: toId, text: trimmed);
+              await live.sendFamilyMessage(
+                toProfileId: toId,
+                text: trimmed.isEmpty ? null : trimmed,
+                attachments: hasAttachments ? attachments : null,
+              );
               return;
             } catch (_) {
               rollbackOptimistic();
@@ -1101,12 +1127,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     if (senderOwnerId == null) return;
 
-    // Skip messages with no text AND no audio attachments — empty bubbles.
-    final hasAudio = attachmentsRaw?.any((a) {
-      final mime = (a is Map) ? (a['mimeType'] ?? a['mime_type']) as String? : null;
-      return mime != null && mime.startsWith('audio/');
-    }) ?? false;
-    if ((text == null || text.isEmpty) && !hasAudio) return;
+    // Skip messages with no text AND no attachments — empty bubbles. Audio
+    // and (v0.3) family-media image/file rows carry their body as an
+    // attachment descriptor, so attachment-only rows must be kept.
+    final hasAnyAttachment = attachmentsRaw != null && attachmentsRaw.isNotEmpty;
+    if ((text == null || text.isEmpty) && !hasAnyAttachment) return;
 
     // Skip intro messages for contacts that are already bonded — they
     // have no pending intro request so showing "Wants to connect" is wrong.
@@ -1643,6 +1668,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
         ? text
         : (hasAudio ? MessageBodySentinels.sentVoice : MessageBodySentinels.sentFile);
 
+    // Keep attachment descriptors (v0.3 family media, mesh room files) on the
+    // row so bubbles can render / preview them; skip rows with no body at all.
+    List<ChatAttachment>? attachments;
+    try {
+      attachments = attachmentsRaw
+          ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      attachments = null;
+    }
+
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
     final existingThread = state.threads.where((t) => t.id == threadId).firstOrNull;
     final isFamilyRoom = kind == 'family' ||
@@ -1665,6 +1701,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       createdAt: createdAt,
       isOutbound: showAsMine,
       delivery: parseDeliveryMetadata(metadata),
+      attachments: attachments,
     );
 
     // Dedup room messages by messageId; reconcile optimistic temp_* echoes.
@@ -1890,26 +1927,41 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  Future<void> sendFamilyRoomMessage(String roomId, String text) async {
+  /// Send a local family room message (Phase 51D).
+  ///
+  /// v0.3 (§3.1): optional [attachments] are metadata descriptors `{id,
+  /// filename, mimeType, sizeBytes, contentHash?}` whose bytes were already
+  /// uploaded to the family-media area; [text] may be empty when attachments
+  /// are present.
+  Future<void> sendFamilyRoomMessage(
+    String roomId,
+    String? text, {
+    List<Map<String, dynamic>>? attachments,
+  }) async {
     final nodeService = _liveNodeService();
     final nodeState = _ref.read(nodeProvider);
     if (nodeService == null || nodeState.activeNode == null) {
       throw StateError('Not connected to home node');
     }
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    final trimmed = (text ?? '').trim();
+    final attModels = attachments
+        ?.map((a) => ChatAttachment.fromJson(a))
+        .toList();
+    final hasAttachments = attModels != null && attModels.isNotEmpty;
+    if (trimmed.isEmpty && !hasAttachments) return;
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
     final now = DateTime.now().toUtc().toIso8601String();
     final myProfileId = nodeState.effectiveFamilyProfileId;
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
-      text: trimmed,
+      text: trimmed.isEmpty ? null : trimmed,
       createdAt: now,
       isOutbound: true,
       senderDisplayName: 'You',
       senderOwnerId: myProfileId,
       delivery: const GroupDeliveryMetadata(deliveryReceipt: 'delivered'),
+      attachments: hasAttachments ? attModels : null,
     );
     _localDb.insertMessage(tempMsg.toJson());
     state = state.copyWith(
@@ -1927,11 +1979,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
       type: ChatThreadType.familyGroup,
       displayName: existingThread?.displayName ?? ThreadTitleSentinels.familyGroup,
       chatRoomId: roomId,
-      lastMessageText: trimmed,
+      lastMessageText: trimmed.isNotEmpty
+          ? trimmed
+          : (hasAttachments ? MessageBodySentinels.sentFile : trimmed),
       lastMessageAt: DateTime.now(),
     );
 
-    await nodeService.sendFamilyRoomMessage(roomId: roomId, text: trimmed);
+    await nodeService.sendFamilyRoomMessage(
+      roomId: roomId,
+      text: trimmed.isEmpty ? null : trimmed,
+      attachments: hasAttachments ? attachments : null,
+    );
   }
 
   /// Invite a contact to a room.

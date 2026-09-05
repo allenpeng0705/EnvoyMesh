@@ -7,6 +7,7 @@ import '../models/chat_room.dart';
 import '../models/contact.dart';
 import '../models/content_engage_notification.dart';
 import '../models/feed_notification.dart';
+import '../models/family_attachment.dart';
 import '../models/library_read.dart';
 import '../models/peer_search_result.dart';
 import '../models/terminal_session.dart';
@@ -354,15 +355,92 @@ class NodeServiceClient {
   }
 
   /// Phase 51C — local family DM (never leaves the home node).
+  ///
+  /// v0.3 (§3.1): [text] may be omitted when [attachments] is present; each
+  /// element of [attachments] is a metadata descriptor `{id, filename,
+  /// mimeType, sizeBytes, contentHash?}` whose bytes were already uploaded
+  /// via [uploadFamilyAttachment].
   Future<Map<String, dynamic>> sendFamilyMessage({
     required String toProfileId,
-    required String text,
+    String? text,
+    List<Map<String, dynamic>>? attachments,
   }) async {
+    _guardFamilySendParams(text: text, attachments: attachments);
     return await _client.call('sendFamilyMessage', {
           'toProfileId': toProfileId,
-          'text': text,
+          if (text != null) 'text': text,
+          if (attachments != null && attachments.isNotEmpty)
+            'attachments': attachments,
         })
         as Map<String, dynamic>;
+  }
+
+  /// v0.3 §3.2 — upload family-media bytes before referencing them in a
+  /// family message. [scope] is a DM pair (`dm`) or a family room (`room`);
+  /// returns the metadata descriptor `{id, filename, mimeType, sizeBytes,
+  /// contentHash}` to pass as an `attachments` entry on
+  /// [sendFamilyMessage] / [sendFamilyRoomMessage].
+  ///
+  /// Storage stays in the profile `family-media` area — never the owner vault,
+  /// never the mesh. Content-hash dedupe: re-uploading identical bytes
+  /// returns the same id.
+  Future<Map<String, dynamic>> uploadFamilyAttachment({
+    required FamilyAttachmentScope scope,
+    required String filename,
+    required String mimeType,
+    required String contentBase64,
+  }) async {
+    scope.validate();
+    return await _client.call(
+          'uploadFamilyAttachment',
+          {
+            'scope': scope.toJson(),
+            'filename': filename,
+            'mimeType': mimeType,
+            'contentBase64': contentBase64,
+          },
+          const Duration(seconds: 120),
+        )
+        as Map<String, dynamic>;
+  }
+
+  /// v0.3 §3.3 — read stored family-media bytes lazily (on demand).
+  ///
+  /// Pass [offset] + [maxBytes] for a range read. When [offset] is set,
+  /// [sizeBytes] in the result is the full stored size and [truncated] is
+  /// true while more bytes remain beyond `offset + maxBytes`; omitting both
+  /// does a whole-file read (files cap at 25 MiB).
+  Future<Map<String, dynamic>> readFamilyAttachment({
+    required String id,
+    int? offset,
+    int? maxBytes,
+  }) async {
+    final trimmedId = id.trim();
+    if (trimmedId.isEmpty) {
+      throw ArgumentError.value(id, 'id', 'readFamilyAttachment requires a non-empty attachment id');
+    }
+    return await _client.call('readFamilyAttachment', {
+          'id': trimmedId,
+          if (offset != null) 'offset': offset,
+          if (maxBytes != null) 'maxBytes': maxBytes,
+        })
+        as Map<String, dynamic>;
+  }
+
+  /// v0.3 §3.1 — attachment-aware family sends must carry at least a message
+  /// body or one attachment descriptor.
+  void _guardFamilySendParams({
+    String? text,
+    List<Map<String, dynamic>>? attachments,
+  }) {
+    final hasText = text != null && text.trim().isNotEmpty;
+    final hasAttachments = attachments != null && attachments.isNotEmpty;
+    if (!hasText && !hasAttachments) {
+      throw ArgumentError(
+        'Family messages require text and/or at least one attachment '
+        'descriptor (upload bytes via uploadFamilyAttachment first).',
+      );
+    }
   }
 
   Future<Map<String, dynamic>> listFamilyRooms() async {
@@ -380,13 +458,21 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  /// Phase 51C — local family room message (never leaves the home node).
+  ///
+  /// v0.3 (§3.1): same optional [attachments] semantics as
+  /// [sendFamilyMessage], scoped to the room.
   Future<Map<String, dynamic>> sendFamilyRoomMessage({
     required String roomId,
-    required String text,
+    String? text,
+    List<Map<String, dynamic>>? attachments,
   }) async {
+    _guardFamilySendParams(text: text, attachments: attachments);
     return await _client.call('sendFamilyRoomMessage', {
           'roomId': roomId,
-          'text': text,
+          if (text != null) 'text': text,
+          if (attachments != null && attachments.isNotEmpty)
+            'attachments': attachments,
         })
         as Map<String, dynamic>;
   }

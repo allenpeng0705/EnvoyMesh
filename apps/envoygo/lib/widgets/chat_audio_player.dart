@@ -13,16 +13,26 @@ import '../models/chat_message.dart';
 ///
 /// Loads bytes from the home vault via [onLoadAudio], writes a temp file,
 /// and plays with [AudioPlayer] (supports m4a/mp4/aac; webm may fail on iOS).
+///
+/// v0.3: family-media voice notes are NOT vault-backed — they carry no
+/// [ChatAttachment.vaultRelativePath] and must be fetched by attachment id via
+/// [onLoadFamilyAudio] (`readFamilyAttachment`), which is used whenever the
+/// attachment has no vault path.
 class ChatAudioPlayer extends StatefulWidget {
   final ChatAttachment attachment;
   final String? transcription;
   final Future<String?> Function(String vaultRelativePath) onLoadAudio;
+
+  /// Loader for non-vault (family-media) voice notes, keyed by attachment.
+  /// Used when [attachment.vaultRelativePath] is empty and this is provided.
+  final Future<String?> Function(ChatAttachment attachment)? onLoadFamilyAudio;
 
   const ChatAudioPlayer({
     super.key,
     required this.attachment,
     this.transcription,
     required this.onLoadAudio,
+    this.onLoadFamilyAudio,
   });
 
   @override
@@ -118,7 +128,12 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
 
   Future<void> _load() async {
     final vaultPath = widget.attachment.vaultRelativePath;
-    if (vaultPath == null || vaultPath.isEmpty) {
+    final familyLoader = widget.onLoadFamilyAudio;
+    final isFamilyStored =
+        familyLoader != null &&
+        widget.attachment.isFamilyStored &&
+        widget.attachment.id.isNotEmpty;
+    if ((vaultPath == null || vaultPath.isEmpty) && !isFamilyStored) {
       // Pending upload — show duration, no error chrome.
       if (mounted) {
         setState(() {
@@ -133,7 +148,9 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
       return;
     }
     try {
-      final contentBase64 = await widget.onLoadAudio(vaultPath);
+      final contentBase64 = isFamilyStored
+          ? await familyLoader(widget.attachment)
+          : await widget.onLoadAudio(vaultPath ?? '');
       if (contentBase64 == null || contentBase64.isEmpty) {
         if (mounted) {
           setState(() {

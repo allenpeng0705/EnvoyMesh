@@ -208,6 +208,11 @@ class ChatAttachment {
   /// Actual recording duration in seconds (Phase 37 mobile).
   final int? durationSec;
 
+  /// v0.3 family-media content hash (e.g. `sha256:…`), present when the
+  /// bytes live in the home node's `family-media` area instead of the vault.
+  /// Mesh vault attachments leave this null.
+  final String? contentHash;
+
   const ChatAttachment({
     required this.id,
     required this.filename,
@@ -216,10 +221,25 @@ class ChatAttachment {
     required this.sensitivity,
     this.vaultRelativePath,
     this.durationSec,
+    this.contentHash,
   });
 
   /// Whether this attachment is an audio file.
   bool get isAudio => mimeType.startsWith('audio/');
+
+  /// Whether this attachment is an image file.
+  bool get isImage => mimeType.startsWith('image/');
+
+  /// Whether the attachment is stored on the home node's family-media area
+  /// (v0.3 §3.4) — i.e. NOT vault-backed — and must be fetched by id via
+  /// `readFamilyAttachment` rather than `readLibraryItemContent`.
+  ///
+  /// Family descriptors never carry `vaultRelativePath` and always carry a
+  /// `contentHash` (upload response + message/event descriptors). Mesh vault
+  /// rows carry a vault path, so a missing path alone is not sufficient.
+  bool get isFamilyStored =>
+      (vaultRelativePath == null || vaultRelativePath!.isEmpty) &&
+      (contentHash != null && contentHash!.isNotEmpty);
 
   factory ChatAttachment.fromJson(Map<String, dynamic> json) {
     return ChatAttachment(
@@ -230,6 +250,7 @@ class ChatAttachment {
       sensitivity: (json['sensitivity'] as String?) ?? 'friends',
       vaultRelativePath: json['vaultRelativePath'] as String?,
       durationSec: json['durationSec'] as int?,
+      contentHash: json['contentHash'] as String?,
     );
   }
 
@@ -241,5 +262,6 @@ class ChatAttachment {
         'sensitivity': sensitivity,
         if (vaultRelativePath != null) 'vaultRelativePath': vaultRelativePath,
         if (durationSec != null) 'durationSec': durationSec,
+        if (contentHash != null) 'contentHash': contentHash,
       };
 }
