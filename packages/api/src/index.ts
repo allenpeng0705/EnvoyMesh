@@ -90,6 +90,7 @@ export * from "./family-profile.js";
 export * from "./shop.js";
 export * from "./kiosk-status.js";
 export * from "./fleet-manifest.js";
+export * from "./fleet-workers-ensure.js";
 export * from "./fleet-bootstrap.js";
 export * from "./h2a-wire-semantics.js";
 export * from "./owner-did-presentation.js";

@@ -225,6 +225,8 @@ import type {
   ChainProbeReachabilityParams,
   ChainProbeReachabilityResult,
   ChainStartFromGoalResult,
+  EnsureFleetWorkersParams,
+  EnsureFleetWorkersResult,
   ChainExportCostsParams,
   ChainExportCostsResult,
   ChainListRecipesParams,
@@ -1216,6 +1218,9 @@ import {
   createDebouncedAgentNetworkRefresh,
   type DebouncedAgentNetworkRefresh,
 } from "./agent-network-bond-refresh.js";
+import { ensureFleetWorkersReadyViaRuntime } from "./ensure-fleet-workers.js";
+import { fulfillInboundFleetLeaseRequest } from "./handle-fleet-lease-request-inbound.js";
+import { evaluateWanPeerOnlineGate } from "./wan-peer-online-gate.js";
 import { WorkerLeaseStore } from "./worker-lease-store.js";
 import { WorkerReliabilityStore } from "./worker-reliability-store.js";
 import { WorkerAttemptReceiptStore } from "./worker-attempt-receipt-store.js";
@@ -4596,6 +4601,51 @@ class NodeServiceImpl implements NodeService {
     }
     this._scheduleDeferredAgentNetworkIndexRefresh();
     return { requested, failed };
+  }
+
+  /**
+   * Phase 66B — Join on + publish lease locally, then lease.request to
+   * bonded direct/referred peers only (strangers stay out).
+   */
+  async ensureFleetWorkersJoinAndLease(
+    params?: EnsureFleetWorkersParams,
+  ): Promise<EnsureFleetWorkersResult> {
+    const identityCtx = this._identityContext();
+    return ensureFleetWorkersReadyViaRuntime(
+      {
+        getOwnOwnerId: () => this._profile?.owner?.ownerId,
+        getNodeConfig: () => this.getNodeConfig(),
+        enableJoin: async () => {
+          await this.updateNodeConfig({ capabilityProviderEnabled: true });
+        },
+        ensureLeaseBroadcaster: async () => {
+          const mesh = this._reachableMesh();
+          if (!mesh) return undefined;
+          return this.ensureWorkerLeaseBroadcasterStarted(mesh);
+        },
+        refreshAgentNetworkWorkers: () => this.refreshAgentNetworkWorkers(),
+        getBonds: () => this.getBonds(),
+        ensureAgentIdentity: () => this._ensureAgentIdentity(),
+        resolveLibp2pPeer: async (ownerId) => {
+          const resolved = await identityCtx.resolveLibp2pPeerForBondOwner(ownerId);
+          if (!resolved) return undefined;
+          return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+        },
+        dialHintsFor: (peerId, listenAddrs) => identityCtx.dialHintsForChat(peerId, listenAddrs),
+        sendEnvelope: async ({ transportPeerId, envelope, dialHints }) => {
+          const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
+          const mesh = this._reachableMesh();
+          if (!mesh) throw new Error("mesh not started");
+          await sendEnvelopeWithRetry({
+            mesh: mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
+            transportPeerId,
+            envelope,
+            dialHints,
+          });
+        },
+      },
+      params,
+    );
   }
 
   private _agentNetworkIndexRefreshTimers: ReturnType<typeof setTimeout>[] = [];
@@ -16695,9 +16745,40 @@ class NodeServiceImpl implements NodeService {
       store: this._chainOrchestrationContext().getChainSideState().workerLeases,
       maxWorkers: Math.max(32, bondedOwners.size * 2),
       isBondedOwner: (ownerId) => bondedOwners.has(ownerId),
-      onLeaseRequest: async () => {
-        // Best-effort immediate republish (broadcaster may not be running in tests).
-        await this._leaseBroadcaster?.publishNow();
+      onLeaseRequest: async (request) => {
+        const credOwner = envelope.agentCredential?.ownerId;
+        await fulfillInboundFleetLeaseRequest({
+          requesterPeerId: request.requesterPeerId,
+          requesterOwnerId: typeof credOwner === "string" ? credOwner : undefined,
+          getBonds: () => this.getBonds(),
+          resolveOwnerForPeer: async (peerId) => {
+            try {
+              const cards = await this.listAgentCards();
+              const card = cards.find((c) => c.sourceAgentPeerId === peerId);
+              if (card?.ownerId) return card.ownerId;
+            } catch {
+              /* ignore */
+            }
+            try {
+              const recs = await this._peerDirectoryStore.listPeerRecords();
+              return recs.find((r) => r.peerId === peerId)?.ownerId;
+            } catch {
+              return undefined;
+            }
+          },
+          getJoinEnabled: async () => {
+            const cfg = await this.getNodeConfig();
+            return cfg.capabilityProviderEnabled === true;
+          },
+          enableJoin: async () => {
+            await this.updateNodeConfig({ capabilityProviderEnabled: true });
+          },
+          ensureLeaseBroadcaster: async () => {
+            const mesh = this._reachableMesh();
+            if (!mesh) return this._leaseBroadcaster;
+            return this.ensureWorkerLeaseBroadcasterStarted(mesh);
+          },
+        });
       },
     });
     if (!result.handled) {
@@ -17671,6 +17752,17 @@ class NodeServiceImpl implements NodeService {
       }
     }
 
+    let discoveryProfile: string | undefined;
+    let relayEnabled: boolean | undefined;
+    try {
+      const persisted = await this._configStore.load();
+      discoveryProfile = persisted?.discoveryProfile;
+      relayEnabled = persisted?.relayEnabled;
+    } catch {
+      /* WAN gate uses defaults */
+    }
+    const hasLiveRelayReservation = mesh?.hasLiveRelayReservation?.() === true;
+
     const rows = ownerIds.map((ownerId) => {
       const agentPeerId = agentPeerIdByOwner.get(ownerId);
       const peerRecords = recordsByOwner.get(ownerId) ?? [];
@@ -17679,12 +17771,29 @@ class NodeServiceImpl implements NodeService {
       const connectedRecord = peerRecords
         .filter((r) => isLibp2pPeerId(r.peerId) && connectedIds.has(r.peerId))
         .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0];
-      const online = Boolean(connectedRecord);
-      const viaRelay = online ? circuitIds.has(connectedRecord.peerId) : false;
-      const sameLan = sameLanFromListenAddrs(
-        connectedRecord?.listenAddrs ?? peerRecords[0]?.listenAddrs,
-      );
-      return { ownerId, agentPeerId, online, sameLan, viaRelay };
+      const meshConnected = Boolean(connectedRecord);
+      const viaRelay = meshConnected ? circuitIds.has(connectedRecord.peerId) : false;
+      const listenAddrs =
+        connectedRecord?.listenAddrs ?? peerRecords[0]?.listenAddrs ?? [];
+      const sameLan = sameLanFromListenAddrs(listenAddrs);
+      const gated = evaluateWanPeerOnlineGate({
+        meshConnected,
+        sameLan,
+        viaRelay,
+        discoveryProfile,
+        relayEnabled,
+        hasLiveRelayReservation,
+        dialHints: listenAddrs,
+      });
+      return {
+        ownerId,
+        agentPeerId,
+        online: gated.online,
+        sameLan,
+        viaRelay,
+        wanPathReady: gated.wanPathReady,
+        gateReason: gated.reason,
+      };
     });
     return { rows };
   }

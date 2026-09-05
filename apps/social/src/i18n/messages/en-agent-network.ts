@@ -159,6 +159,9 @@ export const agentNetworkSettingsMessages = {
     refresh: "Refresh workers",
     refreshing: "Refreshing…",
     refreshed: "Workers refreshed",
+    ensureJoinLease: "Ensure Join and leases",
+    ensureBusy: "Ensuring…",
+    ensureDone: "Join and leases requested",
     joinOffAfterLan:
       "Bonded on LAN but not recruitable — Join Agent Network or use Office LAN preset.",
   },

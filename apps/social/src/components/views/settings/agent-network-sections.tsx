@@ -413,6 +413,8 @@ export function WorkersStatusSection() {
   const [lanBondWithoutJoin, setLanBondWithoutJoin] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshed, setRefreshed] = useState(false);
+  const [ensuring, setEnsuring] = useState(false);
+  const [ensured, setEnsured] = useState(false);
 
   const joinOn = nodeConfig?.capabilityProviderEnabled === true;
   const lanOn = nodeConfig?.lanAutoBondEnabled === true;
@@ -483,6 +485,20 @@ export function WorkersStatusSection() {
     }
   }, [loadStatus, nodeService]);
 
+  const handleEnsure = useCallback(async () => {
+    if (typeof nodeService.ensureFleetWorkersJoinAndLease !== "function") return;
+    setEnsuring(true);
+    setEnsured(false);
+    try {
+      await nodeService.ensureFleetWorkersJoinAndLease();
+      await loadStatus();
+      setEnsured(true);
+      window.setTimeout(() => setEnsured(false), 4000);
+    } finally {
+      setEnsuring(false);
+    }
+  }, [loadStatus, nodeService]);
+
   return (
     <section className="settings-section" data-testid="agent-network-workers-status">
       <h4>{t("settings.agentNetwork.workersStatus.heading")}</h4>
@@ -521,6 +537,22 @@ export function WorkersStatusSection() {
         </button>
         {refreshed ? (
           <span className="settings-hint">{t("settings.agentNetwork.workersStatus.refreshed")}</span>
+        ) : null}
+        <button
+          type="button"
+          className="settings-button"
+          data-testid="ensure-fleet-workers"
+          onClick={() => {
+            void handleEnsure();
+          }}
+          disabled={ensuring}
+        >
+          {ensuring
+            ? t("settings.agentNetwork.workersStatus.ensureBusy")
+            : t("settings.agentNetwork.workersStatus.ensureJoinLease")}
+        </button>
+        {ensured ? (
+          <span className="settings-hint">{t("settings.agentNetwork.workersStatus.ensureDone")}</span>
         ) : null}
       </div>
       {lanBondWithoutJoin ? (

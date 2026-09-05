@@ -27,6 +27,7 @@ const getNodeConfig = vi.fn();
 const getBonds = vi.fn();
 const listAgentCards = vi.fn();
 const refreshAgentNetworkWorkers = vi.fn();
+const ensureFleetWorkersJoinAndLease = vi.fn();
 const requestAgentCard = vi.fn();
 const refreshNodeConfig = vi.fn();
 
@@ -45,6 +46,7 @@ const mockNodeService = {
   getBonds,
   listAgentCards,
   refreshAgentNetworkWorkers,
+  ensureFleetWorkersJoinAndLease,
   requestAgentCard,
   on: vi.fn(() => () => {}),
 };
@@ -114,6 +116,11 @@ beforeEach(() => {
   getBonds.mockResolvedValue([]);
   listAgentCards.mockResolvedValue([]);
   refreshAgentNetworkWorkers.mockResolvedValue({ requested: 0, failed: 0 });
+  ensureFleetWorkersJoinAndLease.mockResolvedValue({
+    localJoinEnabled: true,
+    localLeasePublished: false,
+    peers: [],
+  });
   requestAgentCard.mockResolvedValue({ ok: true });
 });
 
@@ -321,6 +328,20 @@ describe("WorkersStatusSection", () => {
     fireEvent.click(refresh);
     await waitFor(() => {
       expect(refreshAgentNetworkWorkers).toHaveBeenCalled();
+    });
+  });
+
+  it("Ensure Join and leases calls ensureFleetWorkersJoinAndLease", async () => {
+    ensureFleetWorkersJoinAndLease.mockResolvedValue({
+      localJoinEnabled: true,
+      localLeasePublished: true,
+      peers: [],
+    });
+    renderWithI18n(<WorkersStatusSection />);
+    const ensure = await waitFor(() => screen.getByTestId("ensure-fleet-workers"));
+    fireEvent.click(ensure);
+    await waitFor(() => {
+      expect(ensureFleetWorkersJoinAndLease).toHaveBeenCalled();
     });
   });
 });

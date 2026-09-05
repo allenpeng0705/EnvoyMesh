@@ -49,6 +49,9 @@ export const deAgentNetworkSettingsMessages = {
     refresh: "Worker aktualisieren",
     refreshing: "Aktualisieren…",
     refreshed: "Worker aktualisiert",
+    ensureJoinLease: "Beitritt und Leases sicherstellen",
+    ensureBusy: "Wird sichergestellt…",
+    ensureDone: "Beitritt und Leases angefordert",
     joinOffAfterLan:
       "Im LAN gebunden, aber nicht rekrutierbar — Agentennetzwerk beitreten oder Büro-LAN-Preset nutzen.",
   },

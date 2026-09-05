@@ -587,6 +587,12 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.refreshAgentNetworkWorkers();
   }
 
+  async ensureFleetWorkersJoinAndLease(
+    params?: import("@envoymesh/api").EnsureFleetWorkersParams,
+  ) {
+    return this._ns.ensureFleetWorkersJoinAndLease(params);
+  }
+
   async getTaskResult(taskId: string) {
     return this._ns.getTaskResult(taskId);
   }

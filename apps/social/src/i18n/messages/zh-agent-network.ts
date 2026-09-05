@@ -152,6 +152,9 @@ export const zhAgentNetworkSettingsMessages = {
     refresh: "刷新工作节点",
     refreshing: "刷新中…",
     refreshed: "工作节点已刷新",
+    ensureJoinLease: "确保加入并发布租约",
+    ensureBusy: "处理中…",
+    ensureDone: "已请求加入并发布租约",
     joinOffAfterLan: "已在局域网绑定，但尚未可被征用 — 请加入智能体网络或使用办公局域网预设。",
   },
   quickReference: {

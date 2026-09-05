@@ -153,6 +153,7 @@ export type RpcMethods =
   | "getAgentCard"
   | "requestAgentCard"
   | "refreshAgentNetworkWorkers"
+  | "ensureFleetWorkersJoinAndLease"
   | "getTaskResult"
   | "listPendingApprovals"
   | "approvePendingApproval"
@@ -2742,6 +2743,9 @@ export interface ChainWorkerReachability {
   sameLan: boolean;
   /** Connection is via circuit relay (not direct). */
   viaRelay: boolean;
+  /** Phase 66B — WAN path is reservation + circuit/public dial hints. */
+  wanPathReady?: boolean;
+  gateReason?: "no-live-relay-reservation" | "no-wan-dial-hints";
 }
 
 export interface ChainProbeReachabilityResult {

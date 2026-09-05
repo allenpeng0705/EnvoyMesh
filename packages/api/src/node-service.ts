@@ -2306,6 +2306,14 @@ export interface NodeService {
   refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }>;
 
   /**
+   * Phase 66B — local Join + lease publish, then ask bonded (direct/referred)
+   * peers to republish leases. Public/blocked strangers are skipped.
+   */
+  ensureFleetWorkersJoinAndLease(
+    params?: import("./fleet-workers-ensure.js").EnsureFleetWorkersParams,
+  ): Promise<import("./fleet-workers-ensure.js").EnsureFleetWorkersResult>;
+
+  /**
    * Latest cached `task.result` payload (with typed Artifacts) for a taskId.
    * Returns `undefined` if the home node has not received a `task.result` for
    * that taskId. Phase 34 — used by the Activity drill-down to render typed

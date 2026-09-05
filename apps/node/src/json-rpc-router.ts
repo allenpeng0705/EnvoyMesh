@@ -26,6 +26,7 @@ import type {
   ChainSetDefaultsParams,
   ChainPreviewGoalParams,
   ChainStartFromGoalParams,
+  EnsureFleetWorkersParams,
   ChainExportCostsParams,
   ChainListRecipesParams,
   ChainSaveRecipeParams,
@@ -574,6 +575,8 @@ export async function routeRpcMethod(
       return ns.requestAgentCard(params.targetOwnerId as string);
     case "refreshAgentNetworkWorkers":
       return ns.refreshAgentNetworkWorkers();
+    case "ensureFleetWorkersJoinAndLease":
+      return ns.ensureFleetWorkersJoinAndLease(params as EnsureFleetWorkersParams);
     case "getTaskResult":
       return ns.getTaskResult(params.taskId as string);
     case "listPendingApprovals":

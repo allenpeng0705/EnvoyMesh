@@ -1194,6 +1194,7 @@ export interface NodeService {
         requested: number;
         failed: number;
     }>;
+    ensureFleetWorkersJoinAndLease(params?: import("./fleet-workers-ensure.js").EnsureFleetWorkersParams): Promise<import("./fleet-workers-ensure.js").EnsureFleetWorkersResult>;
     /** Phase 34: latest cached `task.result` (typed Artifacts) for the taskId. */
     getTaskResult(taskId: string): Promise<TaskResultPayload | undefined>;
     /** Pending AI actions awaiting owner approval. */

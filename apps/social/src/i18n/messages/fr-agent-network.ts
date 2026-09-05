@@ -49,6 +49,9 @@ export const frAgentNetworkSettingsMessages = {
     refresh: "Actualiser les workers",
     refreshing: "Actualisation…",
     refreshed: "Workers actualisés",
+    ensureJoinLease: "Assurer Join et baux",
+    ensureBusy: "En cours…",
+    ensureDone: "Join et baux demandés",
     joinOffAfterLan:
       "Lié en LAN mais non recrutable — rejoignez le réseau d'agents ou utilisez le préréglage LAN de bureau.",
   },

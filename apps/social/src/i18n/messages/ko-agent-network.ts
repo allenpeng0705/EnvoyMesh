@@ -49,6 +49,9 @@ export const koAgentNetworkSettingsMessages = {
     refresh: "워커 새로 고침",
     refreshing: "새로 고치는 중…",
     refreshed: "워커가 새로 고침됨",
+    ensureJoinLease: "가입과 리스 확보",
+    ensureBusy: "처리 중…",
+    ensureDone: "가입과 리스를 요청했습니다",
     joinOffAfterLan:
       "LAN에서 바인딩되었지만 모집할 수 없습니다 — 에이전트 네트워크에 참가하거나 사무실 LAN 프리셋을 사용하세요.",
   },

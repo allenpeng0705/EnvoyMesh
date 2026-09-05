@@ -271,6 +271,9 @@ export interface NodeServiceClient {
   getAgentCard(ownerId: string): Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined>;
   requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;
   refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }>;
+  ensureFleetWorkersJoinAndLease(
+    params?: import("@envoymesh/api").EnsureFleetWorkersParams,
+  ): Promise<import("@envoymesh/api").EnsureFleetWorkersResult>;
   getTaskResult(taskId: string): Promise<import("@envoymesh/api").TaskResultPayload | undefined>;
   listPendingApprovals(): Promise<import("@envoymesh/api").PendingApprovalSummary[]>;
   approvePendingApproval(itemId: string, notes?: string): Promise<import("@envoymesh/api").ApprovePendingApprovalResult>;
@@ -1284,6 +1287,11 @@ function createWsNodeServiceClient(
     },
     async refreshAgentNetworkWorkers() {
       return wsClient.rpc("refreshAgentNetworkWorkers") as Promise<{ requested: number; failed: number }>;
+    },
+    async ensureFleetWorkersJoinAndLease(params) {
+      return wsClient.rpc("ensureFleetWorkersJoinAndLease", params ?? {}) as Promise<
+        import("@envoymesh/api").EnsureFleetWorkersResult
+      >;
     },
     async getTaskResult(taskId: string) {
       return wsClient.rpc("getTaskResult", { taskId }) as Promise<

@@ -49,6 +49,9 @@ export const jaAgentNetworkSettingsMessages = {
     refresh: "ワーカーを更新",
     refreshing: "更新中…",
     refreshed: "ワーカーを更新しました",
+    ensureJoinLease: "参加とリースを確保",
+    ensureBusy: "処理中…",
+    ensureDone: "参加とリースを要求しました",
     joinOffAfterLan:
       "LAN でバンディング済みですが募集不可です — エージェントネットワークに参加するかオフィス LAN プリセットを使ってください。",
   },

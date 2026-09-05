@@ -203,4 +203,72 @@ describe.sequential("E2E Phase 60 three-process Agent Network smoke (libp2p)", (
     expect(report.report?.chainId).toBe(chainId);
     expect(report.report?.executiveSummary?.length).toBeGreaterThan(0);
   }, 120_000);
+
+  it("66B cold start: bond → Join+lease ensure → lease-visible → Team job starts", async () => {
+    const orchestrator = await createPhase13TestNode();
+    const workerB = await createPhase13TestNode();
+    const workerC = await createPhase13TestNode();
+    nodes.push(orchestrator, workerB, workerC);
+
+    await wireHomeAsChainParticipant(orchestrator);
+    await wireHomeAsChainParticipant(workerB);
+    await wireHomeAsChainParticipant(workerC);
+    wireMockTeamJobEngine(orchestrator);
+    wireMockTeamJobEngine(workerB);
+    wireMockTeamJobEngine(workerC);
+    wireWorkerLeaseInboundHandler(orchestrator);
+    wireWorkerLeaseInboundHandler(workerB);
+    wireWorkerLeaseInboundHandler(workerC);
+
+    await bondAndExchangeCards(orchestrator, workerB, "Assigner", "Worker B");
+    await bondAndExchangeCards(orchestrator, workerC, "Assigner", "Worker C");
+
+    const before = await orchestrator.service.agentNetworkDiagnosticsSnapshot();
+    expect(before.workers.filter((w) => w.leaseReady).length).toBe(0);
+
+    await enableAgentNetworkWorker(orchestrator, {
+      displayName: "Assigner",
+      capabilities: ["task.execute", "chain.orchestrate", "agent-network-worker"],
+    });
+    await enableAgentNetworkWorker(workerB, {
+      displayName: "Worker B",
+      capabilities: ["task.execute", "agent-network-worker"],
+    });
+    await enableAgentNetworkWorker(workerC, {
+      displayName: "Worker C",
+      capabilities: ["task.execute", "agent-network-worker"],
+    });
+
+    await orchestrator.service.ensureFleetWorkersJoinAndLease();
+    await workerB.service.ensureFleetWorkersJoinAndLease();
+    await workerC.service.ensureFleetWorkersJoinAndLease();
+    await startLeasePublisher(orchestrator);
+    await startLeasePublisher(workerB);
+    await startLeasePublisher(workerC);
+    await orchestrator.service.refreshAgentNetworkWorkers();
+
+    await waitForPhase13(async () => {
+      const snap = await orchestrator.service.agentNetworkDiagnosticsSnapshot();
+      const ownerB = workerB.profile.owner.ownerId;
+      const ownerC = workerC.profile.owner.ownerId;
+      const rowB = snap.workers.find((w) => w.ownerId === ownerB);
+      const rowC = snap.workers.find((w) => w.ownerId === ownerC);
+      return rowB?.leaseReady === true && rowC?.leaseReady === true;
+    }, 30_000);
+
+    const snap = await orchestrator.service.agentNetworkDiagnosticsSnapshot();
+    expect(snap.workers.filter((w) => w.leaseReady).length).toBeGreaterThanOrEqual(2);
+
+    const started = await orchestrator.service.chainStartFromGoal({
+      goal: "66B fleet cold start",
+      allowLlm: false,
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok || !started.chainId) return;
+
+    await waitForPhase13(async () => {
+      const state = await orchestrator.service.chainGetState({ chainId: started.chainId! });
+      return state.bidCount >= 1;
+    }, 30_000);
+  }, 90_000);
 });
