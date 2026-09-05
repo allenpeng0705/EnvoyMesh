@@ -193,6 +193,7 @@ export function buildReclaimMandate(input: {
     costCeilingUsd: input.costCeilingUsd ?? 3,
     maxWorkers: awardMode === "direct" ? 1 : 3,
     allowDepth3: false,
+    allowDepth4: false,
     maxSensitivity: "public",
     deadlineAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
     createdAt: now.toISOString(),

@@ -363,10 +363,9 @@ export function intermediateArtifactsReadyForAward(
       }
       continue;
     }
-    if (workerRow.phase !== "verified") {
-      if (parent.inlineText && parent.kind !== "file") continue;
-      return { ok: false, reason: "artifact_delivery_pending" };
-    }
+    // Remaining phases: pending | transferring (verified already continued above).
+    if (parent.inlineText && parent.kind !== "file") continue;
+    return { ok: false, reason: "artifact_delivery_pending" };
   }
   return { ok: true };
 }
