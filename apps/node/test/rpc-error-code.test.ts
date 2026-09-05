@@ -44,3 +44,14 @@ describe("rpcErrorCode", () => {
     expect(rpcErrorCode("unknown-token: some detail")).toBe("ERROR")
   })
 })
+
+describe("rpcErrorCode — router-level owner denials", () => {
+  it("maps legacy 'Only the node owner can' text to owner-only", () => {
+    expect(rpcErrorCode("Only the node owner can call askHomeModel")).toBe("owner-only")
+    expect(rpcErrorCode("Only the node owner can call updateNodeConfig")).toBe("owner-only")
+  })
+
+  it("keeps legacy ERROR for unrelated messages", () => {
+    expect(rpcErrorCode("boom")).toBe("ERROR")
+  })
+})

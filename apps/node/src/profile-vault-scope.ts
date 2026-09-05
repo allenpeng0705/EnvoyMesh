@@ -47,7 +47,18 @@ export function sanitizeProfileId(profileId: string): string {
     .replace(/-{2,}/g, "-")
     .replace(/^[._-]+|[._-]+$/g, "")
   if (cleaned && cleaned !== "." && cleaned !== "..") {
-    return cleaned.slice(0, 80)
+    const truncated = cleaned.slice(0, 80)
+    // Distinct family ids must never collide on one vault segment: whenever
+    // sanitization altered the raw id (or truncated it), append a deterministic
+    // digest so e.g. "mom" vs "mom!" map to different areas.
+    if (cleaned !== raw || raw.length > 80) {
+      const digest = createHash("sha256")
+        .update(raw || "unknown-profile")
+        .digest("hex")
+        .slice(0, 12)
+      return `${truncated}-${digest}`
+    }
+    return truncated
   }
   const digest = createHash("sha256")
     .update(raw || "unknown-profile")

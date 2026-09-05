@@ -26,6 +26,9 @@ const KNOWN_RPC_ERROR_TOKENS = new Set([
  * before the first `:`) when it is one of the known tokens, else `"ERROR"`.
  */
 export function rpcErrorCode(message: string): string {
+  // Router-level owner denials (requireOwnerProfile) throw this legacy text;
+  // map it to the same catalog token the impl-level EM-P denies use.
+  if (message.startsWith("Only the node owner can")) return "owner-only"
   const colon = message.indexOf(":")
   if (colon > 0) {
     const token = message.slice(0, colon)

@@ -21,10 +21,20 @@ describe("sanitizeProfileId", () => {
     expect(sanitizeProfileId("a.b_c")).toBe("a.b_c")
   })
 
-  it("collapses disallowed characters into single dashes", () => {
-    expect(sanitizeProfileId("my profile!")).toBe("my-profile")
-    expect(sanitizeProfileId("  spaced   out  ")).toBe("spaced-out")
-    expect(sanitizeProfileId("mom & dad")).toBe("mom-dad")
+  it("collapses disallowed characters and appends a collision-safe digest", () => {
+    expect(sanitizeProfileId("my profile!")).toMatch(/^my-profile-[0-9a-f]{12}$/)
+    expect(sanitizeProfileId("  spaced   out  ")).toMatch(/^spaced-out-[0-9a-f]{12}$/)
+    expect(sanitizeProfileId("mom & dad")).toMatch(/^mom-dad-[0-9a-f]{12}$/)
+  })
+
+  it("distinct raw ids never collide on one sanitized segment", () => {
+    const a = sanitizeProfileId("mom")
+    const b = sanitizeProfileId("mom!")
+    const c = sanitizeProfileId("mom.")
+    expect(a).toBe("mom")
+    expect(b).not.toBe(a)
+    expect(c).not.toBe(a)
+    expect(b).not.toBe(c)
   })
 
   it("never returns an empty, dot, or dot-dot segment", () => {
@@ -78,7 +88,7 @@ describe("isFamilyProfileId / familyProfileIdFromCaller", () => {
 describe("profileVaultNotesPrefix", () => {
   it("nests the sanitized profile under notes/veda", () => {
     expect(profileVaultNotesPrefix("mom")).toBe("notes/veda/mom")
-    expect(profileVaultNotesPrefix("sue jane")).toBe("notes/veda/sue-jane")
+    expect(profileVaultNotesPrefix("sue jane")).toMatch(/^notes\/veda\/sue-jane-[0-9a-f]{12}$/)
   })
 })
 

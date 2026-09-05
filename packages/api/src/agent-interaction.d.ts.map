@@ -1,1 +1,0 @@
-{"version":3,"file":"agent-interaction.d.ts","sourceRoot":"","sources":["agent-interaction.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,oBAAoB,EAAE,MAAM,mBAAmB,CAAC;AAE9D,6GAA6G;AAC7G,wBAAgB,yBAAyB,CAAC,KAAK,EAAE;IAC/C,UAAU,EAAE,OAAO,GAAG,OAAO,GAAG,QAAQ,CAAC;IACzC,oBAAoB,EAAE,oBAAoB,GAAG,SAAS,CAAC;IACvD,aAAa,CAAC,EAAE,OAAO,CAAC;CACzB,GAAG,OAAO,CAIV"}

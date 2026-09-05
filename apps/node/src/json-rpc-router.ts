@@ -65,12 +65,16 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "readLocalFileContent",
   "pinLibraryItemExternal",
   "discoverPublishedLibrary",
+  "setLibraryItemPublished",
+  "exportLibraryItemToIpfs",
+  "verifyLibraryItemIpfsGateway",
   "publishWebContentEntry",
   // EM-P: owner-vault/mesh surfaces explicitly denied for family sessions
   // (router gate + catalog `owner-only: …` impl check in node-service-impl).
   "knowledgeQuery",
   "sendChatAttachment",
   "shareFile",
+  "sendChatRoomAttachment",
   "createTerminalSession",
   "renameTerminalSession",
   "listTerminalSessions",

@@ -10332,10 +10332,12 @@ class NodeServiceImpl implements NodeService {
   }
 
   async setLibraryItemPublished(documentId: string, published: boolean): Promise<void> {
+    this._denyFamilySession("library publishing is limited to the node owner");
     return setLibraryItemPublishedViaRuntime(this._fileShareContext(), documentId, published);
   }
 
   async exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult> {
+    this._denyFamilySession("IPFS library export is limited to the node owner");
     return exportLibraryItemToIpfsViaRuntime(this._fileShareContext(), documentId);
   }
 
@@ -10756,6 +10758,7 @@ class NodeServiceImpl implements NodeService {
   async verifyLibraryItemIpfsGateway(
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult> {
+    this._denyFamilySession("IPFS gateway verification is limited to the node owner");
     return verifyLibraryItemIpfsGatewayViaRuntime(this._fileShareContext(), params);
   }
 

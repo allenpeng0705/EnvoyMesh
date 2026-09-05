@@ -150,3 +150,12 @@ describe("isOwnerOnlyRpcMethod", () => {
     ).rejects.toThrow(/Only the node owner/)
   })
 })
+
+describe("EM-P follow-up owner surfaces", () => {
+  it("gates publish/export/room-attachment documentId surfaces as owner-only", () => {
+    expect(isOwnerOnlyRpcMethod("setLibraryItemPublished")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("exportLibraryItemToIpfs")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("verifyLibraryItemIpfsGateway")).toBe(true)
+    expect(isOwnerOnlyRpcMethod("sendChatRoomAttachment")).toBe(true)
+  })
+})
