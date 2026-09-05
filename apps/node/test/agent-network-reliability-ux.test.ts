@@ -51,7 +51,7 @@ function readSlice(path: string, fromLine: number, toLine: number): string {
 
 describe("Phase 61D — reliability UX wiring (source-level)", () => {
   it("chain orchestrator writes reliabilityFallbackLevel onto each ranked worker", () => {
-    const slice = readSlice(ORCHESTRATION, 2470, 2510);
+    const slice = readSlice(ORCHESTRATION, 2620, 2660);
     expect(
       slice,
       "expected the ranked-worker object built in the orchestrator to "
@@ -81,7 +81,7 @@ describe("Phase 61D — reliability UX wiring (source-level)", () => {
   it(
     "Social ChainStartDialog shows the sparse chip when reliabilityFallbackLevel !== 'exact'",
     () => {
-      const slice = readSlice(SOCIAL_DIALOG, 660, 680);
+      const slice = readSlice(SOCIAL_DIALOG, 695, 720);
       expect(
         slice,
         "Social dialog must read `suggested.reliabilityFallbackLevel` and "

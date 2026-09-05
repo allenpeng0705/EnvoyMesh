@@ -46,8 +46,8 @@ import { resolve } from "node:path";
 import { describe, expect, greaterThanOrEqualTo, it } from "vitest";
 
 const IMPL = resolve(__dirname, "../src/node-service-impl.ts");
-const MIN_LINE = 16815; // first line of the recovery outbound loop
-const MAX_LINE = 16860; // after the unsupported continue / request build
+const MIN_LINE = 16615; // first line of the recovery outbound loop
+const MAX_LINE = 16660; // after the unsupported continue / request build
 
 function readImplSlice(): string {
   const text = readFileSync(IMPL, "utf8");
