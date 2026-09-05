@@ -156,6 +156,9 @@ export const zhChainsMessages = {
     provenanceSummaryLine: "{attempts} 次尝试 · {worker} · {state}",
     lastReason: "最近原因：{reason}",
     technicalDetails: "技术细节",
+    artifactGraphTitle: "产物交接",
+    artifactGraphEmpty: "尚无中间产物。",
+    artifactGraphEdge: "{from} → {to}",
     stepState: {
       pending: "等待中",
       offered: "已发出",

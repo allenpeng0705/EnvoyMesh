@@ -266,6 +266,53 @@ export function ChainLiveSteps({
                           {provenance.summary?.lastReason ? (
                             <p>{t("chains.detail.lastReason", { reason: provenance.summary.lastReason })}</p>
                           ) : null}
+                          {provenance.artifactGraph ? (
+                            <div
+                              className="chain-live-steps__artifact-graph"
+                              data-testid={`chain-step-artifact-graph-${step.subtaskId}`}
+                            >
+                              <p className="chain-live-steps__artifact-graph-title">
+                                {t("chains.detail.artifactGraphTitle")}
+                              </p>
+                              {provenance.artifactGraph.edges.length === 0 &&
+                              provenance.artifactGraph.nodes.length === 0 ? (
+                                <p>{t("chains.detail.artifactGraphEmpty")}</p>
+                              ) : (
+                                <ul>
+                                  {provenance.artifactGraph.edges
+                                    .filter(
+                                      (edge) =>
+                                        edge.from.startsWith(`${step.subtaskId}:`) ||
+                                        edge.to.startsWith(`${step.subtaskId}:`),
+                                    )
+                                    .map((edge) => (
+                                      <li key={`${edge.from}->${edge.to}`}>
+                                        <code>
+                                          {t("chains.detail.artifactGraphEdge", {
+                                            from: edge.from,
+                                            to: edge.to,
+                                          })}
+                                          {edge.key ? ` · ${edge.key}` : ""}
+                                        </code>
+                                      </li>
+                                    ))}
+                                  {provenance.artifactGraph.nodes
+                                    .filter((n) => n.subtaskId === step.subtaskId)
+                                    .map((n) => (
+                                      <li key={n.id}>
+                                        <code>
+                                          {n.artifactKey}
+                                          {n.kind ? ` (${n.kind})` : ""}
+                                          {n.contentHash
+                                            ? ` · ${n.contentHash.slice(0, 12)}…`
+                                            : ""}
+                                        </code>
+                                      </li>
+                                    ))}
+                                </ul>
+                              )}
+                            </div>
+                          ) : null}
                           <details className="chain-live-steps__technical">
                             <summary>{t("chains.detail.technicalDetails")}</summary>
                             <ul data-testid={`chain-step-provenance-events-${step.subtaskId}`}>

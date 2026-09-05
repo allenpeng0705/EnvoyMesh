@@ -99,6 +99,12 @@ import {
   jobInputsReadyForAward,
 } from "./chain-input-delivery-runtime.js";
 import {
+  buildIntermediateFileArtifacts,
+  intermediateArtifactsReadyForAward,
+  preferDeliveredFileArtifacts,
+  registerArtifactsFromFinalPartial,
+} from "./chain-artifact-transfer.js";
+import {
   cancelHedgedSpeculation,
   clearSpeculativeSibling,
   ingestSpeculativePartial,
@@ -250,6 +256,13 @@ export interface ChainOrchestratorHandlerDeps extends ChainOrchestratorSendDeps 
     workerPeerId: string,
   ) => void | Promise<void>;
   /**
+   * Phase 65C — persist staged intermediate blobs under `out/` after a parent final.
+   */
+  onParentArtifactsStaged?: (
+    state: ChainState,
+    records: import("@envoymesh/api").ChainArtifactDeliveryRecord[],
+  ) => void | Promise<void>;
+  /**
    * Phase 41 / MAP — orchestrator-side verification loop (design §8.3). When
    * present, `handleOrchestratorPartial` records verdicts on final partials
    * and escalates to cross-agent verification on `partial`/`disputed` rule
@@ -380,6 +393,8 @@ export interface ChainState {
   inputDeliveries?: import("@envoymesh/api").ChainInputDeliveryRecord[];
   /** Phase 59 — delivery policy (defaults from 59A lock). */
   inputDeliveryPolicy?: import("@envoymesh/api").ChainInputDeliveryPolicy;
+  /** Phase 65C — intermediate artifact ledger (stage + per-worker delivery). */
+  artifactDeliveries?: import("@envoymesh/api").ChainArtifactDeliveryRecord[];
   /** Phase 60A — each award/replacement is a distinct execution attempt. */
   attempts: Map<string, ChainAttemptState>;
   /** Compatibility projection: selected/current attempt for each subtask. */
@@ -455,6 +470,7 @@ export function createChainState(
     awardMode: opts?.awardMode === "direct" ? "direct" : "competitive",
     inputAttachments,
     inputDeliveries: [],
+    artifactDeliveries: [],
     inputDeliveryPolicy: {
       ...DEFAULT_CHAIN_INPUT_DELIVERY_POLICY,
       ...(opts?.inputDeliveryScope === "all" || opts?.inputDeliveryScope === "referenced"
@@ -1219,10 +1235,30 @@ export async function directAwardSubtask(
     });
     return { ok: false, reason: inputsReady.reason };
   }
+  const artsReady = intermediateArtifactsReadyForAward(state, subtaskId, workerPeerId);
+  if (!artsReady.ok) {
+    updateCurrentAttempt(state, subtaskId, "lost", artsReady.reason, now);
+    await state.ledger.release(subtaskId, artsReady.reason);
+    state.awards.delete(subtaskId);
+    state.awardedAt.delete(subtaskId);
+    state.bids.delete(`${subtaskId}::${workerPeerId}`);
+    deps.audit.record({
+      type: "chain.awarded",
+      outcome: "deny",
+      intent: "task.chain.accept",
+      correlationId: state.chainId,
+      summary:
+        `artifact_delivery_block subtask=${subtaskId.slice(0, 12)}` +
+        ` worker=${workerPeerId.slice(0, 14)} reason=${artsReady.reason}`,
+    });
+    return { ok: false, reason: artsReady.reason };
+  }
 
   const prepared = prepareSubtaskPropose(state, subtask);
+  const interArts = buildIntermediateFileArtifacts(state, subtaskId, workerPeerId);
+  const preferred = preferDeliveredFileArtifacts(prepared.inputArtifacts, interArts);
   const jobArts = buildJobInputFileArtifacts(state, subtaskId, workerPeerId) as NamedArtifact[];
-  const inputArtifacts = mergeProposeInputArtifacts(prepared.inputArtifacts, jobArts);
+  const inputArtifacts = mergeProposeInputArtifacts(preferred, jobArts);
   const sent = await sendChainAccept(
     deps,
     workerPeerId,
@@ -1430,13 +1466,36 @@ export async function retryStaleAccepts(
       });
       continue;
     }
+    const artsReady = intermediateArtifactsReadyForAward(
+      state,
+      subtaskId,
+      award.workerPeerId,
+    );
+    if (!artsReady.ok) {
+      deps.audit.record({
+        type: "chain.awarded",
+        outcome: "deny",
+        intent: "task.chain.accept",
+        correlationId: state.chainId,
+        summary:
+          `accept_resend_blocked subtask=${subtaskId.slice(0, 12)}` +
+          ` reason=${artsReady.reason}`,
+      });
+      continue;
+    }
     const parentArts = subtask ? buildInputArtifacts(state, subtask) : undefined;
+    const interArts = buildIntermediateFileArtifacts(
+      state,
+      subtaskId,
+      award.workerPeerId,
+    );
+    const preferred = preferDeliveredFileArtifacts(parentArts, interArts);
     const jobArts = buildJobInputFileArtifacts(
       state,
       subtaskId,
       award.workerPeerId,
     ) as NamedArtifact[];
-    const inputArtifacts = mergeProposeInputArtifacts(parentArts, jobArts);
+    const inputArtifacts = mergeProposeInputArtifacts(preferred, jobArts);
     const ok = await sendChainAccept(
       deps,
       award.workerPeerId,
@@ -1726,7 +1785,9 @@ export type EvaluateBidsResult =
         | "cancelled"
         | "max_rounds_exceeded"
         | "input_delivery_pending"
-        | "input_delivery_failed";
+        | "input_delivery_failed"
+        | "artifact_delivery_pending"
+        | "artifact_delivery_failed";
     };
 
 export async function evaluateBids(
@@ -2672,6 +2733,25 @@ export async function handleOrchestratorPartial(
       );
       if (speculationBlocksAdvance(speculationAfterVerify.reason)) {
         return { ok: true };
+      }
+    }
+    // Phase 65C — stage parent finals for child workers before dependents advance.
+    const staged = registerArtifactsFromFinalPartial(state, payload.partial, now);
+    if (staged.length > 0) {
+      state.journalEvent?.("artifact.staged", {
+        subtaskId,
+        artifactIds: staged.map((r) => r.artifactKey),
+        contentHashes: staged.map((r) => r.contentHash),
+      });
+      if (deps.onParentArtifactsStaged) {
+        try {
+          await deps.onParentArtifactsStaged(state, staged);
+        } catch (err) {
+          console.warn(
+            `[chain.artifact] persist staged failed for ${state.chainId}/${subtaskId}:`,
+            err,
+          );
+        }
       }
     }
     await advanceReadySubtasks(deps, state);

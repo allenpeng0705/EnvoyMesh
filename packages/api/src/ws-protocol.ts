@@ -2102,6 +2102,8 @@ export interface ChainGetStepProvenanceResult {
     lastReason?: string;
   };
   events: ChainStepProvenanceEvent[];
+  /** Phase 65C — soft parent→child artifact handoff graph for this job. */
+  artifactGraph?: import("./chain-artifact-delivery.js").ChainArtifactGraph;
 }
 
 export interface ChainGetStateResult {
@@ -2227,6 +2229,10 @@ export interface ChainGetStateResult {
    * (`pending` → `verified` / `failed`).
    */
   inputDeliveries?: import("./chain-input-delivery.js").ChainInputDeliveryRecord[];
+  /**
+   * Phase 65C — intermediate artifact stage + per-worker delivery ledger.
+   */
+  artifactDeliveries?: import("./chain-artifact-delivery.js").ChainArtifactDeliveryRecord[];
   /**
    * Phase 59D — job input delivery policy (scope / auto / gc).
    */

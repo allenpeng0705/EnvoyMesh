@@ -32,6 +32,11 @@ import {
   jobInputsReadyForAward,
 } from "./chain-input-delivery-runtime.js";
 import {
+  buildIntermediateFileArtifacts,
+  intermediateArtifactsReadyForAward,
+  preferDeliveredFileArtifacts,
+} from "./chain-artifact-transfer.js";
+import {
   createSpeculativeAttempt,
   decideSpeculationForSubtask,
   selectAmongSpeculativeFinals,
@@ -258,6 +263,18 @@ async function launchSpeculativeSiblingAward(
     attempt.updatedAt = now.toISOString();
     return { launched: false, reason: inputsReady.reason };
   }
+  const artsReady = intermediateArtifactsReadyForAward(
+    state,
+    subtaskId,
+    speculativeWorker,
+  );
+  if (!artsReady.ok) {
+    await state.ledger.release(ledgerKey, artsReady.reason);
+    attempt.state = "lost";
+    attempt.lastReason = artsReady.reason;
+    attempt.updatedAt = now.toISOString();
+    return { launched: false, reason: artsReady.reason };
+  }
 
   const subtask = state.subtasks.get(subtaskId);
   if (!subtask) {
@@ -268,8 +285,14 @@ async function launchSpeculativeSiblingAward(
   }
 
   const prepared = prepareSubtaskPropose(state, subtask);
+  const interArts = buildIntermediateFileArtifacts(
+    state,
+    subtaskId,
+    speculativeWorker,
+  );
+  const preferred = preferDeliveredFileArtifacts(prepared.inputArtifacts, interArts);
   const jobArts = buildJobInputFileArtifacts(state, subtaskId, speculativeWorker) as NamedArtifact[];
-  const inputArtifacts = mergeProposeInputArtifacts(prepared.inputArtifacts, jobArts);
+  const inputArtifacts = mergeProposeInputArtifacts(preferred, jobArts);
   const sent = await sendChainAccept(deps, speculativeWorker, award, prepared.subtask, inputArtifacts);
   if (!sent) {
     await state.ledger.release(ledgerKey, "speculative_accept_send_failed");

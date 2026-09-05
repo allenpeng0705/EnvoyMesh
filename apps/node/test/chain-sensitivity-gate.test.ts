@@ -8,6 +8,7 @@ import {
   MIN_REP_FOR_SENSITIVITY,
   MIN_VERDICTS_FOR_PRIVATE,
   bondMaxSensitivity,
+  chainArtifactPathWithinJobWorkspace,
   requiresChainAwardApproval,
   requiresReputationApproval,
 } from "../src/chain-sensitivity-gate.js";
@@ -87,5 +88,12 @@ describe("requiresReputationApproval (Phase 41 progressive trust)", () => {
 
   it("thresholds are exposed for tooling", () => {
     expect(MIN_REP_FOR_SENSITIVITY).toEqual({ public: 0, friends: 0.6, private: 0.85 });
+  });
+
+  it("Phase 65C confines intermediate artifact paths to the job workspace", () => {
+    expect(
+      chainArtifactPathWithinJobWorkspace("c1", "imports/team-jobs/c1/out/x.txt"),
+    ).toBe(true);
+    expect(chainArtifactPathWithinJobWorkspace("c1", "notes/x.txt")).toBe(false);
   });
 });

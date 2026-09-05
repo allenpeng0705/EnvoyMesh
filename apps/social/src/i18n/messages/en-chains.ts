@@ -159,6 +159,9 @@ export const chainsMessages = {
     provenanceSummaryLine: "{attempts} attempt(s) · {worker} · {state}",
     lastReason: "Last reason: {reason}",
     technicalDetails: "Technical details",
+    artifactGraphTitle: "Artifact handoff",
+    artifactGraphEmpty: "No intermediate artifacts yet.",
+    artifactGraphEdge: "{from} → {to}",
     stepState: {
       pending: "Pending",
       offered: "Offered",

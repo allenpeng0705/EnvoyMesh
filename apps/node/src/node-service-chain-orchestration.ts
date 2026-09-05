@@ -76,6 +76,13 @@ import {
   gcChainInputWorkspace,
 } from "./chain-input-delivery-runtime.js";
 import {
+  buildIntermediateFileArtifacts,
+  deliverIntermediateArtifactsOnAward,
+  intermediateArtifactsReadyForAward,
+  persistStagedArtifactsToVault,
+  preferDeliveredFileArtifacts,
+} from "./chain-artifact-transfer.js";
+import {
   maybeScheduleSpeculationAfterAward,
   ownerPickSpeculativeAttempt,
   clearSpeculativeSibling,
@@ -907,13 +914,21 @@ export async function _chainTransportResolver(
     resolveDialHints: async (transportPeerId) => {
       try {
         const store = deps.getPeerDirectoryStore();
+        const records = await store.listPeerRecords();
         const match =
           (await store.getPeerByPeerId?.(transportPeerId)) ??
-          (await store.listPeerRecords()).find((r) => r.peerId === transportPeerId);
-        return (match?.listenAddrs ?? []).filter((a) => a.trim().length > 0);
+          records.find((r) => r.peerId === transportPeerId);
+        const fromDir = (match?.listenAddrs ?? []).filter((a) => a.trim().length > 0);
+        if (fromDir.length > 0) return fromDir;
+        // Owner-row fallback when peerId lookup misses but listen addrs exist.
+        for (const rec of records) {
+          const addrs = (rec.listenAddrs ?? []).filter((a) => a.trim().length > 0);
+          if (addrs.length > 0 && rec.peerId === transportPeerId) return addrs;
+        }
       } catch {
-        return [];
+        /* ignore */
       }
+      return [];
     },
   };
 }
@@ -1897,6 +1912,11 @@ export async function buildChainOrchestratorDeps(
     },
     llmDecompose,
     llmMerge: await buildLlmMergeAsync(deps),
+    onParentArtifactsStaged: async (_state, records) => {
+      const vaultDir = deps.getVaultDir();
+      if (!vaultDir || records.length === 0) return;
+      await persistStagedArtifactsToVault({ vaultDir, records });
+    },
     onAwardAccepted: async (state, subtaskId, workerPeerId) => {
       const vaultDir = deps.getVaultDir();
       const mesh = deps.getReachableMesh();
@@ -1910,6 +1930,63 @@ export async function buildChainOrchestratorDeps(
         !isSelf && transport
           ? await resolveChainTransportPeerId(transport, workerPeerId)
           : null;
+      const pushFile =
+        mesh && taskStore && profile
+          ? async ({
+              sourceRelativePath,
+              voucherRelativePath,
+              toPeerId,
+              chainId,
+              expiresAt,
+            }: {
+              sourceRelativePath: string;
+              voucherRelativePath: string;
+              toPeerId: string;
+              chainId: string;
+              expiresAt: string;
+            }) => {
+              const dialHints = transport?.resolveDialHints
+                ? await transport.resolveDialHints(toPeerId)
+                : [];
+              // Prefer a concrete listen multiaddr when available (phase13 /
+              // LAN). Bare libp2p peer ids often fail prepareOutbound for
+              // ENVOY_DATA_PROTOCOL even when envelope dial works.
+              const dialTarget = dialHints.find((a) => a.includes("/")) ?? toPeerId;
+              return sendVaultFileViaDataTransfer({
+                mesh,
+                profile,
+                taskStore,
+                vaultDir,
+                relativePath: sourceRelativePath,
+                voucherRelativePath,
+                expiresAt,
+                toPeerId: dialTarget,
+                dialHints,
+                rebuildDialHints: transport?.resolveDialHints
+                  ? () => transport.resolveDialHints!(toPeerId)
+                  : undefined,
+                transferHooks: {
+                  correlationId: chainId,
+                  onUpdate: () => {
+                    /* TransferTracker optional; ledger is source of truth */
+                  },
+                },
+              });
+            }
+          : undefined;
+      // Phase 65C — intermediate parent blobs before Phase 59 composer inputs.
+      await deliverIntermediateArtifactsOnAward({
+        state,
+        subtaskId,
+        workerPeerId,
+        orchestratorPeerId: agentIdentity.agentPeerId,
+        vaultDir,
+        transportPeerId: transportPeerId ?? undefined,
+        copyLocal: async ({ sourceRelativePath, deliveredRelativePath }) =>
+          copyChainInputInVault({ vaultDir, sourceRelativePath, deliveredRelativePath }),
+        pushFile,
+        onUpdate: () => _emitChainState(deps, state.chainId),
+      });
       await deliverChainInputsOnAward({
         state,
         subtaskId,
@@ -1918,40 +1995,7 @@ export async function buildChainOrchestratorDeps(
         transportPeerId: transportPeerId ?? undefined,
         copyLocal: async ({ sourceRelativePath, deliveredRelativePath }) =>
           copyChainInputInVault({ vaultDir, sourceRelativePath, deliveredRelativePath }),
-        pushFile:
-          mesh && taskStore && profile
-            ? async ({
-                sourceRelativePath,
-                voucherRelativePath,
-                toPeerId,
-                chainId,
-                expiresAt,
-              }) => {
-                const dialHints = transport?.resolveDialHints
-                  ? await transport.resolveDialHints(toPeerId)
-                  : [];
-                return sendVaultFileViaDataTransfer({
-                  mesh,
-                  profile,
-                  taskStore,
-                  vaultDir,
-                  relativePath: sourceRelativePath,
-                  voucherRelativePath,
-                  expiresAt,
-                  toPeerId,
-                  dialHints,
-                  rebuildDialHints: transport?.resolveDialHints
-                    ? () => transport.resolveDialHints!(toPeerId)
-                    : undefined,
-                  transferHooks: {
-                    correlationId: chainId,
-                    onUpdate: () => {
-                      /* TransferTracker optional for 59B; state.inputDeliveries is source of truth */
-                    },
-                  },
-                });
-              }
-            : undefined,
+        pushFile,
         onUpdate: () => _emitChainState(deps, state.chainId),
       });
     },
@@ -2843,17 +2887,42 @@ export async function _evaluateAwardAndAccept(
     _emitChainState(deps, chainId);
     return { ok: false, reason: inputsReady.reason };
   }
+  const artsReady = intermediateArtifactsReadyForAward(
+    runtime.state,
+    subtaskId,
+    result.bid.workerPeerId,
+  );
+  if (!artsReady.ok) {
+    await _rollbackSubtaskAward(runtime.state, subtaskId);
+    orchDeps.audit.record({
+      type: "chain.awarded",
+      outcome: "deny",
+      intent: "task.chain.accept",
+      correlationId: chainId,
+      summary:
+        `artifact_delivery_block subtask=${subtaskId} worker=${result.bid.workerPeerId}` +
+        ` reason=${artsReady.reason}`,
+    });
+    _emitChainState(deps, chainId);
+    return { ok: false, reason: artsReady.reason };
+  }
 
   const parentArts =
     subtask && subtask.dependsOn.length > 0
       ? buildInputArtifacts(runtime.state, subtask)
       : undefined;
+  const interArts = buildIntermediateFileArtifacts(
+    runtime.state,
+    subtaskId,
+    result.bid.workerPeerId,
+  );
+  const preferred = preferDeliveredFileArtifacts(parentArts, interArts);
   const jobArts = buildJobInputFileArtifacts(
     runtime.state,
     subtaskId,
     result.bid.workerPeerId,
   ) as import("@envoymesh/protocol").NamedArtifact[];
-  const inputArtifacts = mergeProposeInputArtifacts(parentArts, jobArts);
+  const inputArtifacts = mergeProposeInputArtifacts(preferred, jobArts);
   let acceptOk = await sendChainAccept(
     orchDeps,
     result.bid.workerPeerId,
@@ -3192,6 +3261,7 @@ export async function retryInputDeliveryOwnerAction(
               const dialHints = transport?.resolveDialHints
                 ? await transport.resolveDialHints(toPeerId)
                 : [];
+              const dialTarget = dialHints.find((a) => a.includes("/")) ?? toPeerId;
               return sendVaultFileViaDataTransfer({
                 mesh,
                 profile,
@@ -3200,7 +3270,7 @@ export async function retryInputDeliveryOwnerAction(
                 relativePath: sourceRelativePath,
                 voucherRelativePath,
                 expiresAt,
-                toPeerId,
+                toPeerId: dialTarget,
                 dialHints,
                 rebuildDialHints: transport?.resolveDialHints
                   ? () => transport.resolveDialHints!(toPeerId)

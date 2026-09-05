@@ -69,6 +69,22 @@ export function requiresChainAwardApproval(
 }
 
 /**
+ * Phase 65C — intermediate artifacts inherit mandate `maxSensitivity` (same
+ * award gate as `requiresChainAwardApproval`). Paths must stay under the
+ * job-scoped workspace — not arbitrary vault mirror.
+ */
+export function chainArtifactPathWithinJobWorkspace(
+  chainId: string,
+  relativePath: string,
+): boolean {
+  const norm = relativePath.replace(/\\/g, "/").replace(/^[\\/]+/, "");
+  if (!norm || norm.includes("..") || norm.startsWith("/")) return false;
+  const id = chainId.trim();
+  if (!id) return false;
+  return norm.startsWith(`imports/team-jobs/${id}/`);
+}
+
+/**
  * Reputation-as-gate (Phase 41, design §7.4). `workerRuntime` is only used to
  * make the reason string precise; `workerReputation` and `workerVerdictCount`
  * are the (peer, runtime, skill)-scoped values from the 3-tuple book.

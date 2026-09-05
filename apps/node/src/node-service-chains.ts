@@ -38,6 +38,7 @@ import {
 } from "./chain-defaults.js";
 import { formatPlanWarningDiagnostics } from "./chain-plan-assign.js";
 import { chainCostsToCsv } from "./chain-cost-export.js";
+import { buildArtifactGraph } from "./chain-artifact-transfer.js";
 import { classifySpeculativeFinalSelection } from "./chain-speculation.js";
 import { isFailedWorkerFinalPartial } from "./chain-orchestrator.js";
 import type {
@@ -761,6 +762,7 @@ export function chainGetStateViaRuntime(
   result.steps = buildChainLiveSteps(entry.state);
   result.inputAttachments = entry.state.inputAttachments;
   result.inputDeliveries = entry.state.inputDeliveries;
+  result.artifactDeliveries = entry.state.artifactDeliveries;
   result.inputDeliveryPolicy = entry.state.inputDeliveryPolicy;
   result.provenanceSummary = buildCompactProvenanceSummary(entry.state, ctx.store.getJournalProjection(params.chainId));
   result.speculationReview = buildSpeculationReviewPending(entry.state);
@@ -941,6 +943,7 @@ export async function chainGetStepProvenanceViaRuntime(
       ...(projected?.lastReason ? { lastReason: projected.lastReason } : {}),
     },
     events,
+    ...(entry ? { artifactGraph: buildArtifactGraph(entry.state) } : {}),
   };
 }
 
@@ -961,6 +964,7 @@ export function chainListActiveViaRuntime(
       snap.steps = buildChainLiveSteps(entry.state);
       snap.inputAttachments = entry.state.inputAttachments;
       snap.inputDeliveries = entry.state.inputDeliveries;
+      snap.artifactDeliveries = entry.state.artifactDeliveries;
       snap.inputDeliveryPolicy = entry.state.inputDeliveryPolicy;
       snap.provenanceSummary = buildCompactProvenanceSummary(entry.state, ctx.store.getJournalProjection(chainId));
       const side = ctx.getChainSideState?.();
