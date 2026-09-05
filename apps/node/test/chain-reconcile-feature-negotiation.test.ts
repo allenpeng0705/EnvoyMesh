@@ -46,13 +46,22 @@ import { resolve } from "node:path";
 import { describe, expect, greaterThanOrEqualTo, it } from "vitest";
 
 const IMPL = resolve(__dirname, "../src/node-service-impl.ts");
-const MIN_LINE = 16789; // first line of the recovery outbound loop (shifted by EM-2..EM-R handler additions)
-const MAX_LINE = 16832; // after the unsupported continue / request build (shifted by EM-2..EM-R handler additions)
 
+/**
+ * The recovery outbound loop moves whenever node-service-impl.ts grows (any
+ * handler addition shifts it), so slice ANCHOR-BASED instead of by fixed line
+ * numbers: start at the `reclaimSeed` marker that guards the loop and read the
+ * following ~64 lines, which always contain the feature-negotiation block.
+ */
 function readImplSlice(): string {
   const text = readFileSync(IMPL, "utf8");
   const lines = text.split("\n");
-  return lines.slice(MIN_LINE - 1, MAX_LINE).join("\n");
+  const marker = "const reclaimSeed = side.reclaimSeedChains.has(chainId);";
+  const markerIdx = lines.findIndex((l) => l.includes(marker));
+  if (markerIdx < 0) {
+    throw new Error("reconcile marker not found in node-service-impl.ts");
+  }
+  return lines.slice(markerIdx, Math.min(lines.length, markerIdx + 64)).join("\n");
 }
 
 describe("chain-reconcile-v1 feature negotiation (Phase 60D source-level guard)", () => {
