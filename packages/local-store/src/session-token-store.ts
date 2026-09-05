@@ -55,6 +55,13 @@ export interface SessionTokenStore {
   setToken(record: SessionTokenRecord): Promise<void>;
   /** Remove the session token for a specific device. */
   removeTokenByDeviceId(deviceId: string): Promise<void>;
+  /**
+   * EM-R — remove every token record for a specific deviceId and return what
+   * was removed (so callers of `revokeThinClient` know which devices were
+   * actually revoked and which profiles they were locked to). Resolves [] when
+   * no record matched.
+   */
+  removeTokensForDeviceId(deviceId: string): Promise<SessionTokenRecord[]>;
   /** Remove all tokens for a given ownerId (e.g. when bond is revoked). */
   removeTokensForOwner(ownerId: string): Promise<void>;
   /** Phase 51 — remove all tokens locked to a family profile id. */
@@ -177,6 +184,16 @@ export function createSessionTokenStore(profileDir: string): SessionTokenStore {
       await serialised<void>(async (records) => {
         const filtered = records.filter((r) => r.deviceId !== deviceId);
         return { records: filtered, result: undefined };
+      });
+    },
+
+    async removeTokensForDeviceId(deviceId: string): Promise<SessionTokenRecord[]> {
+      const did = deviceId.trim();
+      if (!did) return [];
+      return serialised<SessionTokenRecord[]>(async (records) => {
+        const removed = records.filter((r) => r.deviceId === did);
+        const filtered = records.filter((r) => r.deviceId !== did);
+        return { records: filtered, result: removed };
       });
     },
 

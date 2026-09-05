@@ -241,6 +241,8 @@ import type {
   PairThinClientResult,
   RepairSessionProfileParams,
   RepairSessionProfileResult,
+  RevokeThinClientParams,
+  RevokeThinClientResult,
   UpdateMyListenAddrsParams,
   UpdateMyListenAddrsResult,
   ListAuthorizedDevicesResult,
@@ -3545,6 +3547,17 @@ export interface NodeService {
   repairSessionProfile(
     params: RepairSessionProfileParams,
   ): Promise<RepairSessionProfileResult>;
+
+  /**
+   * EM-R — revoke a paired thin-client device (docs/envoy-home-side-plan.md
+   * §1.6, thin-client-protocol v0.3 §5). Omit `deviceId` to revoke the
+   * caller's own device (any paired session may self-revoke); pass `deviceId`
+   * to revoke that device — owner-only, family/profile sessions may only
+   * revoke themselves. Revoking removes the device's session token(s) from
+   * the node's session-token store and force-closes any live WebSocket for
+   * that device.
+   */
+  revokeThinClient(params: RevokeThinClientParams): Promise<RevokeThinClientResult>;
 
   /**
    * Mobile → Home: Share the mobile's reachable listen addresses (from UPnP).

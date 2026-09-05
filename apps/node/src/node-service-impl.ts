@@ -406,6 +406,7 @@ import {
   generateFamilyInviteTokenViaRuntime,
   toFamilyProfile,
 } from "./node-service-family.js";
+import { revokeThinClientViaRuntime } from "./node-service-revoke-thin-client.js";
 import {
   shopGetProfileViaRuntime,
   shopUpdateProfileViaRuntime,
@@ -15325,6 +15326,27 @@ class NodeServiceImpl implements NodeService {
     return { ok: true, profileId: requested, isOwnerProfile: false };
   }
 
+  /**
+   * EM-R — revoke a paired thin-client device (envoy-home-side-plan §1.6,
+   * thin-client-protocol v0.3 §5). Omit `deviceId` to revoke the caller's own
+   * device; pass `deviceId` to revoke another device (owner-only — the router
+   * intentionally does NOT gate this RPC so family sessions can self-revoke).
+   * Removes the device's session tokens and force-closes its live WS via the
+   * WsServer binding.
+   */
+  async revokeThinClient(
+    params: import("@envoymesh/api").RevokeThinClientParams,
+  ): Promise<import("@envoymesh/api").RevokeThinClientResult> {
+    return revokeThinClientViaRuntime(
+      {
+        sessionTokenStore: this._sessionTokenStore,
+        disconnectClientsForDevice: (deviceId) =>
+          this._disconnectClientsForDevice?.(deviceId) ?? 0,
+      },
+      params,
+    );
+  }
+
   async listAuthorizedDevices(): Promise<ListAuthorizedDevicesResult> {
     if (!this._deviceAuthorizationStore) {
       return { devices: [] };
@@ -16170,6 +16192,8 @@ class NodeServiceImpl implements NodeService {
    */
   private _thinClientOnlineCheck: ((ownerId: string) => boolean) | null = null;
   private _disconnectClientsForProfile: ((profileId: string) => number) | null = null;
+  /** EM-R — force-close thin-client WebSockets for one device (revokeThinClient). */
+  private _disconnectClientsForDevice: ((deviceId: string) => number) | null = null;
 
   /** Wire the thin-client WS presence check used by push skip-if-online. */
   bindThinClientOnlineCheck(check: (ownerId: string) => boolean): void {
@@ -16187,6 +16211,14 @@ class NodeServiceImpl implements NodeService {
    */
   bindDisconnectClientsForProfile(fn: (profileId: string) => number): void {
     this._disconnectClientsForProfile = fn;
+  }
+
+  /**
+   * EM-R — force-close thin-client WebSockets for a device (revokeThinClient).
+   * Bound from index.ts to WsServer.disconnectClientsForDevice.
+   */
+  bindDisconnectClientsForDevice(fn: (deviceId: string) => number): void {
+    this._disconnectClientsForDevice = fn;
   }
 
   /**

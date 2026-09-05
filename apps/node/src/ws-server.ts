@@ -424,6 +424,31 @@ export class WsServer {
   }
 
   /**
+   * EM-R — force-close authenticated WebSockets bound to a thin-client
+   * deviceId (after `revokeThinClient`). Returns how many sockets were closed.
+   */
+  disconnectClientsForDevice(deviceId: string): number {
+    const target = deviceId.trim();
+    if (!target) return 0;
+    const toClose: WebSocket[] = [];
+    for (const [ws, session] of this.authenticatedSessions) {
+      if (session.deviceId === target) toClose.push(ws);
+    }
+    for (const ws of toClose) {
+      try {
+        ws.close(4001, "device revoked");
+      } catch {
+        try {
+          ws.terminate();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    return toClose.length;
+  }
+
+  /**
    * True when EnvoyGo is connected AND recently sent an RPC (default 20s).
    * Used for chat/bond/feed push skip-if-online — a zombie background WS
    * without recent RPCs must NOT suppress pushes (iOS suspends JS; the

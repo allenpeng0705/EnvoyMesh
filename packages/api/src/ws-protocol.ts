@@ -401,6 +401,7 @@ export type RpcMethods =
   | "pairSharedIdentity"
   | "pairWithHomeNode"
   | "pairThinClient"
+  | "revokeThinClient"
   | "previewFamilyInvite"
   | "repairSessionProfile"
   | "updateMyListenAddrs"
@@ -1146,6 +1147,25 @@ export interface RepairSessionProfileResult {
   ok: true;
   profileId: string;
   isOwnerProfile: boolean;
+}
+
+/**
+ * EM-R — revoke a paired thin-client device (docs/envoy-home-side-plan.md §1.6,
+ * thin-client-protocol v0.3 §5). Omit `deviceId` to revoke the caller's own
+ * device (any paired session may do this). Provide `deviceId` to revoke
+ * another device — owner-only: family/profile sessions may only revoke
+ * themselves.
+ */
+export interface RevokeThinClientParams {
+  /** Target device to revoke; omit to revoke the caller's own device. */
+  deviceId?: string;
+}
+
+/** Result of `revokeThinClient`. Only actually-revoked devices are listed. */
+export interface RevokeThinClientResult {
+  ok: true;
+  /** Devices whose session tokens were removed and/or whose WS was force-closed. */
+  revokedDeviceIds: string[];
 }
 
 /**

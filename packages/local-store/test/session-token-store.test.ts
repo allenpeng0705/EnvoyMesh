@@ -144,6 +144,49 @@ describe("session token store", () => {
     expect(await store.getTokenByValue("tok-tablet")).toBeDefined();
   });
 
+  it("removeTokensForDeviceId removes the matching device and returns the removed records", async () => {
+    const store = createSessionTokenStore(dir);
+    await store.setToken(record({
+      ownerId: "envoy:owner:alice",
+      deviceId: "envoy:device:phone",
+      profileId: "owner",
+      token: "tok-phone",
+    }));
+    await store.setToken(record({
+      ownerId: "envoy:owner:alice",
+      deviceId: "envoy:device:tablet",
+      profileId: "mom",
+      token: "tok-tablet",
+    }));
+
+    const removed = await store.removeTokensForDeviceId("envoy:device:phone");
+
+    expect(removed).toHaveLength(1);
+    expect(removed[0].token).toBe("tok-phone");
+    expect(removed[0].profileId).toBe("owner");
+    expect(await store.getTokenByValue("tok-phone")).toBeUndefined();
+    expect(await store.getTokenByValue("tok-tablet")).toBeDefined();
+  });
+
+  it("removeTokensForDeviceId resolves [] when no record matches", async () => {
+    const store = createSessionTokenStore(dir);
+    await store.setToken(record());
+
+    const removed = await store.removeTokensForDeviceId("envoy:device:unknown");
+
+    expect(removed).toEqual([]);
+    expect(await store.listTokens()).toHaveLength(1);
+  });
+
+  it("removeTokensForDeviceId is a no-op for blank device ids", async () => {
+    const store = createSessionTokenStore(dir);
+    await store.setToken(record());
+
+    expect(await store.removeTokensForDeviceId("   ")).toEqual([]);
+    expect(await store.removeTokensForDeviceId("")).toEqual([]);
+    expect(await store.listTokens()).toHaveLength(1);
+  });
+
   it("removeTokensForOwner is a no-op when owner has no tokens", async () => {
     const store = createSessionTokenStore(dir);
     await store.setToken(record());

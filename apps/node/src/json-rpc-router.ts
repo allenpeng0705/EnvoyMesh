@@ -1252,6 +1252,13 @@ export async function routeRpcMethod(
       return ns.repairSessionProfile({
         profileId: String(params.profileId ?? ""),
       });
+    case "revokeThinClient":
+      // NOT owner-only at the router gate: self-revoke must work for any
+      // paired session. The handler enforces owner-only for a provided
+      // (other-device) deviceId.
+      return ns.revokeThinClient(
+        params as unknown as import("@envoymesh/api").RevokeThinClientParams,
+      );
     case "previewFamilyInvite":
       return ns.previewFamilyInvite({
         pairingToken: String(params.pairingToken ?? ""),

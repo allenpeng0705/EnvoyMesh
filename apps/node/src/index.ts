@@ -523,6 +523,9 @@ if (nodeService instanceof NodeServiceImpl) {
   nodeService.bindDisconnectClientsForProfile((profileId) =>
     wsServerForEvents?.disconnectClientsForProfile(profileId) ?? 0,
   );
+  nodeService.bindDisconnectClientsForDevice((deviceId) =>
+    wsServerForEvents?.disconnectClientsForDevice(deviceId) ?? 0,
+  );
   nodeService.bindCliTaskStore(taskStore);
   nodeService.bindApprovalQueue(approvalQueue);
   const nodeConfig = await nodeService.getNodeConfig();
