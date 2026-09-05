@@ -64,10 +64,14 @@ import { AgentAttachmentChips } from "../AgentAttachmentChips.js";
 import { mergeAgentPromptWithAttachments, toAgentAttachmentRefs, attachmentBasename } from "../../lib/agent-attachments.js";
 import { useAgentDraftAttachments } from "../../hooks/useAgentDraftAttachments.js";
 import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeading.js";
+import { ChatTeamJobEntry } from "../ChatTeamJobEntry.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
   onSelectContact: (id: string | null) => void;
+  onOpenChains?: () => void;
+  onOpenSettingsAi?: () => void;
+  onOpenDiscover?: () => void;
 }
 
 function fmtDateLabel(dateStr: string, t: TFunction): string {
@@ -97,7 +101,13 @@ function isPendingOutgoing(msg: ChatMessage): boolean {
   return msg.messageId.startsWith("pending-") || msg.metadata.deliveryReceipt === "pending";
 }
 
-export function ContactChatPanel({ selectedContact, onSelectContact }: ContactChatPanelProps) {
+export function ContactChatPanel({
+  selectedContact,
+  onSelectContact,
+  onOpenChains,
+  onOpenSettingsAi,
+  onOpenDiscover,
+}: ContactChatPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
   const wsTransportOpen = useTransportWsOpen();
@@ -1019,6 +1029,15 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     Boolean(bonds.find((c) => c.peerOwnerId === selectedContact));
   const showAgentModeToggle = isBondedHumanContact && currentAiMode !== "manual";
 
+  const suggestedTeamJobGoal = useMemo(() => {
+    for (let i = displayMessages.length - 1; i >= 0; i--) {
+      const msg = displayMessages[i]!;
+      const text = (msg.content?.text ?? "").trim();
+      if (text.length >= 8) return text;
+    }
+    return "";
+  }, [displayMessages]);
+
   const handleClearChat = async () => {
     if (displayMessages.length === 0) return;
     setConfirm({
@@ -1257,6 +1276,13 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
                 </button>
+                <ChatTeamJobEntry
+                  scopedOwnerIds={[selectedContact]}
+                  suggestedGoal={suggestedTeamJobGoal}
+                  onOpenChains={onOpenChains}
+                  onOpenSettingsAi={onOpenSettingsAi}
+                  onOpenDiscover={onOpenDiscover}
+                />
               </>
             ) : null}
             <button

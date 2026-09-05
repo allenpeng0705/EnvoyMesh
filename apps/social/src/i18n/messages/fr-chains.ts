@@ -261,6 +261,14 @@ export const frChainsMessages = {
     deleteFailed: "Impossible de supprimer le modèle",
     saveFromReport: "Enregistrer comme modèle",
   },
+  chatEntry: {
+    advanced: "Plus d’actions de chat",
+    notReadyTitle: "Le job d’équipe n’est pas encore dispo dans ce chat",
+    notReadyBody:
+      "Chaque contact de ce chat doit rejoindre Agent Network, avoir une carte agent à jour, être en ligne et prêt (lease). Corrigez les points ci-dessous, puis réessayez.",
+    noBondedPeers: "Ajoutez un contact lié avant de lancer un job d’équipe depuis le chat.",
+    goalTooShort: "Décrivez l’objectif un peu plus (au moins 8 caractères).",
+  },
   bondHealth: {
     ready: "Prêt pour les chaînes",
     stale: "Carte d'agent obsolète",

@@ -37,11 +37,15 @@ import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import type { AssistantMode } from "../../lib/storage.js";
 import { InviteMembersModal } from "./InviteMembersModal.js";
 import { GroupManageModal } from "./GroupManageModal.js";
+import { ChatTeamJobEntry } from "../ChatTeamJobEntry.js";
 
 interface GroupChatPanelProps {
   threadKey: string;
   room: ChatRoom | undefined;
   onLeaveGroup?: () => void;
+  onOpenChains?: () => void;
+  onOpenSettingsAi?: () => void;
+  onOpenDiscover?: () => void;
 }
 
 function fmtDateLabel(dateStr: string, t: TFunction): string {
@@ -83,11 +87,14 @@ export function GroupChatPanel({
   threadKey,
   room,
   onLeaveGroup,
+  onOpenChains,
+  onOpenSettingsAi,
+  onOpenDiscover,
 }: GroupChatPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
-  const { humanProfile, nodeConfig, contactAiModes, setContactAiModes, refreshNodeConfig, connectionStatus } =
+  const { humanProfile, nodeConfig, contactAiModes, setContactAiModes, refreshNodeConfig, connectionStatus, bonds } =
     useNodeState();
   const { messages, isOutgoing, clearThread } = useChatMessages(threadKey);
   const [chatInput, setChatInput] = useState("");
@@ -120,6 +127,14 @@ export function GroupChatPanel({
   const roomTitle = room?.title ?? t("groupChat.untitled");
   const headerInitial = roomTitle.trim().charAt(0).toUpperCase() || "G";
   const memberCount = room?.memberOwnerIds.length ?? 0;
+  const selfOwnerId = humanProfile?.ownerId;
+  const bondedMemberOwnerIds = useMemo(() => {
+    const members = room?.memberOwnerIds ?? [];
+    const bonded = new Set(
+      bonds.filter((b) => b.level !== "blocked").map((b) => b.peerOwnerId),
+    );
+    return members.filter((id) => id !== selfOwnerId && bonded.has(id));
+  }, [bonds, room?.memberOwnerIds, selfOwnerId]);
   const nodeMeshOnline = connectionStatus?.online === true;
 
   const defaultGroupAiMode: AssistantMode =
@@ -188,6 +203,15 @@ export function GroupChatPanel({
     );
     return out;
   }, [messages, pendingOutbound]);
+
+  const suggestedTeamJobGoal = useMemo(() => {
+    for (let i = displayMessages.length - 1; i >= 0; i--) {
+      const msg = displayMessages[i]!;
+      const text = (msg.content?.text ?? "").trim();
+      if (text.length >= 8) return text;
+    }
+    return "";
+  }, [displayMessages]);
 
   const isOutgoingMsg = useCallback(
     (msg: ChatMessage) => isPendingOutgoing(msg) || isOutgoing(msg),
@@ -531,6 +555,15 @@ export function GroupChatPanel({
               >
                 {t("groupChat.leaveGroup")}
               </button>
+            ) : null}
+            {bondedMemberOwnerIds.length > 0 ? (
+              <ChatTeamJobEntry
+                scopedOwnerIds={bondedMemberOwnerIds}
+                suggestedGoal={suggestedTeamJobGoal}
+                onOpenChains={onOpenChains}
+                onOpenSettingsAi={onOpenSettingsAi}
+                onOpenDiscover={onOpenDiscover}
+              />
             ) : null}
             <button
               type="button"

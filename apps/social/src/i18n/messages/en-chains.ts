@@ -453,6 +453,14 @@ export const chainsMessages = {
     deleteFailed: "Could not delete template",
     saveFromReport: "Save as template",
   },
+  chatEntry: {
+    advanced: "More chat actions",
+    notReadyTitle: "Team job isn’t available in this chat yet",
+    notReadyBody:
+      "Each contact in this chat must join Agent Network, keep a fresh agent card, stay online, and be lease-ready. Fix the items below, then try again.",
+    noBondedPeers: "Add a bonded contact before starting a team job from chat.",
+    goalTooShort: "Describe the goal in a bit more detail (at least 8 characters).",
+  },
   bondHealth: {
     ready: "Ready for team jobs",
     stale: "Stale agent card",

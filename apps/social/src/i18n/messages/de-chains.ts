@@ -261,6 +261,14 @@ export const deChainsMessages = {
     deleteFailed: "Vorlage konnte nicht gelöscht werden",
     saveFromReport: "Als Vorlage speichern",
   },
+  chatEntry: {
+    advanced: "Weitere Chat-Aktionen",
+    notReadyTitle: "Teamjob in diesem Chat noch nicht verfügbar",
+    notReadyBody:
+      "Jeder Kontakt in diesem Chat muss dem Agent Network beitreten, eine frische Agent-Karte haben, online und lease-bereit sein. Beheben Sie die Punkte unten und versuchen Sie es erneut.",
+    noBondedPeers: "Fügen Sie einen verbundenen Kontakt hinzu, bevor Sie einen Teamjob aus dem Chat starten.",
+    goalTooShort: "Beschreiben Sie das Ziel etwas genauer (mindestens 8 Zeichen).",
+  },
   bondHealth: {
     ready: "Bereit für Ketten",
     stale: "Agent-Karte veraltet",

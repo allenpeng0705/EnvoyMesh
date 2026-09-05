@@ -261,6 +261,14 @@ export const jaChainsMessages = {
     deleteFailed: "テンプレートを削除できませんでした",
     saveFromReport: "テンプレートとして保存",
   },
+  chatEntry: {
+    advanced: "その他のチャット操作",
+    notReadyTitle: "このチャットではまだチームジョブを始められません",
+    notReadyBody:
+      "このチャットの各連絡先が Agent Network に参加し、最新のエージェントカードがあり、オンラインかつリース準備済みである必要があります。以下を直してからもう一度お試しください。",
+    noBondedPeers: "チャットからチームジョブを始める前に、ボンド済みの連絡先を追加してください。",
+    goalTooShort: "目標をもう少し詳しく書いてください（8文字以上）。",
+  },
   bondHealth: {
     ready: "チェーン準備完了",
     stale: "古いエージェントカード",

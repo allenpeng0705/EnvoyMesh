@@ -215,6 +215,9 @@ export function ChatView({
                 threadKey={selectedContact}
                 room={selectedRoom}
                 onLeaveGroup={() => onSelectedContactChange(null)}
+                onOpenChains={onOpenChains}
+                onOpenSettingsAi={onOpenSettingsAi}
+                onOpenDiscover={onOpenDiscover}
               />
             ) : isAiBotThread(selectedContact) ? (
               <BotChatPanel threadKey={selectedContact} />
@@ -239,6 +242,9 @@ export function ChatView({
               <ContactChatPanel
                 selectedContact={selectedContact}
                 onSelectContact={onSelectedContactChange}
+                onOpenChains={onOpenChains}
+                onOpenSettingsAi={onOpenSettingsAi}
+                onOpenDiscover={onOpenDiscover}
               />
             )
           ) : selectedContact === ENVOY_AI_THREAD_KEY ||

@@ -261,6 +261,14 @@ export const koChainsMessages = {
     deleteFailed: "템플릿을 삭제할 수 없습니다",
     saveFromReport: "템플릿으로 저장",
   },
+  chatEntry: {
+    advanced: "추가 채팅 작업",
+    notReadyTitle: "이 채팅에서는 아직 팀 작업을 시작할 수 없습니다",
+    notReadyBody:
+      "이 채팅의 각 연락처가 Agent Network에 가입하고, 최신 에이전트 카드가 있으며, 온라인이고 리스 준비 상태여야 합니다. 아래 항목을 고친 뒤 다시 시도하세요.",
+    noBondedPeers: "채팅에서 팀 작업을 시작하기 전에 연결된 연락처를 추가하세요.",
+    goalTooShort: "목표를 조금 더 자세히 적어 주세요(최소 8자).",
+  },
   bondHealth: {
     ready: "체인 준비됨",
     stale: "오래된 에이전트 카드",

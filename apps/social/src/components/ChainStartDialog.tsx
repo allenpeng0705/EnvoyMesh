@@ -73,6 +73,8 @@ export interface ChainStartDialogProps {
    * chainGetDefaults for the first preview (Job settings can still change it).
    */
   assignmentMode?: "skill" | "role";
+  /** Phase 67B — preselect these agent peer ids (chat-scoped workers). */
+  initialPreferredPeerIds?: string[];
 }
 
 export function ChainStartDialog({
@@ -93,6 +95,7 @@ export function ChainStartDialog({
   workerCandidates = EMPTY_WORKER_CANDIDATES,
   diagnosticsWorkers,
   assignmentMode: assignmentModeProp,
+  initialPreferredPeerIds,
 }: ChainStartDialogProps) {
   const t = useT();
   const nodeService = useNodeService();
@@ -135,11 +138,19 @@ export function ChainStartDialog({
   const strategyPresets = useMemo(() => listChainTeamStrategyPresets(), []);
 
   // Team member selection — track by agent peer ID (card.sourceAgentPeerId)
-  const [selectedPeerIds, setSelectedPeerIds] = useState<Set<string>>(new Set());
+  const [selectedPeerIds, setSelectedPeerIds] = useState<Set<string>>(() => {
+    if (initialPreferredPeerIds && initialPreferredPeerIds.length > 0) {
+      return new Set(initialPreferredPeerIds);
+    }
+    return new Set();
+  });
   // True once the owner manually toggles a worker. Until then the selection
   // mirrors the system's suggested pool (auto-first); the launch path treats
   // an untouched selection as "use the recommended pool as-is".
-  const selectionTouchedRef = useRef(false);
+  // Phase 67B: chat-seeded preferred peers count as an intentional selection.
+  const selectionTouchedRef = useRef(
+    Boolean(initialPreferredPeerIds && initialPreferredPeerIds.length > 0),
+  );
 
   // A contact is selectable for a team job only when all three readiness
   // dimensions pass: a fresh agent card, opted into the Agent Network, and

@@ -261,6 +261,14 @@ export const itChainsMessages = {
     deleteFailed: "Impossibile eliminare il modello",
     saveFromReport: "Salva come modello",
   },
+  chatEntry: {
+    advanced: "Altre azioni chat",
+    notReadyTitle: "Il job di team non è ancora disponibile in questa chat",
+    notReadyBody:
+      "Ogni contatto in questa chat deve unirsi ad Agent Network, avere una card agent aggiornata, essere online e lease-ready. Sistemate i punti sotto e riprovate.",
+    noBondedPeers: "Aggiungete un contatto bonded prima di avviare un job di team dalla chat.",
+    goalTooShort: "Descrivete l’obiettivo con un po’ più di dettaglio (almeno 8 caratteri).",
+  },
   bondHealth: {
     ready: "Pronto per le catene",
     stale: "Scheda agente obsoleta",

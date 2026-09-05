@@ -441,6 +441,14 @@ export const zhChainsMessages = {
     deleteFailed: "无法删除模板",
     saveFromReport: "保存为模板",
   },
+  chatEntry: {
+    advanced: "更多聊天操作",
+    notReadyTitle: "此聊天尚无法启动团队任务",
+    notReadyBody:
+      "此聊天中的每位联系人都需加入 Agent Network、持有最新代理卡、在线且租约就绪。请先处理下方问题，再重试。",
+    noBondedPeers: "从聊天启动团队任务前，请先添加已绑定的联系人。",
+    goalTooShort: "请把目标写得更具体一些（至少 8 个字符）。",
+  },
   bondHealth: {
     ready: "可参与协作任务",
     stale: "代理卡已过期",
