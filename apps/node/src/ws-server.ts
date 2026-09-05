@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer, type Server as HttpServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import type {
   JsonRpcEvent,
   JsonRpcRequest,
@@ -39,6 +40,12 @@ import {
   rpcHomeTerminalWsSend,
 } from "./home-terminal-ws.js";
 import { isSerializedWsRpcMethod } from "./ws-rpc-concurrency.js";
+import { rpcErrorCode } from "./rpc-error-code.js";
+
+/** EM-R — one JSON-RPC handler invocation (per message per WebSocket). */
+interface RpcInvocation {
+  ws: WebSocket;
+}
 
 
 /**
@@ -91,6 +98,20 @@ export class WsServer {
   private getReadyz?: () => { ready: boolean; reason?: string };
   /** Per-client queue tail for dial/send RPCs (reads run concurrently). */
   private readonly slowRpcTail = new WeakMap<WebSocket, Promise<void>>();
+  /**
+   * EM-R — per-invocation context of the WebSocket RPC handler currently
+   * executing. Lets a self-revoking device (whose `revokeThinClient`
+   * force-closes its own socket) defer that close until its JSON-RPC response
+   * is written, instead of dropping the response on a CLOSING socket.
+   */
+  private readonly activeRpcWs = new AsyncLocalStorage<RpcInvocation>();
+  /**
+   * EM-R — self-revoke closes parked by `disconnectClientsForDevice`, keyed by
+   * the RPC invocation that parked them. Only that invocation's handler closes
+   * the socket (in its `finally`, right after `sendResponse`) — a concurrent
+   * read RPC on the same socket must not close it early.
+   */
+  private readonly deferredDeviceClose = new Map<WebSocket, RpcInvocation>();
 
   constructor(
     private readonly port: number = 3030,
@@ -426,6 +447,13 @@ export class WsServer {
   /**
    * EM-R — force-close authenticated WebSockets bound to a thin-client
    * deviceId (after `revokeThinClient`). Returns how many sockets were closed.
+   *
+   * Self-revoke: when the device being revoked is the session that is
+   * *currently executing* this RPC (tracked via `activeRpcWs`), the close is
+   * deferred until the RPC handler has written its JSON-RPC response
+   * (`flushDeferredDeviceClose` runs right after `sendResponse`). Closing
+   * synchronously would race the response out of a CLOSING socket. Every
+   * other device closes synchronously, exactly as before.
    */
   disconnectClientsForDevice(deviceId: string): number {
     const target = deviceId.trim();
@@ -434,7 +462,14 @@ export class WsServer {
     for (const [ws, session] of this.authenticatedSessions) {
       if (session.deviceId === target) toClose.push(ws);
     }
+    const selfInvocation = this.activeRpcWs.getStore();
     for (const ws of toClose) {
+      if (selfInvocation && ws === selfInvocation.ws) {
+        // The caller's own socket is mid-RPC: park the close here and let the
+        // parking RPC's handler close it immediately after sendResponse.
+        this.deferredDeviceClose.set(ws, selfInvocation);
+        continue;
+      }
       try {
         ws.close(4001, "device revoked");
       } catch {
@@ -446,6 +481,21 @@ export class WsServer {
       }
     }
     return toClose.length;
+  }
+
+  /** EM-R — close a socket parked by `disconnectClientsForDevice` (called right after the parking RPC's response is sent). */
+  private flushDeferredDeviceClose(ws: WebSocket, invocation: RpcInvocation): void {
+    if (this.deferredDeviceClose.get(ws) !== invocation) return;
+    this.deferredDeviceClose.delete(ws);
+    try {
+      ws.close(4001, "device revoked");
+    } catch {
+      try {
+        ws.terminate();
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   /**
@@ -575,6 +625,8 @@ export class WsServer {
       this.authenticatedClients.delete(ws);
       const session = this.authenticatedSessions.get(ws);
       this.authenticatedSessions.delete(ws);
+      // Drop any parked EM-R self-revoke close (socket is already gone).
+      this.deferredDeviceClose.delete(ws);
       if (ownerId && !this.hasClientForOwner(ownerId)) {
         this.thinClientLastRpcAt.delete(ownerId);
       }
@@ -829,12 +881,22 @@ export class WsServer {
     }
 
     // Route RPC to NodeService
+    // The activeRpcWs context lets `revokeThinClient` know when it is running
+    // on the caller's own socket so a self-revoke defers its close until the
+    // response below is written (see disconnectClientsForDevice). The per-
+    // invocation token stops a concurrent read RPC on the same socket from
+    // flushing the parked close early.
+    const invocation: RpcInvocation = { ws };
     try {
-      const result = await this.routeToNodeService(ws, method as RpcMethods, params ?? {});
+      const result = await this.activeRpcWs.run(invocation, () =>
+        this.routeToNodeService(ws, method as RpcMethods, params ?? {}),
+      );
       this.sendResponse(ws, id, result);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.sendResponse(ws, id, undefined, { code: "ERROR", message: errorMessage });
+      this.sendResponse(ws, id, undefined, { code: rpcErrorCode(errorMessage), message: errorMessage });
+    } finally {
+      this.flushDeferredDeviceClose(ws, invocation);
     }
   }
 

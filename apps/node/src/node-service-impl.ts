@@ -8203,6 +8203,11 @@ class NodeServiceImpl implements NodeService {
       sensitivity: "private",
       ownerApproved: true,
       requesterPeerId: meshPeerId,
+      // EM-R — roll actual usage into the daily model-cost rollup when the
+      // node has a task store bound (mirrors the cost-tracked chat-draft /
+      // knowledge-query callers: runModelCall routes cost-tracked only when
+      // taskStore is present). sendToAiBot stays without rollup (parity).
+      taskStore: this._taskStore,
     })
 
     // Stable catalog-token errors (thin-client-protocol v0.3 §2.1): thrown

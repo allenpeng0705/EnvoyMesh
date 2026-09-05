@@ -16,6 +16,7 @@ import {
   type RpcCallerContext,
 } from "./rpc-caller-context.js";
 import { wireClientProxyPushEvents } from "./client-proxy-push.js";
+import { rpcErrorCode } from "./rpc-error-code.js";
 
 /**
  * Creates a libp2p protocol handler for the client-proxy relay bridge.
@@ -112,6 +113,27 @@ export function createClientProxyHandler(
         }
         if (!msg.id || !msg.method) continue;
 
+        // EM-R — a revoked thin client must not keep driving RPCs on a stale
+        // handshake. Direct-WS devices are force-closed by the WsServer at
+        // revocation time, but relayed proxy streams live outside that
+        // registry (only iterated over WsServer.authenticatedSessions): re-check
+        // the session token before every RPC (same in-store lookup the connect
+        // path uses) and drop the stream once the token is gone.
+        if (tokenRecord) {
+          const currentRecord = await nodeService.lookupSessionToken(token);
+          if (!currentRecord) {
+            await streamIo.write(
+              encoder.encode(
+                JSON.stringify({
+                  id: msg.id,
+                  error: { code: "UNAUTHORIZED", message: "Session revoked" },
+                }),
+              ),
+            );
+            break;
+          }
+        }
+
         // Store-review tokens must never reach owner-level RPCs through the
         // proxy — only the two pre-auth pairing methods may run under them.
         if (
@@ -182,10 +204,25 @@ export function createClientProxyHandler(
             routeRpcMethod(nodeService, msg.method!, msg.params ?? {}),
           );
           await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, result })));
+          // EM-R — a relayed thin client that revoked *itself* on this stream:
+          // the response above was already written, so drop the stream now
+          // (parity with the direct-WS response-then-close path). When the
+          // caller revoked a different device this stream stays open; the
+          // token re-check at the top of the loop closes it if it is ever
+          // this device's own token that went away.
+          if (
+            rpcCaller.deviceId &&
+            msg.method === "revokeThinClient" &&
+            isSelfRevokeResult(result, rpcCaller.deviceId)
+          ) {
+            break;
+          }
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           await streamIo.write(
-            encoder.encode(JSON.stringify({ id: msg.id, error: { code: "ERROR", message: errMsg } })),
+            encoder.encode(
+              JSON.stringify({ id: msg.id, error: { code: rpcErrorCode(errMsg), message: errMsg } }),
+            ),
           );
         }
       }
@@ -199,4 +236,15 @@ export function createClientProxyHandler(
       }
     }
   };
+}
+
+/**
+ * EM-R — true when a `revokeThinClient` result reports `deviceId` as revoked.
+ * Lets a relayed thin client that revoked itself drop its own stream right
+ * after the JSON-RPC response is written.
+ */
+export function isSelfRevokeResult(result: unknown, deviceId: string): boolean {
+  if (!result || typeof result !== "object") return false;
+  const revoked = (result as { revokedDeviceIds?: unknown }).revokedDeviceIds;
+  return Array.isArray(revoked) && revoked.includes(deviceId);
 }
