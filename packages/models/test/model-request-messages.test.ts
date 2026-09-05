@@ -206,6 +206,28 @@ describe("ModelRequest chat messages (EM-1)", () => {
     expect(msgs[1]).toEqual({ role: "assistant", content: "Hi there" });
   });
 
+  it("anthropic handles system-only messages with a non-empty user turn", async () => {
+    const { requests, complete } = captureProvider(
+      (f) =>
+        createAnthropicProvider({
+          modelName: "claude-sonnet-4-20250514",
+          endpoint: "http://127.0.0.1:9999",
+          fetchImplementation: f,
+        }),
+      { content: [{ text: "answer" }], usage: { input_tokens: 7, output_tokens: 2 } },
+    );
+    await complete({
+      taskType: "ai_bot.chat",
+      prompt: "",
+      messages: [{ role: "system", content: "System only" }],
+      sensitivity: "public",
+    });
+    expect(requests[0].body.system).toBe("System only");
+    const msgs = requests[0].body.messages as Array<{ role: string; content: string }>;
+    expect(msgs.length).toBe(1);
+    expect(msgs[0].role).toBe("user");
+  });
+
   it("anthropic honors sampling: temperature, stop→stop_sequences, maxTokens override", async () => {
     const { requests, complete } = captureProvider(
       (f) =>

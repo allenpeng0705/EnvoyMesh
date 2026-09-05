@@ -2994,7 +2994,11 @@ export interface AskHomeModelMessage {
  */
 export interface AskHomeModelParams {
   messages: AskHomeModelMessage[];
-  /** Selects among configured usable providers only. */
+  /**
+   * Model-name hint for the currently-effective home provider (maps to the
+   * provider's model override). It does not switch between providers — provider
+   * selection stays owner-managed on the node.
+   */
   modelHint?: string;
   maxTokens?: number;
   temperature?: number;
@@ -3003,9 +3007,11 @@ export interface AskHomeModelParams {
 
 /**
  * Result of an `askHomeModel` call. `providerMode` reports what actually
- * answered: one of `"envoy-local" | "ollama" | "openai-compatible" | "cloud" |
- * "mock"` when the providerId is recognized, otherwise the raw providerId
- * (best-effort). `providerId` is included for exact attribution.
+ * answered, one of `"envoy-local" | "ollama" | "openai-compatible" | "cloud" |
+ * "mock"`, or is omitted when the providerId is unrecognized (never fabricated;
+ * the type reuses the status union, which also includes "disabled" — that value
+ * is not produced by `askHomeModel`). `providerId` is included for exact
+ * attribution.
  */
 export interface AskHomeModelResult {
   text: string;

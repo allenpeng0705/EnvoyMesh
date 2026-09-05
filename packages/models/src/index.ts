@@ -143,9 +143,15 @@ function anthropicChatBody(
             content: m.content,
           }))
       : [{ role: "user", content: request.prompt }];
-  // Anthropic requires the first message to be from the user.
+  // Anthropic requires a non-empty messages array whose first turn is from the
+  // user. Guard both: (a) a leading assistant turn gets a neutral user prefix,
+  // (b) system-only input (no user/assistant turns) falls back to the caller's
+  // prompt or a placeholder user turn instead of sending `messages: []`.
   if (turns.length > 0 && turns[0].role === "assistant") {
     turns = [{ role: "user", content: "(continue)" }, ...turns];
+  } else if (turns.length === 0) {
+    const fallback = request.prompt?.trim() ? request.prompt : "(no user message)";
+    turns = [{ role: "user", content: fallback }];
   }
   const body: {
     messages: Array<{ role: "user" | "assistant"; content: string }>;
