@@ -1203,24 +1203,30 @@ import {
   listAgentCardsIncludingLocal,
   placeholderMandate,
   refreshAgentNetworkMembershipIndex,
-  sameLanFromListenAddrs,
   snapshotToResult,
   type ChainOrchestrationContext,
 } from "./node-service-chain-orchestration.js";
 import { handleInboundCapabilityManifest } from "./agent-adapter-manifest-inbound.js";
 import { handleInboundWorkerLease } from "./agent-worker-lease-inbound.js";
 import {
-  buildLocalLeaseRuntime,
-  startWorkerLeaseBroadcaster,
-  type WorkerLeaseBroadcastMesh,
-} from "./agent-worker-lease-broadcast.js";
-import {
   createDebouncedAgentNetworkRefresh,
   type DebouncedAgentNetworkRefresh,
 } from "./agent-network-bond-refresh.js";
-import { ensureFleetWorkersReadyViaRuntime } from "./ensure-fleet-workers.js";
 import { fulfillInboundFleetLeaseRequest } from "./handle-fleet-lease-request-inbound.js";
-import { evaluateWanPeerOnlineGate } from "./wan-peer-online-gate.js";
+import { ensureFleetWorkersJoinAndLeaseViaRuntime } from "./node-service-fleet-ops.js";
+import {
+  buildWorkerLeaseLifecycleDeps,
+  ensureWorkerLeaseBroadcasterStartedViaRuntime,
+  startWorkerLeaseBroadcasterViaRuntime,
+} from "./node-service-worker-lease.js";
+import {
+  buildAgentNetworkRefreshDeps,
+  refreshAgentNetworkWorkersViaRuntime,
+} from "./node-service-agent-network-refresh.js";
+import {
+  buildChainProbeReachabilityDeps,
+  chainProbeReachabilityViaRuntime,
+} from "./node-service-chain-probe-reachability.js";
 import { WorkerLeaseStore } from "./worker-lease-store.js";
 import { WorkerReliabilityStore } from "./worker-reliability-store.js";
 import { WorkerAttemptReceiptStore } from "./worker-attempt-receipt-store.js";
@@ -1239,7 +1245,6 @@ import {
   createTaskChainReconcileRequestPayload,
   parseTaskChainReconcileResponsePayload,
 } from "@envoymesh/protocol";
-import { localAgentNetworkEngineReady } from "./chain-ready-probe.js";
 import { getLocalRuntimePassRate } from "./node-service-chain-orchestration.js";
 import { handleInboundScoreboardRule } from "./scoreboard-rule-inbound.js";
 import {
@@ -4517,90 +4522,7 @@ class NodeServiceImpl implements NodeService {
    * learn `agent-network-worker` without waiting for them to pull.
    */
   async refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }> {
-    let requested = 0;
-    let failed = 0;
-    anLog("refresh", "refreshAgentNetworkWorkers start");
-    try {
-      const cfg = await this.getNodeConfig();
-      if (cfg.capabilityProviderEnabled === true) {
-        try {
-          const pushed = await this.announceLocalAgentCardToBondedPeers();
-          anLog("refresh", "announce local card", {
-            announced: pushed.announced,
-            failed: pushed.failed,
-          });
-          if (pushed.failed > 0) {
-            anWarn("refresh", "announceLocalAgentCard partial failure", {
-              announced: pushed.announced,
-              failed: pushed.failed,
-            });
-          }
-        } catch (err) {
-          anWarn("refresh", "announceLocalAgentCardToBondedPeers failed", {
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      } else {
-        anLog("refresh", "skip announce — Join Agent Network off");
-      }
-      const bonds = (await this.getBonds()).filter(
-        (bond) => bond.level === "direct" || bond.level === "referred",
-      );
-      requested = bonds.length;
-      anLog("refresh", "pull cards from bonded peers", { count: requested });
-      const outcomes = await mapPoolSettled(
-        bonds,
-        AGENT_CARD_REFRESH_CONCURRENCY,
-        async (bond) => {
-          try {
-            let connected = false;
-            try {
-              connected = (await this.getPeerConnectionInfo(bond.peerOwnerId)).connected;
-            } catch {
-              /* treat as offline */
-            }
-            if (!connected) {
-              try {
-                await raceWithTimeout(
-                  this.warmContactConnection(bond.peerOwnerId),
-                  AGENT_CARD_REFRESH_WARM_MS,
-                  `agentCardWarm(${bond.peerOwnerId.slice(0, 16)}…)`,
-                );
-                connected = (await this.getPeerConnectionInfo(bond.peerOwnerId)).connected;
-              } catch {
-                /* still offline — use relay budget below */
-              }
-            }
-            const timeoutMs = agentCardRefreshTimeoutMs(connected);
-            const result = await raceWithTimeout(
-              this.requestAgentCard(bond.peerOwnerId, { timeoutMs }),
-              timeoutMs,
-              `requestAgentCard(${bond.peerOwnerId.slice(0, 16)}…)`,
-            );
-            return Boolean(result?.ok);
-          } catch {
-            return false;
-          }
-        },
-      );
-      failed = outcomes.filter((ok) => !ok).length;
-      anLog("refresh", "card pull done", { requested, failed, ok: requested - failed });
-    } catch {
-      /* bonds unavailable — still refresh local index */
-      anWarn("refresh", "bond list / card pull failed — still refreshing index");
-    }
-    try {
-      await this.refreshAgentNetworkMembershipIndex();
-      const cards = await this.listAgentCards();
-      this.emit("home:agent-cards-updated", { cards });
-      anLog("refresh", "membership index refreshed", { cards: cards.length });
-    } catch (err) {
-      anWarn("refresh", "refreshAgentNetworkMembershipIndex failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    this._scheduleDeferredAgentNetworkIndexRefresh();
-    return { requested, failed };
+    return refreshAgentNetworkWorkersViaRuntime(buildAgentNetworkRefreshDeps(this));
   }
 
   /**
@@ -4610,42 +4532,7 @@ class NodeServiceImpl implements NodeService {
   async ensureFleetWorkersJoinAndLease(
     params?: EnsureFleetWorkersParams,
   ): Promise<EnsureFleetWorkersResult> {
-    const identityCtx = this._identityContext();
-    return ensureFleetWorkersReadyViaRuntime(
-      {
-        getOwnOwnerId: () => this._profile?.owner?.ownerId,
-        getNodeConfig: () => this.getNodeConfig(),
-        enableJoin: async () => {
-          await this.updateNodeConfig({ capabilityProviderEnabled: true });
-        },
-        ensureLeaseBroadcaster: async () => {
-          const mesh = this._reachableMesh();
-          if (!mesh) return undefined;
-          return this.ensureWorkerLeaseBroadcasterStarted(mesh);
-        },
-        refreshAgentNetworkWorkers: () => this.refreshAgentNetworkWorkers(),
-        getBonds: () => this.getBonds(),
-        ensureAgentIdentity: () => this._ensureAgentIdentity(),
-        resolveLibp2pPeer: async (ownerId) => {
-          const resolved = await identityCtx.resolveLibp2pPeerForBondOwner(ownerId);
-          if (!resolved) return undefined;
-          return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
-        },
-        dialHintsFor: (peerId, listenAddrs) => identityCtx.dialHintsForChat(peerId, listenAddrs),
-        sendEnvelope: async ({ transportPeerId, envelope, dialHints }) => {
-          const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
-          const mesh = this._reachableMesh();
-          if (!mesh) throw new Error("mesh not started");
-          await sendEnvelopeWithRetry({
-            mesh: mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
-            transportPeerId,
-            envelope,
-            dialHints,
-          });
-        },
-      },
-      params,
-    );
+    return ensureFleetWorkersJoinAndLeaseViaRuntime(this, params);
   }
 
   private _agentNetworkIndexRefreshTimers: ReturnType<typeof setTimeout>[] = [];
@@ -17164,15 +17051,10 @@ class NodeServiceImpl implements NodeService {
   async ensureWorkerLeaseBroadcasterStarted(
     mesh?: EnvoyMesh,
   ): Promise<{ stop: () => void; publishNow: () => Promise<void> } | undefined> {
-    const live = mesh ?? this._reachableMesh();
-    if (!live) return undefined;
-    try {
-      const cfg = await this.getNodeConfig();
-      if (cfg.capabilityProviderEnabled !== true) return undefined;
-    } catch {
-      return undefined;
-    }
-    return this.startWorkerLeaseBroadcaster(live);
+    return ensureWorkerLeaseBroadcasterStartedViaRuntime(
+      buildWorkerLeaseLifecycleDeps(this),
+      mesh,
+    );
   }
 
   /**
@@ -17182,71 +17064,11 @@ class NodeServiceImpl implements NodeService {
     mesh: EnvoyMesh,
     opts?: { intervalMs?: number; ttlMs?: number },
   ): Promise<{ stop: () => void; publishNow: () => Promise<void> } | undefined> {
-    const profile = this.getProfile();
-    const agentIdentity = await this._ensureAgentIdentity();
-    if (!profile || !agentIdentity) {
-      console.warn("[agent.worker.lease] broadcaster skipped: agent identity/profile unavailable");
-      return undefined;
-    }
-    this._leaseBroadcaster?.stop();
-    const identityCtx = this._identityContext();
-    const broadcaster = startWorkerLeaseBroadcaster({
-      mesh: mesh as WorkerLeaseBroadcastMesh,
-      agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
-      agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
-      agentCredential: agentIdentity.agentCredential,
-      workerPeerId: agentIdentity.agentPeerId,
-      ownerId: profile.owner.ownerId,
-      buildRuntimes: async () => {
-        const { skills, runtime } = await this._localManifestDescriptor();
-        const localReady = await localAgentNetworkEngineReady({
-          engine: this.getAgentNetworkWorkerEngine(),
-          isOpenClawReady: () => this.isOpenClawReady(),
-          isExtAgentBridgeReady: () => this.isExtAgentBridgeReady(),
-          isEnvoyHarnessReady: () => this.isEnvoyHarnessReady(),
-          probeExtAgent: async () => {
-            const reach = await this.probeExtAgent();
-            return { reachable: reach.reachable === true };
-          },
-        });
-        return [
-          buildLocalLeaseRuntime({
-            runtime,
-            ready: localReady.ready,
-            skillIds: skills.map((s) => s.skillId),
-            runtimeVersion: "mesh-lease",
-          }),
-        ];
-      },
-      connectivity: async () => {
-        const meshStats = mesh.getConnectionStats?.();
-        return {
-          direct: (meshStats?.connectedPeerIds?.length ?? 0) > 0,
-          relay: (meshStats?.circuitPeerIds?.length ?? 0) > 0,
-        };
-      },
-      bondOwnerIds: async () => {
-        const bonds = await this.getBonds();
-        return bonds
-          .map((b) => b.peerOwnerId)
-          .filter((id): id is string => Boolean(id));
-      },
-      resolveLibp2pPeer: async (ownerId) => {
-        const resolved = await identityCtx.resolveLibp2pPeerForBondOwner(ownerId);
-        if (!resolved) return undefined;
-        return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
-      },
-      dialHintsFor: (peerId, listenAddrs) => identityCtx.dialHintsForChat(peerId, listenAddrs),
-      intervalMs: opts?.intervalMs,
-      ttlMs: opts?.ttlMs,
-      onError: (err) =>
-        console.warn(
-          "[agent.worker.lease] broadcast cycle failed:",
-          err instanceof Error ? err.message : err,
-        ),
-    });
-    this._leaseBroadcaster = broadcaster;
-    return broadcaster;
+    return startWorkerLeaseBroadcasterViaRuntime(
+      buildWorkerLeaseLifecycleDeps(this),
+      mesh,
+      opts,
+    );
   }
 
   /**
@@ -17675,127 +17497,10 @@ class NodeServiceImpl implements NodeService {
   async chainProbeReachability(
     params: ChainProbeReachabilityParams,
   ): Promise<ChainProbeReachabilityResult> {
-    const ownerIds = params.ownerIds ?? [];
-    if (ownerIds.length === 0) return { rows: [] };
-
-    // Map owner id → agent peer id via cached agent cards.
-    const cards = await this.listAgentCards();
-    const agentPeerIdByOwner = new Map<string, string | undefined>();
-    for (const card of cards) {
-      agentPeerIdByOwner.set(card.ownerId, card.sourceAgentPeerId);
-    }
-
-    // Live mesh connection snapshot — open libp2p connections + relay-routed subset.
-    const mesh = this._reachableMesh();
-    const readConnectedIds = (): Set<string> => {
-      const stats = mesh?.getConnectionStats();
-      return new Set(stats?.connectedPeerIds ?? mesh?.getConnectedPeerIds() ?? []);
-    };
-    const readCircuitIds = (): Set<string> => {
-      const stats = mesh?.getConnectionStats();
-      return new Set(stats?.circuitPeerIds ?? []);
-    };
-    let connectedIds = readConnectedIds();
-    let circuitIds = readCircuitIds();
-
-    // Index peer-directory records by owner so we can check every device's
-    // libp2p peer id. Connectivity is a property of the NODE (libp2p host),
-    // not the agent identity — `sourceAgentPeerId` is an `envoy_agent_*` id
-    // that is never a libp2p PeerId, so comparing it directly against
-    // `connectedIds` would always report offline (every contact filtered out).
-    const recordsByOwner = new Map<string, PeerDirectoryRecord[]>();
-    try {
-      const allRecords = await this._peerDirectoryStore.listPeerRecords();
-      for (const rec of allRecords) {
-        const list = recordsByOwner.get(rec.ownerId);
-        if (list) list.push(rec);
-        else recordsByOwner.set(rec.ownerId, [rec]);
-      }
-    } catch {
-      /* leave empty — every row reports offline + sameLan=false */
-    }
-
-    const isOwnerConnected = (ownerId: string): boolean => {
-      const peerRecords = recordsByOwner.get(ownerId) ?? [];
-      return peerRecords.some(
-        (r) => isLibp2pPeerId(r.peerId) && connectedIds.has(r.peerId),
-      );
-    };
-
-    // Team jobs polls this every 20s and previously only read the passive
-    // connection snapshot. Unlike chat (which dials on open), that meant
-    // bonded peers with no open session were always "offline" and hidden
-    // from the contact list. Best-effort warm offline owners before the
-    // final snapshot so the UI matches real reachability.
-    if (mesh) {
-      const offlineOwners = ownerIds.filter((id) => !isOwnerConnected(id)).slice(0, 8);
-      if (offlineOwners.length > 0) {
-        const warmOne = async (ownerId: string): Promise<void> => {
-          try {
-            await raceWithTimeout(
-              this.warmContactConnection(ownerId),
-              // Align with warm phase-1 (hints 5s + LAN 8s); do not wait full WAN.
-              14_000,
-              `chainProbeWarm(${ownerId.slice(0, 16)}…)`,
-            );
-          } catch {
-            /* best-effort — leave offline */
-          }
-        };
-        // Bound concurrency so a large bond list doesn't stampede dials.
-        const concurrency = 3;
-        for (let i = 0; i < offlineOwners.length; i += concurrency) {
-          await Promise.all(offlineOwners.slice(i, i + concurrency).map(warmOne));
-        }
-        connectedIds = readConnectedIds();
-        circuitIds = readCircuitIds();
-      }
-    }
-
-    let discoveryProfile: string | undefined;
-    let relayEnabled: boolean | undefined;
-    try {
-      const persisted = await this._configStore.load();
-      discoveryProfile = persisted?.discoveryProfile;
-      relayEnabled = persisted?.relayEnabled;
-    } catch {
-      /* WAN gate uses defaults */
-    }
-    const hasLiveRelayReservation = mesh?.hasLiveRelayReservation?.() === true;
-
-    const rows = ownerIds.map((ownerId) => {
-      const agentPeerId = agentPeerIdByOwner.get(ownerId);
-      const peerRecords = recordsByOwner.get(ownerId) ?? [];
-      // A contact is online when ANY of their devices' libp2p peer ids is
-      // currently connected. Prefer the most-recently-seen connected record.
-      const connectedRecord = peerRecords
-        .filter((r) => isLibp2pPeerId(r.peerId) && connectedIds.has(r.peerId))
-        .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0];
-      const meshConnected = Boolean(connectedRecord);
-      const viaRelay = meshConnected ? circuitIds.has(connectedRecord.peerId) : false;
-      const listenAddrs =
-        connectedRecord?.listenAddrs ?? peerRecords[0]?.listenAddrs ?? [];
-      const sameLan = sameLanFromListenAddrs(listenAddrs);
-      const gated = evaluateWanPeerOnlineGate({
-        meshConnected,
-        sameLan,
-        viaRelay,
-        discoveryProfile,
-        relayEnabled,
-        hasLiveRelayReservation,
-        dialHints: listenAddrs,
-      });
-      return {
-        ownerId,
-        agentPeerId,
-        online: gated.online,
-        sameLan,
-        viaRelay,
-        wanPathReady: gated.wanPathReady,
-        gateReason: gated.reason,
-      };
-    });
-    return { rows };
+    return chainProbeReachabilityViaRuntime(
+      buildChainProbeReachabilityDeps(this),
+      params,
+    );
   }
 
   async chainResolveIteration(
