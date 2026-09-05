@@ -343,6 +343,7 @@ export type RpcMethods =
     | "ensureEnvoyTerminalSession"
     | "sendToAiBot"
     | "askHomeModel"
+    | "getHomeModelStatus"
     | "piRespondToProposal"
     | "ehRespondToUserQuestion"
     | "ehRespondToPermission"
@@ -2991,4 +2992,58 @@ export interface AskHomeModelResult {
   model: string;
   providerId?: string;
   providerMode?: string;
+}
+
+// ============================================
+// getHomeModelStatus (EM-4) — thin-client home model status RPC
+// ============================================
+
+/**
+ * Canonical provider modes reported by `getHomeModelStatus`
+ * (docs/envoy-home-side-plan.md §1.3, thin-client-protocol v0.3 §2.2).
+ * Superset of the `askHomeModel` answering modes — adds `"disabled"` for the
+ * not-configured state the status RPC must report.
+ */
+export type HomeModelProviderMode =
+  | "envoy-local"
+  | "ollama"
+  | "openai-compatible"
+  | "cloud"
+  | "mock"
+  | "disabled";
+
+/**
+ * Capabilities of the home node's effective model provider. `"unknown"`
+ * means the node has no deterministic signal (e.g. no mmproj loaded, no
+ * `/api/tags` capability report, nothing declared in config) and must be
+ * treated as unsupported by clients (contract §1.3: "unknown" ⇒ no-vision /
+ * no-embedding semantics).
+ */
+export interface HomeModelStatusCapabilities {
+  /** The effective provider can answer text prompts. False for mock/disabled. */
+  text: boolean;
+  /** True only with a deterministic signal (Envoy Local mmproj, Ollama tags, config-declared). */
+  vision: boolean | "unknown";
+  /** True when the embed sidecar (:18791) is running or an embedding provider is configured. */
+  embedding: boolean | "unknown";
+  /** Router is non-streaming today — always false. */
+  streaming: boolean;
+}
+
+/**
+ * Result of the read-only `getHomeModelStatus` RPC. `reachable`/`configured`
+ * are false and `model` is null when the node cannot serve model requests.
+ * `contextWindow`/`maxTokens` appear only when the node's configuration
+ * actually provides them (e.g. Envoy Local `-c` ctx size); otherwise omitted.
+ */
+export interface GetHomeModelStatusResult {
+  /** True when the effective provider can serve a request right now. */
+  reachable: boolean;
+  /** True when a usable, non-mock, non-disabled provider is configured. */
+  configured: boolean;
+  mode: HomeModelProviderMode;
+  model: string | null;
+  capabilities: HomeModelStatusCapabilities;
+  contextWindow?: number;
+  maxTokens?: number;
 }

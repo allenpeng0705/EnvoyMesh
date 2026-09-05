@@ -73,6 +73,10 @@ describe("isOwnerOnlyRpcMethod", () => {
     expect(isOwnerOnlyRpcMethod("askHomeModel")).toBe(true)
   })
 
+  it("does not owner-gate getHomeModelStatus (EM-4 read-only status)", () => {
+    expect(isOwnerOnlyRpcMethod("getHomeModelStatus")).toBe(false)
+  })
+
   it("does not owner-gate Envoy Harness / Pi RPCs (codingEnabled gate)", () => {
     for (const method of [
       "getEnvoyHarnessStatus",

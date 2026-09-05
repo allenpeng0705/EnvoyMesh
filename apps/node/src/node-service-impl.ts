@@ -457,6 +457,7 @@ import {
   deriveHomeModelProviderMode,
   homeModelRoutingError,
 } from "./ask-home-model.js";
+import { buildHomeModelStatus } from "./home-model-status.js";
 import { bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 // Phase 8 / b3 — the real `askEnvoyHarness` runtime. The
 // `loadEnvoyHarnessRuntimeConfig` is the env-var-driven
@@ -8218,6 +8219,95 @@ class NodeServiceImpl implements NodeService {
       model: result.model ?? "unknown",
       providerId: result.providerId,
       providerMode: deriveHomeModelProviderMode(result.providerId),
+    }
+  }
+
+  /**
+   * EM-4 — thin-client `getHomeModelStatus` RPC (envoy-home-side-plan §1.3,
+   * thin-client-protocol v0.3 §2.2). Read-only status: open to owner AND family
+   * sessions (router does not owner-gate it), and it must never throw — any
+   * live-state failure collapses to a conservative `reachable:false` result so
+   * the client can render "home model unavailable" instead of an RPC error.
+   *
+   * Capability resolution is best-effort with the signals the runtime exposes
+   * today (see `buildHomeModelStatus`):
+   *   - vision stays "unknown" unless a deterministic signal exists — no
+   *     mmproj tracking in the Envoy Local runtime/catalog yet, so none is
+   *     ever passed today;
+   *   - embedding is true when the Envoy Local embed sidecar (:18791) answers
+   *     or a real embedding provider is configured in Knowledge settings;
+   *   - contextWindow is surfaced only for a running Envoy Local (`-c` ctx).
+   */
+  async getHomeModelStatus(): Promise<
+    import("@envoymesh/api").GetHomeModelStatusResult
+  > {
+    try {
+      const cfg = await this._configStore.load()
+      const effective = await this.getEffectiveModelProviders()
+      let local: import("@envoymesh/api").EnvoyLocalStatus | null = null
+      let embed: import("@envoymesh/api").EnvoyLocalEmbedStatus | null = null
+      try {
+        local = await this.getEnvoyLocalStatus()
+      } catch (err) {
+        console.warn(
+          "[home-model-status] Envoy Local status probe failed:",
+          err instanceof Error ? err.message : String(err),
+        )
+      }
+      try {
+        embed = await this.getEnvoyLocalEmbedStatus()
+      } catch (err) {
+        console.warn(
+          "[home-model-status] Envoy Local embed status probe failed:",
+          err instanceof Error ? err.message : String(err),
+        )
+      }
+
+      // Embedding provider "configured" = a real (non-mock) embed path:
+      // Envoy Local embed with an installed active model, or an external
+      // Ollama / OpenAI-compatible embed mode with model/endpoint declared in
+      // Knowledge settings.
+      const kb = resolveAiKnowledgeBaseSettings(cfg?.aiSettings?.knowledgeBase)
+      const emb = kb.embedding
+      const embedMode = emb?.mode
+      let embeddingConfigured = false
+      if (embedMode === "ollama" || embedMode === "openai-compatible") {
+        embeddingConfigured = Boolean(emb?.modelName?.trim() || emb?.endpoint?.trim())
+      } else if (embedMode === "envoy-local") {
+        embeddingConfigured = Boolean(embed?.activeModelId)
+      }
+
+      const localServing = local != null && local.enabled && local.running
+      const ctxSize =
+        localServing && local?.activeModelId
+          ? local?.serverParams?.ctxSize
+          : undefined
+
+      return buildHomeModelStatus({
+        config: effective,
+        envoyLocal:
+          local != null && (local.enabled || local.running)
+            ? { running: local.running }
+            : null,
+        embedding: {
+          sidecarRunning: embed?.running === true,
+          providerConfigured: embeddingConfigured,
+        },
+        // `getEffectiveModelProviders` sets modelName to the Envoy Local
+        // activeModelId when local wins; fall back to the raw status id.
+        modelName: effective.modelName ?? local?.activeModelId ?? null,
+        // Envoy Local is the only mode whose config provides a context size
+        // today (`-c` ctx from serverParams) — surface it only while serving.
+        contextWindow: ctxSize,
+        // No deterministic vision signal exists in the current runtime —
+        // leave unset so the builder reports "unknown" (contract semantics).
+      })
+    } catch (err) {
+      console.warn(
+        "[home-model-status] status build failed — reporting unreachable:",
+        err instanceof Error ? err.message : String(err),
+      )
+      return buildHomeModelStatus({ config: null })
     }
   }
 

@@ -253,6 +253,7 @@ import type {
   SendChatParams,
   AskHomeModelParams,
   AskHomeModelResult,
+  GetHomeModelStatusResult,
 } from "./ws-protocol.js";
 
 // ============================================
@@ -3133,6 +3134,14 @@ export interface NodeService {
    * sampling params pass through to the answering provider.
    */
   askHomeModel(params: AskHomeModelParams): Promise<AskHomeModelResult>;
+  /**
+   * EM-4 — read-only home-model status (thin-client `getHomeModelStatus`;
+   * envoy-home-side-plan §1.3, thin-client-protocol v0.3 §2.2). Open to both
+   * owner and family sessions (status is not owner-only, like
+   * `getEnvoyLocalStatus`). Never throws — errors collapse to a conservative
+   * `reachable:false` result.
+   */
+  getHomeModelStatus(): Promise<GetHomeModelStatusResult>;
   /**
    * Start or focus a Pi interactive TUI for an explicitly chosen project folder.
    * Requires `projectPath` to spawn — no boot auto-start. Up to

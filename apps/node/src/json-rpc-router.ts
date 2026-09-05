@@ -1543,6 +1543,8 @@ export async function routeRpcMethod(
       return ns.askHomeModel(
         params as unknown as import("@envoymesh/api").AskHomeModelParams,
       );
+    case "getHomeModelStatus":
+      return ns.getHomeModelStatus();
     case "ensurePiTerminalSession":
       return ns.ensurePiTerminalSession({
         projectPath:
