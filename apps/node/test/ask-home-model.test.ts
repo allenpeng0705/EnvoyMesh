@@ -24,10 +24,8 @@ describe("deriveHomeModelProviderMode", () => {
     expect(deriveHomeModelProviderMode("peer.mock")).toBe("mock");
   });
 
-  it("echoes unrecognized providerIds and passes through undefined", () => {
-    expect(deriveHomeModelProviderMode("local.custom-thing")).toBe(
-      "local.custom-thing",
-    );
+  it("returns undefined for unrecognized providerIds and for undefined", () => {
+    expect(deriveHomeModelProviderMode("local.custom-thing")).toBeUndefined();
     expect(deriveHomeModelProviderMode(undefined)).toBeUndefined();
   });
 });

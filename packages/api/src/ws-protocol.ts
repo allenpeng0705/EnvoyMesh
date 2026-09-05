@@ -2991,7 +2991,7 @@ export interface AskHomeModelResult {
   text: string;
   model: string;
   providerId?: string;
-  providerMode?: string;
+  providerMode?: HomeModelProviderMode; // forward-declared union below (superset incl. "disabled")
 }
 
 // ============================================

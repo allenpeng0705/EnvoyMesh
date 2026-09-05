@@ -7,38 +7,29 @@
  * constructing a full NodeServiceImpl.
  */
 import type { ModelRouteDecision } from "@envoymesh/models";
-
-/**
- * Canonical provider modes reported to thin clients. Mirrors the node's own
- * provider-config modes plus `"mock"`.
- */
-export type HomeModelProviderMode =
-  | "envoy-local"
-  | "ollama"
-  | "openai-compatible"
-  | "cloud"
-  | "mock";
+import type { HomeModelProviderMode } from "@envoymesh/api";
 
 /**
  * Best-effort provider-mode label derived from the answering provider's
- * `providerId` (built by `buildModelProviders` in @envoymesh/models):
+ * `providerId` (built by `buildModelProviders` in @envoymesh/models), using the
+ * canonical API union (`@envoymesh/api` `HomeModelProviderMode`):
  *   - `local.envoy-local`        → "envoy-local"
  *   - `local.ollama.<model>`     → "ollama"
  *   - `cloud.openai-compatible`  → "openai-compatible"
  *   - `cloud.*` (litellm/anthropic-compatible/…) → "cloud"
  *   - `*.mock` (local/cloud/peer) → "mock"
- * Anything unrecognized echoes the raw providerId (fallback, not a guess).
+ * Anything unrecognized → undefined (never a fabricated label).
  */
 export function deriveHomeModelProviderMode(
   providerId: string | undefined,
-): HomeModelProviderMode | string | undefined {
+): HomeModelProviderMode | undefined {
   if (!providerId) return undefined
   if (providerId.includes("envoy-local")) return "envoy-local"
   if (providerId.includes("ollama")) return "ollama"
   if (providerId.includes("openai-compatible")) return "openai-compatible"
   if (providerId.includes(".mock")) return "mock"
   if (providerId.startsWith("cloud.")) return "cloud"
-  return providerId
+  return undefined
 }
 
 /**
