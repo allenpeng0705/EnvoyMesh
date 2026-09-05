@@ -3118,6 +3118,29 @@ class AppLocalizationsDe extends AppLocalizations {
   String get chainsProvenanceFailed => 'Herkunft konnte nicht geladen werden.';
 
   @override
+  String get chainsArtifactGraphTitle => 'Artefakt-Übergaben';
+
+  @override
+  String get chainsArtifactGraphEmpty =>
+      'Keine Zwischenartefakte für diesen Schritt.';
+
+  @override
+  String get chainsHomesTitle => 'Geräte in diesem Job';
+
+  @override
+  String get chainsHomesAssigner => 'Assigner-Gerät';
+
+  @override
+  String get chainsHomesWorkers => 'Worker-Geräte';
+
+  @override
+  String get chainsHomesWatchingRemote =>
+      'Läuft auf einem anderen Computer — Fortschritt erscheint hier.';
+
+  @override
+  String get chainsHomesThisHomeAssigner => 'Ihr Heimknoten ist der Assigner.';
+
+  @override
   String get chainsRebalanceHeading => 'Budget hinzufügen';
 
   @override

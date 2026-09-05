@@ -1356,5 +1356,12 @@
   "chainsTechnicalDetails": "Technische Details",
   "chainsProvenanceEmpty": "Keine Herkunftsdaten.",
   "chainsProvenanceFailed": "Herkunft konnte nicht geladen werden.",
+  "chainsArtifactGraphTitle": "Artefakt-Übergaben",
+  "chainsArtifactGraphEmpty": "Keine Zwischenartefakte für diesen Schritt.",
+  "chainsHomesTitle": "Geräte in diesem Job",
+  "chainsHomesAssigner": "Assigner-Gerät",
+  "chainsHomesWorkers": "Worker-Geräte",
+  "chainsHomesWatchingRemote": "Läuft auf einem anderen Computer — Fortschritt erscheint hier.",
+  "chainsHomesThisHomeAssigner": "Ihr Heimknoten ist der Assigner.",
   "chainsStatusRecovering": "Wiederherstellung…"
 }

@@ -113,6 +113,11 @@ export const zhChainsMessages = {
     assignerStrandedRestarted: "没有可恢复的进度快照 — 已在本机重新开始。",
     assignerStrandedCancelled: "团队任务已取消。",
     assignerStrandedFailed: "无法更新此任务",
+    homesTitle: "此任务涉及的节点",
+    homesAssigner: "编排机",
+    homesWorkers: "工作机",
+    homesWatchingRemote: "任务在另一台电脑上运行 — 进度会显示在这里。",
+    homesThisHomeAssigner: "本机是编排机。",
     speculationReviewTitle: "工作节点结果不一致",
     speculationReviewDisagree:
       "两个工作节点完成了此步骤但结果不同。请选择其一以继续，或重新分配该步骤。",

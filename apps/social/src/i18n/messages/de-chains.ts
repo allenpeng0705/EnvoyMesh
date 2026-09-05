@@ -97,6 +97,11 @@ export const deChainsMessages = {
       "Kein Zwischenspeicher vorhanden — neuer Lauf auf diesem Computer gestartet.",
     assignerStrandedCancelled: "Team-Job abgebrochen.",
     assignerStrandedFailed: "Dieser Job konnte nicht aktualisiert werden",
+    homesTitle: "Geräte in diesem Job",
+    homesAssigner: "Assigner-Gerät",
+    homesWorkers: "Worker-Geräte",
+    homesWatchingRemote: "Läuft auf einem anderen Computer — Fortschritt erscheint hier.",
+    homesThisHomeAssigner: "Dieser Computer ist der Assigner.",
     speculationReviewTitle: "Arbeitsergebnisse stimmen nicht überein",
     speculationReviewDisagree:
       "Zwei Teammitglieder haben diesen Schritt mit unterschiedlichen Ergebnissen beendet. Wählen Sie eines, um fortzufahren, oder weisen Sie den Schritt neu zu.",

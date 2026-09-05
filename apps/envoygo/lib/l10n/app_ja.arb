@@ -1356,5 +1356,12 @@
   "chainsTechnicalDetails": "技術詳細",
   "chainsProvenanceEmpty": "由来データがありません。",
   "chainsProvenanceFailed": "由来を読み込めませんでした。",
+  "chainsArtifactGraphTitle": "成果物の引き渡し",
+  "chainsArtifactGraphEmpty": "このステップの中間成果物はありません。",
+  "chainsHomesTitle": "このジョブのホーム",
+  "chainsHomesAssigner": "Assigner ホーム",
+  "chainsHomesWorkers": "ワーカーホーム",
+  "chainsHomesWatchingRemote": "別のパソコンで実行中 — 進捗はここに表示されます。",
+  "chainsHomesThisHomeAssigner": "ホームノードが Assigner です。",
   "chainsStatusRecovering": "復旧中…"
 }

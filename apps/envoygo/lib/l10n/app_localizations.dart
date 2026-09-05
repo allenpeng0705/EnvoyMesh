@@ -5682,6 +5682,48 @@ abstract class AppLocalizations {
   /// **'Could not load execution history.'**
   String get chainsProvenanceFailed;
 
+  /// No description provided for @chainsArtifactGraphTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Artifact handoffs'**
+  String get chainsArtifactGraphTitle;
+
+  /// No description provided for @chainsArtifactGraphEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No intermediate artifacts recorded for this step.'**
+  String get chainsArtifactGraphEmpty;
+
+  /// No description provided for @chainsHomesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Homes on this job'**
+  String get chainsHomesTitle;
+
+  /// No description provided for @chainsHomesAssigner.
+  ///
+  /// In en, this message translates to:
+  /// **'Assigner home'**
+  String get chainsHomesAssigner;
+
+  /// No description provided for @chainsHomesWorkers.
+  ///
+  /// In en, this message translates to:
+  /// **'Worker homes'**
+  String get chainsHomesWorkers;
+
+  /// No description provided for @chainsHomesWatchingRemote.
+  ///
+  /// In en, this message translates to:
+  /// **'Running on another computer — progress updates here.'**
+  String get chainsHomesWatchingRemote;
+
+  /// No description provided for @chainsHomesThisHomeAssigner.
+  ///
+  /// In en, this message translates to:
+  /// **'This phone’s home is the Assigner.'**
+  String get chainsHomesThisHomeAssigner;
+
   /// No description provided for @chainsRebalanceHeading.
   ///
   /// In en, this message translates to:

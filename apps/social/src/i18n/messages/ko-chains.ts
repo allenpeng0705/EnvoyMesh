@@ -97,6 +97,11 @@ export const koChainsMessages = {
       "중간 스냅샷이 없습니다 — 이 컴퓨터에서 새 실행을 시작했습니다.",
     assignerStrandedCancelled: "팀 작업이 취소되었습니다.",
     assignerStrandedFailed: "이 작업을 업데이트할 수 없습니다",
+    homesTitle: "이 작업의 홈",
+    homesAssigner: "Assigner 홈",
+    homesWorkers: "워커 홈",
+    homesWatchingRemote: "다른 컴퓨터에서 실행 중 — 진행 상황이 여기에 표시됩니다.",
+    homesThisHomeAssigner: "이 컴퓨터가 Assigner입니다.",
     speculationReviewTitle: "작업 결과가 일치하지 않음",
     speculationReviewDisagree:
       "두 팀원이 이 단계를 서로 다른 결과로 마쳤습니다. 계속하려면 하나를 고르거나 단계를 다시 배정하세요.",

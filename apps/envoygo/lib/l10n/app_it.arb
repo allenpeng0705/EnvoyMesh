@@ -1356,5 +1356,12 @@
   "chainsTechnicalDetails": "Dettagli tecnici",
   "chainsProvenanceEmpty": "Nessun dato di provenienza.",
   "chainsProvenanceFailed": "Impossibile caricare la provenienza.",
+  "chainsArtifactGraphTitle": "Consegne artefatti",
+  "chainsArtifactGraphEmpty": "Nessun artefatto intermedio per questo passo.",
+  "chainsHomesTitle": "Home in questo job",
+  "chainsHomesAssigner": "Home Assigner",
+  "chainsHomesWorkers": "Home worker",
+  "chainsHomesWatchingRemote": "In esecuzione su un altro computer — i progressi compaiono qui.",
+  "chainsHomesThisHomeAssigner": "Il nodo home è l’Assigner.",
   "chainsStatusRecovering": "Recupero…"
 }

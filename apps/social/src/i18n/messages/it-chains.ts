@@ -97,6 +97,11 @@ export const itChainsMessages = {
       "Nessuno snapshot a metà — avviata una nuova esecuzione su questo computer.",
     assignerStrandedCancelled: "Lavoro di team annullato.",
     assignerStrandedFailed: "Impossibile aggiornare questo lavoro",
+    homesTitle: "Home in questo job",
+    homesAssigner: "Home Assigner",
+    homesWorkers: "Home worker",
+    homesWatchingRemote: "In esecuzione su un altro computer — i progressi compaiono qui.",
+    homesThisHomeAssigner: "Questo computer è l’Assigner.",
     speculationReviewTitle: "I risultati non coincidono",
     speculationReviewDisagree:
       "Due membri del team hanno completato questo passaggio con risultati diversi. Scegline uno per continuare, oppure riassegna il passaggio.",

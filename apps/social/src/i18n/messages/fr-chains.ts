@@ -97,6 +97,11 @@ export const frChainsMessages = {
       "Pas d'instantané en cours — nouveau parcours démarré sur cet ordinateur.",
     assignerStrandedCancelled: "Mission d'équipe annulée.",
     assignerStrandedFailed: "Impossible de mettre à jour cette mission",
+    homesTitle: "Machines de ce job",
+    homesAssigner: "Machine Assigner",
+    homesWorkers: "Machines workers",
+    homesWatchingRemote: "Tourne sur un autre ordinateur — la progression s’affiche ici.",
+    homesThisHomeAssigner: "Cet ordinateur est l’Assigner.",
     speculationReviewTitle: "Les résultats ne correspondent pas",
     speculationReviewDisagree:
       "Deux membres de l'équipe ont terminé cette étape avec des résultats différents. Choisissez-en un pour continuer, ou réassignez l'étape.",

@@ -3075,6 +3075,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chainsProvenanceFailed => 'Could not load execution history.';
 
   @override
+  String get chainsArtifactGraphTitle => 'Artifact handoffs';
+
+  @override
+  String get chainsArtifactGraphEmpty =>
+      'No intermediate artifacts recorded for this step.';
+
+  @override
+  String get chainsHomesTitle => 'Homes on this job';
+
+  @override
+  String get chainsHomesAssigner => 'Assigner home';
+
+  @override
+  String get chainsHomesWorkers => 'Worker homes';
+
+  @override
+  String get chainsHomesWatchingRemote =>
+      'Running on another computer — progress updates here.';
+
+  @override
+  String get chainsHomesThisHomeAssigner =>
+      'This phone’s home is the Assigner.';
+
+  @override
   String get chainsRebalanceHeading => 'Add budget';
 
   @override

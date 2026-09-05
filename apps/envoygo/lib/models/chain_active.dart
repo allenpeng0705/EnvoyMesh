@@ -278,6 +278,8 @@ class ChainActiveSummary {
   final bool assignerStrandedCanReclaim;
   final bool assignerStrandedCanCancel;
   final bool remoteOwnershipIsCreator;
+  /// Phase 67C — Assigner peer when handed off (for multi-home labeling).
+  final String? assignerPeerId;
 
   const ChainActiveSummary({
     required this.chainId,
@@ -305,6 +307,7 @@ class ChainActiveSummary {
     this.assignerStrandedCanReclaim = false,
     this.assignerStrandedCanCancel = false,
     this.remoteOwnershipIsCreator = false,
+    this.assignerPeerId,
   });
 
   factory ChainActiveSummary.fromJson(Map<String, dynamic> json) {
@@ -344,6 +347,9 @@ class ChainActiveSummary {
     final canReclaim = stranded && strandedRaw['canReclaim'] == true;
     final canCancel = stranded && strandedRaw['canCancel'] == true;
     final isCreator = ownershipRaw is Map && ownershipRaw['localRole'] == 'creator';
+    final assignerPeerId = ownershipRaw is Map
+        ? (ownershipRaw['assignerPeerId'] as String?)
+        : null;
     return ChainActiveSummary(
       chainId: json['chainId'] as String,
       chainMandateId: json['chainMandateId'] as String? ?? '',
@@ -398,6 +404,9 @@ class ChainActiveSummary {
       assignerStrandedCanReclaim: canReclaim,
       assignerStrandedCanCancel: canCancel,
       remoteOwnershipIsCreator: isCreator,
+      assignerPeerId: assignerPeerId?.trim().isNotEmpty == true
+          ? assignerPeerId!.trim()
+          : null,
     );
   }
 

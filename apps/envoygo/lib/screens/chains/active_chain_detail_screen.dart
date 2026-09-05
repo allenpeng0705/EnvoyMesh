@@ -773,6 +773,64 @@ class _ActiveChainDetailScreenState
                     ),
                     const SizedBox(height: 12),
                   ],
+                  if (st.assignerPeerId != null ||
+                      st.steps.any(
+                        (s) => (s.workerPeerId ?? '').isNotEmpty,
+                      )) ...[
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              l10n.chainsHomesTitle,
+                              style: theme.textTheme.titleSmall,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              st.remoteOwnershipIsCreator
+                                  ? l10n.chainsHomesWatchingRemote
+                                  : l10n.chainsHomesThisHomeAssigner,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                            if (st.assignerPeerId != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                '${l10n.chainsHomesAssigner}: ${_shortPeerId(st.assignerPeerId!)}',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
+                            Builder(
+                              builder: (context) {
+                                final workers = st.steps
+                                    .map((s) => s.workerPeerId)
+                                    .whereType<String>()
+                                    .where(
+                                      (id) =>
+                                          id.isNotEmpty &&
+                                          id != st.assignerPeerId,
+                                    )
+                                    .toSet()
+                                    .toList();
+                                if (workers.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    '${l10n.chainsHomesWorkers}: ${workers.map(_shortPeerId).join(', ')}',
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (st.iteration?.waitingForOwner == true) ...[
                     Card(
                       color: theme.colorScheme.secondaryContainer,
@@ -1073,7 +1131,9 @@ class _ActiveChainDetailScreenState
                       final waiting = step.waitingOn.isEmpty
                           ? null
                           : '${l10n.chainsStepsWaitingOn} ${step.waitingOn.map((w) => w.label ?? w.key).join(", ")}';
-                      final allowStepControl = !finalized;
+                      // Creator watching a remote Assigner is read-only on steps.
+                      final allowStepControl =
+                          !finalized && !st.remoteOwnershipIsCreator;
                       final showCancel =
                           allowStepControl && canCancelChainStep(step.state);
                       final showReassign =
@@ -1321,6 +1381,16 @@ class _ChainStepProvenanceSheetState extends State<_ChainStepProvenanceSheet> {
     final events =
         (_provenance?['events'] as List?)?.whereType<Map>().toList() ??
             const <Map>[];
+    final artifactGraphRaw = _provenance?['artifactGraph'];
+    final artifactGraph = artifactGraphRaw is Map
+        ? Map<String, dynamic>.from(artifactGraphRaw)
+        : null;
+    final artifactEdges =
+        (artifactGraph?['edges'] as List?)?.whereType<Map>().toList() ??
+            const <Map>[];
+    final artifactNodes =
+        (artifactGraph?['nodes'] as List?)?.whereType<Map>().toList() ??
+            const <Map>[];
 
     return SafeArea(
       child: Padding(
@@ -1395,36 +1465,78 @@ class _ChainStepProvenanceSheetState extends State<_ChainStepProvenanceSheet> {
                     ],
                   ),
                 )
-              else if (events.isEmpty)
-                Text(
-                  l10n.chainsProvenanceEmpty,
-                  style: theme.textTheme.bodySmall,
-                )
-              else
-                ...events.map((raw) {
-                  final e = Map<String, dynamic>.from(raw);
-                  final seq = e['seq'];
-                  final type = e['type']?.toString() ?? '';
-                  final attemptId = e['attemptId']?.toString();
-                  final worker = e['workerPeerId']?.toString();
-                  final transport = e['transportPath']?.toString();
-                  final reason = e['reason']?.toString();
-                  final parts = <String>[
-                    if (seq != null) '#$seq',
-                    type,
-                    if (attemptId != null && attemptId.isNotEmpty) attemptId,
-                    if (worker != null && worker.isNotEmpty) _shortId(worker),
-                    if (transport != null && transport.isNotEmpty) transport,
-                    if (reason != null && reason.isNotEmpty) reason,
-                  ];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      parts.join(' · '),
+              else ...[
+                if (artifactGraph != null) ...[
+                  Text(
+                    l10n.chainsArtifactGraphTitle,
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 6),
+                  if (artifactEdges.isEmpty && artifactNodes.isEmpty)
+                    Text(
+                      l10n.chainsArtifactGraphEmpty,
                       style: theme.textTheme.bodySmall,
-                    ),
-                  );
-                }),
+                    )
+                  else ...[
+                    ...artifactEdges.map((raw) {
+                      final e = Map<String, dynamic>.from(raw);
+                      final from = e['fromSubtaskId']?.toString() ?? '';
+                      final to = e['toSubtaskId']?.toString() ?? '';
+                      final key = e['key']?.toString() ?? '';
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '$from → $to${key.isNotEmpty ? ' · $key' : ''}',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      );
+                    }),
+                    ...artifactNodes.map((raw) {
+                      final n = Map<String, dynamic>.from(raw);
+                      final id = n['subtaskId']?.toString() ?? '';
+                      final label = n['label']?.toString() ?? id;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          label,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      );
+                    }),
+                  ],
+                  const SizedBox(height: 12),
+                ],
+                if (events.isEmpty)
+                  Text(
+                    l10n.chainsProvenanceEmpty,
+                    style: theme.textTheme.bodySmall,
+                  )
+                else
+                  ...events.map((raw) {
+                    final e = Map<String, dynamic>.from(raw);
+                    final seq = e['seq'];
+                    final type = e['type']?.toString() ?? '';
+                    final attemptId = e['attemptId']?.toString();
+                    final worker = e['workerPeerId']?.toString();
+                    final transport = e['transportPath']?.toString();
+                    final reason = e['reason']?.toString();
+                    final parts = <String>[
+                      if (seq != null) '#$seq',
+                      type,
+                      if (attemptId != null && attemptId.isNotEmpty) attemptId,
+                      if (worker != null && worker.isNotEmpty) _shortId(worker),
+                      if (transport != null && transport.isNotEmpty) transport,
+                      if (reason != null && reason.isNotEmpty) reason,
+                    ];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        parts.join(' · '),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    );
+                  }),
+              ],
             ],
           ),
         ),

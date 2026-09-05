@@ -3118,6 +3118,30 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chainsProvenanceFailed => 'Impossible de charger la provenance.';
 
   @override
+  String get chainsArtifactGraphTitle => 'Remises d’artefacts';
+
+  @override
+  String get chainsArtifactGraphEmpty =>
+      'Aucun artefact intermédiaire pour cette étape.';
+
+  @override
+  String get chainsHomesTitle => 'Machines de ce job';
+
+  @override
+  String get chainsHomesAssigner => 'Machine Assigner';
+
+  @override
+  String get chainsHomesWorkers => 'Machines workers';
+
+  @override
+  String get chainsHomesWatchingRemote =>
+      'Tourne sur un autre ordinateur — la progression s’affiche ici.';
+
+  @override
+  String get chainsHomesThisHomeAssigner =>
+      'Votre nœud domicile est l’Assigner.';
+
+  @override
   String get chainsRebalanceHeading => 'Ajouter du budget';
 
   @override

@@ -37,6 +37,8 @@ import {
   applyOwnershipNotify,
   statusMirrorFromChainStatus,
   withStatusMirror,
+  syntheticDelegatedChainGetState,
+  enrichChainGetStateWithOwnership,
 } from "./chain-remote-reclaim.js";
 import type { ChainRemoteOwnership } from "./chain-remote-reclaim.js";
 import type { TaskChainOwnershipPayload } from "@envoymesh/protocol";
@@ -1528,6 +1530,20 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
         );
         side.remoteOwnership.set(payload.chainId, mirrored);
         void deps.recordDelegatedOwnership?.(mirrored);
+        // Phase 67C — push mirrored progress to creator Social/EnvoyGo UIs.
+        // Creator homes have no local runtime, so `_emitChainState` is a no-op.
+        if (!deps.getChainStore().getRuntime(payload.chainId)) {
+          void deps.ensureAgentIdentity().then((agent) => {
+            const localPeerId = agent?.agentPeerId ?? mirrored.creatorPeerId;
+            if (localPeerId !== mirrored.creatorPeerId) return;
+            const state = enrichChainGetStateWithOwnership(
+              syntheticDelegatedChainGetState(mirrored),
+              mirrored,
+              localPeerId,
+            );
+            deps.emit("chain:state", state);
+          });
+        }
       } else if (
         !ownership &&
         side.observedChains.has(payload.chainId)

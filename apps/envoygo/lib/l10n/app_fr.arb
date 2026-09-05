@@ -1356,5 +1356,12 @@
   "chainsTechnicalDetails": "Détails techniques",
   "chainsProvenanceEmpty": "Aucune donnée de provenance.",
   "chainsProvenanceFailed": "Impossible de charger la provenance.",
+  "chainsArtifactGraphTitle": "Remises d’artefacts",
+  "chainsArtifactGraphEmpty": "Aucun artefact intermédiaire pour cette étape.",
+  "chainsHomesTitle": "Machines de ce job",
+  "chainsHomesAssigner": "Machine Assigner",
+  "chainsHomesWorkers": "Machines workers",
+  "chainsHomesWatchingRemote": "Tourne sur un autre ordinateur — la progression s’affiche ici.",
+  "chainsHomesThisHomeAssigner": "Votre nœud domicile est l’Assigner.",
   "chainsStatusRecovering": "Récupération…"
 }

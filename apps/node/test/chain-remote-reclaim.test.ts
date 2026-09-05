@@ -123,6 +123,65 @@ describe("chain-remote-reclaim (Phase 64A)", () => {
     expect(enriched.assignerStranded?.canCancel).toBe(true);
   });
 
+  it("67C merges statusMirror steps onto creator synthetic getState", async () => {
+    const { withStatusMirror, statusMirrorFromChainStatus, applyStatusMirrorToChainGetState } =
+      await import("../src/chain-remote-reclaim.js");
+    const ownership = withStatusMirror(
+      createRemoteOwnership({
+        chainId: "chain_mirror",
+        creatorPeerId: "creator_peer",
+        creatorOwnerId: "co",
+        assignerPeerId: "assigner_peer",
+        assignerOwnerId: "ao",
+        goal: "cross-home progress",
+        status: "assigner_active",
+      }),
+      statusMirrorFromChainStatus({
+        phase: "running",
+        awardMode: "direct",
+        subtaskCount: 2,
+        awardedCount: 2,
+        partialCount: 1,
+        steps: [
+          {
+            subtaskId: "s1",
+            objective: "Research topic",
+            state: "done",
+            workerPeerId: "worker_a",
+          },
+          {
+            subtaskId: "s2",
+            objective: "Write summary",
+            state: "running",
+            workerPeerId: "worker_b",
+          },
+        ],
+      }),
+    );
+    const synthetic = syntheticDelegatedChainGetState(ownership);
+    expect(synthetic.subtaskCount).toBe(2);
+    expect(synthetic.awardedCount).toBe(2);
+    expect(synthetic.partialCount).toBe(1);
+    expect(synthetic.steps).toHaveLength(2);
+    expect(synthetic.steps?.[0]?.objective).toBe("Research topic");
+    expect(synthetic.steps?.[1]?.workerPeerId).toBe("worker_b");
+
+    const withLocal = applyStatusMirrorToChainGetState(
+      {
+        ...synthetic,
+        steps: [
+          {
+            subtaskId: "local",
+            objective: "Keep local",
+            state: "running",
+          },
+        ],
+      },
+      ownership,
+    );
+    expect(withLocal.steps?.[0]?.subtaskId).toBe("local");
+  });
+
   it("64B reclaim/cancel gates and stranded scan", () => {
     const ownership = createRemoteOwnership({
       chainId: "chain_stub",

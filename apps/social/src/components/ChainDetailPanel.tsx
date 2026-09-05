@@ -8,7 +8,7 @@
  * Pulls live state from `chainGetState` on mount and on the `chain:state`
  * WebSocket event, so the bid inbox and rebalance bar reflect fresh bids.
  */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   ChainGetStateResult,
   ChainEvaluateBidsResult,
@@ -22,6 +22,10 @@ import { ChainBidInbox, type ChainBidInboxSubtask } from "./ChainBidInbox.js";
 import { ChainLiveSteps } from "./ChainLiveSteps.js";
 import { ChainRebalanceBar } from "./ChainRebalanceBar.js";
 import { BackIcon } from "../icons.js";
+import {
+  shortChainPeerId,
+  summarizeChainHomes,
+} from "../lib/chain-homes-summary.js";
 
 export interface ChainDetailPanelProps {
   chainId: string;
@@ -267,6 +271,104 @@ export function ChainDetailPanel({
   const isFinalized = state?.published || state?.chainCancelled;
   const detailStatus = state ? deriveDetailStatus(state) : "unknown";
   const statusLabel = t(`chains.status.${detailStatus}`);
+  const homes = useMemo(
+    () =>
+      summarizeChainHomes({
+        remoteOwnership: state?.remoteOwnership,
+        steps: state?.steps,
+      }),
+    [state?.remoteOwnership, state?.steps],
+  );
+
+  const strandedBanner =
+    state?.assignerStranded &&
+    state.remoteOwnership?.localRole === "creator" &&
+    !state.published &&
+    !state.chainCancelled ? (
+      <section
+        className="chain-detail-panel__section chain-assigner-stranded"
+        data-testid="chain-assigner-stranded"
+      >
+        <h4>{t("chains.detail.assignerStrandedTitle")}</h4>
+        <p>{t("chains.detail.assignerStrandedBody")}</p>
+        <div className="chain-iteration-owner__actions">
+          {state.assignerStranded.canReclaim ? (
+            <button
+              type="button"
+              className="secondary btn-sm"
+              disabled={busyOwnership}
+              data-testid="chain-assigner-reclaim"
+              onClick={() => {
+                void (async () => {
+                  if (!nodeService.chainReclaimAssigner) {
+                    showToast(t("chains.detail.assignerStrandedFailed"), "error");
+                    return;
+                  }
+                  setBusyOwnership(true);
+                  try {
+                    const r = await nodeService.chainReclaimAssigner({ chainId });
+                    if (!r.ok) {
+                      showToast(r.reason ?? t("chains.detail.assignerStrandedFailed"), "error");
+                      return;
+                    }
+                    showToast(
+                      r.mode === "restart"
+                        ? t("chains.detail.assignerStrandedRestarted")
+                        : t("chains.detail.assignerStrandedReclaimed"),
+                      "success",
+                    );
+                    await load();
+                    onChanged?.();
+                  } catch (err) {
+                    showToast(err instanceof Error ? err.message : String(err), "error");
+                  } finally {
+                    setBusyOwnership(false);
+                  }
+                })();
+              }}
+            >
+              {t("chains.detail.assignerStrandedReclaim")}
+            </button>
+          ) : null}
+          {state.assignerStranded.canCancel ? (
+            <button
+              type="button"
+              className="link-btn"
+              disabled={busyOwnership}
+              data-testid="chain-assigner-cancel-delegated"
+              onClick={() => {
+                void (async () => {
+                  if (!nodeService.chainCancelDelegated) {
+                    showToast(t("chains.detail.assignerStrandedFailed"), "error");
+                    return;
+                  }
+                  setBusyOwnership(true);
+                  try {
+                    const r = await nodeService.chainCancelDelegated({
+                      chainId,
+                      reason: "owner_stranded_cancel",
+                    });
+                    if (!r.ok) {
+                      showToast(r.reason ?? t("chains.detail.assignerStrandedFailed"), "error");
+                      return;
+                    }
+                    showToast(t("chains.detail.assignerStrandedCancelled"), "success");
+                    await load();
+                    onChanged?.();
+                  } catch (err) {
+                    showToast(err instanceof Error ? err.message : String(err), "error");
+                  } finally {
+                    setBusyOwnership(false);
+                  }
+                })();
+              }}
+            >
+              {t("chains.detail.assignerStrandedCancel")}
+            </button>
+          ) : null}
+        </div>
+      </section>
+    ) : null;
 
   return (
     <div className="chain-detail-panel">
@@ -348,6 +450,34 @@ export function ChainDetailPanel({
             ) : null}
           </section>
 
+          {strandedBanner}
+
+          {homes.assignerPeerId || homes.workerPeerIds.length > 0 ? (
+            <section
+              className="chain-detail-panel__section chain-detail-homes"
+              data-testid="chain-detail-homes"
+            >
+              <h4>{t("chains.detail.homesTitle")}</h4>
+              {homes.watchingRemoteAssigner ? (
+                <p className="muted">{t("chains.detail.homesWatchingRemote")}</p>
+              ) : homes.localRole === "assigner" ? (
+                <p className="muted">{t("chains.detail.homesThisHomeAssigner")}</p>
+              ) : null}
+              {homes.assignerPeerId ? (
+                <p data-testid="chain-detail-homes-assigner">
+                  <strong>{t("chains.detail.homesAssigner")}:</strong>{" "}
+                  <code>{shortChainPeerId(homes.assignerPeerId)}</code>
+                </p>
+              ) : null}
+              {homes.workerPeerIds.length > 0 ? (
+                <p data-testid="chain-detail-homes-workers">
+                  <strong>{t("chains.detail.homesWorkers")}:</strong>{" "}
+                  {homes.workerPeerIds.map((id) => shortChainPeerId(id)).join(", ")}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
           {(state.steps ?? []).length > 0 ? (
             <ChainLiveSteps
               steps={state.steps!}
@@ -356,7 +486,7 @@ export function ChainDetailPanel({
               goal={state.goal ?? goal}
               inputAttachments={state.inputAttachments}
               inputDeliveries={state.inputDeliveries}
-              allowStepControl={!isFinalized}
+              allowStepControl={!isFinalized && state.remoteOwnership?.localRole !== "creator"}
               busySubtaskId={busySubtaskId}
               busyDeliveryKey={busyDeliveryKey}
               onCancelStep={handleCancelStep}
@@ -387,95 +517,6 @@ export function ChainDetailPanel({
             <p className="chain-detail-panel__honesty" data-testid="chain-detail-recovery-honesty">
               {t("chains.detail.recoveringHonesty")}
             </p>
-          ) : null}
-
-          {state.assignerStranded &&
-          state.remoteOwnership?.localRole === "creator" &&
-          !state.published &&
-          !state.chainCancelled ? (
-            <section
-              className="chain-detail-panel__section chain-assigner-stranded"
-              data-testid="chain-assigner-stranded"
-            >
-              <h4>{t("chains.detail.assignerStrandedTitle")}</h4>
-              <p>{t("chains.detail.assignerStrandedBody")}</p>
-              <div className="chain-iteration-owner__actions">
-                {state.assignerStranded.canReclaim ? (
-                  <button
-                    type="button"
-                    className="secondary btn-sm"
-                    disabled={busyOwnership}
-                    data-testid="chain-assigner-reclaim"
-                    onClick={() => {
-                      void (async () => {
-                        if (!nodeService.chainReclaimAssigner) {
-                          showToast(t("chains.detail.assignerStrandedFailed"), "error");
-                          return;
-                        }
-                        setBusyOwnership(true);
-                        try {
-                          const r = await nodeService.chainReclaimAssigner({ chainId });
-                          if (!r.ok) {
-                            showToast(r.reason ?? t("chains.detail.assignerStrandedFailed"), "error");
-                            return;
-                          }
-                          showToast(
-                            r.mode === "restart"
-                              ? t("chains.detail.assignerStrandedRestarted")
-                              : t("chains.detail.assignerStrandedReclaimed"),
-                            "success",
-                          );
-                          await load();
-                          onChanged?.();
-                        } catch (err) {
-                          showToast(err instanceof Error ? err.message : String(err), "error");
-                        } finally {
-                          setBusyOwnership(false);
-                        }
-                      })();
-                    }}
-                  >
-                    {t("chains.detail.assignerStrandedReclaim")}
-                  </button>
-                ) : null}
-                {state.assignerStranded.canCancel ? (
-                  <button
-                    type="button"
-                    className="link-btn"
-                    disabled={busyOwnership}
-                    data-testid="chain-assigner-cancel-delegated"
-                    onClick={() => {
-                      void (async () => {
-                        if (!nodeService.chainCancelDelegated) {
-                          showToast(t("chains.detail.assignerStrandedFailed"), "error");
-                          return;
-                        }
-                        setBusyOwnership(true);
-                        try {
-                          const r = await nodeService.chainCancelDelegated({
-                            chainId,
-                            reason: "owner_stranded_cancel",
-                          });
-                          if (!r.ok) {
-                            showToast(r.reason ?? t("chains.detail.assignerStrandedFailed"), "error");
-                            return;
-                          }
-                          showToast(t("chains.detail.assignerStrandedCancelled"), "success");
-                          await load();
-                          onChanged?.();
-                        } catch (err) {
-                          showToast(err instanceof Error ? err.message : String(err), "error");
-                        } finally {
-                          setBusyOwnership(false);
-                        }
-                      })();
-                    }}
-                  >
-                    {t("chains.detail.assignerStrandedCancel")}
-                  </button>
-                ) : null}
-              </div>
-            </section>
           ) : null}
 
           {(state.speculationReview ?? []).map((review) => (

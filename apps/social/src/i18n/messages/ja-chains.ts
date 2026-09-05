@@ -97,6 +97,11 @@ export const jaChainsMessages = {
       "途中のスナップショットがありません — このパソコンで新しい実行を開始しました。",
     assignerStrandedCancelled: "チームジョブをキャンセルしました。",
     assignerStrandedFailed: "このジョブを更新できませんでした",
+    homesTitle: "このジョブのホーム",
+    homesAssigner: "Assigner ホーム",
+    homesWorkers: "ワーカーホーム",
+    homesWatchingRemote: "別のパソコンで実行中 — 進捗はここに表示されます。",
+    homesThisHomeAssigner: "このパソコンが Assigner です。",
     speculationReviewTitle: "作業結果が一致しません",
     speculationReviewDisagree:
       "2 つのチームメンバーがこのステップで異なる結果を出しました。続行するには一方を選ぶか、ステップを再割当してください。",

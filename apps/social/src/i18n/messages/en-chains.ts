@@ -113,6 +113,11 @@ export const chainsMessages = {
     assignerStrandedRestarted: "No mid-flight snapshot — started a new run on this computer.",
     assignerStrandedCancelled: "Team job cancelled.",
     assignerStrandedFailed: "Could not update this job",
+    homesTitle: "Homes on this job",
+    homesAssigner: "Assigner home",
+    homesWorkers: "Worker homes",
+    homesWatchingRemote: "Running on another computer — progress updates here.",
+    homesThisHomeAssigner: "This computer is the Assigner.",
     speculationReviewTitle: "Results disagree",
     speculationReviewDisagree:
       "Two team members finished this step with different results. Pick one to continue, or reassign the step.",

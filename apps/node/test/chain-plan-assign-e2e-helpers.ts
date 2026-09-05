@@ -80,8 +80,28 @@ export async function bondAndExchangeCards(
   await registerBondedPeer(b, a, aName);
   await a.mesh.probePeer(b.mesh.multiaddrs[0]!);
   await b.mesh.probePeer(a.mesh.multiaddrs[0]!);
-  expect((await a.service.requestAgentCard(b.profile.owner.ownerId)).ok).toBe(true);
-  expect((await b.service.requestAgentCard(a.profile.owner.ownerId)).ok).toBe(true);
+  // Phase 60F+ — retry requestAgentCard up to 5 times. The first call
+  // sometimes races with the libp2p dial setup ("No reachable path
+  // before the transport peer is fully connected"). Three-node
+  // smokes are particularly prone to this because the mesh between
+  // three processes takes longer to settle than two. Each retry
+  // waits 500 ms — bounded total ~2.5 s before failing hard.
+  let aOk = false;
+  let bOk = false;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [aRes, bRes] = await Promise.all([
+      a.service.requestAgentCard(b.profile.owner.ownerId, { timeoutMs: 8_000 }),
+      b.service.requestAgentCard(a.profile.owner.ownerId, { timeoutMs: 8_000 }),
+    ]);
+    aOk = aRes.ok;
+    bOk = bRes.ok;
+    if (aOk && bOk) break;
+    if (attempt === 4) {
+      expect(aRes.ok, `a.requestAgentCard(b) failed: ${aRes.error}`).toBe(true);
+      expect(bRes.ok, `b.requestAgentCard(a) failed: ${bRes.error}`).toBe(true);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
   await waitForPhase13(async () => {
     const cards = await a.service.listAgentCards();
     return cards.some((c) => c.ownerId === b.profile.owner.ownerId);
@@ -90,6 +110,8 @@ export async function bondAndExchangeCards(
     const cards = await b.service.listAgentCards();
     return cards.some((c) => c.ownerId === a.profile.owner.ownerId);
   }, 15_000);
+  void aOk;
+  void bOk;
 }
 
 export async function enableAgentNetworkWorker(

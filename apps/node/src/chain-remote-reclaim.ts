@@ -208,7 +208,7 @@ export function ownershipViewForLocal(
 export function syntheticDelegatedChainGetState(
   ownership: ChainRemoteOwnership,
 ): ChainGetStateResult {
-  return {
+  const base: ChainGetStateResult = {
     chainId: ownership.chainId,
     chainMandateId: "",
     subtaskCount: 0,
@@ -233,6 +233,39 @@ export function syntheticDelegatedChainGetState(
           }
         : undefined,
   };
+  return applyStatusMirrorToChainGetState(base, ownership);
+}
+
+/**
+ * Phase 67C — surface Assigner statusMirror as live steps/counts on the
+ * creator home (no local runtime). Prefer local steps when already present.
+ */
+export function applyStatusMirrorToChainGetState(
+  result: ChainGetStateResult,
+  ownership: ChainRemoteOwnership | undefined,
+): ChainGetStateResult {
+  const mirror = ownership?.statusMirror;
+  if (!mirror) return result;
+  const hasLocalSteps = (result.steps?.length ?? 0) > 0;
+  if (hasLocalSteps) return result;
+
+  result.subtaskCount = mirror.subtaskCount;
+  result.awardedCount = mirror.awardedCount;
+  result.partialCount = mirror.partialCount;
+  result.awardMode = mirror.awardMode;
+  if (mirror.phase === "completed") {
+    result.published = true;
+  }
+  if (mirror.phase === "cancelled") {
+    result.chainCancelled = true;
+  }
+  result.steps = mirror.steps.map((s) => ({
+    subtaskId: s.subtaskId,
+    objective: s.objective?.trim() || s.subtaskId,
+    state: s.state,
+    ...(s.workerPeerId ? { workerPeerId: s.workerPeerId } : {}),
+  }));
+  return result;
 }
 
 export function enrichChainGetStateWithOwnership(
@@ -249,6 +282,10 @@ export function enrichChainGetStateWithOwnership(
       canReclaim: true,
       canCancel: true,
     };
+  }
+  // Creator homes (and any empty-step view) get mirrored Assigner progress.
+  if (view.localRole === "creator") {
+    applyStatusMirrorToChainGetState(result, ownership);
   }
   return result;
 }

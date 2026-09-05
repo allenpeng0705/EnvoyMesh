@@ -2986,6 +2986,27 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chainsProvenanceFailed => '출처를 불러오지 못했습니다.';
 
   @override
+  String get chainsArtifactGraphTitle => '산출물 전달';
+
+  @override
+  String get chainsArtifactGraphEmpty => '이 단계의 중간 산출물이 없습니다.';
+
+  @override
+  String get chainsHomesTitle => '이 작업의 홈';
+
+  @override
+  String get chainsHomesAssigner => 'Assigner 홈';
+
+  @override
+  String get chainsHomesWorkers => '워커 홈';
+
+  @override
+  String get chainsHomesWatchingRemote => '다른 컴퓨터에서 실행 중 — 진행 상황이 여기에 표시됩니다.';
+
+  @override
+  String get chainsHomesThisHomeAssigner => '홈 노드가 Assigner입니다.';
+
+  @override
   String get chainsRebalanceHeading => '예산 추가';
 
   @override

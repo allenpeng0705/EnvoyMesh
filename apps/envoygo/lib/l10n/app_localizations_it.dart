@@ -3112,6 +3112,29 @@ class AppLocalizationsIt extends AppLocalizations {
   String get chainsProvenanceFailed => 'Impossibile caricare la provenienza.';
 
   @override
+  String get chainsArtifactGraphTitle => 'Consegne artefatti';
+
+  @override
+  String get chainsArtifactGraphEmpty =>
+      'Nessun artefatto intermedio per questo passo.';
+
+  @override
+  String get chainsHomesTitle => 'Home in questo job';
+
+  @override
+  String get chainsHomesAssigner => 'Home Assigner';
+
+  @override
+  String get chainsHomesWorkers => 'Home worker';
+
+  @override
+  String get chainsHomesWatchingRemote =>
+      'In esecuzione su un altro computer — i progressi compaiono qui.';
+
+  @override
+  String get chainsHomesThisHomeAssigner => 'Il nodo home è l’Assigner.';
+
+  @override
   String get chainsRebalanceHeading => 'Aggiungi budget';
 
   @override

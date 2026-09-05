@@ -2960,6 +2960,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chainsProvenanceFailed => '无法加载执行历史。';
 
   @override
+  String get chainsArtifactGraphTitle => '产物交接';
+
+  @override
+  String get chainsArtifactGraphEmpty => '此步骤尚无中间产物。';
+
+  @override
+  String get chainsHomesTitle => '此任务涉及的节点';
+
+  @override
+  String get chainsHomesAssigner => '编排机';
+
+  @override
+  String get chainsHomesWorkers => '工作机';
+
+  @override
+  String get chainsHomesWatchingRemote => '任务在另一台电脑上运行 — 进度会显示在这里。';
+
+  @override
+  String get chainsHomesThisHomeAssigner => '家庭节点是编排机。';
+
+  @override
   String get chainsRebalanceHeading => '追加预算';
 
   @override

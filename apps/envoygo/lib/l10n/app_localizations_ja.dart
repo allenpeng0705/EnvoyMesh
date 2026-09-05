@@ -2990,6 +2990,27 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chainsProvenanceFailed => '由来を読み込めませんでした。';
 
   @override
+  String get chainsArtifactGraphTitle => '成果物の引き渡し';
+
+  @override
+  String get chainsArtifactGraphEmpty => 'このステップの中間成果物はありません。';
+
+  @override
+  String get chainsHomesTitle => 'このジョブのホーム';
+
+  @override
+  String get chainsHomesAssigner => 'Assigner ホーム';
+
+  @override
+  String get chainsHomesWorkers => 'ワーカーホーム';
+
+  @override
+  String get chainsHomesWatchingRemote => '別のパソコンで実行中 — 進捗はここに表示されます。';
+
+  @override
+  String get chainsHomesThisHomeAssigner => 'ホームノードが Assigner です。';
+
+  @override
   String get chainsRebalanceHeading => '予算を追加';
 
   @override
