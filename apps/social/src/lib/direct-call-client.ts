@@ -275,6 +275,30 @@ export class DirectCallClient implements NodeServiceClient {
   chainCancel(params: Parameters<NodeService["chainCancel"]>[0]): ReturnType<NodeService["chainCancel"]> {
     return this._ns.chainCancel(params);
   }
+  chainReclaimAssigner(
+    params: Parameters<NonNullable<NodeService["chainReclaimAssigner"]>>[0],
+  ): ReturnType<NonNullable<NodeService["chainReclaimAssigner"]>> {
+    if (typeof this._ns.chainReclaimAssigner !== "function") {
+      return Promise.resolve({
+        ok: false,
+        chainId: params.chainId,
+        reason: "unsupported",
+      });
+    }
+    return this._ns.chainReclaimAssigner(params);
+  }
+  chainCancelDelegated(
+    params: Parameters<NonNullable<NodeService["chainCancelDelegated"]>>[0],
+  ): ReturnType<NonNullable<NodeService["chainCancelDelegated"]>> {
+    if (typeof this._ns.chainCancelDelegated !== "function") {
+      return Promise.resolve({
+        ok: false,
+        chainId: params.chainId,
+        reason: "unsupported",
+      });
+    }
+    return this._ns.chainCancelDelegated(params);
+  }
   chainReassignSubtask(
     params: Parameters<NonNullable<NodeService["chainReassignSubtask"]>>[0],
   ): ReturnType<NonNullable<NodeService["chainReassignSubtask"]>> {

@@ -643,4 +643,67 @@ describe("acceptHandoff — orchestrator-B accepts", () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("not_pending:delegated");
   });
+
+  it("rejects when estimated cost exceeds the sub-mandate budget", async () => {
+    const { deps } = makeMockDeps();
+    const record = makePendingRecord();
+    const fakeState = { chainId: "chain_40e" } as unknown as Parameters<typeof acceptHandoff>[1];
+    const result = await acceptHandoff(
+      deps as unknown as Parameters<typeof acceptHandoff>[0],
+      fakeState,
+      record,
+      {
+        chainId: "chain_40e",
+        handoffRequestId: record.requestId,
+        subtaskIds: record.subtaskIds,
+        subChainId: "chain_40e_sub_1",
+        subChainMandate: makeSubChainMandate(),
+        reportBackByAt: "2026-06-18T01:00:00.000Z",
+        estimatedCostUsd: 99,
+      },
+      NOW,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("estimate_exceeds_sub_budget");
+    expect(record.status).toBe("pending");
+  });
+
+  it("rejects when child depth flags exceed the parent mandate", async () => {
+    const { deps } = makeMockDeps();
+    const record = makePendingRecord();
+    const fakeState = {
+      chainId: "chain_40e",
+      chainMandate: {
+        allowDepth3: true,
+        allowDepth4: false,
+        maxChainCostUsd: 20,
+        costCeilingUsd: 5,
+        deadlineAt: "2026-06-18T02:00:00.000Z",
+      },
+    } as unknown as Parameters<typeof acceptHandoff>[1];
+    const result = await acceptHandoff(
+      deps as unknown as Parameters<typeof acceptHandoff>[0],
+      fakeState,
+      record,
+      {
+        chainId: "chain_40e",
+        handoffRequestId: record.requestId,
+        subtaskIds: record.subtaskIds,
+        subChainId: "chain_40e_sub_1",
+        subChainMandate: {
+          ...makeSubChainMandate(),
+          allowDepth4: true,
+          maxChainCostUsd: 5,
+          costCeilingUsd: 2,
+          deadlineAt: "2026-06-18T01:00:00.000Z",
+        },
+        reportBackByAt: "2026-06-18T01:00:00.000Z",
+        estimatedCostUsd: 3,
+      },
+      NOW,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("depth_exceeds_parent");
+  });
+
 });

@@ -52,7 +52,7 @@ describe("openInHerdr", () => {
   });
 
   afterEach(async () => {
-    await rm(profileDir, { recursive: true, force: true });
+    await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
   });
 
   it("spawns detached herdr in openclaw workspace on success", async () => {

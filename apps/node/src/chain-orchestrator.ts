@@ -67,6 +67,8 @@ import {
 } from "@envoymesh/protocol";
 import { randomUUID } from "node:crypto";
 
+import { resolveAllowedChainDepth } from "./chain-depth-mandate.js";
+
 import {
   DEFAULT_CHAIN_INPUT_DELIVERY_POLICY,
   parseChainInputAttachmentsFromGoal,
@@ -207,7 +209,12 @@ export interface ChainOrchestratorHandlerDeps extends ChainOrchestratorSendDeps 
    */
   llmDecompose?: (
     goal: string,
-    opts?: { assignmentMode?: "skill" | "role" },
+    opts?: {
+      assignmentMode?: "skill" | "role";
+      /** Phase 65A — per-call mandate depth flags (overrides decomposer defaults). */
+      allowDepth3?: boolean;
+      allowDepth4?: boolean;
+    },
   ) => Promise<
     | {
         ok: true;
@@ -811,9 +818,13 @@ export async function planChain(
   const useLlm = opts.allowLlm !== false && deps.llmDecompose !== undefined;
 
   if (useLlm && deps.llmDecompose) {
-    const r = await deps.llmDecompose(goal, { assignmentMode });
+    const r = await deps.llmDecompose(goal, {
+      assignmentMode,
+      allowDepth3: state.chainMandate.allowDepth3 === true,
+      allowDepth4: state.chainMandate.allowDepth4 === true,
+    });
     if (r.ok) {
-      if (r.steps.some((s) => s.depth < 1 || s.depth > 3)) {
+      if (r.steps.some((s) => s.depth < 1 || s.depth > resolveAllowedChainDepth(state.chainMandate))) {
         return { ok: false, reason: "decompose_too_deep" };
       }
       const steps = r.steps.map((s) =>
@@ -3085,7 +3096,12 @@ export function buildChainLiveSteps(state: ChainState): ChainLiveStep[] {
 export async function broadcastChainStatus(
   deps: ChainOrchestratorHandlerDeps,
   state: ChainState,
-  opts?: { goal?: string; awardMode?: "direct" | "competitive" },
+  opts?: {
+    goal?: string;
+    awardMode?: "direct" | "competitive";
+    /** Phase 64B — also send status to the creator for reclaim mirrors. */
+    extraPeerIds?: string[];
+  },
 ): Promise<{ sent: number; failed: number }> {
   const payload = buildChainStatusPayload(state, {
     ...opts,
@@ -3098,6 +3114,9 @@ export async function broadcastChainStatus(
   // Also include awarded / bidding workers in case the worker list was narrowed.
   for (const award of state.awards.values()) peers.add(award.workerPeerId);
   for (const bid of state.bids.values()) peers.add(bid.workerPeerId);
+  for (const extra of opts?.extraPeerIds ?? []) {
+    if (extra && extra !== deps.orchestratorPeerId) peers.add(extra);
+  }
   let sent = 0;
   let failed = 0;
   for (const recipientPeerId of peers) {

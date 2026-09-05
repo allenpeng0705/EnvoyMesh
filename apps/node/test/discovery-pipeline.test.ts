@@ -118,9 +118,9 @@ describe("handleMeshPeerDiscoveredViaRuntime", () => {
     expect(ctx.emit).not.toHaveBeenCalled();
   });
 
-  // ---- Background bookkeeping (runs for ALL peers) ---------------------
+  // ---- Background bookkeeping (LAN / relay only; not anonymous DHT) ----
 
-  it("still persists seed store for infrastructure peers", async () => {
+  it("does NOT persist seed store for bootstrap peer on public DHT addrs", async () => {
     const seedStore = { upsertMany: vi.fn().mockResolvedValue(undefined) };
     const ctx = mockContext({
       getDiscoverySeedStore: () => seedStore,
@@ -128,11 +128,23 @@ describe("handleMeshPeerDiscoveredViaRuntime", () => {
     });
     await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWBoot", PUBLIC_MULTIADDRS);
 
+    expect(seedStore.upsertMany).not.toHaveBeenCalled();
+    expect(ctx.emit).not.toHaveBeenCalled();
+  });
+
+  it("still persists seed store for infrastructure relay-sourced peers", async () => {
+    const seedStore = { upsertMany: vi.fn().mockResolvedValue(undefined) };
+    const ctx = mockContext({
+      getDiscoverySeedStore: () => seedStore,
+      getBootstrapPeerIds: () => new Set(["12D3KooWRelay"]),
+    });
+    await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerC", CIRCUIT_MULTIADDRS);
+
     expect(seedStore.upsertMany).toHaveBeenCalledTimes(1);
     expect(ctx.emit).not.toHaveBeenCalled();
   });
 
-  it("still merges peer directory listen addrs for infrastructure peers", async () => {
+  it("does NOT merge peer directory for bootstrap peer on public DHT addrs", async () => {
     const mergeFn = vi.fn().mockResolvedValue(undefined);
     const ctx = mockContext({
       peerDirectoryStore: { mergeListenAddrsForPeerId: mergeFn } as any,
@@ -140,7 +152,18 @@ describe("handleMeshPeerDiscoveredViaRuntime", () => {
     });
     await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWBoot", PUBLIC_MULTIADDRS);
 
-    expect(mergeFn).toHaveBeenCalledWith("12D3KooWBoot", PUBLIC_MULTIADDRS);
+    expect(mergeFn).not.toHaveBeenCalled();
+    expect(ctx.emit).not.toHaveBeenCalled();
+  });
+
+  it("still merges peer directory listen addrs for relay-sourced peers", async () => {
+    const mergeFn = vi.fn().mockResolvedValue(undefined);
+    const ctx = mockContext({
+      peerDirectoryStore: { mergeListenAddrsForPeerId: mergeFn } as any,
+    });
+    await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerC", CIRCUIT_MULTIADDRS);
+
+    expect(mergeFn).toHaveBeenCalledWith("12D3KooWPeerC", CIRCUIT_MULTIADDRS);
     expect(ctx.emit).not.toHaveBeenCalled();
   });
 

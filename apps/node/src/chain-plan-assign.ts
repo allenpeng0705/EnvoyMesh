@@ -170,6 +170,8 @@ export function buildPlanAssignPrompt(
   roster: readonly PlanAssignRosterEntry[],
   opts?: {
     assignmentMode?: ChainAssignmentMode;
+    /** Phase 65A — highest depth the mandate allows (1..4). Default 3 for prompt shape. */
+    maxDepth?: number;
     iteration?: {
       round: number;
       maxRounds: number;
@@ -179,6 +181,9 @@ export function buildPlanAssignPrompt(
   },
 ): string {
   const mode = resolveAssignmentMode(opts?.assignmentMode);
+  const maxDepth = Math.max(1, Math.min(4, Math.floor(opts?.maxDepth ?? 3)));
+  const depthUnion =
+    maxDepth >= 4 ? "1|2|3|4" : maxDepth >= 3 ? "1|2|3" : maxDepth >= 2 ? "1|2" : "1";
   const rosterJson = JSON.stringify(
     roster.map((w) => {
       const roles = agentNetworkRoleIds(w.profile?.roles);
@@ -261,8 +266,8 @@ export function buildPlanAssignPrompt(
     "",
     "Return ONLY a JSON object (no prose, no markdown fencing) with shape:",
     mode === "role"
-      ? '{ "assignmentMode": "role", "steps": [ { "objective": string, "requiredRole": string, "requiredSkill": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "assignKind": "exact_role"|"role_substitute"|"skill_fallback"|"generalist", "missingRole"?: string, "reason": string, "threadId"?: string, "produces"?: string[], "expects"?: [{ "key": string, "fromStepIndex"?: number }], "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "warnings": [ { "code": string, "role"?: string, "stepIndex"?: number, "usedPeerId"?: string, "assignKind"?: string, "message": string } ], "notes"?: string }'
-      : '{ "assignmentMode": "skill", "steps": [ { "objective": string, "requiredSkill": string, "depth": 1|2|3, "dependsOn": number[], "assignedPeerId": string, "reason": string, "threadId"?: string, "produces"?: string[], "expects"?: [{ "key": string, "fromStepIndex"?: number }], "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "warnings"?: [], "notes"?: string }',
+      ? `{ "assignmentMode": "role", "steps": [ { "objective": string, "requiredRole": string, "requiredSkill": string, "depth": ${depthUnion}, "dependsOn": number[], "assignedPeerId": string, "assignKind": "exact_role"|"role_substitute"|"skill_fallback"|"generalist", "missingRole"?: string, "reason": string, "threadId"?: string, "produces"?: string[], "expects"?: [{ "key": string, "fromStepIndex"?: number }], "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "warnings": [ { "code": string, "role"?: string, "stepIndex"?: number, "usedPeerId"?: string, "assignKind"?: string, "message": string } ], "notes"?: string }`
+      : `{ "assignmentMode": "skill", "steps": [ { "objective": string, "requiredSkill": string, "depth": ${depthUnion}, "dependsOn": number[], "assignedPeerId": string, "reason": string, "threadId"?: string, "produces"?: string[], "expects"?: [{ "key": string, "fromStepIndex"?: number }], "constraints"?: string[] } ], "aggregation": "llm_merge"|"concatenate", "warnings"?: [], "notes"?: string }`,
     "",
     `User goal: ${JSON.stringify(goal)}`,
     iterationBlock,
@@ -343,7 +348,7 @@ export function parsePlanAssignResult(rawText: string): PlanAssignParseResult | 
       typeof c.requiredSkill === "string" && c.requiredSkill.trim().length > 0
         ? c.requiredSkill.trim()
         : "task.execute";
-    const depth = Math.max(1, Math.min(3, Math.floor(Number(c.depth ?? 1))));
+    const depth = Math.max(1, Math.min(4, Math.floor(Number(c.depth ?? 1))));
     const constraints = Array.isArray(c.constraints)
       ? c.constraints.filter((x): x is string => typeof x === "string").slice(0, 4)
       : [];

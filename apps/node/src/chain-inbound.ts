@@ -43,6 +43,7 @@ import {
   ChainHandoffDelegatePayloadSchema,
   ChainRelayRouteSchema,
   ChainArbitrationPayloadSchema,
+  TaskChainOwnershipPayloadSchema,
   evaluateEnvelopeRolePolicy,
   type EnvoyEnvelope,
   type TaskChainAcceptPayload,
@@ -59,6 +60,7 @@ import {
   type ChainHandoffDelegatePayload,
   type ChainRelayRoute,
   type ChainArbitrationPayload,
+  type TaskChainOwnershipPayload,
 } from "@envoymesh/protocol";
 
 import type {
@@ -92,6 +94,8 @@ const WORKER_RECEIVE_INTENTS = new Set<string>([
   "task.chain.accept",
   "task.chain.cancel",
   "task.chain.status",
+  // Phase 64A — creator receives Assigner ownership notify without chain.orchestrate.
+  "task.chain.ownership",
 ]);
 
 /**
@@ -201,6 +205,8 @@ function parsePayloadByIntent(
       return wrap(TaskChainHeartbeatPayloadSchema, payload, "malformed_heartbeat_payload");
     case "task.chain.status":
       return wrap(TaskChainStatusPayloadSchema, payload, "malformed_status_payload");
+    case "task.chain.ownership":
+      return wrap(TaskChainOwnershipPayloadSchema, payload, "malformed_ownership_payload");
     case "task.chain.report":
       return wrap(TaskChainReportPayloadSchema, payload, "malformed_report_payload");
     case "task.chain.handoff":
@@ -242,7 +248,8 @@ type ChainPayloadUnion =
   | ChainHandoffRequestPayload
   | ChainHandoffDelegatePayload
   | ChainRelayRoute
-  | ChainArbitrationPayload;
+  | ChainArbitrationPayload
+  | TaskChainOwnershipPayload;
 
 // ---------------------------------------------------------------------------
 // Internal — handler dispatch
@@ -297,6 +304,14 @@ async function dispatchToHandler(
         );
       case "task.chain.status":
         return await deps.handleWorkerStatus(envelope, payload as TaskChainStatusPayload);
+      case "task.chain.ownership":
+        if (!deps.handleOwnershipNotify) {
+          return { ok: false, reason: "no_ownership_handler" };
+        }
+        return await deps.handleOwnershipNotify(
+          envelope,
+          payload as TaskChainOwnershipPayload,
+        );
       case "task.chain.report":
         return await deps.handleOwnerReport(envelope, payload as TaskChainReportPayload);
       case "task.chain.handoff":

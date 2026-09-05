@@ -184,7 +184,8 @@ describe("bridge-config-store", () => {
       const hermes = next.extAgents?.find((a) => a.id === "hermes");
       expect(codex?.projectPath).toBe(root);
       expect(cursor?.projectPath).toBeUndefined();
-      expect(hermes?.projectPath).toBeUndefined();
+      // hermes is a cwd-capable agent — valid projectPath is kept.
+      expect(hermes?.projectPath).toBe(root);
     } finally {
       rmSync(root, { recursive: true, force: true });
       await rm(profileDir, { recursive: true, force: true });

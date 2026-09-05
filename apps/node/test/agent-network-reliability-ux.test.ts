@@ -51,7 +51,7 @@ function readSlice(path: string, fromLine: number, toLine: number): string {
 
 describe("Phase 61D — reliability UX wiring (source-level)", () => {
   it("chain orchestrator writes reliabilityFallbackLevel onto each ranked worker", () => {
-    const slice = readSlice(ORCHESTRATION, 2270, 2300);
+    const slice = readSlice(ORCHESTRATION, 2470, 2510);
     expect(
       slice,
       "expected the ranked-worker object built in the orchestrator to "

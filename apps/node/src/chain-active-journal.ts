@@ -55,6 +55,11 @@ export interface ChainJournalCheckpoint {
       etaSlackMs: number;
     };
   };
+  /**
+   * Phase 64A — creator vs Assigner ownership for remote handoff recovery.
+   * Opaque blob validated by `parseRemoteOwnership` in chain-remote-reclaim.ts.
+   */
+  ownership?: Record<string, unknown>;
 }
 
 export function emptyChainJournalProjection(): ChainJournalProjection {
@@ -251,6 +256,7 @@ export class ChainActiveJournal {
     lastSeq: number,
     at = new Date(),
     runtimeSnapshot?: ChainJournalCheckpoint["runtimeSnapshot"],
+    ownership?: Record<string, unknown>,
   ): Promise<ChainJournalCheckpoint> {
     await this.flush(chainId);
     const checkpoint: ChainJournalCheckpoint = {
@@ -260,6 +266,7 @@ export class ChainActiveJournal {
       updatedAt: at.toISOString(),
       projection,
       ...(runtimeSnapshot ? { runtimeSnapshot } : {}),
+      ...(ownership ? { ownership } : {}),
     };
     const path = this.checkpointPath(chainId);
     await mkdir(dirname(path), { recursive: true });

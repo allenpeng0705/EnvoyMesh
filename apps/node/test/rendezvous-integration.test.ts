@@ -68,6 +68,7 @@ function createTestConfigStore(config: PersistedNodeConfig | null) {
     load: async () => config,
     save: async () => {},
     exists: async () => true,
+    peek: () => config ?? undefined,
   };
 }
 

@@ -107,7 +107,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
   });
 
   afterEach(async () => {
-    await rm(profileDir, { recursive: true, force: true });
+    await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
   });
 
   describe("warmContactConnection", () => {

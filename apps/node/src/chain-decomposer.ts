@@ -7,10 +7,10 @@
  *
  * The decomposer is intentionally strict about its input/output:
  *   - The prompt asks for a JSON array of subtasks with `objective`,
- *     `requiredSkill`, and `depth` (1..3).
+ *     `requiredSkill`, and `depth` (1..CHAIN_MAX_DEPTH, mandate-gated later).
  *   - The response is parsed as `ChainSubtask`-shaped JSON, validated by
  *     `ChainSubtaskSchema`, and tagged with `subtaskId`, `chainId`, etc.
- *   - The chain orchestrator enforces depth ≤ 3 separately so this module
+ *   - The chain orchestrator enforces mandate depth separately so this module
  *     can stay focused on prompt engineering + parsing.
  *
  * Provider selection is the owner's job — pass the `ModelProvider[]` built
@@ -20,6 +20,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  CHAIN_MAX_DEPTH,
   type ChainSubtask,
   ChainSubtaskSchema,
 } from "@envoymesh/protocol";
@@ -30,6 +31,7 @@ import {
 
 import type { ChainAuditSink } from "./chain-inbound-types.js";
 import { planPromptAddonForGoal } from "./chain-deliverable-policy.js";
+import { resolveAllowedChainDepth, type ChainDepthMandateFlags } from "./chain-depth-mandate.js";
 
 export interface DecomposerInput {
   goal: string;
@@ -77,12 +79,19 @@ export interface CreateLlmDecomposerOptions {
     chainId: string;
     chainMandateId: string;
     deadlineAt?: string;
+    /** When set, clamp/reject depths above this mandate budget. */
+    allowDepth3?: boolean;
+    allowDepth4?: boolean;
   };
 }
 
 export type LlmDecomposer = (
   goal: string,
-  callOpts?: { assignmentMode?: import("./chain-plan-assign.js").ChainAssignmentMode },
+  callOpts?: {
+    assignmentMode?: import("./chain-plan-assign.js").ChainAssignmentMode;
+    allowDepth3?: boolean;
+    allowDepth4?: boolean;
+  },
 ) => Promise<DecomposerResult>;
 
 /**
@@ -105,6 +114,14 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
       return { ok: false, reason: "empty_goal" };
     }
 
+    const depthFlags = {
+      allowDepth3:
+        callOpts?.allowDepth3 === true || opts.chainContext?.allowDepth3 === true,
+      allowDepth4:
+        callOpts?.allowDepth4 === true || opts.chainContext?.allowDepth4 === true,
+    };
+    const maxDepth = resolveAllowedChainDepth(depthFlags);
+
     const roster = opts.getRoster ? await opts.getRoster() : [];
     const usePlanAssign = roster.length > 0;
     const rawMode =
@@ -118,9 +135,16 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
     let prompt: string;
     if (usePlanAssign) {
       const { buildPlanAssignPrompt } = await import("./chain-plan-assign.js");
-      prompt = buildPlanAssignPrompt(goal, roster, { assignmentMode });
+      prompt = buildPlanAssignPrompt(goal, roster, { assignmentMode, maxDepth });
     } else {
-      prompt = buildDecomposePrompt(goal, opts);
+      prompt = buildDecomposePrompt(goal, {
+        ...opts,
+        chainContext: {
+          ...(opts.chainContext ?? { chainId: "chain_tmp", chainMandateId: "chainmandate_tmp" }),
+          allowDepth3: depthFlags.allowDepth3,
+          allowDepth4: depthFlags.allowDepth4,
+        },
+      });
     }
 
     let result: Awaited<ReturnType<typeof routeModelRequest>>;
@@ -186,7 +210,7 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
         warnings: parsed.warnings,
       });
       if (hasDependsOnCycle(subtasks)) return { ok: false, reason: "parse_failed" };
-      if (subtasks.some((s) => s.depth < 1 || s.depth > 3)) {
+      if (subtasks.some((s) => s.depth < 1 || s.depth > maxDepth)) {
         return { ok: false, reason: "too_deep" };
       }
       opts.onPlanMeta?.({
@@ -223,7 +247,10 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
     const rawArr = rawSteps as unknown[];
     for (const [i, raw] of rawArr.entries()) {
       const candidate = (raw ?? {}) as Record<string, unknown>;
-      const depth = Math.max(1, Math.min(3, Math.floor(Number(candidate.depth ?? 1))));
+      const depth = Math.max(
+        1,
+        Math.min(maxDepth, Math.floor(Number(candidate.depth ?? 1))),
+      );
       const obj: Record<string, unknown> = {
         version: "0.1",
         subtaskId: `subtask_${chainIdSuffix}_${i + 1}`,
@@ -259,7 +286,7 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
       }
     }
 
-    if (subtasks.some((s) => s.depth < 1 || s.depth > 3)) {
+    if (subtasks.some((s) => s.depth < 1 || s.depth > maxDepth)) {
       return { ok: false, reason: "too_deep" };
     }
 
@@ -281,13 +308,20 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
 export function buildDecomposePrompt(goal: string, opts: CreateLlmDecomposerOptions): string {
   const max = Math.max(1, Math.min(5, opts.timeoutMs === undefined ? 5 : 5));
   void max;
+  const maxDepth = resolveAllowedChainDepth(depthFlagsFromContext(opts.chainContext));
+  const depthHint =
+    maxDepth >= 4
+      ? "integer 1..4 (leaf=1 … depth-4 rollup). Prefer 1–2 unless the goal needs nested orchestration."
+      : maxDepth >= 3
+        ? "integer 1 (leaf), 2 (combines leaves), or 3 (top-level rollup). Use 1 for most subtasks."
+        : "integer 1 (leaf) or 2 (rollup). Use 1 for most subtasks.";
   return [
     "You are a planning assistant for a multi-agent task system.",
     "Decompose the user's goal into 2–5 subtasks that can each be assigned to a different worker agent.",
     "Return ONLY a JSON array (no prose, no markdown fencing) where each element has:",
     '  - "objective": a single concrete sentence describing what the worker should produce',
     '  - "requiredSkill": one short kebab-case tag, e.g. "research.web", "summarize.text", "code.write"',
-    '  - "depth": integer 1 (leaf subtask), 2 (combines 2+ leaves), or 3 (top-level rollup). Use 1 for most subtasks.',
+    `  - "depth": ${depthHint}`,
     '  - "constraints": optional array of short strings (max 4 items)',
     '  - "dependsOn": optional array of subtask indices (0-based) this subtask depends on',
     "",
@@ -299,6 +333,18 @@ export function buildDecomposePrompt(goal: string, opts: CreateLlmDecomposerOpti
     .filter((l) => l.length > 0)
     .join("\n");
 }
+
+function depthFlagsFromContext(
+  ctx: CreateLlmDecomposerOptions["chainContext"] | undefined,
+): ChainDepthMandateFlags {
+  return {
+    allowDepth3: ctx?.allowDepth3 === true,
+    allowDepth4: ctx?.allowDepth4 === true,
+  };
+}
+
+// Keep CHAIN_MAX_DEPTH referenced so depth-4 parse stays aligned with protocol.
+void CHAIN_MAX_DEPTH;
 
 /**
  * Extract the first JSON object/array from an LLM response. Some models

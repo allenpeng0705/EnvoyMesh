@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Default capabilities for EnvoyMesh","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open","updater:default","process:default","allow-restart-node-process","allow-stop-node-process","allow-app-logs","allow-pick-directory"]}}

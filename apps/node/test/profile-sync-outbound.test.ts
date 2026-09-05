@@ -41,7 +41,7 @@ describe("sendProfileRequest", () => {
 
     expect(sendChatExpectEnvelopeReply).toHaveBeenCalledTimes(1);
     expect(mesh.send).not.toHaveBeenCalled();
-    expect(mesh.sendExpectReply).toBeUndefined();
+    expect(mesh.sendExpectReply).not.toHaveBeenCalled();
     expect(reply).toBe(responseEnvelope);
   });
 });

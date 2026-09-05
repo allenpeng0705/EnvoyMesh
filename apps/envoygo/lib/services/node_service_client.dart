@@ -2166,6 +2166,23 @@ class NodeServiceClient {
     return ChainActiveSummary.fromJson(result);
   }
 
+  /// Phase 64B — creator reclaim of a stranded remote-Assigner job.
+  Future<Map<String, dynamic>> chainReclaimAssigner(String chainId) async {
+    return await _client.call('chainReclaimAssigner', {'chainId': chainId})
+        as Map<String, dynamic>;
+  }
+
+  /// Phase 64B — cancel a delegated remote-Assigner job from the creator.
+  Future<Map<String, dynamic>> chainCancelDelegated(
+    String chainId, {
+    String? reason,
+  }) async {
+    return await _client.call('chainCancelDelegated', {
+          'chainId': chainId,
+          if (reason != null) 'reason': reason,
+        }) as Map<String, dynamic>;
+  }
+
   /// Phase 60A — lazily fetch execution provenance for one Team-job step.
   Future<Map<String, dynamic>> getChainStepProvenance(
     String chainId,

@@ -153,6 +153,13 @@ export async function registerBondedPeer(
     JSON.stringify({ version: "0.1", records: [...withoutOwner, nextRecord] }, null, 2),
     { mode: 0o600 },
   );
+  // Also upsert via the store mutex so concurrent NodeService peer-directory
+  // writes cannot wipe the raw-file row (common in three-home AN smokes).
+  await local.peerDirectory.ensurePeerFromInboundChat({
+    ownerId: remote.profile.owner.ownerId,
+    peerId: remote.mesh.peerId,
+    listenAddrs: remote.mesh.multiaddrs.map(String),
+  });
 
   // Mirror the remote peer's published library onto the local node so the
   // circle proposer and mesh-awareness worker can read shared topics.
@@ -252,6 +259,15 @@ export function wireFullDaemonAgentCardHandlers(
 export function wireChainInboundHandler(node: Phase13TestNode): void {
   node.mesh.onMessage(async ({ envelope }) => {
     if (!envelope.intent.startsWith("task.chain.")) return;
+    // Phase 60D — reconcile is handled outside the generic chain dispatcher
+    // (same split as apps/node/src/index.ts).
+    if (
+      envelope.intent === "task.chain.reconcile.request" ||
+      envelope.intent === "task.chain.reconcile.response"
+    ) {
+      await node.service.handleInboundChainReconcile(envelope);
+      return;
+    }
     await node.service.handleInboundChainEnvelope(envelope);
   });
 }
@@ -282,9 +298,12 @@ export function wireGatedMockTeamJobEngine(
     "E2E mock team job result for Agent Network recovery chaos.";
   node.service.isOpenClawReady = () => true;
   node.service.askOpenClaw = async () => {
+    // Avoid TOCTOU hang: release() may flip `released` between the check
+    // and waiters.push. Always re-check after registering the waiter.
     if (released) return text;
     await new Promise<void>((resolve) => {
       waiters.push(resolve);
+      if (released) resolve();
     });
     return text;
   };

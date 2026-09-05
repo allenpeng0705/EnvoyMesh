@@ -7,7 +7,7 @@
  *   callers round-trip a chain report through parseChainReport → render.
  * - ChainMandate parse + invariants (maxChainCostUsd >= 0, costCeilingUsd >= 0,
  *   maxWorkers 1..16, allowDepth3 flag, deadlineAt ISO datetime).
- * - ChainSubtask parse with depth bound enforcement (1..3, depth-4 rejected).
+ * - ChainSubtask parse with depth bound enforcement (1..4; depth-5 rejected).
  * - ChainSubtaskBid with mandatory bidExpiresAt ISO datetime.
  * - ChainSubtaskAward with negotiationRound bound (1..3, round-4 rejected).
  * - ChainSubtaskPartial with seq monotonic (>= 1).
@@ -288,6 +288,11 @@ describe("ChainMandate", () => {
     expect(UnsignedChainMandateSchema.parse(m).allowDepth3).toBe(true);
   });
 
+  it("accepts allowDepth4 opt-in (Phase 65A)", () => {
+    const m = unsignedMandate({ allowDepth4: true });
+    expect(UnsignedChainMandateSchema.parse(m).allowDepth4).toBe(true);
+  });
+
   it("parseChainMandate round-trip", () => {
     const m = signedMandate();
     expect(parseChainMandate(m)).toEqual(m);
@@ -311,12 +316,16 @@ describe("ChainSubtask", () => {
     expect(() => subtask({ depth: 3 })).not.toThrow();
   });
 
-  it("CHAIN_MAX_DEPTH is 3", () => {
-    expect(CHAIN_MAX_DEPTH).toBe(3);
+  it("depth-4 subtask parses (Phase 65A hard cap; mandate.allowDepth4 at runtime)", () => {
+    expect(() => subtask({ depth: 4 })).not.toThrow();
   });
 
-  it("rejects depth-4 subtask at parse time (hard cap)", () => {
-    expect(() => subtask({ depth: 4 })).toThrow();
+  it("CHAIN_MAX_DEPTH is 4", () => {
+    expect(CHAIN_MAX_DEPTH).toBe(4);
+  });
+
+  it("rejects depth-5 subtask at parse time (hard cap)", () => {
+    expect(() => subtask({ depth: 5 })).toThrow();
   });
 
   it("rejects depth-0 subtask at parse time", () => {

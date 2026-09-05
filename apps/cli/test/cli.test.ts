@@ -70,22 +70,22 @@ describe("CLI", () => {
   });
 
   describe("setup", () => {
-    it("setup command exists", () => {
-      const { out, code } = run("setup", { cwd: TMP });
-      // setup() resolves scripts/setup.sh via WS_ROOT (the repo root), so it
-      // works regardless of the caller's cwd. We only assert it actually runs.
-      expect(out).toContain("Setup");
+    // Never run bare `setup` in unit tests — it invokes scripts/setup.sh which
+    // runs `pnpm install` and can delete node_modules/vitest mid-suite.
+    it("setup --help wires to setup.sh without installing", () => {
+      const { out, code } = run("setup --help", { cwd: TMP });
+      expect(code).toBe(0);
+      expect(out).toContain("Usage:");
+      expect(out).not.toContain("setup.sh not found");
     });
 
-    it("setup works from repo root", () => {
-      const { out, code } = run("setup");
-      // setup.sh should be invokable from repo root. We don't assert exit 0
-      // because the script is a heavy installer that may need network access
-      // and a clean environment; here we just check the banner is printed.
-      expect(out).toContain("EnvoyMesh Setup");
-      // Make sure we got past the early sanity checks (not "not found").
+    it("setup.sh exists at repo scripts path", () => {
+      const setupSh = join(__dirname, "..", "..", "..", "scripts", "setup.sh");
+      expect(existsSync(setupSh)).toBe(true);
+      const { out, code } = run("setup --help");
+      expect(code).toBe(0);
+      expect(out).toContain("Usage:");
       expect(out).not.toContain("setup.sh not found");
-      void code;
     });
   });
 

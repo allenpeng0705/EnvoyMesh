@@ -41,7 +41,7 @@ const CLAIM_KEYWORDS: ClaimRule[] = [
       // not a valid dedup assertion. `.toEqual([...])` is also valid when
       // the array literal contains an exact expected set.
       const hasBoundedCount =
-        /\.toBe\(\s*\d+\s*\)|\.toHaveLength\(\s*\d+\s*\)|\.toHaveBeenCalledTimes\(\s*\d+\s*\)|\.toBeNull\(\)|\.toBeLessThanOrEqual\(\s*\d+\s*\)|\.toBeUndefined\(\)|\.toEqual\(\s*\[/.test(
+        /\.toBe\(\s*\d+\s*\)|\.toHaveLength\(\s*\d+\s*\)|\.toHaveBeenCalledTimes\(\s*\d+\s*\)|\.toBeNull\(\)|\.toBeLessThanOrEqual\(\s*\d+\s*\)|\.toBeUndefined\(\)|\.toEqual\(/.test(
           body,
         );
       const hasInexact = /toBeGreaterThan\(0\)|toBeGreaterThanOrEqual\(\s*1\)|>=\s*[1-9]/.test(body);
@@ -59,7 +59,7 @@ const CLAIM_KEYWORDS: ClaimRule[] = [
       // a value passed/returned, not the timer actually firing.
       const lower = name.toLowerCase();
       const isValueOrValidationCheck =
-        /does not treat .*timeout|ack timeout|timeout.*failure|allows retry|rejects .* timeout|uses .* timeout|passes .* timeout|returns .* timeout|resolve.*timeout.*returns|default protocol timeout|stalls? past|after .* timeout|before .* timeout/i.test(
+        /does not treat .*timeout|ack timeout|timeout.*failure|allows retry|rejects .* timeout|uses .* timeout|passes .* timeout|returns .* timeout|resolve.*timeout.*returns|default protocol timeout|stalls? past|after .* timeout|before .* timeout|probe_timeout|timeoutms|noprogresstimeout|overalltimeout|startuptimeout|soft-allows|hard-skips|with timeouts|timeout races|ontimeout|default timeout|model-size-aware|any-abort|budget elapses|when request omits/i.test(
           lower,
         );
       if (isValueOrValidationCheck) return true;
@@ -73,6 +73,10 @@ const CLAIM_KEYWORDS: ClaimRule[] = [
     assertExercises: (body, name) => {
       const lower = name.toLowerCase();
       if (/does\s+not\s+synthesize|no\s+synthesize|without\s+synthesiz/.test(lower)) {
+        return true;
+      }
+      // Chain deliverable skill / round named "synthesize" (not federated synthesize*).
+      if (/subtask|worker prompt|sealed-round|extend then publish|deliverable/.test(lower)) {
         return true;
       }
       return /synthesize[A-Z][a-zA-Z]*\(|from\s+['"][^'"]*synthesize/.test(body);

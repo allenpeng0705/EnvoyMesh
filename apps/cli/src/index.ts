@@ -89,10 +89,10 @@ async function statusCmd(): Promise<void> {
   }
 }
 
-async function setup(): Promise<number> {
+async function setup(args: string[] = []): Promise<number> {
   const s = join(WS_ROOT, "scripts", "setup.sh");
   if (!existsSync(s)) { console.log("setup.sh not found"); return 1; }
-  return sh("bash", ["scripts/setup.sh"]);
+  return sh("bash", ["scripts/setup.sh", ...args]);
 }
 
 async function stop(): Promise<void> {
@@ -555,7 +555,7 @@ async function main(): Promise<void> {
     case "status":
       await statusCmd(); break;
     case "setup":
-      process.exit(await setup());
+      process.exit(await setup(rest));
     case "gateway": case "gw":
       process.exit(await gateway(rest));
     case "config":

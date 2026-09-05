@@ -110,19 +110,10 @@ afterEach(() => {
 
 describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", () => {
   describe("default path (no test seam)", () => {
-    it("returns 12 skills from the default envoy-harness + openclaw catalogs, each tagged with its runtime", () => {
-      // Phase 8 / Step 3 commit 2 — envoy-harness grew
-      // from 5 to 8 (added 3 B-class: setup-sponsor-friend
-      // / peer-list / relay-status). OpenClaw stays at 4
-      // (the 3 B-class skills are NOT duplicated in
-      // OPENCLAW_SKILLS — the merged manifest's fail-loud
-      // `SkillIdCollisionError` policy treats duplicate
-      // skillIds as a hard error, and the Step 3 plan §3.1
-      // declares envoy-harness the canonical impl. When
-      // the OpenClaw skill handler lands (a future chunk
-      // per §3.6), the 3 skills will move to OpenClaw
-      // (envoy-harness loses them) or namespace under
-      // OpenClaw. v0 is envoy-harness-only for B-class.
+    it("returns 13 skills from the default envoy-harness + openclaw catalogs, each tagged with its runtime", () => {
+      // Phase 8 / Step 3 — envoy-harness grew (B-class + peer-cluster).
+      // OpenClaw stays at 4 (B-class skills are NOT duplicated in
+      // OPENCLAW_SKILLS — fail-loud SkillIdCollisionError on duplicates).
       const service = makeTestService();
       services.push(service);
 
@@ -136,19 +127,20 @@ describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", (
         { runtime: "openclaw", runtimeVersion: "unknown" },
       ]);
 
-      // 8 envoy-harness skills: 5 original
+      // 9 envoy-harness skills: 5 original
       // (code-edit / code-review / doc-search / bash-run
-      // / plan) + 3 B-class (Step 3 commit 2).
+      // / plan) + B-class + peer-cluster.
       const envoySkills = manifest.skills.filter(
         (s) => s.runtime === "envoy-harness",
       );
-      expect(envoySkills.length).toBe(8);
+      expect(envoySkills.length).toBe(9);
       const envoySkillIds = envoySkills.map((s) => s.skillId).sort();
       expect(envoySkillIds).toEqual([
         "bash-run",
         "code-edit",
         "code-review",
         "doc-search",
+        "peer-cluster",
         "peer-list",
         "plan",
         "relay-status",
@@ -156,7 +148,7 @@ describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", (
       ]);
 
       // 4 openclaw skills (unchanged from Step 4; the
-      // 3 B-class skills are envoy-harness only in v0).
+      // B-class skills are envoy-harness only in v0).
       const openClawSkills = manifest.skills.filter(
         (s) => s.runtime === "openclaw",
       );
@@ -168,12 +160,12 @@ describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", (
         "summarize",
         "translate",
       ]);
-
-      // All 12 skillIds are unique (the aggregator
+      expect(manifest.skills.length).toBe(13);
+      // All skillIds are unique (the aggregator
       // fails loud on collision; this verifies it
       // doesn't trip for the production catalogs).
       const allIds = manifest.skills.map((s) => s.skillId);
-      expect(new Set(allIds).size).toBe(12);
+      expect(new Set(allIds).size).toBe(13);
     });
 
     it("uses the mesh peerId when a mesh is provided (sync; no async setup needed)", () => {
@@ -247,13 +239,10 @@ describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", (
       expect(withCustom.skills[0].skillId).toBe("custom-1");
 
       // Reset the test seam → back to the default
-      // 8 + 4 = 12 skills (Phase 8 / Step 3 commit 2:
-      // envoy-harness grew from 5 to 8; OpenClaw
-      // stays at 4 since the 3 B-class skills are
-      // envoy-harness only in v0).
+      // 9 + 4 = 13 skills.
       service.setManifestStubsForTests(undefined);
       const withDefault = service.getNodeManifest();
-      expect(withDefault.skills.length).toBe(12);
+      expect(withDefault.skills.length).toBe(13);
     });
 
     it("throws SkillIdCollisionError when two test adapters expose the same skillId", () => {

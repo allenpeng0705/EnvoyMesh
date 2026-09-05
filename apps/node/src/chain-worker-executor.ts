@@ -310,6 +310,8 @@ export async function executeAcceptedSubtask(
   subtask: ChainSubtask,
   opts?: { inputArtifacts?: NamedArtifact[] },
 ): Promise<{ ok: boolean; reason?: string }> {
+  const orchPeer = () =>
+    workerDeps.resolveOrchestratorPeerId?.(subtask.subtaskId) ?? orchestratorPeerId;
   let seq = 0;
   const emit = async (note: string, isFinal: boolean, confidence?: number) => {
     seq += 1;
@@ -335,14 +337,14 @@ export async function executeAcceptedSubtask(
         createdAt: (workerDeps.now ?? (() => new Date()))().toISOString(),
       }),
     });
-    await deliverChainPartial(workerDeps, orchestratorPeerId, partial, subtask.chainId);
+    await deliverChainPartial(workerDeps, orchPeer(), partial, subtask.chainId);
   };
 
   if (workerDeps.executeSubtask) {
     const result = await workerDeps.executeSubtask(
       subtask,
       async (payload) => {
-        await deliverChainPartial(workerDeps, orchestratorPeerId, payload, subtask.chainId);
+        await deliverChainPartial(workerDeps, orchPeer(), payload, subtask.chainId);
       },
       opts,
     );

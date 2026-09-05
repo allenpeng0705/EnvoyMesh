@@ -26,7 +26,11 @@ const profileDirs: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(meshes.splice(0).map((m) => m.stop().catch(() => {})));
-  await Promise.all(profileDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  await Promise.all(
+    profileDirs.splice(0).map((d) =>
+      rm(d, { recursive: true, force: true }).catch(() => undefined),
+    ),
+  );
 });
 
 async function writeWanConfig(profileDir: string): Promise<void> {

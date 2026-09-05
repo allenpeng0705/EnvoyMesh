@@ -171,7 +171,7 @@ describe("routeRpcMethod — Phase 13 NodeServiceImpl integration", () => {
   });
 
   afterEach(async () => {
-    await rm(profileDir, { recursive: true, force: true });
+    await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
   });
 
   function createNode(): NodeServiceImpl {

@@ -214,6 +214,16 @@ describe("OpenClaw-compatible agent mock", () => {
         listenPort: bridgePort,
         secret,
         agentName: "OpenClaw",
+        activeExtAgent: "openclaw-mock",
+        extAgents: [
+          {
+            id: "openclaw-mock",
+            name: "OpenClaw",
+            adapter: "envoymesh-message",
+            url: mock.url,
+            enabled: true,
+          },
+        ],
       },
       identity,
       mesh: makeMesh({ sendChat }),

@@ -58,31 +58,39 @@ export type ChainHandoffStatus = z.infer<typeof ChainHandoffStatusSchema>;
 /**
  * Phase 47D — serializable Assigner iteration side-state for handoff rehydrate.
  * Omits full `ChainReport` objects; drafts keep summary + judge metadata only.
+ *
+ * Phase 65B — outer round hard cap raised to {@link CHAIN_ITERATION_MAX_ROUNDS}
+ * (48) so multi-hour jobs stay mandate/budget/deadline-bound rather than
+ * artificially capped at 10.
  */
+export const CHAIN_ITERATION_MAX_ROUNDS = 48;
+
 export const ChainIterationWireSchema = z.object({
-  round: z.number().int().min(1).max(10),
-  maxRounds: z.number().int().min(1).max(10),
+  round: z.number().int().min(1).max(CHAIN_ITERATION_MAX_ROUNDS),
+  maxRounds: z.number().int().min(1).max(CHAIN_ITERATION_MAX_ROUNDS),
   extendsInRound: z.number().int().min(0).max(32).default(0),
   maxExtendsInRound: z.number().int().min(0).max(32).default(2),
-  extendMaxDepth: z.number().int().min(1).max(3).default(3),
+  extendMaxDepth: z.number().int().min(1).max(4).default(3),
   extendOnlyAfterPartial: z.boolean().default(true),
   sealedByRound: z.record(z.string(), z.array(z.string().min(1))).default({}),
   openRoundSubtaskIds: z.array(z.string().min(1)).max(64).default([]),
   drafts: z
     .array(
       z.object({
-        round: z.number().int().min(1).max(10),
+        round: z.number().int().min(1).max(CHAIN_ITERATION_MAX_ROUNDS),
         summary: z.string().max(50_000),
         judgeDecision: z.string().max(32).optional(),
         judgeReason: z.string().max(2000).optional(),
       }),
     )
-    .max(10)
+    .max(CHAIN_ITERATION_MAX_ROUNDS)
     .default([]),
   judgeMode: z.enum(["llm", "always_stop", "owner"]).default("llm"),
   carryMode: z.enum(["summary", "full_draft", "structured"]).default("summary"),
   goal: z.string().min(1).max(8000),
   waitingForOwner: z.boolean().optional(),
+  /** Phase 65B — true when awarded workers lack a live lease (step paused). */
+  pausedForLease: z.boolean().optional(),
   stopReason: z.string().max(64).optional(),
 });
 export type ChainIterationWire = z.infer<typeof ChainIterationWireSchema>;
@@ -115,8 +123,8 @@ export const ChainHandoffRequestPayloadSchema = z
     /** ISO datetime by which B must respond. */
     expiresAt: z.string().datetime(),
     createdAt: z.string().datetime(),
-    /** Phase 47D — opt-in outer iteration rounds for Assigner after handoff. */
-    iterationMaxRounds: z.number().int().min(1).max(10).optional(),
+    /** Phase 47D / 65B — opt-in outer iteration rounds (hard cap 48). */
+    iterationMaxRounds: z.number().int().min(1).max(CHAIN_ITERATION_MAX_ROUNDS).optional(),
     iterationJudgeMode: z.enum(["llm", "always_stop", "owner"]).optional(),
     extendMaxStepsPerRound: z.number().int().min(0).max(32).optional(),
     /**
@@ -284,6 +292,46 @@ export const ChainArbitrationPayloadSchema = z.object({
   createdAt: z.string().datetime(),
 });
 export type ChainArbitrationPayload = z.infer<typeof ChainArbitrationPayloadSchema>;
+
+// ---------------------------------------------------------------------------
+// Phase 64A — Assigner → creator ownership notify
+// ---------------------------------------------------------------------------
+
+/**
+ * `task.chain.ownership` — Assigner tells the creator home that remote
+ * ownership status changed (restart recovering, active again, stranded).
+ * Creator updates its delegated ledger; does not grant manage rights.
+ */
+export const ChainOwnershipNotifyStatusSchema = z.enum([
+  "delegated",
+  "assigner_active",
+  "assigner_recovering",
+  "assigner_stranded",
+  "reclaimed",
+  "cancelled",
+]);
+export type ChainOwnershipNotifyStatus = z.infer<typeof ChainOwnershipNotifyStatusSchema>;
+
+export const TaskChainOwnershipPayloadSchema = z.object({
+  chainId: ChainIdSchema,
+  ownershipEpoch: z.string().min(1).max(128),
+  status: ChainOwnershipNotifyStatusSchema,
+  assignerPeerId: z.string().min(1).max(256),
+  creatorPeerId: z.string().min(1).max(256),
+  goal: z.string().max(2000).optional(),
+  createdAt: z.string().datetime(),
+});
+export type TaskChainOwnershipPayload = z.infer<typeof TaskChainOwnershipPayloadSchema>;
+
+export function createTaskChainOwnershipPayload(
+  input: TaskChainOwnershipPayload,
+): TaskChainOwnershipPayload {
+  return TaskChainOwnershipPayloadSchema.parse(input);
+}
+
+export function parseTaskChainOwnershipPayload(input: unknown): TaskChainOwnershipPayload {
+  return TaskChainOwnershipPayloadSchema.parse(input);
+}
 
 // ---------------------------------------------------------------------------
 // Convenience helper — get the sub-chain's root subtasks from a handoff

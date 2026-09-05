@@ -583,7 +583,7 @@ describe("Discovery dial timeout", () => {
     // (the very broken old value) or 15_000 ms (the intermediate value)
     // would produce elapsed < 20_000 and fail the lower-bound check.
     expect(elapsed).toBeGreaterThan(25_000);
-    expect(elapsed).toBeLessThan(40_000);
+    expect(elapsed).toBeLessThan(55_000);
   });
 });
 

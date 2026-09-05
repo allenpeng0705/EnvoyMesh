@@ -127,7 +127,10 @@ function serializeChainRuntime(entry: ChainRuntimeEntry): PersistedChainRuntime 
       journalEvent: undefined,
       subtasks: [...state.subtasks], bids: [...state.bids], awards: [...state.awards],
       partials: [...state.partials], partialsByAttempt: [...state.partialsByAttempt],
-      speculativeAwards: [...state.speculativeAwards], speculationLocked: [...state.speculationLocked],
+      speculativeAwards: [...state.speculativeAwards],
+      hedgeSchedule: [...state.hedgeSchedule],
+      speculationLocked: [...state.speculationLocked],
+      verifyOnlyBlockedSubtasks: [...state.verifyOnlyBlockedSubtasks],
       cancelledSubtasks: [...state.cancelledSubtasks],
       negotiationRounds: [...state.negotiationRounds], workersBySubtask: [...state.workersBySubtask],
       proposedSubtasks: [...state.proposedSubtasks], proposedAt: [...state.proposedAt],
@@ -159,7 +162,9 @@ function deserializeChainRuntime(row: PersistedChainRuntime | undefined): ChainR
   state.partials = map(raw.partials);
   state.partialsByAttempt = map(raw.partialsByAttempt);
   state.speculativeAwards = map(raw.speculativeAwards);
+  state.hedgeSchedule = map(raw.hedgeSchedule);
   state.speculationLocked = set(raw.speculationLocked);
+  state.verifyOnlyBlockedSubtasks = set(raw.verifyOnlyBlockedSubtasks);
   state.cancelledSubtasks = set(raw.cancelledSubtasks);
   state.negotiationRounds = map(raw.negotiationRounds);
   state.workersBySubtask = map(raw.workersBySubtask);
@@ -190,6 +195,8 @@ export class ChainStore {
   private persistInFlight: Promise<void> = Promise.resolve();
   private journal?: ChainActiveJournal;
   private readonly journalProjections = new Map<string, ChainJournalProjection>();
+  /** Phase 64A — remote Assigner ownership attached to checkpoints. */
+  private readonly ownershipByChain = new Map<string, Record<string, unknown>>();
 
   /** Restore unfinished Team jobs and keep a crash-safe periodic snapshot. */
   async init(profileDir: string): Promise<void> {
@@ -217,6 +224,10 @@ export class ChainStore {
       if (!entry || entry.state.published || entry.state.chainCancelled) continue;
       const { state } = entry;
       this.journalProjections.set(chainId, recovered.projection);
+      const ownershipRaw = recovered.checkpoint?.ownership;
+      if (ownershipRaw && typeof ownershipRaw === "object") {
+        this.ownershipByChain.set(chainId, ownershipRaw);
+      }
       const recoveredAttempts = Object.values(recovered.projection.attempts);
       // Prefer runtimeSnapshot attempts/selection when present; projection fills gaps only.
       if (recoveredAttempts.length > 0 && state.attempts.size === 0) {
@@ -300,6 +311,7 @@ export class ChainStore {
           after.lastSeq,
           new Date(),
           serializeChainRuntime(entry),
+          this.ownershipByChain.get(chainId),
         );
       }
     }
@@ -340,6 +352,7 @@ export class ChainStore {
           recovered.lastSeq,
           new Date(),
           serializeChainRuntime(entry),
+          this.ownershipByChain.get(state.chainId),
         );
       }
     }
@@ -352,6 +365,15 @@ export class ChainStore {
 
   getJournalProjection(chainId: string): ChainJournalProjection | undefined {
     return this.journalProjections.get(chainId);
+  }
+
+  /** Phase 64A — attach remote Assigner ownership to the next checkpoint write. */
+  setOwnership(chainId: string, ownership: Record<string, unknown>): void {
+    this.ownershipByChain.set(chainId, ownership);
+  }
+
+  getOwnership(chainId: string): Record<string, unknown> | undefined {
+    return this.ownershipByChain.get(chainId);
   }
 
   /** Overwrite the runtime entry for the given chainId. */
@@ -667,6 +689,9 @@ export interface ChainContext {
   speculationEnabled?: boolean;
   speculationOnDisagreement?: "auto" | "block";
   maxParallelAttemptsPerStep?: number;
+  /** Phase 65A — opt-in deeper DAGs (forwarded into the chain mandate). */
+  allowDepth3?: boolean;
+  allowDepth4?: boolean;
 }): Promise<
   | {
       ok: true;
@@ -1646,6 +1671,8 @@ export async function chainStartFromGoalViaRuntime(
       speculationEnabled: params.speculationEnabled,
       speculationOnDisagreement: params.speculationOnDisagreement,
       maxParallelAttemptsPerStep: params.maxParallelAttemptsPerStep,
+      allowDepth3: params.allowDepth3,
+      allowDepth4: params.allowDepth4,
     });
     if (!result.ok) {
       return {
@@ -1698,6 +1725,8 @@ export async function chainStartFromGoalViaRuntime(
     speculationEnabled: params.speculationEnabled,
     speculationOnDisagreement: params.speculationOnDisagreement,
     maxParallelAttemptsPerStep: params.maxParallelAttemptsPerStep,
+    allowDepth3: params.allowDepth3,
+    allowDepth4: params.allowDepth4,
   });
   if (!result.ok) {
     return { ok: false, error: result.error };

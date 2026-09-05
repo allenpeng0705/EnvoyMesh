@@ -15,7 +15,7 @@ import {
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 
 let profileDir: string;
@@ -110,6 +110,8 @@ describe("NodeServiceImpl.runDocumentAgentTurn", () => {
     );
     node.bindCliTaskStore(taskStore);
     node.bindExternalMesh({ peerId: "12D3KooWCliExternalMesh" } as never);
+    // Avoid live RAG/embed startup — knowledgeQuery falls back to sync vault search.
+    vi.spyOn(node as never, "_getRagService").mockResolvedValue(null);
 
     await expect(node.knowledgeQuery("What can you help me with?")).resolves.toEqual(expect.any(String));
   });

@@ -330,10 +330,13 @@ export function ChainDefaultsPanel() {
           id="chain-iteration-max-rounds"
           type="number"
           min={1}
-          max={5}
+          max={48}
           value={defaults.iterationMaxRounds}
           onChange={(e) =>
-            writeField("iterationMaxRounds", Math.max(1, Math.min(5, parseInt(e.target.value, 10) || 1)))
+            writeField(
+              "iterationMaxRounds",
+              Math.max(1, Math.min(48, parseInt(e.target.value, 10) || 1)),
+            )
           }
         />
         <small className="chain-default-hint">{t("chainDefaults.iterationMaxRoundsHint")}</small>

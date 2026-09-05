@@ -176,6 +176,8 @@ describe("EnvoyHarnessPersistentAcpHost", () => {
       });
       sessionId = started.sessionId;
       await first.prompt("first turn");
+      // PersistedSession.appendMessage flushes asynchronously.
+      await new Promise((resolve) => setTimeout(resolve, 25));
     } finally {
       first.close();
     }
@@ -194,6 +196,7 @@ describe("EnvoyHarnessPersistentAcpHost", () => {
       const result = await second.prompt("second turn");
       expect(result.stopReason).toBe("end_turn");
       expect(result.text).toContain("echo:second turn");
+      await new Promise((resolve) => setTimeout(resolve, 25));
 
       // Both turns persisted: 4 messages (user/assistant x2). A failed
       // resume would have started a fresh session with only 2.

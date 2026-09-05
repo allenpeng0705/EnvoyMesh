@@ -103,6 +103,8 @@ const INTENT_ROLE_POLICIES: Record<string, readonly RolePair[]> = {
   // Phase 60D — restart reconciliation (agent↔agent).
   "task.chain.reconcile.request": AGENT_AGENT_ONLY,
   "task.chain.reconcile.response": AGENT_AGENT_ONLY,
+  // Phase 64A — Assigner notifies creator of ownership/recovery status.
+  "task.chain.ownership": AGENT_AGENT_ONLY,
   // Phase 60B — signed worker leases (agent↔agent; bond/sender bindings enforced at receive).
   "agent.worker.lease": AGENT_AGENT_ONLY,
   "agent.worker.lease.revoke": AGENT_AGENT_ONLY,

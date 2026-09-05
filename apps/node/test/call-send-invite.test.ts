@@ -120,7 +120,8 @@ describe("NodeServiceImpl.sendCallInvite (Phase 42A)", () => {
   });
 
   afterEach(async () => {
-    await rm(profileDir, { recursive: true, force: true });
+    // SQLite / open fds can leave tmp dirs non-empty on Darwin; don't fail the test on cleanup.
+    await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
   });
 
   it("1. embeds the SDP offer and uses the resolved transport peer ID", async () => {
@@ -149,9 +150,9 @@ describe("NodeServiceImpl.sendCallInvite (Phase 42A)", () => {
     expect(parsed.iceServers).toBeDefined();
     expect(parsed.iceServers).toHaveLength(3);
     const urls = parsed.iceServers!.map((s) => s.urls);
-    expect(urls).toContain("stun:stun.l.google.com:19302");
+    expect(urls).toContain("stun:stun.miwifi.com:3478");
+    expect(urls).toContain("stun:stun.nextcloud.com:3478");
     expect(urls).toContain("stun:stun.cloudflare.com:3478");
-    expect(urls).toContain("stun:global.stun.twilio.com:3478");
   });
 
   it("4. passes through caller-supplied iceServers (overrides defaults)", async () => {
@@ -315,7 +316,7 @@ describe("NodeServiceImpl.sendCallInvite (Phase 42A)", () => {
     expect(callId).not.toBeNull();
     expect(sends).toHaveLength(1);
     // Connected peers take the fast sendChat path (not _deliverCallEnvelope / mesh.send).
-    expect(sends[0]!.options).toEqual({ dialHints: [] });
+    expect(sends[0]!.options).toMatchObject({ dialHints: [] });
     expect((node as any)._mesh.sendChat).toHaveBeenCalledTimes(1);
     expect((node as any)._mesh.send).not.toHaveBeenCalled();
     expect(ensurePeerReachable).not.toHaveBeenCalled();

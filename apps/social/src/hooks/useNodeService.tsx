@@ -310,6 +310,12 @@ export interface NodeServiceClient {
     params?: import("@envoymesh/api").ChainListObservedParams,
   ): Promise<import("@envoymesh/api").ChainListObservedResult>;
   chainCancel(params: ChainCancelParams): Promise<ChainCancelResult>;
+  chainReclaimAssigner?(
+    params: import("@envoymesh/api").ChainReclaimAssignerParams,
+  ): Promise<import("@envoymesh/api").ChainReclaimAssignerResult>;
+  chainCancelDelegated?(
+    params: import("@envoymesh/api").ChainCancelDelegatedParams,
+  ): Promise<import("@envoymesh/api").ChainCancelDelegatedResult>;
   chainReassignSubtask?(
     params: import("@envoymesh/api").ChainReassignSubtaskParams,
   ): Promise<import("@envoymesh/api").ChainReassignSubtaskResult>;
@@ -1372,6 +1378,18 @@ function createWsNodeServiceClient(
     },
     async chainCancel(params: ChainCancelParams) {
       return wsClient.rpc("chainCancel", params as unknown as Record<string, unknown>) as unknown as Promise<ChainCancelResult>;
+    },
+    async chainReclaimAssigner(params: import("@envoymesh/api").ChainReclaimAssignerParams) {
+      return wsClient.rpc(
+        "chainReclaimAssigner",
+        params as unknown as Record<string, unknown>,
+      ) as unknown as Promise<import("@envoymesh/api").ChainReclaimAssignerResult>;
+    },
+    async chainCancelDelegated(params: import("@envoymesh/api").ChainCancelDelegatedParams) {
+      return wsClient.rpc(
+        "chainCancelDelegated",
+        params as unknown as Record<string, unknown>,
+      ) as unknown as Promise<import("@envoymesh/api").ChainCancelDelegatedResult>;
     },
     async chainReassignSubtask(params: import("@envoymesh/api").ChainReassignSubtaskParams) {
       return wsClient.rpc("chainReassignSubtask", params as unknown as Record<string, unknown>) as unknown as Promise<

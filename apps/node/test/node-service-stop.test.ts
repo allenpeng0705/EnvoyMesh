@@ -49,6 +49,7 @@ function makeCtx(overrides: Partial<StopNodeContext> = {}): {
     clearExternalMesh: vi.fn(),
     getAndClearAdvertiseInterestsTimer: vi.fn((): undefined => undefined),
     getAndClearAdvertiseInterestsStartupTimeout: vi.fn((): undefined => undefined),
+    getAndClearAgentCardRefreshStartupTimeout: vi.fn((): undefined => undefined),
     getDeviceId: vi.fn((): string | undefined => "device-1"),
   };
   const ctx: StopNodeContext = {

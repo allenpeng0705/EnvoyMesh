@@ -81,8 +81,8 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 61 default tools + 2 additional = 63
-      expect(tools).toHaveLength(63);
+      // default tools + 2 additional
+      expect(tools).toHaveLength(68);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
@@ -96,8 +96,10 @@ describe("ToolRegistry", () => {
           "mesh.list-all-approvals",
           "mesh.list-external-agent-actions",
           "mesh.list-external-sessions", "mesh.list-pending", "mesh.list-sessions",
-          "mesh.list-triggers", "mesh.list_agent_network_workers", "mesh.match_capability_route",
+          "mesh.list-triggers", "mesh.list_agent_network_workers",
+          "mesh.market.search", "mesh.market.shortlist", "mesh.match_capability_route",
           "mesh.mcp.call_tool", "mesh.mcp.list_tools",
+          "mesh.notes_create", "mesh.notes_export_mcp", "mesh.notes_export_obsidian",
           "mesh.probe_peer",
           "mesh.reject", "mesh.reject-all", "mesh.remove-trigger",
           "mesh.revoke-external-agent", "mesh.session-summary", "mesh.set-contact-disclosure",
@@ -114,8 +116,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: 61 (includes MCP consumer + agent-network probe tools)
-      expect(tools.length).toBe(61);
+      // Default tools: 66 (includes market/notes + MCP consumer + agent-network probe tools)
+      expect(tools.length).toBe(66);
     });
   });
 
@@ -329,7 +331,7 @@ describe("executeTool — IPFS library hooks", () => {
         "vault:vault/report.pdf",
       ]);
     } finally {
-      await rm(profileDir, { recursive: true, force: true });
+      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
@@ -360,7 +362,7 @@ describe("executeTool — IPFS library hooks", () => {
       expect(payload.source).toBe("workspace");
       expect(payload.textContent).toBe("unified read");
     } finally {
-      await rm(profileDir, { recursive: true, force: true });
+      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
@@ -391,7 +393,7 @@ describe("executeTool — IPFS library hooks", () => {
       expect(payload.textContent).toBe("hello vault");
       expect(payload.relativePath).toBe("notes/hello.txt");
     } finally {
-      await rm(profileDir, { recursive: true, force: true });
+      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
@@ -425,7 +427,7 @@ describe("executeTool — IPFS library hooks", () => {
       expect(result.ok).toBe(true);
       expect((result.result as { cid?: string })?.cid).toBe("bafyfromtool");
     } finally {
-      await rm(profileDir, { recursive: true, force: true });
+      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
@@ -450,7 +452,7 @@ describe("executeTool — IPFS library hooks", () => {
       expect(result.ok).toBe(false);
       expect(result.error).toMatch(/documentId/i);
     } finally {
-      await rm(profileDir, { recursive: true, force: true });
+      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
@@ -479,7 +481,7 @@ describe("executeTool — IPFS library hooks", () => {
       expect(result.ok).toBe(true);
       expect((result.result as { fetchedBytes?: number })?.fetchedBytes).toBe(12);
     } finally {
-      await rm(profileDir, { recursive: true, force: true });
+      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
@@ -502,7 +504,7 @@ describe("executeTool — IPFS library hooks", () => {
       expect(result.ok).toBe(false);
       expect(result.error).toMatch(/verifyLibraryItemIpfsGateway/);
     } finally {
-      await rm(profileDir, { recursive: true, force: true });
+      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 });

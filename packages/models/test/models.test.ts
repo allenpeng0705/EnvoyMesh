@@ -433,6 +433,7 @@ describe("model router", () => {
     });
     expect(JSON.parse(requests[0].init.body as string)).toEqual({
       model: "gpt-4o-mini",
+      max_tokens: 4096,
       messages: [{ role: "user", content: "Explain EnvoyMesh" }],
     });
   });

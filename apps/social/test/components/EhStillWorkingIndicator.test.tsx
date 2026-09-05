@@ -17,7 +17,7 @@ describe("EhStillWorkingIndicator", () => {
       <EhStillWorkingIndicator active={true} onCancel={onCancel} />,
     )
 
-    expect(screen.getByText(/envoy-harness is thinking/i)).toBeDefined()
+    expect(screen.getByText(/Thinking/i)).toBeDefined()
     const cancelBtn = screen.getByRole("button", { name: /Cancel/i })
     fireEvent.click(cancelBtn)
     expect(onCancel).toHaveBeenCalledTimes(1)
@@ -26,7 +26,7 @@ describe("EhStillWorkingIndicator", () => {
   it("upgrades to still-working label after delay", () => {
     vi.useFakeTimers()
     renderWithI18n(<EhStillWorkingIndicator active={true} />)
-    expect(screen.getByText(/envoy-harness is thinking/i)).toBeDefined()
+    expect(screen.getByText(/Thinking/i)).toBeDefined()
     act(() => {
       vi.advanceTimersByTime(8_000)
     })

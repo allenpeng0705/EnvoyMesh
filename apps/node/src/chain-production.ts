@@ -69,17 +69,25 @@ export async function resolveChainTransportPeerId(
   const localDevicePeerId = resolver.localDevicePublicKeyPem
     ? derivePeerId(resolver.localDevicePublicKeyPem)
     : undefined;
+  let localMeshPeerId: string | undefined;
+  try {
+    localMeshPeerId = resolver.mesh.peerId;
+  } catch {
+    localMeshPeerId = undefined;
+  }
   if (
     recipientPeerId === resolver.localAgentPeerId ||
     recipientPeerId === localDevicePeerId ||
-    recipientPeerId === resolver.mesh.peerId
+    (localMeshPeerId !== undefined && recipientPeerId === localMeshPeerId)
   ) {
-    return resolver.mesh.peerId;
+    return localMeshPeerId ?? resolver.localAgentPeerId ?? null;
   }
 
   const ownerFromAgent = resolver.agentPeerToOwner?.get(recipientPeerId);
   if (ownerFromAgent) {
-    return resolveTransportForOwner(resolver, ownerFromAgent);
+    const viaOwner = await resolveTransportForOwner(resolver, ownerFromAgent);
+    // Card may exist before peer-directory has the owner row — fall through.
+    if (viaOwner) return viaOwner;
   }
 
   const records = await resolver.peerDirectoryStore.listPeerRecords();
@@ -178,11 +186,17 @@ export async function sendChainEnvelopeOverMesh(
   const localDevicePeerId = resolver.localDevicePublicKeyPem
     ? derivePeerId(resolver.localDevicePublicKeyPem)
     : undefined;
+  let localMeshPeerId: string | undefined;
+  try {
+    localMeshPeerId = resolver.mesh.peerId;
+  } catch {
+    localMeshPeerId = undefined;
+  }
   const isLocal =
     recipientPeerId === resolver.localAgentPeerId ||
     recipientPeerId === localDevicePeerId ||
-    recipientPeerId === resolver.mesh.peerId ||
-    transportPeerId === resolver.mesh.peerId;
+    (localMeshPeerId !== undefined &&
+      (recipientPeerId === localMeshPeerId || transportPeerId === localMeshPeerId));
 
   if (isLocal) {
     if (!resolver.deliverLocally) {

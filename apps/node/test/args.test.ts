@@ -363,7 +363,13 @@ discovery:
       "--bootstrap-preset",
       "public-libp2p-am7",
     ]);
-    expect(args.bootstrapPresets).toEqual(["public-libp2p", "public-libp2p-am6", "public-libp2p-am7", "cn-relay"]);
+    expect(args.bootstrapPresets).toEqual([
+      "public-libp2p",
+      "public-libp2p-am6",
+      "public-libp2p-am7",
+      "cn-relay",
+      "us-relay",
+    ]);
     expect(args.bootstrapPeers.length).toBeGreaterThanOrEqual(4);
     expect(args.bootstrapPeers.some((peer) => peer.includes("am6.bootstrap.libp2p.io"))).toBe(true);
     expect(args.bootstrapPeers.some((peer) => peer.includes("am7.bootstrap.libp2p.io"))).toBe(true);
@@ -405,10 +411,10 @@ my-org:
     expect(() => parseNodeArgs(["--bootstrap-preset", "unknown-preset"])).toThrow("Unknown bootstrap preset");
   });
 
-  it("contacts-only profile strips public-libp2p presets and keeps cn-relay", () => {
+  it("contacts-only profile strips public-libp2p presets and keeps community relays", () => {
     const args = parseNodeArgs(["--discovery-profile", "contacts-only"]);
     expect(args.discoveryProfile).toBe("contacts-only");
-    expect(args.bootstrapPresets).toEqual(["cn-relay"]);
+    expect(args.bootstrapPresets).toEqual(["cn-relay", "us-relay"]);
     expect(args.bootstrapPeers.some((peer) => peer.includes("bootstrap.libp2p.io"))).toBe(false);
     expect(args.enableRelay).toBe(true);
     expect(args.enableDht).toBe(true);
@@ -425,7 +431,7 @@ my-org:
       persisted.bootstrapPeers = [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR];
       applyPersistedDiscoveryConfig(args, persisted);
       expect(args.discoveryProfile).toBe("contacts-only");
-      expect(args.bootstrapPresets).toEqual(["cn-relay"]);
+      expect(args.bootstrapPresets).toEqual(["cn-relay", "us-relay"]);
       expect(args.bootstrapPeers.some((peer) => peer.includes("bootstrap.libp2p.io"))).toBe(false);
     } finally {
       rmSync(profileDir, { recursive: true, force: true });

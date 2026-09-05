@@ -41,6 +41,11 @@ import {
 } from "@envoymesh/protocol";
 
 import type { ChainOrchestratorHandlerDeps, ChainState } from "./chain-orchestrator.js";
+import {
+  verifySubChainMandate,
+  verifySubChainSelfConsistency,
+  type ChainBudgetDeadlineMandate,
+} from "./chain-depth-mandate.js";
 
 // ---------------------------------------------------------------------------
 // Local types
@@ -256,6 +261,41 @@ export async function acceptHandoff(
   if (isHandoffTerminal(record.status)) {
     return { ok: false, reason: `not_pending:${record.status}` };
   }
+
+  // Phase 65A — sub-mandate must fit parent budget/depth/deadline (when known)
+  // and the estimate must fit the child budget.
+  const childRaw = input.subChainMandate;
+  if (childRaw && typeof childRaw === "object") {
+    const child = childRaw as Partial<ChainBudgetDeadlineMandate>;
+    if (typeof child.maxChainCostUsd === "number") {
+      const selfCheck = verifySubChainSelfConsistency({
+        child: { maxChainCostUsd: child.maxChainCostUsd },
+        estimatedCostUsd: input.estimatedCostUsd,
+      });
+      if (!selfCheck.ok) return { ok: false, reason: selfCheck.reason };
+    }
+    const parent = state.chainMandate as ChainBudgetDeadlineMandate | undefined;
+    if (
+      parent &&
+      typeof child.maxChainCostUsd === "number" &&
+      typeof child.costCeilingUsd === "number" &&
+      typeof child.deadlineAt === "string"
+    ) {
+      const parentCheck = verifySubChainMandate({
+        parent,
+        child: {
+          allowDepth3: child.allowDepth3,
+          allowDepth4: child.allowDepth4,
+          maxChainCostUsd: child.maxChainCostUsd,
+          costCeilingUsd: child.costCeilingUsd,
+          deadlineAt: child.deadlineAt,
+        },
+        estimatedCostUsd: input.estimatedCostUsd,
+      });
+      if (!parentCheck.ok) return { ok: false, reason: parentCheck.reason };
+    }
+  }
+
   // Build the delegate payload to return to the caller. The caller
   // will sign + send it back to A as the ack.
   const delegate = buildDelegatePayload(

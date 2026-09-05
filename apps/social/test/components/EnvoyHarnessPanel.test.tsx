@@ -24,6 +24,7 @@ const ehRespondToPermission = vi.fn()
 const listEnvoyHarnessPeers = vi.fn()
 const setEnvoyHarnessProjectPath = vi.fn()
 const invokeEnvoyHarnessEhui = vi.fn()
+const getEnvoyHarnessCommandCatalog = vi.fn()
 
 const eventHandlers = new Map<string, Set<(payload: unknown) => void>>()
 
@@ -64,6 +65,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     listEnvoyHarnessPeers,
     setEnvoyHarnessProjectPath,
     invokeEnvoyHarnessEhui,
+    getEnvoyHarnessCommandCatalog,
     isConnected: true,
     on: (event: string, handler: (payload: unknown) => void) => {
       if (!eventHandlers.has(event)) eventHandlers.set(event, new Set())
@@ -126,7 +128,26 @@ beforeEach(() => {
   listEnvoyHarnessPeers.mockReset()
   setEnvoyHarnessProjectPath.mockReset()
   invokeEnvoyHarnessEhui.mockReset()
+  getEnvoyHarnessCommandCatalog.mockReset()
   getEnvoyHarnessStatus.mockResolvedValue(status())
+  getEnvoyHarnessCommandCatalog.mockResolvedValue({
+    agentId: "envoy-harness",
+    agentName: "Envoy Harness",
+    commands: [
+      {
+        slash: "/help",
+        summary: "Show help",
+        intercept: "envoy",
+        source: "static",
+      },
+      {
+        slash: "/review",
+        summary: "Review changes",
+        intercept: "envoy",
+        source: "static",
+      },
+    ],
+  })
   getEnvoyHarnessTurnStatus.mockResolvedValue({ busy: false })
   setEnvoyHarnessAutoRunPolicy.mockImplementation(async (policy: string) =>
     status({ autoRunPolicy: policy }),
@@ -348,7 +369,7 @@ describe("EnvoyHarnessPanel", () => {
     fireEvent.change(input, { target: { value: "hello" } })
     fireEvent.submit(input.closest("form")!)
 
-    expect(await screen.findByText(/envoy-harness is thinking/i)).toBeDefined()
+    expect(await screen.findByText(/Thinking/i)).toBeDefined()
     expect(screen.getByRole("button", { name: /Cancel/i })).toBeDefined()
   })
 
@@ -374,7 +395,7 @@ describe("EnvoyHarnessPanel", () => {
 
     expect(await screen.findByText("Hi! You said: hello")).toBeDefined()
     await waitFor(() => {
-      expect(screen.queryByText(/envoy-harness is thinking/i)).toBeNull()
+      expect(screen.queryByText(/Thinking/i)).toBeNull()
     })
   })
 
@@ -463,7 +484,7 @@ describe("EnvoyHarnessPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /Cancel/i }))
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /Cancel/i })).toBeNull()
-      expect(screen.queryByText(/envoy-harness is thinking/i)).toBeNull()
+      expect(screen.queryByText(/Thinking/i)).toBeNull()
     })
     expect(cancelEnvoyHarnessTurn).toHaveBeenCalled()
     expect(screen.getByText("Run npm test")).toBeDefined()

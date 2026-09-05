@@ -35,6 +35,8 @@ export type ChainReconcileKnownAttempt = z.infer<typeof ChainReconcileKnownAttem
 export const TaskChainReconcileRequestPayloadSchema = z.object({
   chainId: z.string().min(1).max(128),
   orchestratorEpoch: z.string().min(1).max(128),
+  /** Phase 64A — optional remote Assigner ownership epoch (creator/reclaim gate). */
+  ownershipEpoch: z.string().min(1).max(128).optional(),
   knownAttempts: z.array(ChainReconcileKnownAttemptSchema).max(256),
   requestedAt: z.string().datetime(),
 });

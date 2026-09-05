@@ -941,6 +941,10 @@ export function ChainStartDialog({
                       <option value={1}>{t("chains.start.iterationRounds1")}</option>
                       <option value={2}>{t("chains.start.iterationRounds2")}</option>
                       <option value={3}>{t("chains.start.iterationRounds3")}</option>
+                      <option value={5}>5</option>
+                      <option value={10}>10</option>
+                      <option value={24}>24</option>
+                      <option value={48}>48</option>
                     </select>
                   </label>
                   <label className="chain-start-iteration-label">

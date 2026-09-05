@@ -140,7 +140,7 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
   });
 
   afterEach(async () => {
-    await rm(profileDir, { recursive: true, force: true });
+    await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
   });
 
   // ------------------------------------------------------------------
@@ -279,7 +279,7 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
         const ok = await localNode.declineCallInvite(callId, reason);
         expect(ok).toBe(true);
         expect(parseCallRejectPayload(localSends[0]!.envelope.payload).reason).toBe(reason);
-        await rm(freshDir, { recursive: true, force: true });
+        await rm(freshDir, { recursive: true, force: true }).catch(() => undefined);
       }
     });
 
@@ -445,7 +445,7 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
         expect(s[0]!.envelope.intent).toBe("call.accept");
         expect(s[0]!.envelope.recipientPeerId).toBe(PEER_ENVELOPE_PEER_ID);
         expect(verifyEnvelope(s[0]!.envelope)).toBe(true);
-        await rm(dir, { recursive: true, force: true });
+        await rm(dir, { recursive: true, force: true }).catch(() => undefined);
       }
       // reject
       {
@@ -462,7 +462,7 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
         await n.declineCallInvite(id, "busy");
         expect(s[0]!.envelope.intent).toBe("call.reject");
         expect(verifyEnvelope(s[0]!.envelope)).toBe(true);
-        await rm(dir, { recursive: true, force: true });
+        await rm(dir, { recursive: true, force: true }).catch(() => undefined);
       }
       // hangup
       {
@@ -481,7 +481,7 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
         const hangupEnv = s.find((x) => x.envelope.intent === "call.hangup")!;
         expect(hangupEnv).toBeTruthy();
         expect(verifyEnvelope(hangupEnv.envelope)).toBe(true);
-        await rm(dir, { recursive: true, force: true });
+        await rm(dir, { recursive: true, force: true }).catch(() => undefined);
       }
       // mute
       {
@@ -500,7 +500,7 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
         const muteEnv = s.find((x) => x.envelope.intent === "call.mute")!;
         expect(muteEnv).toBeTruthy();
         expect(verifyEnvelope(muteEnv.envelope)).toBe(true);
-        await rm(dir, { recursive: true, force: true });
+        await rm(dir, { recursive: true, force: true }).catch(() => undefined);
       }
     });
   });

@@ -237,6 +237,7 @@ describe("task.chain.* (Phase 40E, all agent↔agent)", () => {
     "task.chain.delegate",
     "task.chain.relay",
     "task.chain.arbitration",
+    "task.chain.ownership",
   ] as const;
 
   for (const intent of eIntents) {
@@ -271,7 +272,7 @@ describe("schema / role-policy sync", () => {
     // documents the invariant.
     const allIntents = EnvoyIntentSchema.options;
     const chainIntents = allIntents.filter((i) => i.startsWith("task.chain."));
-    expect(chainIntents.length).toBe(18); // 9 from 40A + status + 4 from 40E + ready + reconcile req/res
+    expect(chainIntents.length).toBe(19); // 9 from 40A + status + 4 from 40E + ready + reconcile req/res + ownership (64A)
     for (const intent of chainIntents) {
       // Probing human→human should be denied for every chain intent
       // (none of them are human↔human; the only human-targeting one is

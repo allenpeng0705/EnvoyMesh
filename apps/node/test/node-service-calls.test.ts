@@ -228,9 +228,9 @@ describe("effectiveCallIceServersViaRuntime", () => {
     const ctx = makeContext();
     const out = await effectiveCallIceServersViaRuntime(ctx);
     expect(out).toEqual([
-      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun.miwifi.com:3478" },
+      { urls: "stun:stun.nextcloud.com:3478" },
       { urls: "stun:stun.cloudflare.com:3478" },
-      { urls: "stun:global.stun.twilio.com:3478" },
     ]);
   });
 });

@@ -1,9 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { afterEach, describe, expect, it } from "vitest"
+import { cleanup, render, screen } from "@testing-library/react"
 import { SearchHighlightedText } from "../../src/lib/eh-transcript-search-highlight.js"
+
+afterEach(() => cleanup())
 
 describe("SearchHighlightedText", () => {
   it("wraps matches in mark elements", () => {

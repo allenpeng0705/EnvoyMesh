@@ -159,10 +159,14 @@ describe("ext agent project path store", () => {
 });
 
 describe("home-fs owner-only RPC gate", () => {
-  it("marks browse / project path methods as owner-only", () => {
+  it("exposes project picker paths via coding gate (not owner-only)", () => {
+    for (const method of ["getHomeFsInfo", "listHomeFsEntries"]) {
+      expect(isOwnerOnlyRpcMethod(method), method).toBe(false);
+    }
+  });
+
+  it("marks Obsidian / project path / preview methods as owner-only", () => {
     for (const method of [
-      "getHomeFsInfo",
-      "listHomeFsEntries",
       "discoverObsidianVaults",
       "getExtAgentProjectPath",
       "setExtAgentProjectPath",
@@ -172,7 +176,7 @@ describe("home-fs owner-only RPC gate", () => {
     }
   });
 
-  it("rejects family callers on listHomeFsEntries", async () => {
+  it("rejects family callers on owner-only listChatRooms", async () => {
     await expect(
       runWithRpcCaller(
         {
@@ -182,8 +186,8 @@ describe("home-fs owner-only RPC gate", () => {
           source: "session",
         },
         async () => {
-          if (isOwnerOnlyRpcMethod("listHomeFsEntries")) {
-            requireOwnerProfile("call listHomeFsEntries");
+          if (isOwnerOnlyRpcMethod("listChatRooms")) {
+            requireOwnerProfile("call listChatRooms");
           }
         },
       ),

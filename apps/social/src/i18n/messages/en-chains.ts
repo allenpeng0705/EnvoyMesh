@@ -104,6 +104,15 @@ export const chainsMessages = {
     recovering: "Recovering after restart — confirming worker progress before continuing",
     recoveringHonesty:
       "Workers are not re-awarded during recovery. Late finals are kept; duplicates are dropped.",
+    assignerStrandedTitle: "Assigner offline",
+    assignerStrandedBody:
+      "The computer running this team job stopped responding. You can cancel the job, or reclaim it to continue on this computer (starts a new run of the same goal).",
+    assignerStrandedReclaim: "Continue here",
+    assignerStrandedCancel: "Cancel job",
+    assignerStrandedReclaimed: "Job resumed on this computer.",
+    assignerStrandedRestarted: "No mid-flight snapshot — started a new run on this computer.",
+    assignerStrandedCancelled: "Team job cancelled.",
+    assignerStrandedFailed: "Could not update this job",
     speculationReviewTitle: "Results disagree",
     speculationReviewDisagree:
       "Two team members finished this step with different results. Pick one to continue, or reassign the step.",

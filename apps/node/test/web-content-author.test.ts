@@ -39,6 +39,10 @@ describe("resolveWebContentPath", () => {
 const PNG_1X1 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
+/** Valid 1x1 JPEG from sharp — decodable by fitImageToMaxBytes. */
+const JPEG_1X1 =
+  "/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKpAB//Z";
+
 describe("publishWebContentEntry section", () => {
   it("publishes a custom Market section with topic tag", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-section-"));
@@ -292,22 +296,24 @@ describe("publishWebContentEntry", () => {
     expect(photo?.mimeType).toBe("image/png");
   });
 
-  it("strips JPEG EXIF metadata on photo publish", async () => {
+  it("strips JPEG metadata on photo publish", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-photo-exif-"));
     const ownerId = "envoy:owner:alice";
-    const exifPayload = new Uint8Array([0x45, 0x78, 0x69, 0x66, 0x00, 0x00]);
+    const baseJpeg = Buffer.from(JPEG_1X1, "base64");
+    const exifPayload = Buffer.from([0x45, 0x78, 0x69, 0x66, 0x00, 0x00]);
     const appLen = exifPayload.length + 2;
-    const jpegWithExif = new Uint8Array([
-      0xff, 0xd8,
-      0xff, 0xe1, (appLen >> 8) & 0xff, appLen & 0xff, ...exifPayload,
-      0xff, 0xd9,
+    const jpegWithExif = Buffer.concat([
+      baseJpeg.subarray(0, 2),
+      Buffer.from([0xff, 0xe1, (appLen >> 8) & 0xff, appLen & 0xff]),
+      exifPayload,
+      baseJpeg.subarray(2),
     ]);
     const result = await publishWebContentEntry(profileDir, {
       template: "photo",
       title: "Stripped",
       visibility: "public",
       ownerId,
-      contentBase64: Buffer.from(jpegWithExif).toString("base64"),
+      contentBase64: jpegWithExif.toString("base64"),
       mimeType: "image/jpeg",
       fileName: "stripped.jpg",
       gallery: "wall",
@@ -315,8 +321,8 @@ describe("publishWebContentEntry", () => {
     const onDisk = await readFile(join(profileDir, "web", result.path));
     expect(onDisk[0]).toBe(0xff);
     expect(onDisk[1]).toBe(0xd8);
-    expect(onDisk.equals(Buffer.from([0xff, 0xd8, 0xff, 0xd9]))).toBe(true);
-    expect(onDisk.byteLength).toBeLessThan(jpegWithExif.byteLength);
+    expect(onDisk.includes(Buffer.from("Exif"))).toBe(false);
+    expect(onDisk.byteLength).toBeLessThanOrEqual(jpegWithExif.byteLength);
   });
 
   it("publishes a file under files/", async () => {

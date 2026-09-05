@@ -9,10 +9,13 @@ import {
   ChainSubtaskSchema,
   type ChainReport,
   type ChainSubtask,
+  CHAIN_ITERATION_MAX_ROUNDS,
 } from "@envoymesh/protocol";
 
 import { extractJson } from "./chain-decomposer.js";
 import type { ChainState } from "./chain-orchestrator.js";
+
+export { CHAIN_ITERATION_MAX_ROUNDS };
 
 export type IterationJudgeDecision = "continue" | "stop" | "ask_owner" | "extend";
 
@@ -23,7 +26,8 @@ export type IterationStopReason =
   | "budget"
   | "deadline"
   | "no_workers"
-  | "ask_owner";
+  | "ask_owner"
+  | "lease_stale";
 
 export type IterationJudgeMode = "llm" | "always_stop" | "owner";
 export type IterationCarryMode = "summary" | "full_draft" | "structured";
@@ -39,7 +43,8 @@ export type ExtendRejectReason =
   | "depth_exceeded"
   | "empty_steps"
   | "budget"
-  | "deadline";
+  | "deadline"
+  | "lease_stale";
 
 export interface IterationDraft {
   round: number;
@@ -74,6 +79,11 @@ export interface ChainIterationState {
   goal: string;
   /** Phase 47C — judge asked the owner; do not publish until resolved. */
   waitingForOwner?: boolean;
+  /**
+   * Phase 65B — awarded open-round workers lack a live lease; Assigner
+   * pauses stall-reassign / continue until leases renew (or owner cancels).
+   */
+  pausedForLease?: boolean;
 }
 
 export interface CreateIterationStateInput {
@@ -88,13 +98,16 @@ export interface CreateIterationStateInput {
 }
 
 export function createIterationState(input: CreateIterationStateInput): ChainIterationState {
-  const maxRounds = Math.max(1, Math.min(10, Math.floor(input.maxRounds)));
+  const maxRounds = Math.max(
+    1,
+    Math.min(CHAIN_ITERATION_MAX_ROUNDS, Math.floor(input.maxRounds)),
+  );
   return {
     round: 1,
     maxRounds,
     extendsInRound: 0,
     maxExtendsInRound: Math.max(0, Math.floor(input.maxExtendsInRound ?? 2)),
-    extendMaxDepth: Math.max(1, Math.min(3, Math.floor(input.extendMaxDepth ?? 3))),
+    extendMaxDepth: Math.max(1, Math.min(4, Math.floor(input.extendMaxDepth ?? 3))),
     extendOnlyAfterPartial: input.extendOnlyAfterPartial !== false,
     sealedByRound: {},
     openRoundSubtaskIds: [...input.openRoundSubtaskIds],
@@ -182,6 +195,7 @@ export function canStartNextRound(
 ): { ok: true } | { ok: false; reason: IterationStopReason } {
   const it = state.iteration;
   if (!it) return { ok: false, reason: "judge_stop" };
+  if (it.pausedForLease) return { ok: false, reason: "lease_stale" };
   if (it.round >= it.maxRounds) return { ok: false, reason: "max_rounds" };
   if (deadlinePassed(state, now)) return { ok: false, reason: "deadline" };
   if (!budgetAllowsContinue(state)) return { ok: false, reason: "budget" };
@@ -593,6 +607,7 @@ export type IterationWireBlob = {
   carryMode: IterationCarryMode;
   goal: string;
   waitingForOwner?: boolean;
+  pausedForLease?: boolean;
   stopReason?: string;
 };
 
@@ -621,6 +636,7 @@ export function toIterationWireBlob(iteration: ChainIterationState): IterationWi
     carryMode: iteration.carryMode,
     goal: iteration.goal,
     waitingForOwner: iteration.waitingForOwner,
+    pausedForLease: iteration.pausedForLease,
     stopReason: iteration.stopReason,
   };
 }
@@ -644,11 +660,11 @@ export function fromIterationWireBlob(wire: IterationWireBlob): ChainIterationSt
     ? (wire.carryMode as IterationCarryMode)
     : "summary";
   return {
-    round: Math.max(1, Math.min(10, Math.floor(wire.round))),
-    maxRounds: Math.max(1, Math.min(10, Math.floor(wire.maxRounds))),
+    round: Math.max(1, Math.min(CHAIN_ITERATION_MAX_ROUNDS, Math.floor(wire.round))),
+    maxRounds: Math.max(1, Math.min(CHAIN_ITERATION_MAX_ROUNDS, Math.floor(wire.maxRounds))),
     extendsInRound: Math.max(0, Math.floor(wire.extendsInRound)),
     maxExtendsInRound: Math.max(0, Math.floor(wire.maxExtendsInRound)),
-    extendMaxDepth: Math.max(1, Math.min(3, Math.floor(wire.extendMaxDepth ?? 3))),
+    extendMaxDepth: Math.max(1, Math.min(4, Math.floor(wire.extendMaxDepth ?? 3))),
     extendOnlyAfterPartial: wire.extendOnlyAfterPartial !== false,
     sealedByRound,
     openRoundSubtaskIds: [...(wire.openRoundSubtaskIds ?? [])],
@@ -667,6 +683,7 @@ export function fromIterationWireBlob(wire: IterationWireBlob): ChainIterationSt
     carryMode,
     goal: wire.goal,
     waitingForOwner: wire.waitingForOwner === true,
+    pausedForLease: wire.pausedForLease === true,
     stopReason: wire.stopReason as IterationStopReason | undefined,
   };
 }

@@ -99,6 +99,8 @@ export const EnvoyIntentSchema = z.enum([
   // Phase 60D — restart reconciliation (attempt receipts).
   "task.chain.reconcile.request",
   "task.chain.reconcile.response",
+  // Phase 64A — Assigner → creator ownership status (restart / stranded).
+  "task.chain.ownership",
   // Phase 60B — signed short-lived worker leases (availability).
   "agent.worker.lease",
   "agent.worker.lease.revoke",
@@ -1937,7 +1939,8 @@ export const TaskJournalEntrySchema = z.object({
   chainId: z.string().min(1).optional(),
   parentTaskId: z.string().min(1).optional(),
   subtaskId: z.string().min(1).optional(),
-  depth: z.number().int().min(1).max(3).optional(),
+  /** Phase 65A — lineage depth aligns with CHAIN_MAX_DEPTH (4). */
+  depth: z.number().int().min(1).max(4).optional(),
 });
 
 export const TaskProposePayloadSchema = z.object({
@@ -2087,7 +2090,8 @@ export const TaskResultPayloadSchema = z.object({
   chainId: z.string().min(1).optional(),
   parentTaskId: z.string().min(1).optional(),
   subtaskId: z.string().min(1).optional(),
-  depth: z.number().int().min(1).max(3).optional(),
+  /** Phase 65A — lineage depth aligns with CHAIN_MAX_DEPTH (4). */
+  depth: z.number().int().min(1).max(4).optional(),
 });
 
 export type CommerceDeliveryAttestation = NonNullable<
@@ -4339,6 +4343,7 @@ export {
   ChainHandoffDelegatePayloadSchema,
   ChainHandoffStatusSchema,
   ChainIterationWireSchema,
+  CHAIN_ITERATION_MAX_ROUNDS,
   ChainRelayRouteSchema,
   ChainArbitrationEntrySchema,
   ChainArbitrationPayloadSchema,
@@ -4346,6 +4351,9 @@ export {
   isHandoffOpen,
   isHandoffTerminal,
   isHandoffLive,
+  TaskChainOwnershipPayloadSchema,
+  createTaskChainOwnershipPayload,
+  parseTaskChainOwnershipPayload,
 } from "./agent-network-handoff.js";
 export type {
   ChainHandoffRequest,
@@ -4357,6 +4365,8 @@ export type {
   ChainRelayRoute,
   ChainArbitrationEntry,
   ChainArbitrationPayload,
+  ChainOwnershipNotifyStatus,
+  TaskChainOwnershipPayload,
 } from "./agent-network-handoff.js";
 
 export {

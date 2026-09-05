@@ -123,20 +123,22 @@ describe("device-authorization-store", () => {
       const t0 = "2024-01-01T00:00:00.000Z";
       const t1 = "2024-02-01T00:00:00.000Z";
       const t2 = "2024-03-01T00:00:00.000Z";
+      // Distinct display names — registerAuthorizedDevice replaces same-name
+      // entries in place, which would collapse duplicates before merge runs.
       await store.registerAuthorizedDevice({
         deviceId: deviceA.deviceId, devicePublicKeyPem: deviceA.publicKeyPem,
         certificateId: certA.certificateId, deviceProfile: "satellite",
-        displayName: "Phone", pairedAt: t0,
+        displayName: "Phone-A", pairedAt: t0,
       });
       await store.registerAuthorizedDevice({
         deviceId: deviceB.deviceId, devicePublicKeyPem: deviceB.publicKeyPem,
         certificateId: certB.certificateId, deviceProfile: "satellite",
-        displayName: "Phone", pairedAt: t1,
+        displayName: "Phone-B", pairedAt: t1,
       });
       await store.registerAuthorizedDevice({
         deviceId: deviceC.deviceId, devicePublicKeyPem: deviceC.publicKeyPem,
         certificateId: certC.certificateId, deviceProfile: "satellite",
-        displayName: "Phone", pairedAt: t2,
+        displayName: "Phone-C", pairedAt: t2,
       });
 
       // Merge B and C into A (keep A).
@@ -231,12 +233,12 @@ describe("device-authorization-store", () => {
       await store.registerAuthorizedDevice({
         deviceId: deviceA.deviceId, devicePublicKeyPem: deviceA.publicKeyPem,
         certificateId: "cert-a", deviceProfile: "satellite",
-        displayName: "Phone", pairedAt: "2024-01-01T00:00:00.000Z",
+        displayName: "Phone-A", pairedAt: "2024-01-01T00:00:00.000Z",
       });
       await store.registerAuthorizedDevice({
         deviceId: deviceB.deviceId, devicePublicKeyPem: deviceB.publicKeyPem,
         certificateId: "cert-b", deviceProfile: "satellite",
-        displayName: "Phone", pairedAt: "2024-02-01T00:00:00.000Z",
+        displayName: "Phone-B", pairedAt: "2024-02-01T00:00:00.000Z",
       });
       // Pre-existing revocation for B.
       await store.revokeDevice({ owner, deviceId: deviceB.deviceId, reason: "retired" });

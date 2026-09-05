@@ -17,6 +17,19 @@ import type { ChainAttemptState, ChainState } from "./chain-orchestrator.js";
 
 /** Default grace before treating unanswered reconcile as unknown (ms). */
 export const CHAIN_RECOVERY_GRACE_MS = 15_000;
+
+/** Override recovery grace (ms) for tests / reclaim; falls back to default. */
+export function resolveChainRecoveryGraceMs(explicit?: number): number {
+  if (typeof explicit === "number" && Number.isFinite(explicit) && explicit >= 0) {
+    return explicit;
+  }
+  const raw = process.env.ENVOYMESH_CHAIN_RECOVERY_GRACE_MS?.trim();
+  if (raw) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  return CHAIN_RECOVERY_GRACE_MS;
+}
 /** Short grace after worker reports `unknown` before reassignment (ms). */
 export const CHAIN_RECOVERY_UNKNOWN_GRACE_MS = 5_000;
 
@@ -129,7 +142,7 @@ export function beginChainRecovery(input: {
       };
     }
   }
-  const graceMs = input.graceMs ?? CHAIN_RECOVERY_GRACE_MS;
+  const graceMs = resolveChainRecoveryGraceMs(input.graceMs);
   return {
     phase: Object.keys(peers).length === 0 ? "running" : "recovering",
     orchestratorEpoch: input.orchestratorEpoch,
@@ -145,28 +158,38 @@ export function buildReconcileRequest(input: {
   orchestratorEpoch: string;
   workerPeerId: string;
   now?: Date;
+  /** Phase 64A — optional remote Assigner ownership epoch. */
+  ownershipEpoch?: string;
+  /**
+   * Phase 64B reclaim — empty knownAttempts so the worker returns all
+   * receipts for this chainId (placeholder reclaim attempt ids won't match).
+   */
+  requestAllReceipts?: boolean;
 }): TaskChainReconcileRequestPayload {
   const now = input.now ?? new Date();
-  const knownAttempts = [...input.state.attempts.values()]
-    .filter((a) => a.workerPeerId === input.workerPeerId)
-    .filter(
-      (a) =>
-        a.state === "awarded" ||
-        a.state === "running" ||
-        a.state === "final_received" ||
-        a.state === "selected",
-    )
-    .map((a) => ({
-      attemptId: a.attemptId,
-      subtaskId: a.subtaskId,
-      lastKnownState: a.state,
-      ...(typeof a.lastPartialSeq === "number"
-        ? { lastPartialSeq: a.lastPartialSeq }
-        : {}),
-    }));
+  const knownAttempts = input.requestAllReceipts
+    ? []
+    : [...input.state.attempts.values()]
+        .filter((a) => a.workerPeerId === input.workerPeerId)
+        .filter(
+          (a) =>
+            a.state === "awarded" ||
+            a.state === "running" ||
+            a.state === "final_received" ||
+            a.state === "selected",
+        )
+        .map((a) => ({
+          attemptId: a.attemptId,
+          subtaskId: a.subtaskId,
+          lastKnownState: a.state,
+          ...(typeof a.lastPartialSeq === "number"
+            ? { lastPartialSeq: a.lastPartialSeq }
+            : {}),
+        }));
   return {
     chainId: input.state.chainId,
     orchestratorEpoch: input.orchestratorEpoch,
+    ...(input.ownershipEpoch ? { ownershipEpoch: input.ownershipEpoch } : {}),
     knownAttempts,
     requestedAt: now.toISOString(),
   };
@@ -184,6 +207,11 @@ export function applyReconcileReports(input: {
   reports: ChainReconcileAttemptReport[];
   seenPartialKeys: Set<string>;
   now?: Date;
+  /**
+   * Phase 64B — when reclaiming on a creator home, seed missing attempts from
+   * worker receipts instead of treating them as conflicts.
+   */
+  seedMissingAttempts?: boolean;
 }): ApplyReconcileReportResult {
   const now = input.now ?? new Date();
   const nowIso = now.toISOString();
@@ -195,7 +223,56 @@ export function applyReconcileReports(input: {
   };
 
   for (const report of input.reports) {
-    const attempt = input.state.attempts.get(report.attemptId);
+    let attempt = input.state.attempts.get(report.attemptId);
+    if (!attempt && input.seedMissingAttempts) {
+      // Replace placeholder reclaim attempt for this subtask if present.
+      for (const [id, existing] of input.state.attempts) {
+        if (
+          existing.subtaskId === report.subtaskId &&
+          existing.workerPeerId === input.workerPeerId &&
+          id.startsWith("attempt_reclaim_")
+        ) {
+          input.state.attempts.delete(id);
+          if (input.state.selectedAttemptBySubtask.get(report.subtaskId) === id) {
+            input.state.selectedAttemptBySubtask.delete(report.subtaskId);
+          }
+          break;
+        }
+      }
+      attempt = {
+        attemptId: report.attemptId,
+        chainId: input.state.chainId,
+        subtaskId: report.subtaskId,
+        workerPeerId: input.workerPeerId,
+        role: "primary",
+        state: "awarded",
+        attemptNumber: 1,
+        acceptedCostUsd: 0,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        lastReason: "reclaim_seeded_from_receipt",
+      };
+      input.state.attempts.set(attempt.attemptId, attempt);
+      input.state.selectedAttemptBySubtask.set(report.subtaskId, attempt.attemptId);
+      if (!input.state.awards.has(report.subtaskId)) {
+        input.state.awards.set(report.subtaskId, {
+          version: "0.1",
+          subtaskId: report.subtaskId,
+          chainId: input.state.chainId,
+          workerPeerId: input.workerPeerId,
+          negotiationRound: 1,
+          acceptedCostUsd: 0,
+          deadlineAt: input.state.chainMandate.deadlineAt,
+          createdAt: nowIso,
+          attemptId: report.attemptId,
+        });
+        input.state.awardedAt.set(report.subtaskId, nowIso);
+        input.state.workersBySubtask.set(report.subtaskId, [input.workerPeerId]);
+      } else {
+        const award = input.state.awards.get(report.subtaskId)!;
+        (award as { attemptId?: string }).attemptId = report.attemptId;
+      }
+    }
     if (!attempt) {
       // Unknown attempt id from worker — retain as conflict note only.
       result.conflicts.push({
@@ -296,6 +373,15 @@ export function applyReconcileReports(input: {
   if (peer) {
     if (result.unknowns.length > 0) {
       // Stay pending through unknown grace so watchdog/reassign remains paused.
+      peer.workerEpoch = input.workerEpoch;
+    } else if (
+      input.seedMissingAttempts &&
+      result.ingestedFinals.length === 0 &&
+      result.resumedRunning.length > 0
+    ) {
+      // Phase 64C reclaim: a mid-run "running" receipt is not enough to exit
+      // recovery — keep the peer pending so grace / mid-pass can still pull a
+      // later final from the worker receipt store.
       peer.workerEpoch = input.workerEpoch;
     } else {
       peer.status = "reconciled";

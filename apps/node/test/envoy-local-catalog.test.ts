@@ -12,9 +12,11 @@ import { DEFAULT_ENVOY_LOCAL_MODEL } from "../src/envoy-local-platform.js";
 
 describe("envoy-local-catalog", () => {
   it("includes the default enable model", () => {
-    expect(getEnvoyLocalCatalogModel(DEFAULT_ENVOY_LOCAL_MODEL.id)?.url).toBe(
-      DEFAULT_ENVOY_LOCAL_MODEL.url,
-    );
+    const model = getEnvoyLocalCatalogModel(DEFAULT_ENVOY_LOCAL_MODEL.id);
+    expect(model?.id).toBe(DEFAULT_ENVOY_LOCAL_MODEL.id);
+    // Region-aware mirror (CN → hf-mirror.com; global → huggingface.co).
+    expect(model?.url).toMatch(/huggingface\.co|hf-mirror\.com/);
+    expect(model?.url).toContain(DEFAULT_ENVOY_LOCAL_MODEL.fileName);
     expect(DEFAULT_ENVOY_LOCAL_MODEL.id).toMatch(/qwen3\.5/i);
   });
 

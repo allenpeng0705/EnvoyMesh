@@ -28,7 +28,7 @@ describe("NodeServiceImpl WAN join invite", () => {
   });
 
   afterEach(async () => {
-    await rm(profileDir, { recursive: true, force: true });
+    await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
   });
 
   it("createWanJoinInvite returns envoy://join URI and apply merges bootstrap", async () => {
@@ -80,7 +80,7 @@ describe("NodeServiceImpl WAN join invite", () => {
     const compactDecoded = decodeWanJoinInviteV1(parseEnvoyJoinUri(compact.token));
     expect(fullDecoded.bootstrapPeers.length).toBeGreaterThan(0);
     expect(compactDecoded.bootstrapPeers).toEqual([]);
-    expect(compactDecoded.bootstrapPresets).toEqual(["public-libp2p", "cn-relay"]);
+    expect(compactDecoded.bootstrapPresets).toEqual(["public-libp2p", "cn-relay", "us-relay"]);
     expect(compact.token.length).toBeLessThan(full.token.length);
   });
 

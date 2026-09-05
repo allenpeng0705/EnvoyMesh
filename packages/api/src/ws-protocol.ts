@@ -493,6 +493,8 @@ export type RpcMethods =
   | "chainListObserved"
   | "chainCancel"
   | "chainReassignSubtask"
+  | "chainReclaimAssigner"
+  | "chainCancelDelegated"
   | "chainRetryInputDelivery"
   | "chainListReports"
   | "chainGetReport"
@@ -1363,8 +1365,8 @@ export interface ChainDefaultsConfig {
    */
   assignmentMode?: "skill" | "role";
   /**
-   * Phase 47 — outer Team job refinement rounds (B). `1` = today's one-shot
-   * plan→execute→publish. Cap is enforced in the Assigner loop.
+   * Phase 47 / 65B — outer Team job refinement rounds (B). `1` = one-shot
+   * plan→execute→publish. Hard cap is 48 (mandate + spend + deadline still bind).
    */
   iterationMaxRounds?: number;
   /**
@@ -1376,7 +1378,7 @@ export interface ChainDefaultsConfig {
   iterationCarryMode?: "summary" | "full_draft" | "structured";
   /** Phase 47B — max appended steps per open round (A). Default 2. */
   extendMaxStepsPerRound?: number;
-  /** Phase 47B — max depth for appended steps (1..3). Default 3. */
+  /** Phase 47B / 65A — max depth for appended steps (1..4). Default 3. */
   extendMaxDepth?: number;
   /** Phase 47B — require at least one final partial in-round before extend. Default true. */
   extendOnlyAfterPartial?: boolean;
@@ -2179,6 +2181,8 @@ export interface ChainGetStateResult {
     extendsInRound: number;
     maxExtendsInRound: number;
     waitingForOwner?: boolean;
+    /** Phase 65B — open awards paused because worker leases are dead. */
+    pausedForLease?: boolean;
     stopReason?: string;
     drafts: Array<{
       round: number;
@@ -2257,6 +2261,60 @@ export interface ChainGetStateResult {
       role?: "primary" | "speculative" | "replacement";
     }>;
   }>;
+  /**
+   * Phase 64A — remote Assigner ownership for handed-off Team jobs.
+   * Present on Assigner homes with a live runtime and on creator homes that
+   * only hold a delegated ledger entry (no local subtask runtime).
+   */
+  remoteOwnership?: {
+    creatorPeerId: string;
+    assignerPeerId: string;
+    ownershipEpoch: string;
+    status:
+      | "delegated"
+      | "assigner_active"
+      | "assigner_recovering"
+      | "assigner_stranded"
+      | "reclaimed"
+      | "cancelled";
+    localRole: "creator" | "assigner";
+  };
+  /** Phase 64A/64B — creator-side stranded Assigner affordances. */
+  assignerStranded?: {
+    since: string;
+    canReclaim: boolean;
+    canCancel: boolean;
+  };
+}
+
+/** Phase 64A — creator reclaim of a stranded remote Assigner job (64B implements). */
+export interface ChainReclaimAssignerParams {
+  chainId: string;
+}
+
+export interface ChainReclaimAssignerResult {
+  ok: boolean;
+  chainId: string;
+  reason?: string;
+  /**
+   * `resume` — same chainId hydrated from status mirror + worker reconcile.
+   * `restart` — no usable mirror; new local goal run (see newChainId).
+   */
+  mode?: "resume" | "restart";
+  /** When mode is restart, the new local chain id. */
+  newChainId?: string;
+}
+
+/** Phase 64A — cancel a delegated remote-Assigner job from the creator home. */
+export interface ChainCancelDelegatedParams {
+  chainId: string;
+  reason?: string;
+}
+
+export interface ChainCancelDelegatedResult {
+  ok: boolean;
+  chainId: string;
+  reason?: string;
 }
 
 export interface ChainResolveSpeculationParams {
@@ -2756,6 +2814,13 @@ export interface ChainStartFromGoalParams {
   speculationOnDisagreement?: "auto" | "block";
   /** Phase 63 — override parallel finals cap (1 or 2). */
   maxParallelAttemptsPerStep?: number;
+  /**
+   * Phase 65A — opt-in depth-3 DAGs (default false → max depth 2).
+   * Ignored when `allowDepth4` is true (depth-4 implies depth-3).
+   */
+  allowDepth3?: boolean;
+  /** Phase 65A — opt-in depth-4 DAGs (default false). */
+  allowDepth4?: boolean;
 }
 
 export interface ChainResolveIterationParams {
@@ -2870,6 +2935,8 @@ export interface ChainIterationProgressEvent {
   extendsInRound: number;
   maxExtendsInRound: number;
   waitingForOwner?: boolean;
+  /** Phase 65B — open awards paused because worker leases are dead. */
+  pausedForLease?: boolean;
   stopReason?: string;
   judgeDecision?: string;
   judgeReason?: string;

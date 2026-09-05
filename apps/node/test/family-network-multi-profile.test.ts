@@ -87,7 +87,7 @@ describe("Family network E2E (multi-profile)", () => {
   })
 
   afterEach(async () => {
-    await rm(profileDir, { recursive: true, force: true })
+    await rm(profileDir, { recursive: true, force: true }).catch(() => undefined)
   })
 
   async function mintFamilyInvite() {

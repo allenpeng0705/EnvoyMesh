@@ -380,6 +380,22 @@ export async function routeRpcMethod(
         subtaskId: (params as { subtaskId?: string })?.subtaskId ?? "",
         error: "unsupported",
       };
+    case "chainReclaimAssigner":
+      return ns.chainReclaimAssigner?.(
+        params as unknown as import("@envoymesh/api").ChainReclaimAssignerParams,
+      ) ?? {
+        ok: false,
+        chainId: (params as { chainId?: string })?.chainId ?? "",
+        reason: "unsupported",
+      };
+    case "chainCancelDelegated":
+      return ns.chainCancelDelegated?.(
+        params as unknown as import("@envoymesh/api").ChainCancelDelegatedParams,
+      ) ?? {
+        ok: false,
+        chainId: (params as { chainId?: string })?.chainId ?? "",
+        reason: "unsupported",
+      };
     case "chainRetryInputDelivery":
       return ns.chainRetryInputDelivery?.(
         params as unknown as import("@envoymesh/api").ChainRetryInputDeliveryParams,

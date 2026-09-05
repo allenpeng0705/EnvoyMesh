@@ -649,6 +649,107 @@ class _ActiveChainDetailScreenState
                   const SizedBox(height: 12),
                 ],
                 if (st != null) ...[
+                  if (st.assignerStranded &&
+                      st.remoteOwnershipIsCreator &&
+                      !st.published &&
+                      !st.chainCancelled) ...[
+                    Card(
+                      color: theme.colorScheme.errorContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Assigner offline',
+                              style: theme.textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'The computer running this team job stopped responding. Cancel the job, or continue it on this home (starts a new run of the same goal).',
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                if (st.assignerStrandedCanReclaim)
+                                  FilledButton(
+                                    onPressed: _busy
+                                        ? null
+                                        : () async {
+                                            final client = _clientOrNull();
+                                            if (client == null) return;
+                                            setState(() => _busy = true);
+                                            try {
+                                              final r = await client
+                                                  .chainReclaimAssigner(
+                                                      widget.chainId);
+                                              if (!mounted) return;
+                                              if (r['ok'] != true) {
+                                                setState(() {
+                                                  _actionError =
+                                                      (r['reason'] as String?) ??
+                                                          'Could not continue here';
+                                                  _busy = false;
+                                                });
+                                                return;
+                                              }
+                                              setState(() => _busy = false);
+                                              await _refresh();
+                                            } catch (e) {
+                                              if (!mounted) return;
+                                              setState(() {
+                                                _actionError = e.toString();
+                                                _busy = false;
+                                              });
+                                            }
+                                          },
+                                    child: const Text('Continue here'),
+                                  ),
+                                if (st.assignerStrandedCanCancel)
+                                  TextButton(
+                                    onPressed: _busy
+                                        ? null
+                                        : () async {
+                                            final client = _clientOrNull();
+                                            if (client == null) return;
+                                            setState(() => _busy = true);
+                                            try {
+                                              final r = await client
+                                                  .chainCancelDelegated(
+                                                widget.chainId,
+                                                reason: 'owner_stranded_cancel',
+                                              );
+                                              if (!mounted) return;
+                                              if (r['ok'] != true) {
+                                                setState(() {
+                                                  _actionError =
+                                                      (r['reason'] as String?) ??
+                                                          'Could not cancel';
+                                                  _busy = false;
+                                                });
+                                                return;
+                                              }
+                                              setState(() => _busy = false);
+                                              await _refresh();
+                                            } catch (e) {
+                                              if (!mounted) return;
+                                              setState(() {
+                                                _actionError = e.toString();
+                                                _busy = false;
+                                              });
+                                            }
+                                          },
+                                    child: const Text('Cancel job'),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (st.iteration?.waitingForOwner == true) ...[
                     Card(
                       color: theme.colorScheme.secondaryContainer,

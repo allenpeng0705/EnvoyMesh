@@ -199,4 +199,55 @@ describe("chain-reconcile-recovery", () => {
     expect(tick.timedOutPeers).toContain("envoy_worker_b");
     expect(recovery.phase).toBe("running");
   });
+
+  it("seeds missing attempts on reclaim (placeholder replaced by worker receipt)", () => {
+    const state = makeState();
+    const placeholder = state.attempts.get("attempt_1")!;
+    state.attempts.delete("attempt_1");
+    state.attempts.set("attempt_reclaim_step_1", {
+      ...placeholder,
+      attemptId: "attempt_reclaim_step_1",
+      lastReason: "reclaim_hydrate",
+    });
+    state.selectedAttemptBySubtask.set("step_1", "attempt_reclaim_step_1");
+    (state.awards.get("step_1") as { attemptId?: string }).attemptId =
+      "attempt_reclaim_step_1";
+
+    const recovery = beginChainRecovery({
+      state,
+      orchestratorEpoch: "orch_reclaim",
+      now: new Date("2030-01-01T00:00:00.000Z"),
+    });
+    const applied = applyReconcileReports({
+      state,
+      recovery,
+      workerPeerId: "envoy_worker_b",
+      workerEpoch: "worker_1",
+      reports: [
+        {
+          attemptId: "attempt_real_99",
+          subtaskId: "step_1",
+          state: "running",
+          lastPartialSeq: 2,
+        },
+      ],
+      seenPartialKeys: new Set(),
+      seedMissingAttempts: true,
+      now: new Date("2030-01-01T00:00:01.000Z"),
+    });
+    expect(applied.conflicts).toEqual([]);
+    expect(state.attempts.has("attempt_reclaim_step_1")).toBe(false);
+    expect(state.attempts.get("attempt_real_99")?.state).toBe("running");
+    expect(state.selectedAttemptBySubtask.get("step_1")).toBe("attempt_real_99");
+    // Reclaim: running-only receipt must not exit recovery early.
+    expect(recovery.peers["envoy_worker_b"]?.status).toBe("pending");
+    expect(
+      buildReconcileRequest({
+        state,
+        orchestratorEpoch: "orch_reclaim",
+        workerPeerId: "envoy_worker_b",
+        requestAllReceipts: true,
+      }).knownAttempts,
+    ).toEqual([]);
+  });
 });

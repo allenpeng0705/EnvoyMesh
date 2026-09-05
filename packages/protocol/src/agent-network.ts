@@ -107,8 +107,8 @@ export const ChainSubtaskIdSchema = z
 /** The role a node plays within a single chain. */
 export const ChainRoleSchema = z.enum(["orchestrator", "worker"]);
 
-/** Cap on chain depth (orchestrator → sub-orchestrator → worker → sub-worker). */
-export const CHAIN_MAX_DEPTH = 3;
+/** Cap on chain depth (orchestrator → … → leaf worker). Phase 65A raised 3→4. */
+export const CHAIN_MAX_DEPTH = 4;
 
 /**
  * The owner-signed mandate that authorizes a chain. Mirrors the existing
@@ -130,8 +130,13 @@ export const UnsignedChainMandateSchema = z.object({
   costCeilingUsd: z.number().nonnegative(),
   /** Maximum concurrent worker sessions (matches active peer sessions). */
   maxWorkers: z.number().int().min(1).max(16),
-  /** Allowed depth (1, 2, or 3). Depth-3 chains require explicit opt-in. */
+  /** Allowed depth (1..2 by default). Depth-3 / depth-4 require explicit opt-in. */
   allowDepth3: z.boolean().default(false),
+  /**
+   * Phase 65A — opt-in depth-4 (default off). Implies depth-3 permission
+   * when resolving the effective max depth (`resolveAllowedChainDepth`).
+   */
+  allowDepth4: z.boolean().default(false),
   /** Sensitivity ceiling for all artifacts the chain produces. */
   maxSensitivity: SensitivityLocalSchema,
   /** Deadline by which the orchestrator should publish the final chain report. */
@@ -283,7 +288,7 @@ export const ChainSubtaskSchema = z.object({
   subtaskId: ChainSubtaskIdSchema,
   chainId: ChainIdSchema,
   chainMandateId: ChainMandateIdSchema,
-  /** 1..CHAIN_MAX_DEPTH (3). Enforced at parse time so malformed depth is caught early. */
+  /** 1..CHAIN_MAX_DEPTH (4). Enforced at parse time so malformed depth is caught early. */
   depth: z.number().int().min(1).max(CHAIN_MAX_DEPTH),
   /** Required capability tag. Worker must advertise this capability to bid. */
   requiredSkill: z.string().min(1).max(64),

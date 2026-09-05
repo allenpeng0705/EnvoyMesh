@@ -87,6 +87,9 @@ export default defineConfig({
         // File-name conventions
         "**/integration/**/*.test.ts",
         "**/test/**/*e2e*.test.ts",
+        "**/test/**/*e2e*.test.tsx",
+        // Social (and similar) live-node harnesses under test/e2e/
+        "**/test/e2e/**",
         "**/test/**/*a2e*.test.ts",
         "**/test/**/*smoke*.test.ts",
         "**/test/**/*playwright*.test.ts",
@@ -112,6 +115,8 @@ export default defineConfig({
         "**/test/relay-broadcast-e2e.test.ts",
         "**/test/two-node-file-share-e2e.test.ts",
         "**/test/two-node-playwright-e2e.test.ts",
+        // Local Vite diag harness (Capacitor imports; not a unit test).
+        "**/test/_diag-app.test.tsx",
       ];
     })(),
     setupFiles: ["./vitest.setup.ts"],

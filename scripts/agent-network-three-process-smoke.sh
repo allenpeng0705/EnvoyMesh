@@ -21,4 +21,7 @@ echo "[agent-network-three-process-smoke] running Phase 60 three-process smoke (
 
 RUN_E2E=1 npx vitest run apps/node/test/agent-network-three-process-smoke.test.ts
 
+echo "[agent-network-three-process-smoke] running Phase 64C remote-Assigner-kill chaos (RUN_E2E=1)"
+RUN_E2E=1 npx vitest run apps/node/test/agent-network-remote-assigner-chaos-smoke.test.ts
+
 echo "[agent-network-three-process-smoke] OK"

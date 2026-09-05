@@ -108,7 +108,14 @@ function makeDeps(
   return { ...deps, sentEnvelopes, auditEvents, storedReports };
 }
 
-function mandate(overrides: { maxChainCostUsd?: number; stallTimeoutMs?: number } = {}) {
+function mandate(
+  overrides: {
+    maxChainCostUsd?: number;
+    stallTimeoutMs?: number;
+    allowDepth3?: boolean;
+    allowDepth4?: boolean;
+  } = {},
+) {
   return {
     version: "0.1" as const,
     chainMandateId: "chainmandate_test-1",
@@ -118,7 +125,8 @@ function mandate(overrides: { maxChainCostUsd?: number; stallTimeoutMs?: number 
     maxChainCostUsd: overrides.maxChainCostUsd ?? 10,
     costCeilingUsd: 3,
     maxWorkers: 3,
-    allowDepth3: false,
+    allowDepth3: overrides.allowDepth3 ?? false,
+    allowDepth4: overrides.allowDepth4 ?? false,
     maxSensitivity: "public" as const,
     deadlineAt: "2026-06-18T01:00:00.000Z",
     createdAt: NOW.toISOString(),
@@ -266,9 +274,85 @@ describe("planChain", () => {
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(llmDecompose).toHaveBeenCalledWith("role plan goal", { assignmentMode: "role" });
+    expect(llmDecompose).toHaveBeenCalledWith("role plan goal", {
+      assignmentMode: "role",
+      allowDepth3: false,
+      allowDepth4: false,
+    });
     expect(r.assignmentMode).toBe("role");
     expect(r.planWarnings?.[0]?.code).toBe("role_substitute");
+  });
+
+  it("accepts depth-4 steps when allowDepth4 is on the mandate", async () => {
+    const llmDecompose = vi.fn().mockResolvedValue({
+      ok: true,
+      steps: [
+        {
+          version: "0.1" as const,
+          subtaskId: "subtask_leaf",
+          chainId: "chain_test-1",
+          chainMandateId: "chainmandate_test-1",
+          depth: 1,
+          requiredSkill: "task.execute",
+          objective: "leaf",
+          requestedResult: "r1",
+          constraints: [],
+          dependsOn: [],
+          createdAt: NOW.toISOString(),
+        },
+        {
+          version: "0.1" as const,
+          subtaskId: "subtask_d4",
+          chainId: "chain_test-1",
+          chainMandateId: "chainmandate_test-1",
+          depth: 4,
+          requiredSkill: "task.execute",
+          objective: "rollup",
+          requestedResult: "r4",
+          constraints: [],
+          dependsOn: ["subtask_leaf"],
+          createdAt: NOW.toISOString(),
+        },
+      ],
+    });
+    const deps = makeDeps({ llmDecompose });
+    const state = createChainState(mandate({ allowDepth4: true }));
+    const r = await planChain(deps, state, "deep nested goal", { allowLlm: true });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.subtasks.some((s) => s.depth === 4)).toBe(true);
+    expect(llmDecompose).toHaveBeenCalledWith("deep nested goal", {
+      assignmentMode: undefined,
+      allowDepth3: false,
+      allowDepth4: true,
+    });
+  });
+
+  it("rejects depth-4 steps when allowDepth4 is off", async () => {
+    const llmDecompose = vi.fn().mockResolvedValue({
+      ok: true,
+      steps: [
+        {
+          version: "0.1" as const,
+          subtaskId: "subtask_d4",
+          chainId: "chain_test-1",
+          chainMandateId: "chainmandate_test-1",
+          depth: 4,
+          requiredSkill: "task.execute",
+          objective: "too deep",
+          requestedResult: "r4",
+          constraints: [],
+          dependsOn: [],
+          createdAt: NOW.toISOString(),
+        },
+      ],
+    });
+    const deps = makeDeps({ llmDecompose });
+    const state = createChainState(mandate({ allowDepth3: true }));
+    const r = await planChain(deps, state, "too deep goal", { allowLlm: true });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("decompose_too_deep");
   });
 
   it("emits no_llm_role_planning when role mode falls back to keyword path", async () => {

@@ -104,6 +104,15 @@ export const zhChainsMessages = {
     planWarningsTitle: "分配说明",
     recovering: "重启后恢复中 — 正在确认工作节点进度后再继续",
     recoveringHonesty: "恢复期间不会重新分配工作节点。迟到的最终结果会保留；重复结果会被丢弃。",
+    assignerStrandedTitle: "编排机已离线",
+    assignerStrandedBody:
+      "正在运行此团队任务的电脑没有响应。你可以取消任务，或在本机继续（会用同一目标重新开始一次）。",
+    assignerStrandedReclaim: "在本机继续",
+    assignerStrandedCancel: "取消任务",
+    assignerStrandedReclaimed: "已在本机恢复任务。",
+    assignerStrandedRestarted: "没有可恢复的进度快照 — 已在本机重新开始。",
+    assignerStrandedCancelled: "团队任务已取消。",
+    assignerStrandedFailed: "无法更新此任务",
     speculationReviewTitle: "工作节点结果不一致",
     speculationReviewDisagree:
       "两个工作节点完成了此步骤但结果不同。请选择其一以继续，或重新分配该步骤。",

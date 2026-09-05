@@ -26,6 +26,7 @@ export function iterationSnapshotFromState(
     extendsInRound: it.extendsInRound,
     maxExtendsInRound: it.maxExtendsInRound,
     waitingForOwner: it.waitingForOwner === true,
+    pausedForLease: it.pausedForLease === true,
     stopReason: it.stopReason,
     drafts: it.drafts.map((d) => ({
       round: d.round,
@@ -65,6 +66,7 @@ function iterationSnapshotFromInternal(
     extendsInRound: it.extendsInRound,
     maxExtendsInRound: it.maxExtendsInRound,
     waitingForOwner: it.waitingForOwner === true,
+    pausedForLease: it.pausedForLease === true,
     stopReason: it.stopReason,
     drafts: it.drafts.map((d) => ({
       round: d.round,
@@ -101,6 +103,7 @@ export function buildIterationProgressEvent(
     extendsInRound: it.extendsInRound,
     maxExtendsInRound: it.maxExtendsInRound,
     waitingForOwner: it.waitingForOwner === true,
+    pausedForLease: it.pausedForLease === true,
     stopReason: it.stopReason,
     judgeDecision: extra?.judgeDecision ?? it.drafts.at(-1)?.judge?.decision,
     judgeReason: extra?.judgeReason ?? it.drafts.at(-1)?.judge?.reason,

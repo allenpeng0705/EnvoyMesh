@@ -25,6 +25,7 @@ import type {
   ChainHandoffRequestPayload,
   ChainHandoffDelegatePayload,
   ChainArbitrationPayload,
+  TaskChainOwnershipPayload,
 } from "@envoymesh/protocol";
 import type { ChainRelayRoute } from "@envoymesh/protocol";
 
@@ -62,7 +63,9 @@ export type ChainInboundRejectReason =
   | "malformed_delegate_payload"
   | "malformed_relay_payload"
   | "malformed_arbitration_payload"
+  | "malformed_ownership_payload"
   | "no_handoff_handler"
+  | "no_ownership_handler"
   | "handler_exception"
   | "handler_denied";
 
@@ -174,5 +177,10 @@ export interface ChainInboundDeps {
   handleArbitration?: (
     envelope: EnvoyEnvelope,
     payload: ChainArbitrationPayload,
+  ) => Promise<ChainInboundDecision>;
+  /** Phase 64A — creator receives Assigner ownership status notify. */
+  handleOwnershipNotify?: (
+    envelope: EnvoyEnvelope,
+    payload: TaskChainOwnershipPayload,
   ) => Promise<ChainInboundDecision>;
 }

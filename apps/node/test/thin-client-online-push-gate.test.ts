@@ -53,7 +53,7 @@ describe("isThinClientOnline — push skip gate", () => {
   });
 
   afterEach(async () => {
-    await rm(profileDir, { recursive: true, force: true });
+    await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
   });
 
   it("is offline when no thin-client checker is bound (allows push)", () => {
@@ -73,13 +73,13 @@ describe("isThinClientOnline — push skip gate", () => {
   });
 
   it("stays independent of isOwnerOnline (Social activity must not suppress push)", async () => {
-    // Unconfigured AI status → isOwnerOnline defaults to true (owner "present").
-    // Thin-client checker unbound → offline for push purposes.
-    expect(await svc.isOwnerOnline()).toBe(true);
+    // isOwnerOnline mirrors thin-client WS presence when wired; when unbound
+    // both read offline. Desktop Social activity must not flip push gating.
+    expect(await svc.isOwnerOnline()).toBe(false);
     expect(svc.isThinClientOnline()).toBe(false);
 
     svc.recordOwnerActivity();
-    expect(await svc.isOwnerOnline()).toBe(true);
+    expect(await svc.isOwnerOnline()).toBe(false);
     expect(svc.isThinClientOnline()).toBe(false);
   });
 });

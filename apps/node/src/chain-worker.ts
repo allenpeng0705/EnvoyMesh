@@ -117,6 +117,11 @@ export interface ChainWorkerHandlerDeps extends ChainWorkerSendDeps {
   }) => void;
   /** Phase 60D — map subtaskId → attemptId from the last accept. */
   attemptIdBySubtask?: Map<string, string>;
+  /**
+   * Phase 64B — live Assigner peer for a subtask (updated on status/reclaim).
+   * When set, partial delivery prefers this over the accept-time peer.
+   */
+  resolveOrchestratorPeerId?: (subtaskId: string) => string | undefined;
   /** Optional executor — runs the task body and emits partials. */
   executeSubtask?: (
     subtask: ChainSubtask,

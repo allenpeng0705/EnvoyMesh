@@ -74,7 +74,7 @@ export function computeChainBid(input: ComputeChainBidInput): ComputeChainBidRes
   if (!worker.workerPeerId || !worker.workerOwnerId || worker.baseCostUsd < 0) {
     return { ok: false, reason: "invalid_worker" };
   }
-  if (!subtask.subtaskId || subtask.depth < 1 || subtask.depth > 3) {
+  if (!subtask.subtaskId || subtask.depth < 1 || subtask.depth > 4) {
     return { ok: false, reason: "invalid_subtask" };
   }
 

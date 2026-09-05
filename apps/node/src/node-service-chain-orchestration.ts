@@ -32,6 +32,15 @@ import { hasDirectPrivateLanDialHints, type EnvoyMesh } from "@envoymesh/network
 import { anLog, shortId } from "./agent-network-debug.js";
 import { resolveAssignerForChainGoal, previewSuggestedAssigner } from "./chain-assigner-select.js";
 import {
+  createRemoteOwnership,
+  markOwnershipActive,
+  applyOwnershipNotify,
+  statusMirrorFromChainStatus,
+  withStatusMirror,
+} from "./chain-remote-reclaim.js";
+import type { ChainRemoteOwnership } from "./chain-remote-reclaim.js";
+import type { TaskChainOwnershipPayload } from "@envoymesh/protocol";
+import {
   buildChainLiveSteps,
   buildInputArtifacts,
   chainStateSnapshot,
@@ -124,10 +133,16 @@ import {
   createArbitrationStore,
   getLatestVerdictForSubtask,
   getVerdictsFor,
+  isChainArbitrationEntry,
   isVerdictEntry,
   recordVerdictEntry,
   type ArbitrationStore,
 } from "./chain-arbitration.js";
+import { buildArbitrationEntry } from "./chain-handoff.js";
+import {
+  verifySubChainMandate,
+  verifySubChainSelfConsistency,
+} from "./chain-depth-mandate.js";
 import { scoreFromVerdicts } from "./chain-reputation-3tuple.js";
 import { getReputationBySkillForPeer } from "./chain-scoreboard.js";
 import { signCanonicalPayload } from "@envoymesh/identity";
@@ -265,6 +280,16 @@ export interface ChainSideState {
   recoveryAdvancePending: Set<string>;
   /** Phase 59E — chainIds whose job input workspace was already GC'd. */
   inputGcDone: Set<string>;
+  /**
+   * Phase 64A — in-memory remote Assigner ownership (mirrors checkpoint /
+   * delegated store). Keyed by chainId.
+   */
+  remoteOwnership: Map<string, import("./chain-remote-reclaim.js").ChainRemoteOwnership>;
+  /**
+   * Phase 64B — chainIds reclaiming without a local journal: reconcile should
+   * request all worker receipts and seed missing attempt ids.
+   */
+  reclaimSeedChains: Set<string>;
 }
 
 /** Worker-side read-only view of an assigner's team job. */
@@ -315,6 +340,15 @@ function getChainArbitrationStore(chainId: string): ArbitrationStore {
     chainArbitrationStores.set(chainId, store);
   }
   return store;
+}
+
+/** Next seq for a chain's ownership ledger (ignores verdict slots). */
+function nextArbitrationSeq(store: ArbitrationStore): number {
+  let max = 0;
+  for (const entry of store.values()) {
+    if (isChainArbitrationEntry(entry) && entry.seq > max) max = entry.seq;
+  }
+  return max + 1;
 }
 
 /**
@@ -432,6 +466,12 @@ export interface ChainOrchestrationContext {
   getLocalManifestCapabilities(): Promise<string[]>;
   getToolExecutionContext(): Promise<MeshToolContext | null>;
   getBonds(): Promise<BondRecord[]>;
+  /** Phase 64A — persist creator delegated ownership to disk. */
+  recordDelegatedOwnership?(ownership: ChainRemoteOwnership): Promise<void>;
+  /** Phase 64B — read creator delegated ownership (memory or disk). */
+  getDelegatedOwnership?(chainId: string): ChainRemoteOwnership | undefined;
+  /** Phase 64A — persist Assigner ownership onto the chain checkpoint. */
+  recordAssignerOwnership?(ownership: ChainRemoteOwnership): Promise<void>;
   getNodeConfig(): Promise<unknown>;
   updateNodeConfig(cfg: unknown): Promise<void>;
   /**
@@ -526,6 +566,18 @@ export function buildChainOrchestrationContext(host: any): ChainOrchestrationCon
     getLocalManifestCapabilities: () => host._localManifestCapabilities(),
     getToolExecutionContext: () => host.getToolExecutionContext(),
     getBonds: () => host.getBonds(),
+    recordDelegatedOwnership: async (ownership: ChainRemoteOwnership) => {
+      host._chainState?.remoteOwnership?.set(ownership.chainId, ownership);
+      await host._delegatedChainStore?.upsert(ownership);
+    },
+    getDelegatedOwnership: (chainId: string) =>
+      host._chainState?.remoteOwnership?.get(chainId) ??
+      host._delegatedChainStore?.get(chainId),
+    recordAssignerOwnership: async (ownership: ChainRemoteOwnership) => {
+      host._chainStore?.setOwnership(ownership.chainId, { ...ownership });
+      host._chainState?.remoteOwnership?.set(ownership.chainId, ownership);
+      await host._chainStore?.persistNow?.();
+    },
     getNodeConfig: () => host.getNodeConfig(),
     updateNodeConfig: (cfg) => host.updateNodeConfig(cfg),
     // Phase 8 / v1.4 — sync accessor for the
@@ -829,6 +881,20 @@ export async function _chainTransportResolver(
       agentPeerToOwner.set(card.sourceAgentPeerId, card.ownerId);
     }
   }
+  // Membership index often has agent peer ids even when a card row is stale —
+  // needed for reclaim retarget (worker → new Assigner / creator).
+  try {
+    const index = deps.getAgentNetworkMembershipIndex?.();
+    if (index) {
+      for (const w of index.listWorkers()) {
+        if (w.peerId && w.ownerId && !agentPeerToOwner.has(w.peerId)) {
+          agentPeerToOwner.set(w.peerId, w.ownerId);
+        }
+      }
+    }
+  } catch {
+    /* optional */
+  }
   return {
     mesh,
     peerDirectoryStore: deps.getPeerDirectoryStore(),
@@ -936,9 +1002,65 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
       }
       return result;
     },
-    handleWorkerCancel: (envelope, payload) => handleWorkerCancel(workerDeps, envelope, payload),
+    handleWorkerCancel: async (envelope, payload) => {
+      // Phase 64B — creator reclaim/cancel of a remote Assigner: stop local
+      // orchestration without fanning cancel to workers (mid-flight resume).
+      const runtime = chainStore.getRuntime(payload.chainId);
+      const ownership = chainSide.remoteOwnership.get(payload.chainId);
+      if (
+        runtime &&
+        !payload.subtaskId &&
+        ownership &&
+        envelope.senderPeerId === ownership.creatorPeerId &&
+        (payload.reason === "creator_reclaim_or_cancel" ||
+          payload.cancelledBy === "owner")
+      ) {
+        runtime.state.chainCancelled = true;
+        await orchDeps.audit.record({
+          type: "chain.cancelled",
+          outcome: "record",
+          intent: "task.chain.cancel",
+          remotePeerId: envelope.senderPeerId,
+          correlationId: payload.chainId,
+          summary: "assigner_stopped_by_creator_reclaim_without_worker_cancel",
+        });
+        _emitChainState(deps, payload.chainId);
+        return { ok: true };
+      }
+      return handleWorkerCancel(workerDeps, envelope, payload);
+    },
     handleWorkerHeartbeat: (envelope, payload) => handleWorkerHeartbeat(workerDeps, envelope, payload),
     handleWorkerStatus: (envelope, payload) => handleWorkerStatus(workerDeps, envelope, payload),
+    handleOwnershipNotify: async (envelope, payload: TaskChainOwnershipPayload) => {
+      const side = deps.getChainSideState();
+      const current = side.remoteOwnership.get(payload.chainId);
+      // Only the known Assigner (or first notify) may update creator ownership.
+      if (current && current.assignerPeerId !== envelope.senderPeerId) {
+        return { ok: false, reason: "handler_denied" as const };
+      }
+      if (payload.assignerPeerId !== envelope.senderPeerId) {
+        return { ok: false, reason: "handler_denied" as const };
+      }
+      const applied = applyOwnershipNotify({
+        current,
+        notify: payload,
+      });
+      if (!applied.ok) {
+        return { ok: false, reason: "handler_denied" as const };
+      }
+      side.remoteOwnership.set(payload.chainId, applied.ownership);
+      await deps.recordDelegatedOwnership?.(applied.ownership);
+      _emitChainState(deps, payload.chainId);
+      await orchDeps.audit.record({
+        type: "chain.handoff.request_received",
+        outcome: "record",
+        intent: "task.chain.ownership",
+        remotePeerId: envelope.senderPeerId,
+        correlationId: payload.chainId,
+        summary: `ownership_notify status=${payload.status} epoch=${payload.ownershipEpoch}`,
+      });
+      return { ok: true };
+    },
     handleOrchestratorBid: async (envelope, payload, state) => {
       const runtime = chainStore.getRuntime(state.chainId);
       if (!runtime) return { ok: false, reason: "handler_denied" as const };
@@ -1049,6 +1171,35 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
       if (goal) {
         // Phase 47D — remember trigger so iteration progress events carry observerPeerId.
         deps.getChainSideState().iterationObservers.set(payload.chainId, envelope.senderPeerId);
+        // Phase 64A — record Assigner ownership before plan+assign runs.
+        void (async () => {
+          const agentIdentity = await deps.ensureAgentIdentity();
+          const profile = deps.getProfile();
+          const creatorOwnerId =
+            (await deps.listAgentCards()).find((c) => c.sourceAgentPeerId === envelope.senderPeerId)
+              ?.ownerId ?? envelope.senderPeerId;
+          if (agentIdentity && profile?.owner?.ownerId) {
+            const ownership = markOwnershipActive(
+              createRemoteOwnership({
+                chainId: payload.chainId,
+                creatorPeerId: envelope.senderPeerId,
+                creatorOwnerId,
+                assignerPeerId: agentIdentity.agentPeerId,
+                assignerOwnerId: profile.owner.ownerId,
+                goal,
+                status: "assigner_active",
+                ...(typeof payload.maxChainCostUsd === "number"
+                  ? { maxChainCostUsd: payload.maxChainCostUsd }
+                  : {}),
+                ...(typeof payload.costCeilingUsd === "number"
+                  ? { costCeilingUsd: payload.costCeilingUsd }
+                  : {}),
+              }),
+            );
+            deps.getChainSideState().remoteOwnership.set(payload.chainId, ownership);
+            await deps.recordAssignerOwnership?.(ownership);
+          }
+        })().catch(() => undefined);
         void _runChainGoal(deps, {
           goal,
           chainId: payload.chainId,
@@ -1082,13 +1233,77 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
       return { ok: true };
     },
     handleDelegate: async (envelope, payload) => {
+      // Phase 65A — verify sub-mandate budget/self-consistency, then record
+      // B as owner of the delegated subtree in the arbitration ledger.
+      const child = payload.subChainMandate;
+      const selfCheck = verifySubChainSelfConsistency({
+        child: { maxChainCostUsd: child.maxChainCostUsd },
+        estimatedCostUsd: payload.estimatedCostUsd,
+      });
+      if (!selfCheck.ok) {
+        await orchDeps.audit.record({
+          type: "chain.handoff.delegate_rejected",
+          outcome: "deny",
+          intent: envelope.intent,
+          remotePeerId: envelope.senderPeerId,
+          correlationId: envelope.correlationId,
+          summary: `chainId=${payload.chainId} subChainId=${payload.subChainId} reason=${selfCheck.reason}`,
+        });
+        return { ok: false, reason: "handler_denied" };
+      }
+
+      const parentRuntime = chainStore.getRuntime(payload.chainId);
+      const parentMandate = parentRuntime?.state.chainMandate;
+      if (parentMandate) {
+        const parentCheck = verifySubChainMandate({
+          parent: parentMandate,
+          child,
+          estimatedCostUsd: payload.estimatedCostUsd,
+        });
+        if (!parentCheck.ok) {
+          await orchDeps.audit.record({
+            type: "chain.handoff.delegate_rejected",
+            outcome: "deny",
+            intent: envelope.intent,
+            remotePeerId: envelope.senderPeerId,
+            correlationId: envelope.correlationId,
+            summary: `chainId=${payload.chainId} subChainId=${payload.subChainId} reason=${parentCheck.reason}`,
+          });
+          return { ok: false, reason: "handler_denied" };
+        }
+      }
+
+      const agentIdentity = await deps.ensureAgentIdentity();
+      const cards = await deps.listAgentCards();
+      const senderOwnerId =
+        cards.find((c) => c.sourceAgentPeerId === envelope.senderPeerId)?.ownerId ??
+        envelope.senderPeerId;
+      const arbStore = getChainArbitrationStore(payload.chainId);
+      const entry = buildArbitrationEntry(
+        payload.chainId,
+        nextArbitrationSeq(arbStore),
+        {
+          chainId: payload.chainId,
+          subtaskIds: [...payload.subtaskIds],
+          currentOwnerPeerId: envelope.senderPeerId,
+          currentOwnerOwnerId: senderOwnerId,
+          previousOwnerPeerId: agentIdentity?.agentPeerId,
+          status: "delegated",
+          rationale: `subChainId=${payload.subChainId}`,
+        },
+      );
+      const applied = applyArbitration(arbStore, entry);
+      chainArbitrationStores.set(payload.chainId, applied.store);
+      // Phase 65B — flush ownership before acknowledging delegate.
+      await deps.getChainStore().persistNow?.();
+
       await orchDeps.audit.record({
         type: "chain.handoff.delegate_received",
-        outcome: "record",
+        outcome: "allow",
         intent: envelope.intent,
         remotePeerId: envelope.senderPeerId,
         correlationId: envelope.correlationId,
-        summary: `chainId=${payload.chainId} subChainId=${payload.subChainId} subtasks=${payload.subtaskIds.length} cost=${payload.estimatedCostUsd}`,
+        summary: `chainId=${payload.chainId} subChainId=${payload.subChainId} subtasks=${payload.subtaskIds.length} cost=${payload.estimatedCostUsd} owner=${envelope.senderPeerId}`,
       });
       return { ok: true };
     },
@@ -1105,9 +1320,10 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
     },
     handleArbitration: async (envelope, payload) => {
       // Record the arbitration entry in the local ownership ledger so future
-      // award decisions can consult it. `applyArbitration` is idempotent.
+      // award decisions can consult it. `applyArbitration` returns a new map.
       const store = getChainArbitrationStore(payload.entry.chainId);
-      applyArbitration(store, payload.entry);
+      const applied = applyArbitration(store, payload.entry);
+      chainArbitrationStores.set(payload.entry.chainId, applied.store);
       await orchDeps.audit.record({
         type: "chain.arbitration.converged",
         outcome: "record",
@@ -1133,9 +1349,11 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
     reputationDiscount: 1,
     etaSlackMs: 60_000,
   };
-  const transport = await _chainTransportResolver(deps);
   return {
+    // Resolve transport on each send so long-running subtasks pick up cards /
+    // peer-directory rows that arrive after accept (e.g. reclaim retarget).
     sendEnvelope: async (recipientPeerId, envelope, _payload) => {
+      const transport = await _chainTransportResolver(deps);
       if (!transport) return false;
       return sendChainEnvelopeOverMesh(transport, recipientPeerId, envelope);
     },
@@ -1191,6 +1409,8 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
       if (!side.attemptIdBySubtask) side.attemptIdBySubtask = new Map();
       return side.attemptIdBySubtask;
     })(),
+    resolveOrchestratorPeerId: (subtaskId) =>
+      deps.getChainSideState().workerSubtasks.get(subtaskId)?.orchestratorPeerId,
     executeSubtask: async (subtask, onPartial, opts) => {
       const engine = deps.getAgentNetworkWorkerEngine();
       // Envoy Harness dispatch uses the live adapter built from the host's
@@ -1262,6 +1482,54 @@ export async function buildChainWorkerDeps(deps: ChainOrchestrationContext): Pro
       };
       deps.getChainSideState().observedChains.set(payload.chainId, snap);
       deps.emit("chain:observed", snap);
+
+      // Phase 64B — creator persists Assigner status mirror for mid-flight reclaim.
+      const side = deps.getChainSideState();
+      const ownership =
+        side.remoteOwnership.get(payload.chainId) ??
+        deps.getDelegatedOwnership?.(payload.chainId);
+      if (
+        ownership &&
+        ownership.assignerPeerId === orchestratorPeerId &&
+        ownership.status !== "cancelled" &&
+        ownership.status !== "reclaimed"
+      ) {
+        const mirrored = withStatusMirror(
+          ownership,
+          statusMirrorFromChainStatus({
+            phase: payload.phase,
+            awardMode: payload.awardMode,
+            subtaskCount: payload.subtaskCount,
+            awardedCount: payload.awardedCount,
+            partialCount: payload.partialCount,
+            steps: payload.steps.map((s) => ({
+              subtaskId: s.subtaskId,
+              ...(s.objective ? { objective: s.objective } : {}),
+              state: s.state,
+              ...(s.workerPeerId ? { workerPeerId: s.workerPeerId } : {}),
+            })),
+            createdAt: payload.createdAt,
+          }),
+        );
+        side.remoteOwnership.set(payload.chainId, mirrored);
+        void deps.recordDelegatedOwnership?.(mirrored);
+      } else if (
+        !ownership &&
+        side.observedChains.has(payload.chainId)
+      ) {
+        // Status arrived before ownership was indexed — keep observed snap only.
+      }
+
+      // Retarget in-flight worker subtasks when Assigner peer changes (reclaim).
+      for (const [subtaskId, cached] of side.workerSubtasks) {
+        if (cached.subtask.chainId !== payload.chainId) continue;
+        if (cached.orchestratorPeerId === orchestratorPeerId) continue;
+        side.workerSubtasks.set(subtaskId, {
+          ...cached,
+          orchestratorPeerId,
+        });
+      }
+
       if (payload.phase === "completed" || payload.phase === "cancelled") {
         void maybeGcChainInputWorkspace(deps, payload.chainId);
       }
@@ -1556,9 +1824,10 @@ export async function buildChainOrchestratorDeps(
   if (!agentIdentity || !profile) {
     throw new Error("agent identity unavailable for chain orchestrator deps");
   }
-  const transport = await _chainTransportResolver(deps);
   return {
+    // Fresh transport per send so creator/worker peer-directory + cards stay live.
     sendEnvelope: async (recipientPeerId, envelope, _payload) => {
+      const transport = await _chainTransportResolver(deps);
       if (!transport) return false;
       return sendChainEnvelopeOverMesh(transport, recipientPeerId, envelope);
     },
@@ -1588,6 +1857,7 @@ export async function buildChainOrchestratorDeps(
       ) {
         return { ready: false, reason: `lease_${leaseAvail.state}` };
       }
+      const transport = await _chainTransportResolver(deps);
       if (!transport) return { ready: false, reason: "no_transport" };
       return probeChainWorkerReady({
         transport,
@@ -1635,6 +1905,7 @@ export async function buildChainOrchestratorDeps(
       const isSelf = workerPeerId === agentIdentity.agentPeerId;
       // Local You only needs vault copy; remote push needs mesh + task store.
       if (!isSelf && (!mesh || !taskStore || !profile)) return;
+      const transport = await _chainTransportResolver(deps);
       const transportPeerId =
         !isSelf && transport
           ? await resolveChainTransportPeerId(transport, workerPeerId)
@@ -2371,6 +2642,40 @@ export function _startChainTracking(deps: ChainOrchestrationContext, chainId: st
       try {
         const orchDeps = await buildChainOrchestratorDeps(deps);
         await flushRecoveryAdvancePending(deps, chainId);
+
+        // Phase 65B — pause stall/reassign when awarded workers' leases are dead.
+        const { openAwardsWithDeadLeases, applyLeasePauseState } = await import(
+          "./chain-iteration-lease.js"
+        );
+        const deadLeases = openAwardsWithDeadLeases(
+          rt.state,
+          deps.getChainSideState().workerLeases,
+        );
+        const leasePause = applyLeasePauseState(rt.state, deadLeases);
+        if (leasePause.changed) {
+          await orchDeps.audit.record({
+            type: leasePause.paused
+              ? "chain.iteration.lease_paused"
+              : "chain.iteration.lease_resumed",
+            outcome: "record",
+            intent: "task.chain.heartbeat",
+            correlationId: chainId,
+            summary: leasePause.paused
+              ? `paused workers=${deadLeases.map((d) => `${d.subtaskId}:${d.leaseState}`).join(",")}`
+              : "leases_live",
+          });
+          _emitChainState(deps, chainId);
+          if (leasePause.paused) {
+            _emitChainIteration(deps, chainId, "awaiting_owner", {
+              summary: "paused_for_dead_worker_lease",
+            });
+          }
+        }
+        if (rt.state.iteration?.pausedForLease) {
+          await new Promise((r) => setTimeout(r, 15_000));
+          continue;
+        }
+
         // Always advance dependents + recover silent proposes/accepts.
         const advanced = await advanceReadySubtasks(orchDeps, rt.state);
         const proposed = await retryStaleProposals(orchDeps, rt.state);
@@ -3008,9 +3313,17 @@ export function _emitChainState(deps: ChainOrchestrationContext, chainId: string
     void (async () => {
       try {
         const orchDeps = await buildChainOrchestratorDeps(deps);
+        const ownership = chainSide.remoteOwnership.get(chainId);
+        const creatorPeerId = ownership?.creatorPeerId;
+        const observerPeerId = chainSide.iterationObservers.get(chainId);
+        const extraPeerIds = [
+          ...(creatorPeerId ? [creatorPeerId] : []),
+          ...(observerPeerId ? [observerPeerId] : []),
+        ];
         await broadcastChainStatus(orchDeps, runtime.state, {
           goal: chainSide.goals.get(chainId),
           awardMode: chainSide.awardModes.get(chainId) ?? "direct",
+          ...(extraPeerIds.length > 0 ? { extraPeerIds } : {}),
         });
       } catch (err) {
         console.warn(`[chain.status] broadcast failed for ${chainId}:`, err);
@@ -3179,6 +3492,9 @@ export async function _runChainGoal(
     speculationEnabled?: boolean;
     speculationOnDisagreement?: "auto" | "block";
     maxParallelAttemptsPerStep?: number;
+    /** Phase 65A — opt-in deeper DAGs. */
+    allowDepth3?: boolean;
+    allowDepth4?: boolean;
   },
 ): Promise<{
   ok: boolean;
@@ -3268,7 +3584,8 @@ export async function _runChainGoal(
       maxChainCostUsd: input.maxChainCostUsd ?? 10,
       costCeilingUsd: input.costCeilingUsd ?? 3,
       maxWorkers: awardMode === "direct" ? 1 : 3,
-      allowDepth3: false,
+      allowDepth3: input.allowDepth4 === true || input.allowDepth3 === true,
+      allowDepth4: input.allowDepth4 === true,
       maxSensitivity: "public" as const,
       deadlineAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       createdAt: new Date().toISOString(),
@@ -3329,13 +3646,14 @@ export async function _runChainGoal(
   if (input.plannedSubtasks && input.plannedSubtasks.length > 0) {
     const nowIso = new Date().toISOString();
     try {
+      const { clampChainDepth } = await import("./chain-depth-mandate.js");
       const steps = input.plannedSubtasks.map((s) =>
         ChainSubtaskSchema.parse({
           version: "0.1" as const,
           subtaskId: s.subtaskId,
           chainId,
           chainMandateId,
-          depth: Math.min(3, Math.max(1, Math.floor(s.depth) || 1)),
+          depth: clampChainDepth(s.depth, mandate),
           requiredSkill: s.requiredSkill,
           ...(s.requiredRole ? { requiredRole: s.requiredRole } : {}),
           objective: s.objective,
@@ -3389,7 +3707,11 @@ export async function _runChainGoal(
     state.iteration = fromIterationWireBlob(input.iterationWire);
     // Prefer knobs from this handoff when present.
     if (input.iterationMaxRounds != null) {
-      state.iteration.maxRounds = Math.max(1, Math.min(10, Math.floor(input.iterationMaxRounds)));
+      const { CHAIN_ITERATION_MAX_ROUNDS } = await import("@envoymesh/protocol");
+      state.iteration.maxRounds = Math.max(
+        1,
+        Math.min(CHAIN_ITERATION_MAX_ROUNDS, Math.floor(input.iterationMaxRounds)),
+      );
     }
     if (input.iterationJudgeMode) state.iteration.judgeMode = input.iterationJudgeMode;
     if (input.extendMaxStepsPerRound != null) {
@@ -3407,12 +3729,14 @@ export async function _runChainGoal(
       summary: `rehydrated round=${state.iteration.round}/${state.iteration.maxRounds}`,
     });
   } else if (maxRounds > 1 || maxExtends > 0) {
+    const { resolveAllowedChainDepth } = await import("./chain-depth-mandate.js");
+    const mandateMaxDepth = resolveAllowedChainDepth(mandate);
     state.iteration = createIterationState({
       goal: input.goal,
       maxRounds,
       openRoundSubtaskIds: plan.subtasks.map((s) => s.subtaskId),
       maxExtendsInRound: maxExtends,
-      extendMaxDepth: nodeDefaults.extendMaxDepth ?? 3,
+      extendMaxDepth: Math.min(nodeDefaults.extendMaxDepth ?? 3, mandateMaxDepth),
       extendOnlyAfterPartial: nodeDefaults.extendOnlyAfterPartial !== false,
       judgeMode: input.iterationJudgeMode ?? nodeDefaults.iterationJudgeMode ?? "llm",
       carryMode: nodeDefaults.iterationCarryMode ?? "summary",
@@ -3541,6 +3865,10 @@ export async function _continueIterationRound(
 ): Promise<{ ok: boolean; error?: string }> {
   const it = state.iteration;
   if (!it) return { ok: false, error: "no_iteration" };
+  if (it.pausedForLease) return { ok: false, error: "lease_stale" };
+
+  // Phase 65B — durable checkpoint before opening the next outer round.
+  await deps.getChainStore().persistNow?.();
 
   let nodeDefaults = DEFAULT_CHAIN_DEFAULTS;
   try {
@@ -3774,7 +4102,10 @@ export async function _handoffChainGoalToAssigner(
   }
   const iterationMaxRounds = Math.max(
     1,
-    Math.floor(input.iterationMaxRounds ?? nodeDefaults.iterationMaxRounds ?? 1),
+    Math.min(
+      48,
+      Math.floor(input.iterationMaxRounds ?? nodeDefaults.iterationMaxRounds ?? 1),
+    ),
   );
   const extendMaxStepsPerRound = Math.max(
     0,
@@ -3827,6 +4158,29 @@ export async function _handoffChainGoalToAssigner(
       error: "handoff_send_failed",
       assignerPeerId: input.assignerPeerId,
     };
+  }
+
+  // Phase 64A — persist creator-side delegated ownership (no local runtime).
+  const agentIdentity = await deps.ensureAgentIdentity();
+  const profile = deps.getProfile();
+  if (agentIdentity && profile?.owner?.ownerId) {
+    const ownership = createRemoteOwnership({
+      chainId,
+      creatorPeerId: agentIdentity.agentPeerId,
+      creatorOwnerId: profile.owner.ownerId,
+      assignerPeerId: input.assignerPeerId,
+      assignerOwnerId: card.ownerId,
+      goal: input.goal,
+      status: "delegated",
+      ...(typeof input.maxChainCostUsd === "number"
+        ? { maxChainCostUsd: input.maxChainCostUsd }
+        : {}),
+      ...(typeof input.costCeilingUsd === "number"
+        ? { costCeilingUsd: input.costCeilingUsd }
+        : {}),
+    });
+    deps.getChainSideState().remoteOwnership.set(chainId, ownership);
+    await deps.recordDelegatedOwnership?.(ownership);
   }
 
   return {

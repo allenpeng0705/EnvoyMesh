@@ -273,6 +273,11 @@ class ChainActiveSummary {
   /// (only present when `chainMandate.speculationOnDisagreement === "block"`).
   /// The mobile UI shows a single "Resolve automatically" button per review.
   final List<ChainSpeculationReview> speculationReview;
+  /// Phase 64B — creator-side stranded remote Assigner affordances.
+  final bool assignerStranded;
+  final bool assignerStrandedCanReclaim;
+  final bool assignerStrandedCanCancel;
+  final bool remoteOwnershipIsCreator;
 
   const ChainActiveSummary({
     required this.chainId,
@@ -296,6 +301,10 @@ class ChainActiveSummary {
     this.iteration,
     this.inputDeliveries = const [],
     this.speculationReview = const [],
+    this.assignerStranded = false,
+    this.assignerStrandedCanReclaim = false,
+    this.assignerStrandedCanCancel = false,
+    this.remoteOwnershipIsCreator = false,
   });
 
   factory ChainActiveSummary.fromJson(Map<String, dynamic> json) {
@@ -329,6 +338,12 @@ class ChainActiveSummary {
             : (fileName ?? source.split('/').last);
       }
     }
+    final strandedRaw = json['assignerStranded'];
+    final ownershipRaw = json['remoteOwnership'];
+    final stranded = strandedRaw is Map;
+    final canReclaim = stranded && strandedRaw['canReclaim'] == true;
+    final canCancel = stranded && strandedRaw['canCancel'] == true;
+    final isCreator = ownershipRaw is Map && ownershipRaw['localRole'] == 'creator';
     return ChainActiveSummary(
       chainId: json['chainId'] as String,
       chainMandateId: json['chainMandateId'] as String? ?? '',
@@ -379,6 +394,10 @@ class ChainActiveSummary {
           .map((e) =>
               ChainSpeculationReview.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
+      assignerStranded: stranded,
+      assignerStrandedCanReclaim: canReclaim,
+      assignerStrandedCanCancel: canCancel,
+      remoteOwnershipIsCreator: isCreator,
     );
   }
 

@@ -7,17 +7,18 @@
  *   inside the `for (const [workerPeerId, peer] of Object.entries(recovery.peers))`
  *   loop that runs once per pending peer in the recovery state.
  *
- *   The relevant block (~line 15530):
+ *   The relevant block (~line 16819):
  *     for (const [workerPeerId, peer] of Object.entries(recovery.peers)) {
  *       if (peer.status !== "pending") continue;
  *       // Legacy peers without chain-reconcile-v1: mark unsupported and wait grace.
+ *       // Phase 64C reclaim always attempts reconcile (`!reclaimSeed` gate).
  *       const cards = await this.listAgentCards();
  *       const card = cards.find((c) => c.sourceAgentPeerId === workerPeerId);
  *       const supports =
  *         card?.features?.includes("chain-reconcile-v1") === true ||
  *         // Self / missing card: still try; worker may answer from receipt store.
  *         workerPeerId === agentIdentity.agentPeerId;
- *       if (card && !supports) {
+ *       if (card && !supports && !reclaimSeed) {
  *         peer.status = "unsupported";
  *         continue;
  *       }
@@ -37,7 +38,7 @@
  *
  * Sanity test: if you remove the `peer.status = "unsupported"` line or the
  * `card?.features?.includes("chain-reconcile-v1")` check, the test below
- * fails immediately. Run after editing node-service-impl.ts:15530-15542.
+ * fails immediately. Run after editing node-service-impl.ts:16819-16845.
  */
 
 import { readFileSync } from "node:fs";
@@ -45,8 +46,8 @@ import { resolve } from "node:path";
 import { describe, expect, greaterThanOrEqualTo, it } from "vitest";
 
 const IMPL = resolve(__dirname, "../src/node-service-impl.ts");
-const MIN_LINE = 15520; // first line of the recovery outbound loop
-const MAX_LINE = 15560; // after the unsupported continue
+const MIN_LINE = 16815; // first line of the recovery outbound loop
+const MAX_LINE = 16860; // after the unsupported continue / request build
 
 function readImplSlice(): string {
   const text = readFileSync(IMPL, "utf8");
@@ -70,13 +71,13 @@ describe("chain-reconcile-v1 feature negotiation (Phase 60D source-level guard)"
       slice,
       "expected `peer.status = \"unsupported\"` for legacy peers",
     ).toMatch(/peer\.status\s*=\s*["']unsupported["']/);
-    // The check must gate the status flip on `card && !supports`
-    // so self / missing-card peers still try (worker may answer from
-    // local receipt store).
+    // The check must gate the status flip on `card && !supports && !reclaimSeed`
+    // so self / missing-card peers still try, and Phase 64C reclaim always
+    // attempts reconcile even when the card feature tag is stale.
     expect(
       slice,
-      "expected the unsupported branch to be guarded by `if (card && !supports)`",
-    ).toMatch(/if\s*\(\s*card\s*&&\s*!supports\s*\)/);
+      "expected the unsupported branch to be guarded by `if (card && !supports && !reclaimSeed)`",
+    ).toMatch(/if\s*\(\s*card\s*&&\s*!supports\s*&&\s*!reclaimSeed\s*\)/);
   });
 
   it("self / missing-card peers still attempt the reconcile request", () => {

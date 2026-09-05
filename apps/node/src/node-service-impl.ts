@@ -322,6 +322,7 @@ import {
   verifyInboundEnvelope,
   createAgentCredential,
   generateAgentIdentity,
+  signCanonicalPayload,
 } from "@envoymesh/identity";
 import {
   createAuditEvent,
@@ -1513,6 +1514,7 @@ import {
 import { AgentNetworkMembershipIndex } from "./capability-index.js";
 import {
   extractChainIdFromEnvelope,
+  resolveChainTransportPeerId,
   sendChainEnvelopeOverMesh,
   type ChainTransportResolver,
 } from "./chain-production.js";
@@ -1542,6 +1544,24 @@ import {
 import { executeAcceptedSubtask } from "./chain-worker-executor.js";
 import { chainCostsToCsv } from "./chain-cost-export.js";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
+import {
+  DelegatedChainStore,
+  bumpOwnershipEpochForRestart,
+  enrichChainGetStateWithOwnership,
+  markOwnershipActive,
+  markOwnershipStranded,
+  parseRemoteOwnership,
+  resolveCancelDelegated,
+  resolveReclaimAssigner,
+  shouldMarkAssignerStranded,
+  syntheticDelegatedChainGetState,
+} from "./chain-remote-reclaim.js";
+import type { ChainRemoteOwnership } from "./chain-remote-reclaim.js";
+import {
+  buildReclaimMandate,
+  hydrateReclaimedChainState,
+} from "./chain-reclaim-hydrate.js";
+import { createTaskChainOwnershipPayload } from "@envoymesh/protocol";
 import {
   buildAllLocalFilesList,
 } from "./local-files.js";
@@ -1871,6 +1891,8 @@ class NodeServiceImpl implements NodeService {
     recoveredPartialKeys: new Set<string>(),
     recoveryAdvancePending: new Set<string>(),
     inputGcDone: new Set<string>(),
+    remoteOwnership: new Map(),
+    reclaimSeedChains: new Set<string>(),
   } as const;
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
@@ -2460,8 +2482,19 @@ class NodeServiceImpl implements NodeService {
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
       this._capabilityIndexReady = this._capabilityIndex.init(profileDir);
-      void this._chainStore.init(profileDir).then(() => {
-        void this._beginRecoveryForRestoredChains();
+      void this._chainStore.init(profileDir).then(async () => {
+        await this._delegatedChainStore.init(profileDir);
+        this._hydrateRemoteOwnershipFromStores();
+        void this._beginRecoveryForRestoredChains().catch((err: unknown) => {
+          console.warn("[team-jobs] begin recovery failed:", err);
+        });
+        // Phase 64B — periodic stranded Assigner scan (creator homes).
+        if (!this._delegatedStrandTimer) {
+          this._delegatedStrandTimer = setInterval(() => {
+            void this._scanDelegatedAssigners().catch(() => undefined);
+          }, 30_000);
+          this._delegatedStrandTimer.unref?.();
+        }
       }).catch((err: unknown) => {
         console.warn("[team-jobs] active-state recovery failed:", err);
       });
@@ -16155,6 +16188,10 @@ class NodeServiceImpl implements NodeService {
   // ------------------------------------------------------------------
 
   private readonly _chainStore = new ChainStore();
+  /** Phase 64A — creator-side delegated Assigner ledger (disk-backed). */
+  private readonly _delegatedChainStore = new DelegatedChainStore();
+  /** Phase 64B — periodic stranded-Assigner scanner. */
+  private _delegatedStrandTimer: ReturnType<typeof setInterval> | null = null;
 
   async chainPlan(params: ChainPlanParams): Promise<ChainPlanResult> {
     void this.ensureChainMandateLoaded(params.chainMandateId);
@@ -16185,7 +16222,23 @@ class NodeServiceImpl implements NodeService {
   }
 
   async chainGetState(params: ChainGetStateParams): Promise<ChainGetStateResult> {
-    return chainGetStateViaRuntime(this._chainContext(), params);
+    await this._scanDelegatedAssigners();
+    const result = chainGetStateViaRuntime(this._chainContext(), params);
+    const side = this._chainOrchestrationContext().getChainSideState();
+    let ownership = side.remoteOwnership.get(params.chainId);
+    if (!ownership) {
+      ownership = this._delegatedChainStore.get(params.chainId);
+    }
+    if (!ownership && result.subtaskCount === 0 && !result.chainMandateId) {
+      const delegated = this._delegatedChainStore.get(params.chainId);
+      if (delegated) return syntheticDelegatedChainGetState(delegated);
+    }
+    const agentIdentity = await this._ensureAgentIdentity();
+    return enrichChainGetStateWithOwnership(
+      result,
+      ownership,
+      agentIdentity?.agentPeerId,
+    );
   }
 
   async chainGetStepProvenance(
@@ -16195,7 +16248,35 @@ class NodeServiceImpl implements NodeService {
   }
 
   async chainListActive(_params?: ChainListActiveParams): Promise<ChainListActiveResult> {
-    return chainListActiveViaRuntime(this._chainContext());
+    await this._scanDelegatedAssigners();
+    const listed = chainListActiveViaRuntime(this._chainContext());
+    const side = this._chainOrchestrationContext().getChainSideState();
+    const known = new Set(listed.chains.map((c) => c.chainId));
+    const agentIdentity = await this._ensureAgentIdentity();
+    const extras: ChainGetStateResult[] = [];
+    for (const ownership of this._delegatedChainStore.listActive()) {
+      if (known.has(ownership.chainId)) continue;
+      // Creator-only delegated shells (no local runtime).
+      if (
+        agentIdentity &&
+        ownership.creatorPeerId === agentIdentity.agentPeerId &&
+        ownership.assignerPeerId !== agentIdentity.agentPeerId
+      ) {
+        extras.push(
+          enrichChainGetStateWithOwnership(
+            syntheticDelegatedChainGetState(ownership),
+            ownership,
+            agentIdentity.agentPeerId,
+          ),
+        );
+      }
+    }
+    // Also enrich local runtimes with remoteOwnership when present.
+    for (const chain of listed.chains) {
+      const ownership = side.remoteOwnership.get(chain.chainId);
+      enrichChainGetStateWithOwnership(chain, ownership, agentIdentity?.agentPeerId);
+    }
+    return { chains: [...listed.chains, ...extras] };
   }
 
   async chainListObserved(
@@ -16212,6 +16293,239 @@ class NodeServiceImpl implements NodeService {
     params: import("@envoymesh/api").ChainReassignSubtaskParams,
   ): Promise<import("@envoymesh/api").ChainReassignSubtaskResult> {
     return reassignSubtaskOwnerAction(this._chainOrchestrationContext(), params);
+  }
+
+  async chainReclaimAssigner(
+    params: import("@envoymesh/api").ChainReclaimAssignerParams,
+  ): Promise<import("@envoymesh/api").ChainReclaimAssignerResult> {
+    await this._scanDelegatedAssigners();
+    const side = this._chainOrchestrationContext().getChainSideState();
+    const ownership =
+      side.remoteOwnership.get(params.chainId) ??
+      this._delegatedChainStore.get(params.chainId);
+    const resolved = resolveReclaimAssigner({ chainId: params.chainId, ownership });
+    if (!resolved.ok) {
+      return { ok: false, chainId: resolved.chainId, reason: resolved.reason };
+    }
+
+    const profile = this.getProfile();
+    const ownerKey = profile?.owner?.privateKeyPem;
+    const unsignedMandate = buildReclaimMandate({
+      chainId: params.chainId,
+      issuerOwnerId: resolved.ownership.creatorOwnerId,
+      maxChainCostUsd: ownership?.maxChainCostUsd,
+      costCeilingUsd: ownership?.costCeilingUsd,
+      awardMode: ownership?.statusMirror?.awardMode,
+    });
+    const mandate = {
+      ...unsignedMandate,
+      signature: ownerKey
+        ? signCanonicalPayload(unsignedMandate, ownerKey)
+        : "stub",
+    };
+
+    const hydrated = hydrateReclaimedChainState({
+      ownership: {
+        ...resolved.ownership,
+        // Keep pre-reclaim mirror/goal from stranded record for hydrate decision.
+        ...(ownership?.statusMirror ? { statusMirror: ownership.statusMirror } : {}),
+        ...(ownership?.goal ? { goal: ownership.goal } : {}),
+        ...(typeof ownership?.maxChainCostUsd === "number"
+          ? { maxChainCostUsd: ownership.maxChainCostUsd }
+          : {}),
+        ...(typeof ownership?.costCeilingUsd === "number"
+          ? { costCeilingUsd: ownership.costCeilingUsd }
+          : {}),
+      },
+      mandate: mandate as import("@envoymesh/protocol").ChainMandate,
+    });
+    if (!hydrated.ok) {
+      return { ok: false, chainId: params.chainId, reason: hydrated.reason };
+    }
+
+    // Best-effort stop old Assigner without cancelling workers.
+    void this._bestEffortCancelRemoteAssigner(resolved.ownership).catch(() => undefined);
+
+    if (hydrated.mode === "fallback_restart") {
+      side.remoteOwnership.set(params.chainId, hydrated.ownership);
+      await this._delegatedChainStore.upsert(hydrated.ownership);
+      await this._appendChainAudit({
+        type: "chain.handoff.request_received",
+        outcome: "allow",
+        intent: "task.chain.ownership",
+        remotePeerId: resolved.ownership.assignerPeerId,
+        correlationId: params.chainId,
+        summary: `chain.reclaimed mode=restart reason=${hydrated.reason}`,
+      });
+      const restarted = await _runChainGoal(this._chainOrchestrationContext(), {
+        goal: hydrated.goal,
+      });
+      this._emitChainState(params.chainId);
+      if (!restarted.ok) {
+        return {
+          ok: false,
+          chainId: params.chainId,
+          reason: restarted.error ?? "reclaim_restart_failed",
+          mode: "restart",
+        };
+      }
+      return {
+        ok: true,
+        chainId: params.chainId,
+        mode: "restart",
+        newChainId: restarted.chainId,
+      };
+    }
+
+    // Mid-flight resume: same chainId, hydrate + reconcile workers.
+    side.remoteOwnership.set(params.chainId, hydrated.ownership);
+    await this._delegatedChainStore.upsert(hydrated.ownership);
+    this._chainStore.setOwnership(params.chainId, { ...hydrated.ownership });
+    this._chainStore.setRuntime(params.chainId, {
+      state: hydrated.state,
+      bidStrategy: {
+        baseCostUsd: 1,
+        capabilityLocalEtaMs: 60_000,
+        reputationDiscount: 1,
+        etaSlackMs: 60_000,
+      },
+    });
+    side.goals.set(params.chainId, hydrated.state.goal ?? resolved.goal);
+    side.awardModes.set(
+      params.chainId,
+      hydrated.state.awardMode === "competitive" ? "competitive" : "direct",
+    );
+    side.reclaimSeedChains.add(params.chainId);
+    side.orchestratorEpoch = createOrchestratorEpoch();
+    const recovery = beginChainRecovery({
+      state: hydrated.state,
+      orchestratorEpoch: side.orchestratorEpoch,
+    });
+    side.recovery.set(params.chainId, recovery);
+    hydrated.state.journalEvent?.("recovery.started", {
+      orchestratorEpoch: recovery.orchestratorEpoch,
+      peerCount: Object.keys(recovery.peers).length,
+      graceDeadlineAt: recovery.graceDeadlineAt,
+      reclaim: true,
+    });
+    await this._appendChainAudit({
+      type: "chain.handoff.request_received",
+      outcome: "allow",
+      intent: "task.chain.ownership",
+      remotePeerId: resolved.ownership.assignerPeerId,
+      correlationId: params.chainId,
+      summary: `chain.reclaimed mode=resume workers=${hydrated.workerPeerIds.length}`,
+    });
+    this._startChainTracking(params.chainId);
+    this._emitChainState(params.chainId);
+    if (isChainRecovering(recovery)) {
+      void this._runChainReconcile(params.chainId).catch((err: unknown) => {
+        console.warn(`[team-jobs] reclaim reconcile failed for ${params.chainId}:`, err);
+      });
+    }
+    return {
+      ok: true,
+      chainId: params.chainId,
+      mode: "resume",
+    };
+  }
+
+  async chainCancelDelegated(
+    params: import("@envoymesh/api").ChainCancelDelegatedParams,
+  ): Promise<import("@envoymesh/api").ChainCancelDelegatedResult> {
+    const side = this._chainOrchestrationContext().getChainSideState();
+    const ownership =
+      side.remoteOwnership.get(params.chainId) ??
+      this._delegatedChainStore.get(params.chainId);
+    const resolved = resolveCancelDelegated({ chainId: params.chainId, ownership });
+    if (!resolved.ok) {
+      return { ok: false, chainId: resolved.chainId, reason: resolved.reason };
+    }
+    side.remoteOwnership.set(params.chainId, resolved.ownership);
+    await this._delegatedChainStore.upsert(resolved.ownership);
+    await this._appendChainAudit({
+      type: "chain.handoff.request_received",
+      outcome: "allow",
+      intent: "task.chain.ownership",
+      remotePeerId: resolved.ownership.assignerPeerId,
+      correlationId: params.chainId,
+      summary: `chain.stranded_cancelled reason=${params.reason ?? "owner"}`,
+    });
+    void this._bestEffortCancelRemoteAssigner(resolved.ownership).catch(() => undefined);
+    this._emitChainState(params.chainId);
+    return { ok: true, chainId: params.chainId };
+  }
+
+  /** Phase 64B — mark unreachable remote Assigners as stranded. */
+  private async _scanDelegatedAssigners(): Promise<void> {
+    const side = this._chainOrchestrationContext().getChainSideState();
+    const mesh = this._mesh ?? this._reachableMesh();
+    const connected = new Set(mesh?.getConnectedPeerIds?.() ?? []);
+    const candidates = [
+      ...side.remoteOwnership.values(),
+      ...this._delegatedChainStore.listActive(),
+    ];
+    const seen = new Set<string>();
+    for (const ownership of candidates) {
+      if (seen.has(ownership.chainId)) continue;
+      seen.add(ownership.chainId);
+      if (ownership.status === "assigner_stranded") continue;
+      const decision = shouldMarkAssignerStranded({
+        ownership,
+        assignerReachable: connected.has(ownership.assignerPeerId),
+      });
+      if (!decision.stranded) continue;
+      const stranded = markOwnershipStranded(ownership);
+      side.remoteOwnership.set(ownership.chainId, stranded);
+      await this._delegatedChainStore.upsert(stranded);
+      await this._appendChainAudit({
+        type: "chain.handoff.request_received",
+        outcome: "record",
+        intent: "task.chain.ownership",
+        remotePeerId: stranded.assignerPeerId,
+        correlationId: stranded.chainId,
+        summary: `chain.assigner_lost reason=${decision.reason ?? "unknown"}`,
+      });
+      this._emitChainState(stranded.chainId);
+    }
+  }
+
+  private async _bestEffortCancelRemoteAssigner(
+    ownership: ChainRemoteOwnership,
+  ): Promise<void> {
+    const agentIdentity = await this._ensureAgentIdentity();
+    const mesh = this._mesh;
+    if (!agentIdentity || !mesh) return;
+    try {
+      const { TaskChainCancelPayloadSchema } = await import("@envoymesh/protocol");
+      const payload = TaskChainCancelPayloadSchema.parse({
+        chainId: ownership.chainId,
+        reason: "creator_reclaim_or_cancel",
+        cancelledBy: "owner",
+        notifyWorkerPeerIds: [],
+        createdAt: new Date().toISOString(),
+      });
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId: agentIdentity.agentPeerId,
+        senderPublicKey: agentIdentity.agentPublicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: ownership.assignerPeerId,
+        recipientRole: "agent",
+        intent: "task.chain.cancel",
+        payload,
+        correlationId: ownership.chainId,
+      });
+      const envelope = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
+      const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
+      await sendEnvelopeWithRetry({
+        mesh: mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
+        transportPeerId: ownership.assignerPeerId,
+        envelope,
+        dialHints: [],
+      });
+    } catch {
+      /* best-effort */
+    }
   }
 
   async chainResolveSpeculation(
@@ -16352,17 +16666,50 @@ class NodeServiceImpl implements NodeService {
    * Phase 60D — after checkpoint restore, enter RECOVERING and reconcile
    * in-flight attempts before watchdog/reassignment resumes.
    */
+  private _hydrateRemoteOwnershipFromStores(): void {
+    const side = this._chainOrchestrationContext().getChainSideState();
+    for (const chainId of this._chainStore.listIds()) {
+      const raw = this._chainStore.getOwnership(chainId);
+      const ownership = parseRemoteOwnership(raw);
+      if (ownership) side.remoteOwnership.set(chainId, ownership);
+    }
+    for (const ownership of this._delegatedChainStore.listActive()) {
+      if (!side.remoteOwnership.has(ownership.chainId)) {
+        side.remoteOwnership.set(ownership.chainId, ownership);
+      }
+    }
+  }
+
   private async _beginRecoveryForRestoredChains(): Promise<void> {
     const side = this._chainOrchestrationContext().getChainSideState();
     // Fresh process epoch each restore pass.
     (side as { orchestratorEpoch: string }).orchestratorEpoch = createOrchestratorEpoch();
     (side as { workerEpoch: string }).workerEpoch = createWorkerEpoch();
 
+    const localPeerId = (await this._ensureAgentIdentity())?.agentPeerId;
+
     for (const chainId of this._chainStore.listIds()) {
       const entry = this._chainStore.getRuntime(chainId);
       if (!entry || entry.state.published || entry.state.chainCancelled) {
         this._startChainTracking(chainId);
         continue;
+      }
+      // Phase 64A — only the Assigner home bumps epoch + notifies creator.
+      const existingOwnership = side.remoteOwnership.get(chainId);
+      const isLocalAssigner =
+        Boolean(existingOwnership) &&
+        Boolean(localPeerId) &&
+        existingOwnership!.assignerPeerId === localPeerId;
+      if (isLocalAssigner && existingOwnership) {
+        const bumped = bumpOwnershipEpochForRestart(existingOwnership);
+        side.remoteOwnership.set(chainId, bumped);
+        this._chainStore.setOwnership(chainId, { ...bumped });
+        entry.state.journalEvent?.("ownership.epoch_bumped", {
+          ownershipEpoch: bumped.ownershipEpoch,
+          creatorPeerId: bumped.creatorPeerId,
+          status: bumped.status,
+        });
+        void this._notifyCreatorOwnershipStatus(bumped).catch(() => undefined);
       }
       const recovery = beginChainRecovery({
         state: entry.state,
@@ -16375,6 +16722,12 @@ class NodeServiceImpl implements NodeService {
         graceDeadlineAt: recovery.graceDeadlineAt,
       });
       if (!isChainRecovering(recovery)) {
+        if (isLocalAssigner && existingOwnership) {
+          const active = markOwnershipActive(side.remoteOwnership.get(chainId) ?? existingOwnership);
+          side.remoteOwnership.set(chainId, active);
+          this._chainStore.setOwnership(chainId, { ...active });
+          void this._notifyCreatorOwnershipStatus(active).catch(() => undefined);
+        }
         this._startChainTracking(chainId);
         continue;
       }
@@ -16383,6 +16736,64 @@ class NodeServiceImpl implements NodeService {
       void this._runChainReconcile(chainId).catch((err: unknown) => {
         console.warn(`[team-jobs] reconcile failed for ${chainId}:`, err);
       });
+    }
+  }
+
+  /** Phase 64A — wire + local notify creator that Assigner ownership status changed. */
+  private async _notifyCreatorOwnershipStatus(
+    ownership: ChainRemoteOwnership,
+  ): Promise<void> {
+    await this._appendChainAudit({
+      type: "chain.handoff.request_received",
+      outcome: "record",
+      intent: "task.chain.ownership",
+      remotePeerId: ownership.creatorPeerId,
+      correlationId: ownership.chainId,
+      summary: `ownership_notify status=${ownership.status} epoch=${ownership.ownershipEpoch}`,
+    });
+    this._emitChainState(ownership.chainId);
+
+    const agentIdentity = await this._ensureAgentIdentity();
+    const mesh = this._mesh;
+    if (!agentIdentity || !mesh) return;
+    if (ownership.creatorPeerId === agentIdentity.agentPeerId) return;
+
+    const payload = createTaskChainOwnershipPayload({
+      chainId: ownership.chainId,
+      ownershipEpoch: ownership.ownershipEpoch,
+      status: ownership.status,
+      assignerPeerId: ownership.assignerPeerId,
+      creatorPeerId: ownership.creatorPeerId,
+      ...(ownership.goal ? { goal: ownership.goal } : {}),
+      createdAt: new Date().toISOString(),
+    });
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: agentIdentity.agentPeerId,
+      senderPublicKey: agentIdentity.agentPublicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: ownership.creatorPeerId,
+      recipientRole: "agent",
+      intent: "task.chain.ownership",
+      payload,
+      correlationId: ownership.chainId,
+    });
+    const envelope = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
+    try {
+      const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
+      await sendEnvelopeWithRetry({
+        mesh: mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
+        transportPeerId: ownership.creatorPeerId,
+        envelope,
+        dialHints: [],
+      });
+      const entry = this._chainStore.getRuntime(ownership.chainId);
+      entry?.state.journalEvent?.("ownership.assigner_notified_creator", {
+        ownershipEpoch: ownership.ownershipEpoch,
+        status: ownership.status,
+        creatorPeerId: ownership.creatorPeerId,
+      });
+    } catch {
+      /* best-effort */
     }
   }
 
@@ -16404,25 +16815,31 @@ class NodeServiceImpl implements NodeService {
       return;
     }
 
+    const reclaimSeed = side.reclaimSeedChains.has(chainId);
     for (const [workerPeerId, peer] of Object.entries(recovery.peers)) {
       if (peer.status !== "pending") continue;
       // Legacy peers without chain-reconcile-v1: mark unsupported and wait grace.
+      // Phase 64C reclaim always attempts reconcile (receipt store is local on
+      // the worker even when the card feature tag is missing/stale).
       const cards = await this.listAgentCards();
       const card = cards.find((c) => c.sourceAgentPeerId === workerPeerId);
       const supports =
         card?.features?.includes("chain-reconcile-v1") === true ||
         // Self / missing card: still try; worker may answer from receipt store.
         workerPeerId === agentIdentity.agentPeerId;
-      if (card && !supports) {
+      if (card && !supports && !reclaimSeed) {
         peer.status = "unsupported";
         continue;
       }
       try {
+        const ownership = side.remoteOwnership.get(chainId);
         const request = createTaskChainReconcileRequestPayload(
           buildReconcileRequest({
             state: entry.state,
             orchestratorEpoch: recovery.orchestratorEpoch,
             workerPeerId,
+            ownershipEpoch: ownership?.ownershipEpoch,
+            requestAllReceipts: reclaimSeed,
           }),
         );
         const unsigned = createUnsignedEnvelope({
@@ -16435,25 +16852,66 @@ class NodeServiceImpl implements NodeService {
           payload: request,
         });
         const envelope = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
-        // Best-effort send; response arrives via inbound handler.
-        const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
-        await sendEnvelopeWithRetry({
-          mesh: mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
-          transportPeerId: workerPeerId,
-          envelope,
-          dialHints: [],
-        }).catch(() => undefined);
+        const transport = await _chainTransportResolver(ctx);
+        if (!transport) continue;
+        await sendChainEnvelopeOverMesh(transport, workerPeerId, envelope);
       } catch {
         /* continue other peers */
       }
     }
 
-    // Grace wait then force-complete pending peers.
+    // Phase 64C reclaim: poll receipts until finals land or grace expires.
+    // Workers often finish after the first "running" response; keep asking.
     const graceMs = Math.max(
       0,
       Date.parse(recovery.graceDeadlineAt) - Date.now(),
     );
-    await new Promise((r) => setTimeout(r, Math.min(graceMs, 15_000)));
+    const cappedGrace = Math.min(graceMs, 15_000);
+    const deadline = Date.now() + cappedGrace;
+    const sendReconcileToWorkers = async () => {
+      for (const [workerPeerId, peer] of Object.entries(recovery.peers)) {
+        if (peer.status === "timeout") continue;
+        if (!reclaimSeed && peer.status === "unsupported") continue;
+        try {
+          const ownership = side.remoteOwnership.get(chainId);
+          const request = createTaskChainReconcileRequestPayload(
+            buildReconcileRequest({
+              state: entry.state,
+              orchestratorEpoch: recovery.orchestratorEpoch,
+              workerPeerId,
+              ownershipEpoch: ownership?.ownershipEpoch,
+              requestAllReceipts: reclaimSeed,
+            }),
+          );
+          const unsigned = createUnsignedEnvelope({
+            senderPeerId: agentIdentity.agentPeerId,
+            senderPublicKey: agentIdentity.agentPublicKeyPem,
+            senderRole: "agent",
+            recipientPeerId: workerPeerId,
+            recipientRole: "agent",
+            intent: "task.chain.reconcile.request",
+            payload: request,
+          });
+          const envelope = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
+          const transport = await _chainTransportResolver(ctx);
+          if (!transport) continue;
+          await sendChainEnvelopeOverMesh(transport, workerPeerId, envelope);
+        } catch {
+          /* continue */
+        }
+      }
+    };
+
+    if (reclaimSeed) {
+      while (Date.now() < deadline && isChainRecovering(recovery)) {
+        await sendReconcileToWorkers();
+        await new Promise((r) => setTimeout(r, 500));
+        const early = tickChainRecovery({ recovery });
+        if (early.done) break;
+      }
+    } else {
+      await new Promise((r) => setTimeout(r, cappedGrace));
+    }
     const tick = tickChainRecovery({ recovery });
     if (tick.done || tick.timedOutPeers.length > 0) {
       entry.state.journalEvent?.("recovery.peer_reconciled", {
@@ -16462,6 +16920,15 @@ class NodeServiceImpl implements NodeService {
       });
       this._emitChainState(chainId);
       if (tick.done) {
+        const ownership = side.remoteOwnership.get(chainId);
+        const localId = agentIdentity?.agentPeerId;
+        side.reclaimSeedChains.delete(chainId);
+        if (ownership && localId && ownership.assignerPeerId === localId) {
+          const active = markOwnershipActive(ownership);
+          side.remoteOwnership.set(chainId, active);
+          this._chainStore.setOwnership(chainId, { ...active });
+          void this._notifyCreatorOwnershipStatus(active).catch(() => undefined);
+        }
         await flushRecoveryAdvancePending(this._chainOrchestrationContext(), chainId);
       }
     }
@@ -16495,13 +16962,22 @@ class NodeServiceImpl implements NodeService {
         correlationId: envelope.correlationId ?? envelope.messageId,
       });
       const responseEnv = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
-      const { sendEnvelopeWithRetry } = await import("./chat-outbound-deliver.js");
-      await sendEnvelopeWithRetry({
-        mesh: this._mesh as import("./chat-outbound-deliver.js").OutboundDeliverMesh,
-        transportPeerId: envelope.senderPeerId,
-        envelope: responseEnv,
-        dialHints: [],
-      }).catch(() => undefined);
+      const ctx = this._chainOrchestrationContext();
+      const transport = await _chainTransportResolver(ctx);
+      if (!transport) {
+        console.warn("[task.chain.reconcile] response undeliverable: no transport resolver");
+        return false;
+      }
+      const ok = await sendChainEnvelopeOverMesh(
+        transport,
+        envelope.senderPeerId,
+        responseEnv,
+      );
+      if (!ok) {
+        console.warn(
+          `[task.chain.reconcile] response send failed to ${envelope.senderPeerId.slice(0, 24)}…`,
+        );
+      }
       return true;
     }
 
@@ -16523,7 +16999,16 @@ class NodeServiceImpl implements NodeService {
         workerEpoch: response.workerEpoch,
         reports: response.attempts,
         seenPartialKeys: side.recoveredPartialKeys,
+        seedMissingAttempts: side.reclaimSeedChains.has(response.chainId),
       });
+      // Reconcile finals bypass handleOrchestratorPartial — queue them for
+      // advance once RECOVERING lifts (same path as wire finals during recovery).
+      for (const attemptId of applied.ingestedFinals) {
+        const attempt = entry.state.attempts.get(attemptId);
+        if (attempt?.subtaskId) {
+          side.recoveryAdvancePending.add(`${response.chainId}:${attempt.subtaskId}`);
+        }
+      }
       entry.state.journalEvent?.("recovery.peer_reconciled", {
         workerPeerId: envelope.senderPeerId,
         ingestedFinals: applied.ingestedFinals,
@@ -16534,6 +17019,7 @@ class NodeServiceImpl implements NodeService {
       const tick = tickChainRecovery({ recovery });
       this._emitChainState(response.chainId);
       if (tick.done) {
+        side.reclaimSeedChains.delete(response.chainId);
         await flushRecoveryAdvancePending(this._chainOrchestrationContext(), response.chainId);
       }
       return true;

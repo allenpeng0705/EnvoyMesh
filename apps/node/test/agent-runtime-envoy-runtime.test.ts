@@ -303,16 +303,14 @@ describe("createRealEnvoyHarnessRuntime (Phase 8 Step 2 / b3)", () => {
     });
   });
 
-  it("returns envoy_harness_empty when the result has no text content", async () => {
-    // The harness's agent loop calls the model once
-    // (no tool calls → no second iteration) when the
-    // response has no tool_use blocks. The model
-    // returns a text block with empty content; the
-    // runtime extracts it, sees it's empty, and throws
-    // `envoy_harness_empty`. This matches the openclaw
-    // / ext engine's behavior (clean failure, not a
-    // crash).
+  it("returns a visible fallback when the model keeps producing empty text", async () => {
+    // The harness self-heals once on empty/thinking-only replies, then
+    // returns an explicit fallback instead of a blank bubble.
     const model = scriptedModel([
+      {
+        content: [{ type: "text", text: "" }],
+        stopReason: "end_turn",
+      },
       {
         content: [{ type: "text", text: "" }],
         stopReason: "end_turn",
@@ -327,7 +325,7 @@ describe("createRealEnvoyHarnessRuntime (Phase 8 Step 2 / b3)", () => {
       modelFactory: () => model,
     });
 
-    await expect(runtime.ask("test")).rejects.toThrow(/envoy_harness_empty/);
+    await expect(runtime.ask("test")).resolves.toContain("No visible reply was produced");
   });
 
   it("stamps the configured workerPeerId on the result (LocalMeshSubmitter responsibility)", async () => {

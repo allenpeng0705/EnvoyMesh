@@ -3881,6 +3881,16 @@ export interface NodeService {
     params: import("./ws-protocol.js").ChainReassignSubtaskParams,
   ): Promise<import("./ws-protocol.js").ChainReassignSubtaskResult>;
 
+  /** Phase 64A — reclaim a stranded remote-Assigner job (implemented in 64B). */
+  chainReclaimAssigner?(
+    params: import("./ws-protocol.js").ChainReclaimAssignerParams,
+  ): Promise<import("./ws-protocol.js").ChainReclaimAssignerResult>;
+
+  /** Phase 64A — cancel a delegated remote-Assigner job from the creator (64B). */
+  chainCancelDelegated?(
+    params: import("./ws-protocol.js").ChainCancelDelegatedParams,
+  ): Promise<import("./ws-protocol.js").ChainCancelDelegatedResult>;
+
   /** Phase 59D — retry failed job input deliveries for a chain. */
   chainRetryInputDelivery?(
     params: import("./ws-protocol.js").ChainRetryInputDeliveryParams,
