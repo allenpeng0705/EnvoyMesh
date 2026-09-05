@@ -251,6 +251,8 @@ import type {
   PruneRevokedDevicesResult,
   ListDeviceRevocationsResult,
   SendChatParams,
+  AskHomeModelParams,
+  AskHomeModelResult,
 } from "./ws-protocol.js";
 
 // ============================================
@@ -3125,6 +3127,12 @@ export interface NodeService {
   sendToPi(text: string): Promise<string>;
   /** Dynamic AI bot — send a message to a character bot, get a reply. */
   sendToAiBot(botId: string, text: string): Promise<void>;
+  /**
+   * EM-3 — ask the node's model router a chat-style question (thin-client
+   * `askHomeModel`, owner-only v1). Hosts on the shared `runModelCall` seam;
+   * sampling params pass through to the answering provider.
+   */
+  askHomeModel(params: AskHomeModelParams): Promise<AskHomeModelResult>;
   /**
    * Start or focus a Pi interactive TUI for an explicitly chosen project folder.
    * Requires `projectPath` to spawn — no boot auto-start. Up to

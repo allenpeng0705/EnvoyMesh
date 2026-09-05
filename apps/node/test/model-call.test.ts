@@ -79,6 +79,80 @@ describe("runModelCall", () => {
     expect(result.model).toBe("probe-model");
   });
 
+  it("forwards temperature/maxTokens/stop sampling fields (EM-3)", async () => {
+    const capturedBodies: Array<Record<string, unknown>> = [];
+    const fetchStub = (async (_url: unknown, init?: RequestInit) => {
+      capturedBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "sampled answer" } }],
+          usage: { prompt_tokens: 7, completion_tokens: 2, total_cost: 0.01 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any;
+    vi.stubGlobal("fetch", fetchStub);
+
+    const result = await runModelCall({
+      config: {
+        mode: "openai-compatible",
+        endpoint: "http://127.0.0.1:9/v1",
+        modelName: "probe-model",
+      },
+      taskType: "home.ask",
+      messages: [{ role: "user", content: "Be concise" }],
+      temperature: 0.4,
+      maxTokens: 512,
+      stop: ["\n---", "END"],
+      sensitivity: "private",
+      ownerApproved: true,
+    });
+
+    expect(capturedBodies).toHaveLength(1);
+    expect(capturedBodies[0]!.temperature).toBe(0.4);
+    expect(capturedBodies[0]!.max_tokens).toBe(512);
+    expect(capturedBodies[0]!.stop).toEqual(["\n---", "END"]);
+    expect(result.decision).toMatchObject({ action: "allow" });
+    expect(result.text).toBe("sampled answer");
+  });
+
+  it("keeps provider defaults when sampling fields are absent (EM-3)", async () => {
+    const capturedBodies: Array<Record<string, unknown>> = [];
+    const fetchStub = (async (_url: unknown, init?: RequestInit) => {
+      capturedBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "default answer" } }],
+          usage: { prompt_tokens: 7, completion_tokens: 2, total_cost: 0.01 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any;
+    vi.stubGlobal("fetch", fetchStub);
+
+    const result = await runModelCall({
+      config: {
+        mode: "openai-compatible",
+        endpoint: "http://127.0.0.1:9/v1",
+        modelName: "probe-model",
+      },
+      taskType: "home.ask",
+      messages: [{ role: "user", content: "Use defaults" }],
+      sensitivity: "private",
+      ownerApproved: true,
+    });
+
+    expect(capturedBodies).toHaveLength(1);
+    // JSON.stringify drops undefined members: temperature/stop absent → provider default.
+    expect("temperature" in capturedBodies[0]!).toBe(false);
+    expect("stop" in capturedBodies[0]!).toBe(false);
+    expect(capturedBodies[0]!.max_tokens).toBe(4096); // provider's built-in default
+    expect(result.decision).toMatchObject({ action: "allow" });
+    expect(result.text).toBe("default answer");
+  });
+
   it("falls back to the prompt as a single user turn when messages are absent", async () => {
     const capturedBodies: Array<{ messages?: unknown }> = [];
     const fetchStub = (async (_url: unknown, init?: RequestInit) => {

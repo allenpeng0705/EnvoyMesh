@@ -453,6 +453,10 @@ import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-g
 import { backfillBundledSponsorPeerAddresses, loadBundledSponsorFriendParsed, selectBundledSponsorBackfillAddrs } from "./bundled-sponsor-friend-loader.js";
 import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
 import { runModelCall } from "./model-call.js";
+import {
+  deriveHomeModelProviderMode,
+  homeModelRoutingError,
+} from "./ask-home-model.js";
 import { bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 // Phase 8 / b3 — the real `askEnvoyHarness` runtime. The
 // `loadEnvoyHarnessRuntimeConfig` is the env-var-driven
@@ -8169,6 +8173,51 @@ class NodeServiceImpl implements NodeService {
       }
       this._persistChatMessage(threadKey, errorMsg)
       this.emit("chat:message", errorMsg)
+    }
+  }
+
+  /**
+   * EM-3 — thin-client `askHomeModel` RPC (envoy-home-side-plan §1.2).
+   *
+   * Owner-only v1: the router's OWNER_ONLY gate already rejects family-profile
+   * sessions; the explicit `requireOwnerProfile` here is defense-in-depth so
+   * direct/internal callers (no ALS caller context) resolve to the owner too.
+   * Hosts on the shared `runModelCall` seam; sampling params pass through.
+   */
+  async askHomeModel(
+    params: import("@envoymesh/api").AskHomeModelParams,
+  ): Promise<import("@envoymesh/api").AskHomeModelResult> {
+    requireOwnerProfile("ask the home model")
+
+    const meshPeerId = this._mesh?.peerId ?? ""
+    const result = await runModelCall({
+      config: await this.getEffectiveModelProviders(),
+      taskType: "home.ask",
+      messages: params.messages,
+      modelHint: params.modelHint,
+      temperature: params.temperature,
+      maxTokens: params.maxTokens,
+      stop: params.stop,
+      sensitivity: "private",
+      ownerApproved: true,
+      requesterPeerId: meshPeerId,
+    })
+
+    // Stable catalog-token errors (thin-client-protocol v0.3 §2.1): thrown
+    // Errors whose message starts with cloud-approval-needed / semantic-firewall
+    // / prompt-too-large. Ordinary denials (disabled / un-routable) and absent
+    // text collapse into model-not-configured.
+    const routingError = homeModelRoutingError(result.decision)
+    if (routingError) throw routingError
+    if (!result.text || !result.text.trim()) {
+      throw new Error("model-not-configured: no usable model provider on the home node")
+    }
+
+    return {
+      text: result.text,
+      model: result.model ?? "unknown",
+      providerId: result.providerId,
+      providerMode: deriveHomeModelProviderMode(result.providerId),
     }
   }
 

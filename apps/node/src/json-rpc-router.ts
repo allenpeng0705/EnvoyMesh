@@ -119,6 +119,7 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "reindexRagKnowledge",
   "testRagEmbedding",
   "testChatModel",
+  "askHomeModel",
   "saveExternalMcpSearchAsNote",
   "listExternalMcpKnowledge",
   "importLinkedObsidianNotes",
@@ -1537,6 +1538,10 @@ export async function routeRpcMethod(
       return ns.sendToAiBot(
         String(params.botId ?? ""),
         String(params.text ?? ""),
+      );
+    case "askHomeModel":
+      return ns.askHomeModel(
+        params as unknown as import("@envoymesh/api").AskHomeModelParams,
       );
     case "ensurePiTerminalSession":
       return ns.ensurePiTerminalSession({

@@ -342,6 +342,7 @@ export type RpcMethods =
     | "invokeEnvoyHarnessEhui"
     | "ensureEnvoyTerminalSession"
     | "sendToAiBot"
+    | "askHomeModel"
     | "piRespondToProposal"
     | "ehRespondToUserQuestion"
     | "ehRespondToPermission"
@@ -2953,4 +2954,41 @@ export interface ChainIterationProgressEvent {
   /** Peer that handed off this job (trigger), when known. */
   observerPeerId?: string;
   summary?: string;
+}
+
+// ============================================
+// askHomeModel (EM-3) — thin-client home model RPC
+// ============================================
+
+/** One chat turn in an `askHomeModel` request. */
+export interface AskHomeModelMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+/**
+ * Params for the `askHomeModel` RPC (docs/envoy-home-side-plan.md §1.2,
+ * thin-client-protocol v0.3 §2.1). `messages` is the primary input; sampling
+ * params are optional and pass through to the model provider when present.
+ */
+export interface AskHomeModelParams {
+  messages: AskHomeModelMessage[];
+  /** Selects among configured usable providers only. */
+  modelHint?: string;
+  maxTokens?: number;
+  temperature?: number;
+  stop?: string[];
+}
+
+/**
+ * Result of an `askHomeModel` call. `providerMode` reports what actually
+ * answered: one of `"envoy-local" | "ollama" | "openai-compatible" | "cloud" |
+ * "mock"` when the providerId is recognized, otherwise the raw providerId
+ * (best-effort). `providerId` is included for exact attribution.
+ */
+export interface AskHomeModelResult {
+  text: string;
+  model: string;
+  providerId?: string;
+  providerMode?: string;
 }

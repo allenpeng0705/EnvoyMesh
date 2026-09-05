@@ -69,6 +69,10 @@ describe("isOwnerOnlyRpcMethod", () => {
     }
   })
 
+  it("gates askHomeModel for family (EM-3 owner-only v1)", () => {
+    expect(isOwnerOnlyRpcMethod("askHomeModel")).toBe(true)
+  })
+
   it("does not owner-gate Envoy Harness / Pi RPCs (codingEnabled gate)", () => {
     for (const method of [
       "getEnvoyHarnessStatus",

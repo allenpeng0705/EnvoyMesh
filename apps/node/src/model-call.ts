@@ -37,6 +37,10 @@ export interface RunModelCallOpts {
   prompt?: string;
   /** Multi-turn chat turns (EM-1). Forwarded verbatim to `ModelRequest`. */
   messages?: ModelCallMessage[];
+  /** Sampling params (EM-3) — forwarded verbatim to `ModelRequest`; providers keep their defaults when absent. */
+  temperature?: number;
+  maxTokens?: number;
+  stop?: string[];
   sensitivity: Sensitivity;
   /** Must mirror the caller's flag — also relaxes cloud provider policy via `buildModelProviders`. */
   ownerApproved: boolean;
@@ -67,6 +71,9 @@ export async function runModelCall(opts: RunModelCallOpts): Promise<RunModelCall
     taskType: opts.taskType,
     prompt: opts.prompt ?? "",
     ...(opts.messages && opts.messages.length > 0 ? { messages: opts.messages } : {}),
+    ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+    ...(opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
+    ...(opts.stop !== undefined ? { stop: opts.stop } : {}),
     sensitivity: opts.sensitivity,
     ownerApproved: opts.ownerApproved,
     requesterPeerId: opts.requesterPeerId,
