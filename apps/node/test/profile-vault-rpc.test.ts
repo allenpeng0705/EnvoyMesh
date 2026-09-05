@@ -17,6 +17,7 @@ import {
   createHumanProfileStore,
   createLocalPeerDirectoryStore,
   createLocalTrustStore,
+  createSensitivityOverrideStore,
 } from "@envoymesh/local-store"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { NodeServiceImpl } from "../src/node-service-impl.js"
@@ -291,6 +292,57 @@ describe("EM-P profile-aware vault RPCs", () => {
         svc.createNote({ filename: "owner2.md", content: "# o", subfolder: "veda" }),
       )
       expect(created.relativePath).toBe("notes/veda/owner2.md")
+    })
+  })
+
+  describe("EM-F4 family notes are private by default; publish is owner-only", () => {
+    it("family createNote persists a `private` sensitivity override for the new note", async () => {
+      const created = await runWithRpcCaller(MOM, () =>
+        svc.createNote({
+          filename: "secret.md",
+          content: "# mom's private note",
+          subfolder: "veda",
+        }),
+      )
+      expect(created.relativePath).toBe("notes/veda/mom/secret.md")
+      // createNoteViaRuntime writes the per-item override (default private)
+      // into {profileDir}/vault-sensitivity-overrides.json via
+      // writeSensitivityOverride (node-service-fileshare.ts).
+      const overrides = createSensitivityOverrideStore(profileDir)
+      expect(await overrides.get(created.documentId)).toBe("private")
+    })
+
+    it("family sessions cannot publish a note — setLibraryItemPublished is owner-only", async () => {
+      const created = await runWithRpcCaller(MOM, () =>
+        svc.createNote({
+          filename: "secret.md",
+          content: "# mom's private note",
+          subfolder: "veda",
+        }),
+      )
+      // Router OWNER_ONLY list (json-rpc-router.ts) + impl-level deny:
+      // node-service-impl.setLibraryItemPublished calls _denyFamilySession.
+      await expect(
+        runWithRpcCaller(MOM, () => svc.setLibraryItemPublished(created.documentId, true)),
+      ).rejects.toThrow(/owner-only: library publishing is limited to the node owner/)
+      // The denied attempt must not flip the override to public.
+      const overrides = createSensitivityOverrideStore(profileDir)
+      expect(await overrides.get(created.documentId)).toBe("private")
+    })
+
+    it("owner can publish the family note — override flips to public (positive control)", async () => {
+      const created = await runWithRpcCaller(MOM, () =>
+        svc.createNote({
+          filename: "secret.md",
+          content: "# mom's private note",
+          subfolder: "veda",
+        }),
+      )
+      await runWithRpcCaller(OWNER, () => svc.setLibraryItemPublished(created.documentId, true))
+      // Owner publish writes the override as "public"
+      // (setLibraryItemPublishedViaRuntime → writeSensitivityOverride).
+      const overrides = createSensitivityOverrideStore(profileDir)
+      expect(await overrides.get(created.documentId)).toBe("public")
     })
   })
 })
