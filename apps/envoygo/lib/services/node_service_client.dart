@@ -382,8 +382,8 @@ class NodeServiceClient {
   /// [sendFamilyMessage] / [sendFamilyRoomMessage].
   ///
   /// Storage stays in the profile `family-media` area — never the owner vault,
-  /// never the mesh. Content-hash dedupe: re-uploading identical bytes
-  /// returns the same id.
+  /// never the mesh. Each upload creates a fresh attachment id (no server-side
+  /// content-hash dedupe today); clients send the returned descriptor verbatim.
   Future<Map<String, dynamic>> uploadFamilyAttachment({
     required FamilyAttachmentScope scope,
     required String filename,
