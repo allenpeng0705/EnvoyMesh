@@ -9,6 +9,8 @@
 /// small pure helpers shared by the client wrappers and the tests. Model
 /// helpers here must stay free of any Flutter / socket dependency.
 
+library family_attachment;
+
 /// Scope of a family-media upload (§3.2): a DM pair or a family room.
 ///
 /// Wire shape is exactly one of:
@@ -89,7 +91,7 @@ class FamilyAttachmentScope {
   int get hashCode => Object.hash(toProfileId, roomId);
 
   @override
-  String toString() => 'FamilyAttachmentScope(${debugLabel})';
+  String toString() => 'FamilyAttachmentScope($debugLabel)';
 }
 
 /// Normalize an `uploadFamilyAttachment` result into the metadata descriptor
