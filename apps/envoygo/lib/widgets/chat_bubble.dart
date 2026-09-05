@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import '../ext_agent/agent_attachments.dart';
 import '../l10n/app_localizations.dart';
@@ -13,11 +15,20 @@ class ChatBubble extends StatelessWidget {
   final bool isOutbound;
   final Future<String?> Function(String vaultRelativePath)? onLoadAudio;
 
+  /// v0.3 family-media loader: returns base64 bytes for an attachment stored
+  /// in the home's `family-media` area (fetched by id via
+  /// `readFamilyAttachment`). Family threads only — mesh threads leave this
+  /// null and keep reading vault bytes via [onLoadAudio]. Drives both
+  /// family voice-note playback and inline family image previews.
+  final Future<String?> Function(ChatAttachment attachment)?
+      onLoadFamilyAttachment;
+
   const ChatBubble({
     super.key,
     required this.message,
     required this.isOutbound,
     this.onLoadAudio,
+    this.onLoadFamilyAttachment,
   });
 
   /// Agent home-path attaches (absolute / envoy-uploads) — never voice-note UI.
@@ -27,7 +38,7 @@ class ChatBubble extends StatelessWidget {
       ) ??
       false;
 
-  /// Whether this message has a vault voice-note (not agent home attach).
+  /// Whether this message has a voice note (vault or family-media).
   bool get _hasAudio =>
       !_hasAgentHomeAttach &&
       (message.attachments?.any((a) => a.isAudio) ?? false);
@@ -40,6 +51,28 @@ class ChatBubble extends StatelessWidget {
     final audioAtt = _hasAudio
         ? message.attachments!.firstWhere((a) => a.isAudio)
         : null;
+
+    // Family-media attachments (no vault path) — their bytes live in the
+    // home family-media area. Inline-preview images; everything else falls
+    // through to the generic file chips (name only; no vault read attempted).
+    final familyImageAtt = onLoadFamilyAttachment != null &&
+            message.attachments != null
+        ? message.attachments!
+            .where((a) => !_hasAgentHomeAttach && a.isFamilyStored && a.isImage)
+            .firstOrNull
+        : null;
+
+    // Non-audio attachments shown as chips — family images rendered inline
+    // above are skipped so they do not appear twice.
+    final chipAtts = message.attachments == null
+        ? null
+        : [
+            for (final a in message.attachments!)
+              if (!a.isAudio &&
+                  !isAgentHomePathAttachmentPath(a.vaultRelativePath) &&
+                  a != familyImageAtt)
+                a,
+          ];
 
     return Align(
       alignment: isOutbound ? Alignment.centerRight : Alignment.centerLeft,
@@ -93,6 +126,9 @@ class ChatBubble extends StatelessWidget {
                 attachment: audioAtt,
                 transcription: message.text,
                 onLoadAudio: onLoadAudio!,
+                onLoadFamilyAudio: audioAtt.isFamilyStored
+                    ? onLoadFamilyAttachment
+                    : null,
               ),
             ] else ...[
               const SizedBox(height: 2),
@@ -133,6 +169,13 @@ class ChatBubble extends StatelessWidget {
                   displayText,
                   style: TextStyle(color: colorScheme.onSurface),
                 ),
+              if (familyImageAtt != null && onLoadFamilyAttachment != null) ...[
+                const SizedBox(height: 6),
+                _FamilyAttachmentImage(
+                  attachment: familyImageAtt,
+                  loader: onLoadFamilyAttachment!,
+                ),
+              ],
               if (_hasAgentHomeAttach)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
@@ -151,15 +194,13 @@ class ChatBubble extends StatelessWidget {
                     ],
                   ),
                 )
-              else if (message.attachments != null &&
-                  message.attachments!.any((a) => !a.isAudio))
+              else if (chipAtts != null && chipAtts.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: AgentAttachmentBar(
                     readOnly: true,
                     attachments: [
-                      for (final a
-                          in message.attachments!.where((x) => !x.isAudio))
+                      for (final a in chipAtts)
                         AgentDraftAttachment(
                           id: a.id.isNotEmpty
                               ? a.id
@@ -199,5 +240,94 @@ class ChatBubble extends StatelessWidget {
       default:
         return l10n.chatDeliverySent;
     }
+  }
+}
+
+/// Inline preview for a family-media image: fetches bytes by attachment id
+/// via `readFamilyAttachment` (through [loader]) and renders them in-memory.
+class _FamilyAttachmentImage extends StatefulWidget {
+  final ChatAttachment attachment;
+  final Future<String?> Function(ChatAttachment attachment) loader;
+
+  const _FamilyAttachmentImage({
+    required this.attachment,
+    required this.loader,
+  });
+
+  @override
+  State<_FamilyAttachmentImage> createState() =>
+      _FamilyAttachmentImageState();
+}
+
+class _FamilyAttachmentImageState extends State<_FamilyAttachmentImage> {
+  Uint8List? _bytes;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final contentBase64 = await widget.loader(widget.attachment);
+      if (!mounted) return;
+      if (contentBase64 == null || contentBase64.isEmpty) {
+        setState(() => _failed = true);
+        return;
+      }
+      final bytes = base64Decode(contentBase64);
+      if (!mounted) return;
+      if (bytes.isEmpty) {
+        setState(() => _failed = true);
+      } else {
+        setState(() => _bytes = bytes);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (_failed) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.broken_image_outlined,
+              size: 20, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              widget.attachment.filename,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    if (_bytes == null) {
+      return const SizedBox(
+        width: 22,
+        height: 22,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.memory(
+        _bytes!,
+        width: 200,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      ),
+    );
   }
 }
