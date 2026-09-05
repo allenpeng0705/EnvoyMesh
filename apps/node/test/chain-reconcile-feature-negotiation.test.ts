@@ -38,7 +38,7 @@
  *
  * Sanity test: if you remove the `peer.status = "unsupported"` line or the
  * `card?.features?.includes("chain-reconcile-v1")` check, the test below
- * fails immediately. Run after editing node-service-impl.ts:16819-16845.
+ * fails immediately. Run after editing node-service-impl.ts:16790-16845 (line numbers track file growth).
  */
 
 import { readFileSync } from "node:fs";
@@ -46,8 +46,8 @@ import { resolve } from "node:path";
 import { describe, expect, greaterThanOrEqualTo, it } from "vitest";
 
 const IMPL = resolve(__dirname, "../src/node-service-impl.ts");
-const MIN_LINE = 16615; // first line of the recovery outbound loop
-const MAX_LINE = 16660; // after the unsupported continue / request build
+const MIN_LINE = 16789; // first line of the recovery outbound loop (shifted by EM-2..EM-R handler additions)
+const MAX_LINE = 16832; // after the unsupported continue / request build (shifted by EM-2..EM-R handler additions)
 
 function readImplSlice(): string {
   const text = readFileSync(IMPL, "utf8");
