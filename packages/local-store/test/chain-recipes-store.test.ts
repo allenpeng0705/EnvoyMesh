@@ -1,5 +1,12 @@
 /**
  * Phase 67A — persisted chain goal recipes store.
+ *
+ * Imports go through `@envoymesh/local-store` (the package public
+ * surface) rather than `../src/chain-recipes-store.js`. The package
+ * must re-export `createLocalChainRecipesStore` and
+ * `LocalChainRecipesStore` — without those, downstream consumers
+ * (e.g. `apps/node/src/node-service-impl.ts` chains module) fail at
+ * runtime with `createLocalChainRecipesStore is not a function`.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -9,7 +16,7 @@ import { join } from "node:path";
 import {
   createLocalChainRecipesStore,
   type LocalChainRecipesStore,
-} from "../src/chain-recipes-store.js";
+} from "@envoymesh/local-store";
 
 describe("createLocalChainRecipesStore", () => {
   let profileDir: string;
