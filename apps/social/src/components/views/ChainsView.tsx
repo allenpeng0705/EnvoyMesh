@@ -18,6 +18,7 @@ import type {
   ChainListReportsResult,
   ChainObservedStatus,
   ChainWorkerReachability,
+  AgentNetworkDiagnosticsWorker,
 } from "@envoymesh/api";
 import { agentNetworkPrimaryRole } from "@envoymesh/protocol";
 import { useT } from "../../context/I18nContext.js";
@@ -43,6 +44,7 @@ import {
   buildFleetReadinessChecklist,
   summarizeFleetReadinessInput,
 } from "../../lib/fleet-readiness.js";
+import { collectFleetWorkerGaps } from "../../lib/fleet-worker-gaps.js";
 import { classifyObservedJobBadge } from "../../lib/observed-job-badge.js";
 import { ChainDetailPanel } from "../ChainDetailPanel.js";
 import { AgentNetworkSettingsModal } from "../AgentNetworkSettingsModal.js";
@@ -195,6 +197,10 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
   // dialog can show online/offline and make offline contacts non-selectable.
   // A 20s poll keeps the dots fresh while the view is mounted.
   const [reachabilityByOwner, setReachabilityByOwner] = useState<Map<string, ChainWorkerReachability>>(new Map());
+  /** Phase 66A — 60F lease/card exclusion reasons for named fleet gaps. */
+  const [diagnosticsWorkers, setDiagnosticsWorkers] = useState<
+    AgentNetworkDiagnosticsWorker[]
+  >([]);
 
   // Local Join'd agent — Team job creator is also a worker (online when the
   // node-owner AN engine is ready).
@@ -343,9 +349,34 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
             nodeConfig?.capabilityProviderEnabled === true ? anEngineReady : null,
           bondedPeerCount: bonds.filter((b) => b.level !== "blocked").length,
           candidates: workerCandidates,
+          diagnosticsWorkers,
         }),
       ),
-    [anEngineReady, bonds, nodeConfig?.capabilityProviderEnabled, workerCandidates],
+    [
+      anEngineReady,
+      bonds,
+      diagnosticsWorkers,
+      nodeConfig?.capabilityProviderEnabled,
+      workerCandidates,
+    ],
+  );
+
+  const fleetWorkerGaps = useMemo(
+    () =>
+      collectFleetWorkerGaps({
+        candidates: workerCandidates.map((w) => ({
+          isSelf: w.isSelf,
+          ownerId: w.bond.peerOwnerId,
+          displayName:
+            w.bond.displayName ??
+            w.card?.displayName ??
+            w.bond.peerOwnerId,
+          card: w.card,
+          health: w.health,
+        })),
+        diagnosticsWorkers,
+      }),
+    [diagnosticsWorkers, workerCandidates],
   );
 
   // Chain creation flow (Phase 43 follow-up): a "New chain" button opens a
@@ -410,13 +441,19 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
     const ownerIds = bonds.filter((b) => b.level !== "blocked").map((b) => b.peerOwnerId);
     if (ownerIds.length === 0) {
       setReachabilityByOwner((prev) => (prev.size === 0 ? prev : new Map()));
-      return;
+    } else {
+      try {
+        const result = await nodeService.chainProbeReachability({ ownerIds });
+        setReachabilityByOwner(new Map((result.rows ?? []).map((r) => [r.ownerId, r])));
+      } catch (err) {
+        console.error("[ChainsView] failed to probe worker reachability:", err);
+      }
     }
     try {
-      const result = await nodeService.chainProbeReachability({ ownerIds });
-      setReachabilityByOwner(new Map((result.rows ?? []).map((r) => [r.ownerId, r])));
+      const snap = await nodeService.agentNetworkDiagnosticsSnapshot();
+      setDiagnosticsWorkers(snap.workers ?? []);
     } catch (err) {
-      console.error("[ChainsView] failed to probe worker reachability:", err);
+      console.error("[ChainsView] agentNetworkDiagnosticsSnapshot failed:", err);
     }
   }, [nodeService, bonds]);
 
@@ -785,6 +822,7 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
           readinessPanel={
             <FleetReadinessPanel
               readiness={fleetReadiness}
+              workerGaps={fleetWorkerGaps}
               variant="compact"
               onManageWorkers={() => setShowSettings(true)}
               onOpenSettingsAi={onOpenSettingsAi}
@@ -1042,6 +1080,7 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
           engineReady={anEngineReady}
           bondedPeerCount={bonds.filter((b) => b.level !== "blocked").length}
           workerCandidates={workerCandidates}
+          diagnosticsWorkers={diagnosticsWorkers}
         />
       ) : null}
 
@@ -1056,6 +1095,7 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
           {fleetReadiness.blocked ? (
             <FleetReadinessPanel
               readiness={fleetReadiness}
+              workerGaps={fleetWorkerGaps}
               variant="compact"
               onManageWorkers={() => setShowSettings(true)}
               onOpenSettingsAi={onOpenSettingsAi}

@@ -7,7 +7,10 @@
 
 import { isTeamJobReady } from "./chain-bond-health.js";
 import type { ChainBondHealth } from "./chain-bond-health.js";
-import type { CachedAgentCardSummary } from "@envoymesh/api";
+import type {
+  AgentNetworkDiagnosticsWorker,
+  CachedAgentCardSummary,
+} from "@envoymesh/api";
 
 export type FleetReadinessTone = "pass" | "warn" | "fail" | "skip";
 
@@ -56,7 +59,7 @@ export interface FleetReadinessInput {
   peersOffline: number;
   /** Selectable now (incl. You) via {@link isTeamJobReady}. */
   selectableCount: number;
-  /** Selectable peers excluding local You. */
+  /** Selectable peers excluding local You (lease-aware when diagnostics present). */
   otherReadyCount: number;
 }
 
@@ -74,6 +77,33 @@ export interface FleetReadinessCandidate {
   health: ChainBondHealth;
 }
 
+/** Phase 66A — lease_ready or lease_legacy_ready counts as assigner-selectable. */
+export function isFleetLeaseOk(
+  candidate: FleetReadinessCandidate,
+  workers: readonly AgentNetworkDiagnosticsWorker[] | undefined,
+): boolean {
+  if (!workers || workers.length === 0) return true;
+  const peerId = candidate.card?.sourceAgentPeerId;
+  const ownerId = candidate.card?.ownerId;
+  const w = workers.find(
+    (x) =>
+      (peerId && x.peerId === peerId) ||
+      (ownerId && x.ownerId === ownerId),
+  );
+  if (!w) return true;
+  if (w.leaseReady) return true;
+  const reasons = w.exclusionReasons ?? [];
+  for (const raw of reasons) {
+    const r = raw.startsWith("lease_") ? raw.slice("lease_".length) : raw;
+    if (r === "legacy_ready") return true;
+  }
+  // Explicit lease_* exclusions (expired/busy/…) → not lease-ready.
+  if (reasons.some((r) => r.startsWith("lease_") || r === "expired" || r === "busy")) {
+    return false;
+  }
+  return false;
+}
+
 /**
  * Summarize worker candidates + local Join into checklist input.
  * `bondedPeerCount` should be the true bond count (may exceed candidate rows).
@@ -83,6 +113,8 @@ export function summarizeFleetReadinessInput(params: {
   engineReady: boolean | null;
   bondedPeerCount: number;
   candidates: FleetReadinessCandidate[];
+  /** Optional 60F snapshot workers — lease-aware otherReady when present. */
+  diagnosticsWorkers?: readonly AgentNetworkDiagnosticsWorker[];
 }): FleetReadinessInput {
   const peers = params.candidates.filter((c) => !c.isSelf);
   let peersOptedIn = 0;
@@ -92,12 +124,13 @@ export function summarizeFleetReadinessInput(params: {
   let peersOffline = 0;
   let selectableCount = 0;
   let otherReadyCount = 0;
+  const diag = params.diagnosticsWorkers;
 
   for (const c of params.candidates) {
     const ready = isTeamJobReady(c.card, c.health);
     if (ready) {
       selectableCount += 1;
-      if (!c.isSelf) otherReadyCount += 1;
+      if (!c.isSelf && isFleetLeaseOk(c, diag)) otherReadyCount += 1;
     }
   }
 

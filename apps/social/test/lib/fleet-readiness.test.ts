@@ -158,4 +158,50 @@ describe("summarizeFleetReadinessInput", () => {
     expect(summary.selectableCount).toBe(1);
     expect(summary.otherReadyCount).toBe(0);
   });
+
+  it("excludes lease-expired peers from otherReady when diagnostics present", () => {
+    const summary = summarizeFleetReadinessInput({
+      localJoin: true,
+      engineReady: true,
+      bondedPeerCount: 1,
+      candidates: [
+        {
+          card: peerCard,
+          health: health({}),
+        },
+      ],
+      diagnosticsWorkers: [
+        {
+          peerId: "envoy_agent_bob",
+          ownerId: "envoy:owner:bob",
+          membershipOk: true,
+          leaseReady: false,
+          runtimeReady: false,
+          exclusionReasons: ["lease_expired"],
+        },
+      ],
+    });
+    expect(summary.selectableCount).toBe(1);
+    expect(summary.otherReadyCount).toBe(0);
+  });
+
+  it("counts legacy_ready lease as otherReady", () => {
+    const summary = summarizeFleetReadinessInput({
+      localJoin: true,
+      engineReady: true,
+      bondedPeerCount: 1,
+      candidates: [{ card: peerCard, health: health({}) }],
+      diagnosticsWorkers: [
+        {
+          peerId: "envoy_agent_bob",
+          ownerId: "envoy:owner:bob",
+          membershipOk: true,
+          leaseReady: false,
+          runtimeReady: false,
+          exclusionReasons: ["lease_legacy_ready"],
+        },
+      ],
+    });
+    expect(summary.otherReadyCount).toBe(1);
+  });
 });

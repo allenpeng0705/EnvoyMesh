@@ -299,6 +299,7 @@ export interface StartNodeContextDeps {
   resyncBondedContactReachabilityTags: StartNodeContext["resyncBondedContactReachabilityTags"];
   refreshAgentNetworkMembershipIndex: StartNodeContext["refreshAgentNetworkMembershipIndex"];
   refreshAgentNetworkWorkers: StartNodeContext["refreshAgentNetworkWorkers"];
+  ensureWorkerLeaseBroadcasterStarted: StartNodeContext["ensureWorkerLeaseBroadcasterStarted"];
   scheduleDeferredProfileRefresh: StartNodeContext["scheduleDeferredProfileRefresh"];
   advertiseInterestsIfPublic: StartNodeContext["advertiseInterestsIfPublic"];
   loadHumanProfile: StartNodeContext["loadHumanProfile"];
@@ -1009,6 +1010,7 @@ export function buildStartNodeContext(deps: StartNodeContextDeps): StartNodeCont
       deps.resyncBondedContactReachabilityTags(),
     refreshAgentNetworkMembershipIndex: () => deps.refreshAgentNetworkMembershipIndex(),
     refreshAgentNetworkWorkers: () => deps.refreshAgentNetworkWorkers(),
+    ensureWorkerLeaseBroadcasterStarted: () => deps.ensureWorkerLeaseBroadcasterStarted(),
     scheduleDeferredProfileRefresh: (reason) =>
       deps.scheduleDeferredProfileRefresh(reason),
     advertiseInterestsIfPublic: () => deps.advertiseInterestsIfPublic(),

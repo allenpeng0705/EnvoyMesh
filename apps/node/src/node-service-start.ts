@@ -268,6 +268,11 @@ export interface StartNodeContext {
    *  after a restart — without this, the Team jobs view shows stale cached
    *  cards that may not reflect the peer's current opt-in state. */
   refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }>;
+  /**
+   * Phase 66A — when Join is on, ensure worker-lease broadcaster is running
+   * (NodeService / Tauri; CLI also starts at mesh boot).
+   */
+  ensureWorkerLeaseBroadcasterStarted(): Promise<unknown>;
   scheduleDeferredProfileRefresh(reason: string): void;
   advertiseInterestsIfPublic(): Promise<void>;
   loadHumanProfile(): Promise<import("@envoymesh/api").HumanProfile | undefined>;
@@ -724,6 +729,9 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       multiaddrs: mesh.multiaddrs.map((a: { toString(): string }) => a.toString()),
     });
     ctx.scheduleDeferredProfileRefresh("node:online");
+    void ctx.ensureWorkerLeaseBroadcasterStarted().catch((err) => {
+      console.warn("[agent.worker.lease] ensure after node:online failed:", err);
+    });
     void ctx.refreshAgentNetworkMembershipIndex().catch((err) => {
       console.warn("[chain] refreshAgentNetworkMembershipIndex after node:online failed:", err);
     });

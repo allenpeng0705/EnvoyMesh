@@ -43,6 +43,8 @@ function makeCtx(overrides: Partial<StartNodeContext> = {}): {
     startCapabilityDiscoveryScheduler: ReturnType<typeof vi.fn>;
     startBondWarmInterval: ReturnType<typeof vi.fn>;
     refreshAgentNetworkMembershipIndex: ReturnType<typeof vi.fn>;
+    refreshAgentNetworkWorkers: ReturnType<typeof vi.fn>;
+    ensureWorkerLeaseBroadcasterStarted: ReturnType<typeof vi.fn>;
     scheduleDeferredProfileRefresh: ReturnType<typeof vi.fn>;
     advertiseInterestsIfPublic: ReturnType<typeof vi.fn>;
     resyncBondedContactReachabilityTags: ReturnType<typeof vi.fn>;
@@ -72,6 +74,8 @@ function makeCtx(overrides: Partial<StartNodeContext> = {}): {
     startCapabilityDiscoveryScheduler: vi.fn(),
     startBondWarmInterval: vi.fn(),
     refreshAgentNetworkMembershipIndex: vi.fn(async () => {}),
+    refreshAgentNetworkWorkers: vi.fn(async () => ({ requested: 0, failed: 0 })),
+    ensureWorkerLeaseBroadcasterStarted: vi.fn(async () => undefined),
     scheduleDeferredProfileRefresh: vi.fn(),
     advertiseInterestsIfPublic: vi.fn(async () => {}),
     resyncBondedContactReachabilityTags: vi.fn(async () => {}),
@@ -122,6 +126,8 @@ function makeCtx(overrides: Partial<StartNodeContext> = {}): {
     startBondWarmInterval: spies.startBondWarmInterval,
     resyncBondedContactReachabilityTags: spies.resyncBondedContactReachabilityTags,
     refreshAgentNetworkMembershipIndex: spies.refreshAgentNetworkMembershipIndex,
+    refreshAgentNetworkWorkers: spies.refreshAgentNetworkWorkers,
+    ensureWorkerLeaseBroadcasterStarted: spies.ensureWorkerLeaseBroadcasterStarted,
     scheduleDeferredProfileRefresh: spies.scheduleDeferredProfileRefresh,
     advertiseInterestsIfPublic: spies.advertiseInterestsIfPublic,
     loadPublishedLibraryFromDisk: spies.loadPublishedLibraryFromDisk,

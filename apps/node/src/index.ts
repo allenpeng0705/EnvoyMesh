@@ -2592,13 +2592,8 @@ async function handleInboundMeshMessage({
           } catch {
             /* ignore */
           }
-          // Pull the peer's agent card + rebuild soft pool so Team jobs can see
-          // them without a manual Settings → Refresh workers click.
-          void nodeService.refreshAgentNetworkWorkers().catch((err) => {
-            anWarn("lan-auto-bond", "refreshAgentNetworkWorkers after accept failed", {
-              error: err instanceof Error ? err.message : String(err),
-            });
-          });
+          // Phase 66A — full worker refresh is scheduled by NodeServiceImpl on
+          // bond:established (debounced); no second immediate refresh here.
         },
       });
       if (lanResult.outcome === "accepted") {

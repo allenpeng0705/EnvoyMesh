@@ -1212,6 +1212,10 @@ import {
   startWorkerLeaseBroadcaster,
   type WorkerLeaseBroadcastMesh,
 } from "./agent-worker-lease-broadcast.js";
+import {
+  createDebouncedAgentNetworkRefresh,
+  type DebouncedAgentNetworkRefresh,
+} from "./agent-network-bond-refresh.js";
 import { WorkerLeaseStore } from "./worker-lease-store.js";
 import { WorkerReliabilityStore } from "./worker-reliability-store.js";
 import { WorkerAttemptReceiptStore } from "./worker-attempt-receipt-store.js";
@@ -2664,6 +2668,21 @@ class NodeServiceImpl implements NodeService {
         })
         .catch(() => {})
     })
+    // Phase 66A — any recruiting bond (sponsor, LAN accept, hello) refreshes
+    // cards + membership once (debounced), mirroring LAN soft-pool heal.
+    this._bondAgentNetworkRefresh = createDebouncedAgentNetworkRefresh({
+      refresh: () => this.refreshAgentNetworkWorkers(),
+      track: (work) => this._trackAgentNetworkRefresh(work),
+      onError: (err, reason) => {
+        anWarn("bond-refresh", `refreshAgentNetworkWorkers after ${reason} failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      },
+    });
+    this.on("bond:established", (data) => {
+      const peer = typeof data?.peerOwnerId === "string" ? data.peerOwnerId : "";
+      this._bondAgentNetworkRefresh?.schedule(peer ? `bond:${peer}` : "bond");
+    });
   }
 
   // ============================================
@@ -2713,6 +2732,11 @@ class NodeServiceImpl implements NodeService {
     void this.resyncBondedContactReachabilityTags();
     void this._scrubBondedContactDialState();
     this._startBondWarmInterval();
+    void this.ensureWorkerLeaseBroadcasterStarted(mesh).catch((err) => {
+      anWarn("lease", "ensureWorkerLeaseBroadcasterStarted after bind failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   }
 
   /**
@@ -4577,6 +4601,8 @@ class NodeServiceImpl implements NodeService {
   private _agentNetworkIndexRefreshTimers: ReturnType<typeof setTimeout>[] = [];
   /** In-flight Join/LAN refresh work — awaited in stopNode so tests don't rm() under us. */
   private _agentNetworkRefreshInflight: Promise<unknown> = Promise.resolve();
+  /** Phase 66A — coalesce full worker refresh after bond:established bursts. */
+  private _bondAgentNetworkRefresh: DebouncedAgentNetworkRefresh | undefined;
 
   private _trackAgentNetworkRefresh(work: Promise<unknown>): void {
     this._agentNetworkRefreshInflight = Promise.allSettled([
@@ -11799,8 +11825,10 @@ class NodeServiceImpl implements NodeService {
       // Join Agent Network changes what our card advertises; refresh pulls peers'
       // cards and (when joining) pushes ours so both sides see agent-network-worker.
       if (joinToggled) {
+        const joinOn =
+          (nodePatch as Partial<NodeConfig>).capabilityProviderEnabled === true;
         anLog("join", "Join Agent Network toggled — scheduling refresh", {
-          enabled: (nodePatch as Partial<NodeConfig>).capabilityProviderEnabled === true,
+          enabled: joinOn,
         });
         this._trackAgentNetworkRefresh(
           this.refreshAgentNetworkWorkers().catch((err) => {
@@ -11809,6 +11837,21 @@ class NodeServiceImpl implements NodeService {
             });
           }),
         );
+        // Phase 66A — NodeService/Tauri path must publish leases when Join is on
+        // (CLI `index.ts` already starts the broadcaster at mesh boot).
+        if (joinOn) {
+          const mesh = this._reachableMesh();
+          if (mesh) {
+            void this.ensureWorkerLeaseBroadcasterStarted(mesh).catch((err) => {
+              anWarn("lease", "ensureWorkerLeaseBroadcasterStarted after Join on failed", {
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+          }
+        } else {
+          this._leaseBroadcaster?.stop();
+          this._leaseBroadcaster = undefined;
+        }
       } else if (profilePatched) {
         // Worker profile (skills, freshness, …) is on the Agent Card — push so
         // bonded peers update without waiting for a manual Refresh on their side.
@@ -12728,6 +12771,9 @@ class NodeServiceImpl implements NodeService {
     this._stopLanDiscoverySweep();
     this._stopRelayRosterFeed?.();
     this._stopRelayRosterFeed = undefined;
+    this._bondAgentNetworkRefresh?.cancel();
+    this._leaseBroadcaster?.stop();
+    this._leaseBroadcaster = undefined;
     if (this._vouchedHintReloadTimer) {
       clearTimeout(this._vouchedHintReloadTimer);
       this._vouchedHintReloadTimer = undefined;
@@ -17029,6 +17075,24 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _leaseBroadcaster: { stop: () => void; publishNow: () => Promise<void> } | undefined;
+
+  /**
+   * Phase 66A — start lease broadcast when Join is on (NodeService / Tauri path).
+   * No-op when Join is off or mesh/identity is unavailable.
+   */
+  async ensureWorkerLeaseBroadcasterStarted(
+    mesh?: EnvoyMesh,
+  ): Promise<{ stop: () => void; publishNow: () => Promise<void> } | undefined> {
+    const live = mesh ?? this._reachableMesh();
+    if (!live) return undefined;
+    try {
+      const cfg = await this.getNodeConfig();
+      if (cfg.capabilityProviderEnabled !== true) return undefined;
+    } catch {
+      return undefined;
+    }
+    return this.startWorkerLeaseBroadcaster(live);
+  }
 
   /**
    * Phase 60B — start periodic signed worker-lease broadcast to bonded peers.

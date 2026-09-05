@@ -452,6 +452,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
               host.resyncBondedContactReachabilityTags(),
             refreshAgentNetworkMembershipIndex: () => host.refreshAgentNetworkMembershipIndex(),
             refreshAgentNetworkWorkers: () => host.refreshAgentNetworkWorkers(),
+            ensureWorkerLeaseBroadcasterStarted: () => host.ensureWorkerLeaseBroadcasterStarted(),
             scheduleDeferredProfileRefresh: (reason) =>
               host._scheduleDeferredProfileRefresh(reason),
             advertiseInterestsIfPublic: () => host._advertiseInterestsIfPublic(),

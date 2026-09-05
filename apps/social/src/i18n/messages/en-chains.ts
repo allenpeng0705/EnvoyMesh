@@ -506,6 +506,17 @@ export const chainsMessages = {
         warn: "Only your agent is ready. Bond a peer who joined for multi-home jobs.",
       },
     },
+    gap: {
+      join_off: "Has not joined Agent Network yet.",
+      missing_card: "No agent card yet — refresh after they join.",
+      stale_card: "Agent card is out of date — refresh to pull the latest.",
+      lease_expired: "Worker lease expired — refresh cards so they republish.",
+      lease_unknown: "Worker lease not visible yet — refresh and wait a moment.",
+      lease_busy: "Busy on another job — try again when free.",
+      lease_engine_down: "Their agent engine is down — ask them to start it in Settings → AI.",
+      lease_revoked: "Worker lease was revoked — refresh after they rejoin.",
+      offline: "Looks offline — ask them to open EnvoyMesh, then check again.",
+    },
   },
   workerProfile: {
     title: "Your worker profile",

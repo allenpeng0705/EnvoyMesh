@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { ChainPreviewGoalResult, ChainPreviewSuggestedWorker, ChainStartFromGoalResult, BondRecord, CachedAgentCardSummary, ChainTeamStrategyId } from "@envoymesh/api";
+import type { ChainPreviewGoalResult, ChainPreviewSuggestedWorker, ChainStartFromGoalResult, BondRecord, CachedAgentCardSummary, ChainTeamStrategyId, AgentNetworkDiagnosticsWorker } from "@envoymesh/api";
 import { listChainTeamStrategyPresets } from "@envoymesh/api";
 
 import { useT } from "../context/I18nContext.js";
@@ -16,6 +16,7 @@ import {
   buildFleetReadinessChecklist,
   summarizeFleetReadinessInput,
 } from "../lib/fleet-readiness.js";
+import { collectFleetWorkerGaps } from "../lib/fleet-worker-gaps.js";
 import { AgentNetworkSkillsPreview } from "./AgentNetworkSkillsPreview.js";
 import { FleetReadinessPanel } from "./FleetReadinessPanel.js";
 
@@ -63,6 +64,8 @@ export interface ChainStartDialogProps {
   bondedPeerCount?: number;
   /** Bonded contacts with agent-card health, passed from ChainsView. */
   workerCandidates?: WorkerCandidate[];
+  /** Phase 66A — 60F diagnostics for lease-aware gaps. */
+  diagnosticsWorkers?: AgentNetworkDiagnosticsWorker[];
   /**
    * Seed from the New team job composer chooser. When set, overrides
    * chainGetDefaults for the first preview (Job settings can still change it).
@@ -85,6 +88,7 @@ export function ChainStartDialog({
   engineReady = null,
   bondedPeerCount,
   workerCandidates = EMPTY_WORKER_CANDIDATES,
+  diagnosticsWorkers,
   assignmentMode: assignmentModeProp,
 }: ChainStartDialogProps) {
   const t = useT();
@@ -162,13 +166,31 @@ export function ChainStartDialog({
         engineReady: localJoinEnabled ? engineReady : null,
         bondedPeerCount: peerBonds,
         candidates: workerCandidates,
+        diagnosticsWorkers,
       }),
     );
-  }, [bondedPeerCount, engineReady, localJoinEnabled, workerCandidates]);
+  }, [bondedPeerCount, diagnosticsWorkers, engineReady, localJoinEnabled, workerCandidates]);
+
+  const workerGaps = useMemo(
+    () =>
+      collectFleetWorkerGaps({
+        candidates: workerCandidates.map((w) => ({
+          isSelf: w.isSelf,
+          ownerId: w.bond.peerOwnerId,
+          displayName:
+            w.bond.displayName ?? w.card?.displayName ?? w.bond.peerOwnerId,
+          card: w.card,
+          health: w.health,
+        })),
+        diagnosticsWorkers,
+      }),
+    [diagnosticsWorkers, workerCandidates],
+  );
 
   const readinessPanel = (
     <FleetReadinessPanel
       readiness={readiness}
+      workerGaps={workerGaps}
       onManageWorkers={
         onOpenManageWorkers
           ? () => {

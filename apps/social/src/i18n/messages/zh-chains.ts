@@ -494,6 +494,17 @@ export const zhChainsMessages = {
         warn: "目前只有你的智能体可用。绑定已加入的联系人以进行多节点协作。",
       },
     },
+    gap: {
+      join_off: "尚未加入智能体网络。",
+      missing_card: "尚无代理卡 — 对方加入后请刷新。",
+      stale_card: "代理卡已过期 — 请刷新以拉取最新。",
+      lease_expired: "工作节点租约已过期 — 请刷新以便对方重新发布。",
+      lease_unknown: "尚未看到工作节点租约 — 请刷新并稍等片刻。",
+      lease_busy: "对方正在处理其他任务 — 空闲后再试。",
+      lease_engine_down: "对方智能体引擎未运行 — 请对方在 设置 → AI 中启动。",
+      lease_revoked: "工作节点租约已撤销 — 对方重新加入后请刷新。",
+      offline: "似乎离线 — 请对方打开 EnvoyMesh，然后再次检查。",
+    },
   },
   workerProfile: {
     title: "你的工作节点名片",

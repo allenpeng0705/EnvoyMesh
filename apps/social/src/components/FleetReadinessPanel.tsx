@@ -1,5 +1,6 @@
 /**
  * Phase 58A — Shared Team jobs fleet readiness checklist.
+ * Phase 66A — optional named per-worker gaps under failing rows.
  */
 
 import type {
@@ -8,12 +9,15 @@ import type {
   FleetReadinessRow,
   FleetReadinessTone,
 } from "../lib/fleet-readiness.js";
+import type { FleetWorkerGap } from "../lib/fleet-worker-gaps.js";
 import { useT } from "../context/I18nContext.js";
 
 export interface FleetReadinessPanelProps {
   readiness: FleetReadinessResult;
   /** compact = empty Team jobs strip; default = start dialog / bid inbox */
   variant?: "default" | "compact";
+  /** Phase 66A — one actionable gap per bonded worker (display names). */
+  workerGaps?: readonly FleetWorkerGap[];
   onManageWorkers?: () => void;
   onOpenSettingsAi?: () => void;
   onOpenDiscover?: () => void;
@@ -27,9 +31,12 @@ function toneGlyph(tone: FleetReadinessTone): string {
   return "✗";
 }
 
+const GAP_ROW_IDS = new Set(["peerJoin", "freshCard", "online", "otherReady"]);
+
 export function FleetReadinessPanel({
   readiness,
   variant = "default",
+  workerGaps = [],
   onManageWorkers,
   onOpenSettingsAi,
   onOpenDiscover,
@@ -103,6 +110,13 @@ export function FleetReadinessPanel({
     return text.trim() ? text : null;
   };
 
+  const gapReason = (code: FleetWorkerGap["reasonCode"]): string =>
+    t(`chains.readiness.gap.${code}`);
+
+  const showGapsUnder =
+    workerGaps.length > 0 &&
+    readiness.rows.some((r) => GAP_ROW_IDS.has(r.id) && r.tone !== "pass");
+
   return (
     <div
       className={`fleet-readiness fleet-readiness--${variant}`}
@@ -150,6 +164,37 @@ export function FleetReadinessPanel({
           );
         })}
       </ul>
+      {showGapsUnder ? (
+        <ul className="fleet-readiness__gaps" data-testid="fleet-readiness-gaps">
+          {workerGaps.map((gap) => {
+            const cta = actionLabel(gap.action);
+            const showCta = gap.action !== "none" && cta && actionAvailable(gap.action);
+            return (
+              <li
+                key={`${gap.peerOwnerId}:${gap.reasonCode}`}
+                className="fleet-readiness__gap"
+                data-testid="fleet-readiness-gap"
+                data-reason={gap.reasonCode}
+              >
+                <div className="fleet-readiness__gap-body">
+                  <span className="fleet-readiness__gap-name">{gap.displayName}</span>
+                  <span className="fleet-readiness__gap-reason">{gapReason(gap.reasonCode)}</span>
+                </div>
+                {showCta ? (
+                  <button
+                    type="button"
+                    className="secondary fleet-readiness__cta"
+                    data-testid={`fleet-readiness-gap-cta-${gap.reasonCode}`}
+                    onClick={() => runAction(gap.action)}
+                  >
+                    {cta}
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
     </div>
   );
 }
