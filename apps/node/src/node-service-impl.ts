@@ -452,6 +452,7 @@ import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
 import { backfillBundledSponsorPeerAddresses, loadBundledSponsorFriendParsed, selectBundledSponsorBackfillAddrs } from "./bundled-sponsor-friend-loader.js";
 import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
+import { runModelCall } from "./model-call.js";
 import { bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 // Phase 8 / b3 — the real `askEnvoyHarness` runtime. The
 // `loadEnvoyHarnessRuntimeConfig` is the env-var-driven
@@ -8102,22 +8103,20 @@ class NodeServiceImpl implements NodeService {
 
     try {
       // 3. Call the native LLM router (in-process, no gateway needed).
-      const providers = buildModelProviders(
-        await this.getEffectiveModelProviders(),
-        true,
-      )
-      const result = await routeModelRequest(
-        {
-          taskType: bot.taskType ?? "ai_bot.chat",
-          prompt,
-          sensitivity: "public",
-          ownerApproved: true,
-          requesterPeerId: meshPeerId,
-        },
-        providers,
-      )
+      // Shared seam: builds providers from the effective config + routes one
+      // ModelRequest. No taskStore here — keeps today's no-cost-rollup parity.
+      const modelResult = await runModelCall({
+        config: await this.getEffectiveModelProviders(),
+        taskType: bot.taskType ?? "ai_bot.chat",
+        prompt,
+        sensitivity: "public",
+        ownerApproved: true,
+        requesterPeerId: meshPeerId,
+      })
 
-      let answer = result.response?.text?.trim() ?? "(no response)"
+      // Decision denials surface as an empty/absent response (today's behavior:
+      // a denied or un-routable request yields no text, so fall back).
+      let answer = modelResult.text?.trim() ?? "(no response)"
       // Strip a leading "Luna:" / speaker label if the model echoed it.
       const labelPrefix = new RegExp(`^${bot.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*`, "i")
       answer = answer.replace(labelPrefix, "").trim() || answer
