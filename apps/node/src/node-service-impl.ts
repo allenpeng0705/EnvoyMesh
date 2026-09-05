@@ -7805,6 +7805,19 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
+   * EM-P — throw a catalog `owner-only: …` error when the active session is a
+   * family profile. Missing ALS context (internal/owner callers) is allowed,
+   * mirroring `requireOwnerProfile` back-compat. Defense-in-depth below the
+   * json-rpc-router OWNER_ONLY gate for owner-vault/mesh surfaces.
+   */
+  private _denyFamilySession(what: string): void {
+    const caller = getRpcCaller();
+    if (caller && caller.isOwnerProfile === false) {
+      throw new Error(`owner-only: ${what}`);
+    }
+  }
+
+  /**
    * Owner-controlled Ext Agent chat gate (Phase 51 follow-up).
    * Owner always allowed; non-owner profiles require explicit
    * `extAgentEnabled: true` (default / omitted = off).
@@ -9380,6 +9393,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   async sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult> {
+    // EM-P — mesh chat attachments write into the owner vault (chat/out/…) and
+    // go out over mesh chat: owner-only, never routed to a profile area.
+    this._denyFamilySession("mesh chat attachments are limited to the node owner");
     this._assertOnline();
     this.recordOwnerActivity();
     const bytes = Buffer.from(params.contentBase64, "base64");
@@ -10754,8 +10770,12 @@ class NodeServiceImpl implements NodeService {
   }
 
   async createNote(params: CreateNoteParams): Promise<CreateNoteResult> {
+    // EM-P — owner-only side effects of createNote (public blog publish +
+    // linked-Obsidian/MCP auto-export) must never run for family sessions;
+    // their notes land scoped in the caller's own area via the runtime.
+    const familyCaller = (getRpcCaller()?.isOwnerProfile ?? true) === false;
     const result = await createNoteViaRuntime(this._fileShareContext(), params);
-    if (params.alsoPublishAsBlog) {
+    if (params.alsoPublishAsBlog && !familyCaller) {
       try {
         const title = titleFromNoteContent(params.content, params.filename);
         const body = stripLeadingMarkdownTitle(params.content);
@@ -10771,12 +10791,18 @@ class NodeServiceImpl implements NodeService {
           err instanceof Error ? err.message : err,
         );
       }
+    } else if (params.alsoPublishAsBlog && familyCaller) {
+      console.warn(
+        "[knowledge] createNote: family sessions cannot publish notes as blog posts — skipping alsoPublishAsBlog",
+      );
     }
-    try {
-      const { maybeAutoExportCreatedNoteViaRuntime } = await import("./knowledge-hub.js");
-      await maybeAutoExportCreatedNoteViaRuntime(this._fileShareContext(), result.relativePath);
-    } catch {
-      // best-effort
+    if (!familyCaller) {
+      try {
+        const { maybeAutoExportCreatedNoteViaRuntime } = await import("./knowledge-hub.js");
+        await maybeAutoExportCreatedNoteViaRuntime(this._fileShareContext(), result.relativePath);
+      } catch {
+        // best-effort
+      }
     }
     this.scheduleVaultRagIncrementalReindex(`createNote:${result.relativePath}`);
     return result;
@@ -11640,6 +11666,9 @@ class NodeServiceImpl implements NodeService {
       deliveryChannel?: "inbox" | "chat" | "agent";
     },
   ): Promise<void> {
+    // EM-P — mesh file shares source from the owner vault: owner-only. Family
+    // profiles share through family attachments, not this mesh path.
+    this._denyFamilySession("mesh file sharing is limited to the node owner");
     await shareFileViaRuntime(this._fileShareNetworkContext(), targetOwnerId, file);
   }
 
@@ -15688,6 +15717,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   async knowledgeQuery(question: string): Promise<string> {
+    // EM-P — the owner vault / mesh RAG corpus is owner-only: deny family
+    // sessions outright (router gate + this impl-level check).
+    this._denyFamilySession("knowledge queries are limited to the node owner");
     console.log(`[knowledgeQuery] called with question: ${question.substring(0, 50)}...`);
 
     const mesh = this._reachableMesh();

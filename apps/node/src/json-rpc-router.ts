@@ -56,15 +56,21 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "leaveChatRoom",
   "sendChatRoomMessage",
   "dismissChatRoom",
-  "readLibraryItemContent",
-  "listLibraryItems",
+  // EM-P: readLibraryItemContent / listLibraryItems / listAllLocalFiles are NOT
+  // owner-only anymore — family sessions reach them and are scoped to their own
+  // note area server-side (node-service-fileshare). Other library surfaces stay
+  // owner-only.
   "libraryRead",
   "openLibraryItem",
-  "listAllLocalFiles",
   "readLocalFileContent",
   "pinLibraryItemExternal",
   "discoverPublishedLibrary",
   "publishWebContentEntry",
+  // EM-P: owner-vault/mesh surfaces explicitly denied for family sessions
+  // (router gate + catalog `owner-only: …` impl check in node-service-impl).
+  "knowledgeQuery",
+  "sendChatAttachment",
+  "shareFile",
   "createTerminalSession",
   "renameTerminalSession",
   "listTerminalSessions",

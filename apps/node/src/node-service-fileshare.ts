@@ -95,6 +95,13 @@ import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
+import { getRpcCaller } from "./rpc-caller-context.js";
+import {
+  familyProfileIdFromCaller,
+  isWithinOwnArea,
+  nestVaultNoteUnderOwnArea,
+  scopeVaultRelativePath,
+} from "./profile-vault-scope.js";
 import {
   createDiscoveryRequestPayload,
   createLibraryReadPayload,
@@ -129,6 +136,15 @@ export interface FileShareContext {
   emit(event: string, payload: unknown): void;
 }
 
+/**
+ * EM-P — profileId of the active non-owner session, or undefined when the
+ * caller is the owner / there is no ALS caller context (owner behavior,
+ * byte-identical). Scoping is applied only for family sessions.
+ */
+function familyScopeProfileId(): string | undefined {
+  return familyProfileIdFromCaller(getRpcCaller());
+}
+
 /* ---------- list ---------- */
 
 export async function listLibraryItemsViaRuntime(
@@ -141,7 +157,12 @@ export async function listLibraryItemsViaRuntime(
   const index = await buildVaultIndex({ rootDir: vaultDir });
   const publishedIds = await createPublishedLibraryStore(profileDir).loadDocumentIds();
   const q = params?.query?.trim().toLowerCase();
-  let docs = index.documents;
+  // EM-P — family sessions only ever see their own note area; owner (and no
+  // caller context) lists the whole vault unchanged.
+  const familyProfileId = familyScopeProfileId();
+  let docs = familyProfileId
+    ? index.documents.filter((d) => isWithinOwnArea(d.relativePath, familyProfileId))
+    : index.documents;
   if (q) {
     docs = docs.filter(
       (d) =>
@@ -202,6 +223,24 @@ export async function listAllLocalFilesViaRuntime(
     mcpListQuery?: string;
   },
 ): Promise<ListAllLocalFilesResult> {
+  // EM-P — family sessions only see their own vault note area: workspace /
+  // linked Obsidian / MCP-remote rows (owner surfaces) never appear, and the
+  // owner's blog→notes mirror is not triggered by a family browse.
+  const familyProfileId = familyScopeProfileId();
+  if (familyProfileId) {
+    const vaultItems = await listLibraryItemsViaRuntime(ctx, params);
+    return buildAllLocalFilesList({
+      vaultItems,
+      workspaceItems: [],
+      linkedObsidianItems: [],
+      mcpRemoteItems: [],
+      knowledgeSyncCaps: {
+        linkedObsidianMaxFiles: KNOWLEDGE_SYNC_CAPS.linkedObsidianMaxFiles,
+        mcpRebuildMaxCards: KNOWLEDGE_SYNC_CAPS.mcpRebuildMaxCards,
+      },
+    });
+  }
+
   // Periodically mirror Content → Blog into notes/imports/blog/ for Knowledge Browse.
   await maybeSyncBlogPostsToKnowledge(ctx);
 
@@ -632,7 +671,17 @@ export async function importToLibraryViaRuntime(
   const vaultDir = ctx.getVaultDir();
   if (!vaultDir) throw new Error("Vault dir not initialised");
 
+  // EM-P — family sessions may only import into their own note area; the
+  // caller-supplied path is checked both before and after destination
+  // resolution (resolveImportDestinationPath rewrites bare/legacy paths).
+  const familyProfileId = familyScopeProfileId();
+  if (familyProfileId) {
+    scopeVaultRelativePath(params.relativePath.trim(), familyProfileId);
+  }
   const norm = resolveImportDestinationPath(params.relativePath);
+  if (familyProfileId) {
+    scopeVaultRelativePath(norm, familyProfileId);
+  }
   const abs = resolve(vaultDir, norm);
   assertPathInsideVault(vaultDir, abs);
   const bytes = Buffer.from(params.contentBase64, "base64");
@@ -641,7 +690,9 @@ export async function importToLibraryViaRuntime(
 
   let markdownRelativePath: string | undefined;
   const ext = extname(norm).toLowerCase();
-  if (isVaultExtractableExtension(ext)) {
+  // Markdown companions for office/PDF imports materialize under the owner's
+  // notes/imports/ corpus — never create those for family imports.
+  if (!familyProfileId && isVaultExtractableExtension(ext)) {
     const materialized = await materializeOfficeDocumentToNotes(vaultDir, norm, {
       profileDir: ctx.getProfileDir(),
       sensitivity: "private",
@@ -716,9 +767,15 @@ export async function createNoteViaRuntime(
     throw new Error("Invalid subfolder name");
   }
 
-  const relativePath = safeSubfolder
+  let relativePath = safeSubfolder
     ? `notes/${safeSubfolder}/${filename}`
     : `notes/${filename}`;
+  // EM-P — family notes always land inside the caller's own area
+  // (notes/veda/<profileId>/…); owner sessions keep the v0.2 layout.
+  const familyProfileId = familyScopeProfileId();
+  if (familyProfileId) {
+    relativePath = nestVaultNoteUnderOwnArea(relativePath, familyProfileId);
+  }
 
   const abs = resolve(vaultDir, relativePath);
   assertPathInsideVault(vaultDir, abs);
@@ -795,6 +852,11 @@ export async function deleteVaultItemViaRuntime(
   if (!norm || norm.includes("..") || norm.includes("~")) {
     throw new Error("Invalid vault path");
   }
+  // EM-P — family sessions may only delete items inside their own area.
+  const familyProfileId = familyScopeProfileId();
+  if (familyProfileId) {
+    scopeVaultRelativePath(norm, familyProfileId);
+  }
   const abs = resolve(vaultDir, norm);
   assertPathInsideVault(vaultDir, abs);
   await unlink(abs);
@@ -807,6 +869,11 @@ export async function resolveLibraryItemPathViaRuntime(
   const vaultDir = ctx.getVaultDir();
   if (!vaultDir) throw new Error("Vault dir not initialised");
   const norm = relativePath.trim().replace(/^[\\/]+/, "");
+  // EM-P — family sessions may only resolve/read files inside their own area.
+  const familyProfileId = familyScopeProfileId();
+  if (familyProfileId) {
+    scopeVaultRelativePath(norm, familyProfileId);
+  }
   if (!isSafeVaultPath(vaultDir, norm)) throw new Error("Invalid vault path");
   const absolutePath = resolve(vaultDir, norm);
   assertPathInsideVault(vaultDir, absolutePath);

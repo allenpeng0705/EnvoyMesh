@@ -7,12 +7,33 @@ describe("isOwnerOnlyRpcMethod", () => {
     for (const method of [
       "libraryRead",
       "openLibraryItem",
-      "listAllLocalFiles",
       "readLocalFileContent",
-      "listLibraryItems",
-      "readLibraryItemContent",
       "pinLibraryItemExternal",
       "discoverPublishedLibrary",
+    ]) {
+      expect(isOwnerOnlyRpcMethod(method), method).toBe(true)
+    }
+  })
+
+  it("EM-P: profile-aware vault RPCs are not router-owner-only (scoped server-side)", () => {
+    for (const method of [
+      "createNote",
+      "importToLibrary",
+      "deleteVaultItem",
+      "listAllLocalFiles",
+      "listLibraryItems",
+      "readLibraryItemContent",
+    ]) {
+      expect(isOwnerOnlyRpcMethod(method), method).toBe(false)
+    }
+  })
+
+  it("EM-P: gates owner-vault / mesh RPCs (knowledgeQuery, mesh attachments/shares) for family", () => {
+    for (const method of [
+      "knowledgeQuery",
+      "sendChatAttachment",
+      "shareFile",
+      "uploadEnvoyAttachment",
     ]) {
       expect(isOwnerOnlyRpcMethod(method), method).toBe(true)
     }
