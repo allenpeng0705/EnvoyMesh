@@ -21,7 +21,9 @@ import {
   chainGetStateViaRuntime,
   chainGetStepProvenanceViaRuntime,
   chainListRecipesViaRuntime,
+  chainPreviewGoalViaRuntime,
   chainSaveRecipeViaRuntime,
+  chainStartFromGoalViaRuntime,
   resolveChainRecipeViaRuntime,
   chainSetBidStrategyViaRuntime,
   ChainStore,
@@ -56,6 +58,31 @@ function makeContext(store: ChainStore): ChainContext {
     bidsBySubtask: () => ({}),
     getNodeConfig: async () => null,
     setNodeConfig: async () => undefined,
+    buildChainOrchestratorDeps: async () => ({ now: () => new Date("2030-01-01T00:00:00.000Z") }),
+    evaluateAwardAndAccept: async () => ({ ok: false, reason: "unused" }),
+    emitChainState: () => undefined,
+    startChainTracking: () => undefined,
+    placeholderMandate: (chainId, chainMandateId) => ({
+      version: "0.1",
+      chainMandateId,
+      chainId,
+      issuerOwnerId: "envoy:owner:test",
+      orchestratorOwnerId: "envoy:owner:test",
+      maxChainCostUsd: 10,
+      costCeilingUsd: 3,
+      maxWorkers: 3,
+      allowDepth3: false,
+      allowDepth4: false,
+      maxSensitivity: "public",
+      deadlineAt: "2030-01-02T00:00:00.000Z",
+      createdAt: "2030-01-01T00:00:00.000Z",
+      rebalancePolicy: "never",
+      maxAutoRebalances: 0,
+      autoRebalanceIncrementUsd: 0,
+    }),
+    findAgentNetworkWorkers: async () => [],
+    chainDiagnosticsForSubtasks: () => [],
+    runChainGoal: async () => ({ ok: false, error: "unused" }),
   };
 }
 
@@ -548,6 +575,123 @@ describe("chainSaveRecipeViaRuntime", () => {
       goal: "  ",
     });
     expect(out.ok).toBe(false);
+  });
+
+  it("saves via task-store when label and goal are valid", async () => {
+    const store = new ChainStore();
+    const ctx = makeContext(store);
+    ctx.hasTaskStore = () => true;
+    ctx.saveChainRecipe = async (record) => ({
+      id: record.id ?? "recipe_new",
+      label: record.label,
+      goal: record.goal,
+      maxChainCostUsd: record.maxChainCostUsd,
+      costCeilingUsd: record.costCeilingUsd,
+      createdAt: "2030-01-01T00:00:00.000Z",
+      updatedAt: "2030-01-01T00:00:00.000Z",
+    });
+    const out = await chainSaveRecipeViaRuntime(ctx, {
+      label: "My brief",
+      goal: "Write a short brief with sources.",
+      maxChainCostUsd: 8,
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.recipe.label).toBe("My brief");
+      expect(out.recipe.saved).toBe(true);
+      expect(out.recipe.maxChainCostUsd).toBe(8);
+    }
+  });
+});
+
+describe("chainPreviewGoalViaRuntime templateId", () => {
+  it("falls back to saved template goal when params.goal is empty", async () => {
+    const store = new ChainStore();
+    const ctx = makeContext(store);
+    ctx.listChainRecipes = async () => [
+      {
+        id: "recipe_saved",
+        label: "Saved",
+        goal: "Saved template goal that is long enough for planning.",
+        maxChainCostUsd: 15,
+        costCeilingUsd: 4,
+      },
+    ];
+    ctx.findAgentNetworkWorkersRanked = async () => [
+      {
+        peerId: "envoy_agent_worker",
+        score: 1,
+        summary: "worker",
+        sameLan: true,
+        online: true,
+        viaRelay: false,
+      },
+    ];
+    const out = await chainPreviewGoalViaRuntime(ctx, {
+      goal: "   ",
+      templateId: "recipe_saved",
+      allowLlm: false,
+    });
+    expect(out.ok).toBe(true);
+    expect(out.subtasks.length).toBeGreaterThan(0);
+    expect(out.subtasks[0]?.objective).toContain("Saved template goal");
+  });
+
+  it("returns no_goal when goal and templateId are both missing", async () => {
+    const store = new ChainStore();
+    const out = await chainPreviewGoalViaRuntime(makeContext(store), {
+      goal: "  ",
+      allowLlm: false,
+    });
+    expect(out).toMatchObject({ ok: false, reason: "no_goal" });
+  });
+});
+
+describe("chainStartFromGoalViaRuntime templateId", () => {
+  it("injects template goal and ceilings into runChainGoal", async () => {
+    const store = new ChainStore();
+    const ctx = makeContext(store);
+    ctx.listChainRecipes = async () => [
+      {
+        id: "recipe_start",
+        label: "Start me",
+        goal: "Template start goal that is long enough.",
+        maxChainCostUsd: 11,
+        costCeilingUsd: 2.5,
+      },
+    ];
+    let captured: Record<string, unknown> | undefined;
+    ctx.runChainGoal = async (params) => {
+      captured = params as Record<string, unknown>;
+      return {
+        ok: true,
+        chainId: "chain_from_template",
+        chainMandateId: "chainmandate_from_template",
+        subtasks: [],
+      };
+    };
+    // Skip preview path by supplying plannedSubtasks (still resolves template for goal/ceilings).
+    const out = await chainStartFromGoalViaRuntime(ctx, {
+      goal: "",
+      templateId: "recipe_start",
+      plannedSubtasks: [
+        {
+          subtaskId: "subtask_1",
+          depth: 1,
+          requiredSkill: "task.execute",
+          objective: "Template start goal that is long enough.",
+          requestedResult: "done",
+          constraints: [],
+          dependsOn: [],
+          createdAt: "2030-01-01T00:00:00.000Z",
+          deadlineAt: "2030-01-02T00:00:00.000Z",
+        },
+      ],
+    });
+    expect(out.ok).toBe(true);
+    expect(captured?.goal).toBe("Template start goal that is long enough.");
+    expect(captured?.maxChainCostUsd).toBe(11);
+    expect(captured?.costCeilingUsd).toBe(2.5);
   });
 });
 

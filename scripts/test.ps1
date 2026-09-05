@@ -307,6 +307,35 @@ if ($SMOKE -and -not $BAIL_OUT) {
   } elseif ($SkipPlaywright) {
     Skip-Phase "06c-smoke-web-content"
   }
+
+  # Phase 13/60/64 — three-process + remote-assigner chaos smokes. These
+  # spawn multiple libp2p homes on the same machine and **must not** run
+  # in parallel with each other or with other libp2p E2E: they share
+  # loopback ports + per-process libp2p stream slots, and batch
+  # invocations flake ~50% in this repo. Run them **sequentially** with
+  # 3 s between each so the OS releases ephemeral state.
+  if (-not $BAIL_OUT) {
+    $IsolatedSmokes = @(
+      @{ Name = "agent-network-three-process-smoke"; File = "apps/node/test/agent-network-three-process-smoke.test.ts" }
+      @{ Name = "agent-network-remote-assigner-chaos-smoke"; File = "apps/node/test/agent-network-remote-assigner-chaos-smoke.test.ts" }
+    )
+    $first = $true
+    foreach ($smoke in $IsolatedSmokes) {
+      if (-not $first) {
+        Write-Host ""
+        Write-Host "[06d-smoke-isolated] sleeping 3 s before $($smoke.Name) (let prior run settle)" -ForegroundColor DarkGray
+        Start-Sleep -Seconds 3
+      }
+      $first = $false
+      $phase = "06d-smoke-isolated-$($smoke.Name)"
+      Run-Phase $phase "Isolated RUN_E2E=1 run of $($smoke.Name)" {
+        $env:RUN_E2E = "1"
+        npx vitest run "$($smoke.File)" @JUnit-Args -Phase $phase
+      }
+      if ($script:Fail -gt 0 -and $BAIL) { $BAIL_OUT = $true }
+      if ($BAIL_OUT) { break }
+    }
+  }
 }
 
 # ---- phase: bundle ---------------------------------------------------------

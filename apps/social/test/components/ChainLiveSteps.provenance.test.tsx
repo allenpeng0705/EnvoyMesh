@@ -88,4 +88,66 @@ describe("ChainLiveSteps execution details", () => {
       "attempt.awarded",
     );
   });
+
+  it("shows empty artifact handoff copy when graph has no nodes/edges", async () => {
+    chainGetStepProvenance.mockResolvedValue({
+      chainId: "c1",
+      subtaskId: "s1",
+      selectedAttemptId: "a1",
+      summary: {
+        attemptCount: 1,
+        workerPeerId: "envoy_worker_abcdef123456",
+        state: "running",
+      },
+      events: [],
+      artifactGraph: { nodes: [], edges: [] },
+    });
+    render(
+      <I18nTestProvider locale="en">
+        <ChainLiveSteps
+          chainId="c1"
+          steps={[
+            {
+              subtaskId: "s1",
+              objective: "Research market risks",
+              state: "running",
+              workerPeerId: "envoy_worker_abcdef123456",
+              attemptCount: 1,
+              selectedAttemptId: "a1",
+            },
+          ]}
+        />
+      </I18nTestProvider>,
+    );
+    fireEvent.click(screen.getByTestId("chain-step-execution-details-s1"));
+    await waitFor(() => {
+      expect(screen.getByTestId("chain-step-artifact-graph-s1")).toBeDefined();
+    });
+    expect(screen.getByText(/No intermediate artifacts yet/i)).toBeDefined();
+  });
+
+  it("shows provenance error when chainGetStepProvenance fails", async () => {
+    chainGetStepProvenance.mockRejectedValue(new Error("boom"));
+    render(
+      <I18nTestProvider locale="en">
+        <ChainLiveSteps
+          chainId="c1"
+          steps={[
+            {
+              subtaskId: "s1",
+              objective: "Research market risks",
+              state: "running",
+              workerPeerId: "envoy_worker_abcdef123456",
+              attemptCount: 1,
+              selectedAttemptId: "a1",
+            },
+          ]}
+        />
+      </I18nTestProvider>,
+    );
+    fireEvent.click(screen.getByTestId("chain-step-execution-details-s1"));
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/Could not load execution history/i);
+    });
+  });
 });

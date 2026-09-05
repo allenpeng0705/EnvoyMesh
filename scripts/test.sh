@@ -31,6 +31,8 @@
 #   4. e2e-fast        RUN_E2E=1 vitest run, no playwright, no smoke
 #   5. e2e-playwright  RUN_E2E=1 vitest run on chromium tests (slow)
 #   6. smoke           smoke:phase13 + chain-{two,three}-home-smoke + chain-e2e
+#   6d. smoke-isolated three-process + remote-assigner chaos smokes (one
+#       per RUN_E2E=1 vitest invocation, 3 s between, no shared temp dir)
 #   7. bundle          scripts/bundle.sh (only in `bundle` mode)
 #
 # Why these phases are split:
@@ -490,6 +492,36 @@ if [ "$SMOKE" = "1" ] && [ "$BAIL_OUT" != "1" ]; then
     fi
   elif [ "$SKIP_PLAYWRIGHT" = "1" ]; then
     skip_phase "06c-smoke-web-content"
+  fi
+
+  # Phase 13/60/64 — three-process + remote-assigner chaos smokes. These
+  # spawn multiple libp2p homes on the same machine and **must not** run
+  # in parallel with each other or with other libp2p E2E: they share
+  # loopback ports + per-process libp2p stream slots, and batch
+  # invocations flake ~50% in this repo. Run them **sequentially** with
+  # 3 s between each so the OS releases ephemeral state.
+  if [ "$BAIL_OUT" != "1" ]; then
+    ISOLATED_SMOKES=(
+      "agent-network-three-process-smoke:apps/node/test/agent-network-three-process-smoke.test.ts"
+      "agent-network-remote-assigner-chaos-smoke:apps/node/test/agent-network-remote-assigner-chaos-smoke.test.ts"
+    )
+    first=1
+    for entry in "${ISOLATED_SMOKES[@]}"; do
+      name="${entry%%:*}"
+      file="${entry##*:}"
+      if [ "$first" -eq 0 ]; then
+        # 3 s settle window so the prior run's libp2p streams close
+        # and the OS reclaims loopback ports + temp-dir handles.
+        echo ""
+        echo "[06d-smoke-isolated] sleeping 3 s before $name (let prior run settle)"
+        sleep 3
+      fi
+      first=0
+      run_phase "06d-smoke-isolated-$name" "Isolated RUN_E2E=1 run of $name" \
+        bash -c "RUN_E2E=1 npx vitest run '$file'$(junit_args 06d-smoke-isolated-$name)"
+      if [ "$FAIL_COUNT" -gt 0 ] && [ "$BAIL" = "1" ]; then BAIL_OUT=1; fi
+      [ "$BAIL_OUT" = "1" ] && break
+    done
   fi
 fi
 
