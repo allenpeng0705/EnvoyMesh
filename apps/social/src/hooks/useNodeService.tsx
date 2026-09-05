@@ -607,6 +607,13 @@ export interface NodeServiceClient {
   sendFamilyRoomMessage(
     params: import("@envoymesh/api").SendFamilyRoomMessageParams,
   ): Promise<import("@envoymesh/api").SendFamilyRoomMessageResult>;
+  /**
+   * EM-F1 — sliced read of a family-media attachment (bytes stay on the home
+   * node; never the owner vault). Each slice is capped at 1 MiB by the node.
+   */
+  readFamilyAttachment(
+    params: import("@envoymesh/api").FamilyAttachmentReadParams,
+  ): Promise<import("@envoymesh/api").FamilyAttachmentReadResult>;
   /** Phase 63A — Envoy Market local shop. */
   shopGetProfile(): Promise<import("@envoymesh/api").ShopGetProfileResult>;
   shopUpdateProfile(
@@ -2190,6 +2197,14 @@ function createWsNodeServiceClient(
         "sendFamilyRoomMessage",
         params as unknown as Record<string, unknown>,
       ) as Promise<import("@envoymesh/api").SendFamilyRoomMessageResult>;
+    },
+    async readFamilyAttachment(
+      params: import("@envoymesh/api").FamilyAttachmentReadParams,
+    ) {
+      return wsClient.rpc(
+        "readFamilyAttachment",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").FamilyAttachmentReadResult>;
     },
     async shopGetProfile() {
       return wsClient.rpc("shopGetProfile") as Promise<

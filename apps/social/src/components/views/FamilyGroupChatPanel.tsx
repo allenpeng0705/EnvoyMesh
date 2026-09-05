@@ -20,6 +20,8 @@ import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
 import { useToast } from "../../hooks/useToast.js";
 import { ChatComposer } from "../ChatComposer.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
+import { ChatAudioAttachment } from "../ChatAudioAttachment.js";
+import { ChatFileAttachment } from "../ChatFileAttachment.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { ChatIcon, EditIcon, RemoveIcon } from "../../icons.js";
 import { extractChatMessageText } from "../../lib/bridge-chat-message.js";
@@ -113,7 +115,10 @@ export function FamilyGroupChatPanel({ threadKey, room }: FamilyGroupChatPanelPr
 
   const displayMessages = useMemo(() => {
     const filtered = messages.filter((msg) => {
-      return extractChatMessageText(msg).trim().length > 0;
+      return (
+        extractChatMessageText(msg).trim().length > 0 ||
+        (msg.content.attachments?.length ?? 0) > 0
+      );
     });
     if (!pendingOutbound) return filtered;
     const pendingText = extractChatMessageText(pendingOutbound).trim();
@@ -335,6 +340,19 @@ export function FamilyGroupChatPanel({ threadKey, room }: FamilyGroupChatPanelPr
                         copyText={text}
                         deliveryReceipt={msg.metadata?.deliveryReceipt}
                       >
+                        {msg.content.attachments?.map((attachment) => {
+                          const isAudio =
+                            attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
+                          return isAudio ? (
+                            <ChatAudioAttachment
+                              key={attachment.id}
+                              attachment={attachment}
+                              transcription={msg.content.text?.trim() || undefined}
+                            />
+                          ) : (
+                            <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                          );
+                        })}
                         {text}
                       </ChatMessageBubble>
                     );

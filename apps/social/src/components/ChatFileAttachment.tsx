@@ -8,6 +8,10 @@ import {
   openVaultLibraryFile,
   revealVaultLibraryFile,
 } from "../lib/library-file-actions.js";
+import {
+  FAMILY_ATTACHMENT_PREVIEW_MAX_BYTES,
+  fetchFamilyAttachmentBase64,
+} from "../lib/family-content.js";
 
 export interface ChatFileAttachmentProps {
   attachment: ChatAttachment;
@@ -26,16 +30,32 @@ export function ChatFileAttachment({ attachment }: ChatFileAttachmentProps) {
   const vaultPath = attachment.vaultRelativePath?.replace(/^[\\/]+/, "");
 
   useEffect(() => {
-    if (!vaultPath || !isImageMime(attachment.mimeType)) {
+    if (!isImageMime(attachment.mimeType)) {
       setPreviewUrl(null);
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
-        const result = await nodeService.readLibraryItemContent({ relativePath: vaultPath });
+        if (vaultPath) {
+          const result = await nodeService.readLibraryItemContent({ relativePath: vaultPath });
+          if (cancelled) return;
+          setPreviewUrl(`data:${result.mimeType};base64,${result.contentBase64}`);
+          return;
+        }
+        // No vault path → family-media attachment (EM-F3). Bytes live in the
+        // home `family-media` area, addressed by id — never touch the vault.
+        // Files over the preview cap render as the plain chip (no inline img).
+        if (attachment.sizeBytes > FAMILY_ATTACHMENT_PREVIEW_MAX_BYTES) {
+          if (!cancelled) setPreviewUrl(null);
+          return;
+        }
+        const { contentBase64 } = await fetchFamilyAttachmentBase64(
+          (params) => nodeService.readFamilyAttachment(params),
+          attachment.id,
+        );
         if (cancelled) return;
-        setPreviewUrl(`data:${result.mimeType};base64,${result.contentBase64}`);
+        setPreviewUrl(`data:${attachment.mimeType};base64,${contentBase64}`);
       } catch {
         if (!cancelled) setPreviewUrl(null);
       }
@@ -43,7 +63,7 @@ export function ChatFileAttachment({ attachment }: ChatFileAttachmentProps) {
     return () => {
       cancelled = true;
     };
-  }, [attachment.mimeType, nodeService, vaultPath]);
+  }, [attachment.id, attachment.mimeType, attachment.sizeBytes, nodeService, vaultPath]);
 
   const run = async (action: "open" | "reveal") => {
     if (!vaultPath) {
