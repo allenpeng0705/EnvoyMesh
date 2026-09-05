@@ -61,6 +61,16 @@ export interface ModelProviderPolicy {
 export interface ModelRequest {
   taskType: string;
   prompt: string;
+  /**
+   * Optional chat-style messages (system/user/assistant). When present they win
+   * over `prompt` for chat-capable providers (openai-compatible, Envoy Local,
+   * Ollama, Anthropic with role mapping); `mock` serializes them for its text.
+   * Sampling params are optional; providers keep their defaults when absent.
+   */
+  messages?: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  temperature?: number;
+  maxTokens?: number;
+  stop?: string[];
   sensitivity: Sensitivity;
   estimatedCost?: number;
   preferredProviderTypes?: ModelProviderType[];
@@ -86,6 +96,71 @@ export interface ModelResponse {
     /** Which tier produced actualCostUsd. */
     pricingSource?: "provider" | "catalog" | "mock" | "unknown";
   };
+}
+
+export interface ChatMessageLike {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+/** Text form of a request for firewall/audit/mock purposes. */
+function chatRequestText(request: ModelRequest): string {
+  if (request.messages && request.messages.length > 0) {
+    return request.messages.map((m) => m.content).join("\n");
+  }
+  return request.prompt;
+}
+
+/** Chat messages for OpenAI-compatible endpoints (fallback: single user turn). */
+function openAiChatMessages(
+  request: ModelRequest,
+): Array<{ role: "system" | "user" | "assistant"; content: string }> {
+  if (request.messages && request.messages.length > 0) return request.messages;
+  return [{ role: "user", content: request.prompt }];
+}
+
+/** Anthropic /v1/messages body: system lifted to top level; roles user/assistant. */
+function anthropicChatBody(
+  request: ModelRequest,
+  defaultMaxTokens: number,
+): {
+  system?: string;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  max_tokens: number;
+  temperature?: number;
+  stop_sequences?: string[];
+} {
+  const system = request.messages
+    ?.filter((m) => m.role === "system")
+    .map((m) => m.content)
+    .join("\n");
+  let turns: Array<{ role: "user" | "assistant"; content: string }> =
+    request.messages && request.messages.length > 0
+      ? request.messages
+          .filter((m) => m.role !== "system")
+          .map((m) => ({
+            role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+            content: m.content,
+          }))
+      : [{ role: "user", content: request.prompt }];
+  // Anthropic requires the first message to be from the user.
+  if (turns.length > 0 && turns[0].role === "assistant") {
+    turns = [{ role: "user", content: "(continue)" }, ...turns];
+  }
+  const body: {
+    messages: Array<{ role: "user" | "assistant"; content: string }>;
+    max_tokens: number;
+    system?: string;
+    temperature?: number;
+    stop_sequences?: string[];
+  } = {
+    messages: turns,
+    max_tokens: request.maxTokens ?? defaultMaxTokens,
+  };
+  if (system) body.system = system;
+  if (request.temperature !== undefined) body.temperature = request.temperature;
+  if (request.stop && request.stop.length > 0) body.stop_sequences = request.stop;
+  return body;
 }
 
 export interface ModelProvider {
@@ -233,14 +308,15 @@ export function createMockModelProvider(input: CreateMockModelProviderInput = {}
   return {
     policy,
     async complete(request) {
+      const chatInput = chatRequestText(request);
       let text = responseText;
       if (responseText === PLAN_ASSIGN_FROM_ROSTER_TOKEN) {
         text =
-          synthesizePlanAssignFromRosterPrompt(request.prompt) ??
+          synthesizePlanAssignFromRosterPrompt(chatInput) ??
           JSON.stringify({
             steps: [
               {
-                objective: request.prompt.slice(0, 80) || "goal",
+                objective: chatInput.slice(0, 80) || "goal",
                 requiredSkill: "task.execute",
                 depth: 1,
                 dependsOn: [],
@@ -256,7 +332,7 @@ export function createMockModelProvider(input: CreateMockModelProviderInput = {}
         modelName,
         text,
         usage: {
-          inputTokens: request.prompt.length,
+          inputTokens: chatInput.length,
           outputTokens: text.length,
           estimatedCost: request.estimatedCost ?? 0,
           actualCostUsd: 0,
@@ -290,8 +366,10 @@ export function createLiteLlmProvider(input: CreateLiteLlmProviderInput): ModelP
         },
         body: JSON.stringify({
           model: input.modelName,
-          messages: [{ role: "user", content: request.prompt }],
-          max_tokens: 4096,
+          messages: openAiChatMessages(request),
+          max_tokens: request.maxTokens ?? 4096,
+          temperature: request.temperature,
+          stop: request.stop,
         }),
       });
 
@@ -381,8 +459,10 @@ export function createOpenAiProvider(input: CreateOpenAiProviderInput = {}): Mod
         },
         body: JSON.stringify({
           model: modelName,
-          messages: [{ role: "user", content: request.prompt }],
-          max_tokens: 4096,
+          messages: openAiChatMessages(request),
+          max_tokens: request.maxTokens ?? 4096,
+          temperature: request.temperature,
+          stop: request.stop,
         }),
       });
 
@@ -453,8 +533,7 @@ export function createAnthropicProvider(input: CreateAnthropicProviderInput = {}
         },
         body: JSON.stringify({
           model: modelName,
-          messages: [{ role: "user", content: request.prompt }],
-          max_tokens: 1024,
+          ...anthropicChatBody(request, 1024),
         }),
       });
 
@@ -758,7 +837,8 @@ export async function routeModelRequest(
   request: ModelRequest,
   providers: readonly ModelProvider[],
 ): Promise<ModelRouterResult> {
-  const firewall = evaluateSemanticFirewall({ text: request.prompt });
+  const firewallText = chatRequestText(request);
+  const firewall = evaluateSemanticFirewall({ text: firewallText });
   if (!firewall.ok) {
     const decision = {
       action: "deny" as const,
