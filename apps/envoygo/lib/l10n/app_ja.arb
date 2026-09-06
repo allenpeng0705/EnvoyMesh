@@ -544,6 +544,8 @@
   "chatsBotSavedHint": "ホームノードに保存しました。準備ができたらチャットできます。",
   "chatsBotNotFound": "ホームノードにボットが見つかりません",
   "chatAiDisabledAskOwner": "ファミリーチャット用の AI モデルをホーム所有者に有効にしてもらってください。",
+  "chatFamilyAttachNoThread": "ここには添付できません — ファミリーの会話がありません",
+  "chatPhotoSendFailed": "写真の送信に失敗しました: {error}",
   "pairingLoadProfilesFailed": "既存のプロフィールを読み込めません: {error}",
   "pairingFailed": "ペアリングに失敗: {error}",
   "pairingFailedHomeTimeout": "ペアリングを完了できませんでした — ホームのパソコンが時間内に応答しませんでした。EnvoyAI を開いたままオンラインにし、新しい QR をスキャンしてください。",

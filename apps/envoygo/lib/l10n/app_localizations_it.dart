@@ -3221,6 +3221,15 @@ class AppLocalizationsIt extends AppLocalizations {
       'Chiedi al proprietario di casa di abilitare un modello IA per la chat famiglia.';
 
   @override
+  String get chatFamilyAttachNoThread =>
+      'Impossibile allegare qui — nessuna chat di famiglia';
+
+  @override
+  String chatPhotoSendFailed(String error) {
+    return 'Invio della foto non riuscito: $error';
+  }
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return 'Impossibile caricare i profili esistenti: $error';
   }

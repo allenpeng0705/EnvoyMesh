@@ -544,6 +544,8 @@
   "chatsBotSavedHint": "홈 노드에 저장됨. 준비되면 채팅하세요.",
   "chatsBotNotFound": "홈 노드에서 봇을 찾을 수 없음",
   "chatAiDisabledAskOwner": "가족 채팅용 AI 모델을 홈 소유자에게 요청하세요.",
+  "chatFamilyAttachNoThread": "여기에 첨부할 수 없습니다 — 가족 대화가 없습니다",
+  "chatPhotoSendFailed": "사진 전송 실패: {error}",
   "pairingLoadProfilesFailed": "기존 프로필을 불러올 수 없음: {error}",
   "pairingFailed": "페어링 실패: {error}",
   "pairingFailedHomeTimeout": "페어링을 끝내지 못했습니다 — 홈 컴퓨터가 제때 응답하지 않았습니다. EnvoyAI를 열어 두고 온라인 상태로 유지한 뒤 새 QR을 스캔하세요.",

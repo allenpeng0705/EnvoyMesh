@@ -3062,6 +3062,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatAiDisabledAskOwner => '请让家庭机主为家庭聊天启用 AI 模型。';
 
   @override
+  String get chatFamilyAttachNoThread =>
+      'Cannot attach here — no family thread';
+
+  @override
+  String chatPhotoSendFailed(String error) {
+    return 'Photo send failed: $error';
+  }
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return '无法加载已有档案：$error';
   }

@@ -3093,6 +3093,14 @@ class AppLocalizationsJa extends AppLocalizations {
       'ファミリーチャット用の AI モデルをホーム所有者に有効にしてもらってください。';
 
   @override
+  String get chatFamilyAttachNoThread => 'ここには添付できません — ファミリーの会話がありません';
+
+  @override
+  String chatPhotoSendFailed(String error) {
+    return '写真の送信に失敗しました: $error';
+  }
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return '既存のプロフィールを読み込めません: $error';
   }

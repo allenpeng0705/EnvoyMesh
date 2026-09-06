@@ -3182,6 +3182,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'Ask the home owner to enable an AI model for family chat.';
 
   @override
+  String get chatFamilyAttachNoThread =>
+      'Cannot attach here — no family thread';
+
+  @override
+  String chatPhotoSendFailed(String error) {
+    return 'Photo send failed: $error';
+  }
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return 'Could not load existing profiles: $error';
   }

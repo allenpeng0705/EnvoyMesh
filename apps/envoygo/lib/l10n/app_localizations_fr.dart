@@ -3228,6 +3228,15 @@ class AppLocalizationsFr extends AppLocalizations {
       'Demandez au propriétaire d\'activer un modèle IA pour le chat familial.';
 
   @override
+  String get chatFamilyAttachNoThread =>
+      'Impossible de joindre ici — aucune discussion familiale';
+
+  @override
+  String chatPhotoSendFailed(String error) {
+    return 'Échec de l\'envoi de la photo : $error';
+  }
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return 'Impossible de charger les profils : $error';
   }

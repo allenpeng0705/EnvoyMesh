@@ -3088,6 +3088,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chatAiDisabledAskOwner => '가족 채팅용 AI 모델을 홈 소유자에게 요청하세요.';
 
   @override
+  String get chatFamilyAttachNoThread => '여기에 첨부할 수 없습니다 — 가족 대화가 없습니다';
+
+  @override
+  String chatPhotoSendFailed(String error) {
+    return '사진 전송 실패: $error';
+  }
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return '기존 프로필을 불러올 수 없음: $error';
   }

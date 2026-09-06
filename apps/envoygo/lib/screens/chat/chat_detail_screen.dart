@@ -1214,11 +1214,12 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     required String name,
     String? mimeType,
   }) async {
+    final l10n = AppLocalizations.of(context);
     final nodeService = ref.read(nodeServiceProvider);
     if (nodeService == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Not connected to home node')),
+        SnackBar(content: Text(l10n.commonNotConnectedHome)),
       );
       return;
     }
@@ -1233,7 +1234,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     } else {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cannot attach here — no family thread')),
+        SnackBar(content: Text(l10n.chatFamilyAttachNoThread)),
       );
       return;
     }
@@ -1269,7 +1270,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Photo send failed: ${e.toString().replaceFirst('Bad state: ', '')}',
+            l10n.chatPhotoSendFailed(
+              e.toString().replaceFirst('Bad state: ', ''),
+            ),
           ),
         ),
       );

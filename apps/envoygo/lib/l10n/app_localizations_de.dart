@@ -3226,6 +3226,15 @@ class AppLocalizationsDe extends AppLocalizations {
       'Bitten Sie den Heimbesitzer, ein KI-Modell für den Familienchat zu aktivieren.';
 
   @override
+  String get chatFamilyAttachNoThread =>
+      'Hier nicht möglich — kein Familien-Chat';
+
+  @override
+  String chatPhotoSendFailed(String error) {
+    return 'Foto konnte nicht gesendet werden: $error';
+  }
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return 'Vorhandene Profile konnten nicht geladen werden: $error';
   }

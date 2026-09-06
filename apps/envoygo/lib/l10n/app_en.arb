@@ -1472,6 +1472,17 @@
   "chatsBotSavedHint": "Saved on your home node. Chat when ready.",
   "chatsBotNotFound": "Bot not found on home node",
   "chatAiDisabledAskOwner": "Ask the home owner to enable an AI model for family chat.",
+  "@chatPhotoSendFailed": {
+    "description": "Snackbar shown when uploading/sending a photo over Envoy family media fails.",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "homeRemote.notConnected"
+      }
+    }
+  },
+  "chatFamilyAttachNoThread": "Cannot attach here — no family thread",
+  "chatPhotoSendFailed": "Photo send failed: {error}",
   "pairingLoadProfilesFailed": "Could not load existing profiles: {error}",
   "pairingFailed": "Pairing failed: {error}",
   "pairingFailedHomeTimeout": "Couldn't finish pairing — your home computer didn't respond in time. Keep EnvoyAI open and online, then scan a fresh QR.",

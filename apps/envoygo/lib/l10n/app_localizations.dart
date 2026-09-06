@@ -5874,6 +5874,18 @@ abstract class AppLocalizations {
   /// **'Ask the home owner to enable an AI model for family chat.'**
   String get chatAiDisabledAskOwner;
 
+  /// No description provided for @chatFamilyAttachNoThread.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot attach here — no family thread'**
+  String get chatFamilyAttachNoThread;
+
+  /// Snackbar shown when uploading/sending a photo over Envoy family media fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo send failed: {error}'**
+  String chatPhotoSendFailed(String error);
+
   /// No description provided for @pairingLoadProfilesFailed.
   ///
   /// In en, this message translates to:

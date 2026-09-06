@@ -544,6 +544,8 @@
   "chatsBotSavedHint": "Auf dem Heimknoten gespeichert. Chatten Sie, wenn bereit.",
   "chatsBotNotFound": "Bot auf dem Heimknoten nicht gefunden",
   "chatAiDisabledAskOwner": "Bitten Sie den Heimbesitzer, ein KI-Modell für den Familienchat zu aktivieren.",
+  "chatFamilyAttachNoThread": "Hier nicht möglich — kein Familien-Chat",
+  "chatPhotoSendFailed": "Foto konnte nicht gesendet werden: {error}",
   "pairingLoadProfilesFailed": "Vorhandene Profile konnten nicht geladen werden: {error}",
   "pairingFailed": "Kopplung fehlgeschlagen: {error}",
   "pairingFailedHomeTimeout": "Kopplung nicht abgeschlossen — der Heimcomputer hat nicht rechtzeitig geantwortet. EnvoyAI offen und online lassen, dann einen neuen QR-Code scannen.",

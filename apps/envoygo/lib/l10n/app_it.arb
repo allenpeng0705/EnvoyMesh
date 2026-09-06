@@ -544,6 +544,8 @@
   "chatsBotSavedHint": "Salvato sul nodo di casa. Chatta quando sei pronto.",
   "chatsBotNotFound": "Bot non trovato sul nodo di casa",
   "chatAiDisabledAskOwner": "Chiedi al proprietario di casa di abilitare un modello IA per la chat famiglia.",
+  "chatFamilyAttachNoThread": "Impossibile allegare qui — nessuna chat di famiglia",
+  "chatPhotoSendFailed": "Invio della foto non riuscito: {error}",
   "pairingLoadProfilesFailed": "Impossibile caricare i profili esistenti: {error}",
   "pairingFailed": "Associazione non riuscita: {error}",
   "pairingFailedHomeTimeout": "Associazione non completata — il computer di casa non ha risposto in tempo. Tieni EnvoyAI aperto e online, poi scansiona un nuovo QR.",
