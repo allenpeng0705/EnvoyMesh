@@ -62,7 +62,14 @@ export function pickConnectedTransportForOwner(
   }
   const cached = transportCache?.get(ownerId);
   if (cached && isLibp2pPeerId(cached.peerId) && connectedPeerIds.includes(cached.peerId)) {
-    return { peerId: cached.peerId, listenAddrs: cached.listenAddrs };
+    // Ignore poisoned cache entries that point at a peer already attributed to a
+    // different owner in the directory (would paint every bond Online · Relay).
+    const ownersForPeer = records
+      .filter((r) => r.peerId === cached.peerId)
+      .map((r) => r.ownerId);
+    if (ownersForPeer.length === 0 || ownersForPeer.includes(ownerId)) {
+      return { peerId: cached.peerId, listenAddrs: cached.listenAddrs };
+    }
   }
   const connectedSet = new Set(connectedPeerIds.filter((id) => isLibp2pPeerId(id)));
   if (connectedSet.size === 0) {

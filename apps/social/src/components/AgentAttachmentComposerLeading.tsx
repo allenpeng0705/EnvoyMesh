@@ -51,7 +51,7 @@ export function AgentAttachmentComposerLeading({
       />
       <button
         type="button"
-        className="secondary chat-attach-file-btn"
+        className="chat-composer-icon-btn chat-attach-file-btn"
         title={pickTitle}
         aria-label={attachAriaLabel}
         disabled={disabled || busy}

@@ -3,7 +3,7 @@
  * Thread key `family:<sortedA>:<sortedB>`; send via sendFamilyMessage.
  * Header matches ContactChatPanel: call / AI / clear.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   OWNER_FAMILY_PROFILE_ID,
   contactAiAccessLevelForAssistantMode,
@@ -12,7 +12,9 @@ import {
   threadVisibleTo,
   type ChatMessage,
   type ContactAiPreferences,
+  type FamilyAttachmentDescriptor,
   type FamilyProfile,
+  MAX_CHAT_ATTACHMENT_BYTES,
 } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
@@ -21,6 +23,9 @@ import { useChatMessages, useNodeService } from "../../hooks/useNodeService.js";
 import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
 import { useToast } from "../../hooks/useToast.js";
 import { ChatComposer } from "../ChatComposer.js";
+import { ChatComposerAttachMenu } from "../ChatComposerAttachMenu.js";
+import { VoiceNoteRecorderBar } from "../VoiceNoteRecorderBar.js";
+import { useVoiceNoteRecorder } from "../../hooks/useVoiceNoteRecorder.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatAudioAttachment } from "../ChatAudioAttachment.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
@@ -74,6 +79,8 @@ export function FamilyChatPanel({ threadKey }: FamilyChatPanelProps) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [pendingOutbound, setPendingOutbound] = useState<ChatMessage | null>(null);
+  const [attachBusy, setAttachBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [confirm, setConfirm] = useState<{
     title: string;
     message?: string;
@@ -81,6 +88,12 @@ export function FamilyChatPanel({ threadKey }: FamilyChatPanelProps) {
     confirmLabel?: string;
     onConfirm: () => void;
   } | null>(null);
+
+  const voiceRecorder = useVoiceNoteRecorder({
+    onError: (code) => {
+      setSendError(t(`chat.audioMessage.${code}`));
+    },
+  });
 
   const defaultAiMode: AssistantMode =
     nodeConfig?.aiSettings?.defaultModeForNewContacts ?? "manual";
@@ -259,6 +272,99 @@ export function FamilyChatPanel({ threadKey }: FamilyChatPanelProps) {
     threadKey,
     toProfileId,
   ]);
+
+  const fileToBase64 = async (file: File): Promise<string> => {
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+    return btoa(binary);
+  };
+
+  const uploadAndSendFamilyAttachment = useCallback(
+    async (file: File, caption?: string) => {
+      if (!toProfileId || !nodeService.uploadFamilyAttachment || !nodeService.sendFamilyMessage) {
+        setSendError(
+          t("chat.familySendUnavailable", "Family chat is not available on this connection."),
+        );
+        return;
+      }
+      if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+        showToast(
+          t("contactChat.fileTooLarge", {
+            maxMb: Math.round(MAX_CHAT_ATTACHMENT_BYTES / (1024 * 1024)),
+          }),
+          "error",
+        );
+        return;
+      }
+      pinToBottom();
+      setAttachBusy(true);
+      setSendError(null);
+      try {
+        const contentBase64 = await fileToBase64(file);
+        const uploaded = await nodeService.uploadFamilyAttachment({
+          scope: { dm: { toProfileId } },
+          filename: file.name,
+          mimeType: file.type || "application/octet-stream",
+          contentBase64,
+        });
+        const descriptor: FamilyAttachmentDescriptor = {
+          id: uploaded.id,
+          filename: uploaded.filename,
+          mimeType: uploaded.mimeType,
+          sizeBytes: uploaded.sizeBytes,
+          contentHash: uploaded.contentHash,
+        };
+        await nodeService.sendFamilyMessage({
+          toProfileId,
+          text: caption?.trim() || undefined,
+          attachments: [descriptor],
+        });
+        if (caption?.trim()) setDraft("");
+        showToast(t("contactChat.sendingFile", { filename: file.name }), "success");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : t("contactChat.sendFileFailed");
+        setSendError(msg);
+        showToast(msg, "error");
+      } finally {
+        setAttachBusy(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [nodeService, pinToBottom, showToast, t, toProfileId],
+  );
+
+  const handleAttachFile = useCallback(
+    (file: File) => {
+      void uploadAndSendFamilyAttachment(file, draft);
+    },
+    [draft, uploadAndSendFamilyAttachment],
+  );
+
+  const handleSendVoiceNote = useCallback(async () => {
+    if (voiceRecorder.phase === "sending" || !toProfileId) return;
+    pinToBottom();
+    voiceRecorder.setSending();
+    const capture = await voiceRecorder.finalizeCapture();
+    if (!capture) {
+      voiceRecorder.setIdle();
+      return;
+    }
+    const { blob, mimeType, transcription } = capture;
+    const ext = mimeType.includes("mp4") ? "m4a" : "webm";
+    const filename = `voice-note.${ext}`;
+    try {
+      await uploadAndSendFamilyAttachment(
+        new File([blob], filename, { type: mimeType }),
+        transcription || undefined,
+      );
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : t("contactChat.sendFailed"));
+    } finally {
+      voiceRecorder.setIdle();
+    }
+  }, [pinToBottom, t, toProfileId, uploadAndSendFamilyAttachment, voiceRecorder]);
 
   if (
     !isFamilyThreadKey(threadKey) ||
@@ -444,17 +550,60 @@ export function FamilyChatPanel({ threadKey }: FamilyChatPanelProps) {
           {sendError ? <div className="chat-send-error" role="alert">{sendError}</div> : null}
         </div>
         <footer className="chat-input">
-          <ChatComposer
-            value={draft}
-            onChange={setDraft}
-            onSend={() => {
-              void handleSend();
-            }}
-            placeholder={t("chat.familyComposePlaceholder", "Message family…")}
-            sendLabel={t("common.send", "Send")}
-            disabled={sending || offline}
-            sendDisabled={!draft.trim() || sending || offline}
-          />
+          {voiceRecorder.phase !== "idle" ? (
+            <VoiceNoteRecorderBar
+              isCapturing={voiceRecorder.isCapturing}
+              recordingSeconds={voiceRecorder.recordingSeconds}
+              maxSeconds={voiceRecorder.maxSeconds}
+              sending={voiceRecorder.phase === "sending"}
+              onCancel={voiceRecorder.cancel}
+              onSend={() => void handleSendVoiceNote()}
+            />
+          ) : (
+            <ChatComposer
+              value={draft}
+              onChange={setDraft}
+              onSend={() => {
+                void handleSend();
+              }}
+              placeholder={t("chat.familyComposePlaceholder", "Message family…")}
+              sendLabel={t("common.send", "Send")}
+              disabled={sending || offline || attachBusy}
+              sendDisabled={!draft.trim() || sending || offline || attachBusy}
+              leading={
+                <>
+                  <button
+                    type="button"
+                    className="chat-composer-icon-btn chat-mic-btn"
+                    title={t("chat.audioMessage.record")}
+                    aria-label={t("chat.audioMessage.record")}
+                    disabled={sending || offline || attachBusy}
+                    onClick={() => void voiceRecorder.start()}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                  </button>
+                  <ChatComposerAttachMenu
+                    attachDisabled={sending || offline || attachBusy}
+                    showShareVault={false}
+                    onAttachFile={() => fileInputRef.current?.click()}
+                  />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="chat-file-input-hidden"
+                    accept="*/*"
+                    aria-hidden
+                    tabIndex={-1}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleAttachFile(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </>
+              }
+            />
+          )}
         </footer>
       </div>
 

@@ -623,6 +623,12 @@ export interface NodeServiceClient {
     params: import("@envoymesh/api").SendFamilyRoomMessageParams,
   ): Promise<import("@envoymesh/api").SendFamilyRoomMessageResult>;
   /**
+   * EM-F1 — upload bytes into family-media (DM pair or family room). Local only.
+   */
+  uploadFamilyAttachment(
+    params: import("@envoymesh/api").FamilyAttachmentUploadParams,
+  ): Promise<import("@envoymesh/api").FamilyAttachmentUploadResult>;
+  /**
    * EM-F1 — sliced read of a family-media attachment (bytes stay on the home
    * node; never the owner vault). Each slice is capped at 1 MiB by the node.
    */
@@ -2200,6 +2206,14 @@ function createWsNodeServiceClient(
         "sendFamilyRoomMessage",
         params as unknown as Record<string, unknown>,
       ) as Promise<import("@envoymesh/api").SendFamilyRoomMessageResult>;
+    },
+    async uploadFamilyAttachment(
+      params: import("@envoymesh/api").FamilyAttachmentUploadParams,
+    ) {
+      return wsClient.rpc(
+        "uploadFamilyAttachment",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").FamilyAttachmentUploadResult>;
     },
     async readFamilyAttachment(
       params: import("@envoymesh/api").FamilyAttachmentReadParams,

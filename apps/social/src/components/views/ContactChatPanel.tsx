@@ -31,8 +31,9 @@ import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
 import { ChatAudioAttachment } from "../ChatAudioAttachment.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
-import { EditIcon, ChatIcon, BridgeIcon, P2PIcon, AttachIcon, RemoveIcon, AIIcon } from "../../icons.js";
+import { EditIcon, ChatIcon, BridgeIcon, RemoveIcon, AIIcon } from "../../icons.js";
 import { ChatComposer } from "../ChatComposer.js";
+import { ChatComposerAttachMenu } from "../ChatComposerAttachMenu.js";
 import { VoiceNoteRecorderBar } from "../VoiceNoteRecorderBar.js";
 import { useVoiceNoteRecorder } from "../../hooks/useVoiceNoteRecorder.js";
 import { useToast } from "../../hooks/useToast.js";
@@ -1619,7 +1620,7 @@ export function ContactChatPanel({
                 {!isExtAgentContact ? (
                   <button
                     type="button"
-                    className="secondary chat-mic-btn"
+                    className="chat-composer-icon-btn chat-mic-btn"
                     title={t("chat.audioMessage.record")}
                     aria-label={t("chat.audioMessage.record")}
                     disabled={!nodeMeshOnline || mmxBusy}
@@ -1643,16 +1644,12 @@ export function ContactChatPanel({
                   />
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      className="secondary chat-attach-file-btn"
-                      title={t("contactChat.attachFileTitle")}
-                      aria-label={t("contactChat.attachFileAria")}
-                      disabled={!nodeMeshOnline || attachBusy || mmxBusy}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <AttachIcon size={18} />
-                    </button>
+                    <ChatComposerAttachMenu
+                      attachDisabled={!nodeMeshOnline || attachBusy || mmxBusy}
+                      shareDisabled={false}
+                      onAttachFile={() => fileInputRef.current?.click()}
+                      onShareVault={() => setShareOpen(true)}
+                    />
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1668,17 +1665,6 @@ export function ContactChatPanel({
                     />
                   </>
                 )}
-                {!isExtAgentContact ? (
-                  <button
-                    type="button"
-                    className="secondary chat-share-file-btn"
-                    title={t("contactChat.shareVaultTitle")}
-                    aria-label={t("contactChat.shareVaultAria")}
-                    onClick={() => setShareOpen(true)}
-                  >
-                    <P2PIcon size={18} />
-                  </button>
-                ) : null}
               </>
             }
           />

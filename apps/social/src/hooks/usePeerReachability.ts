@@ -21,13 +21,17 @@ import {
 /** Delay before a background warm when opening chat with an offline contact (lets history RPC run first). */
 const OPEN_CHAT_DEFERRED_WARM_MS = 1_000;
 
+const OPEN_CHAT_HYSTERESIS_OPTS = {
+  stablePathPolls: REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS,
+} as const;
+
 /** Live libp2p reachability for a bonded contact (direct P2P or relay circuit). */
 export function usePeerReachability(peerOwnerId: string | null, enabled = true) {
   const nodeService = useNodeService();
   const nodeServiceRef = useRef(nodeService);
   nodeServiceRef.current = nodeService;
 
-  const [info, setInfo] = useState<PeerConnectionInfo | null>(null);
+  const [info, setInfo] = useState<PeerConnectionInfo | null>({ connected: false, direct: false });
   const [checking, setChecking] = useState(false);
   const hysteresisRef = useRef(createReachabilityHysteresisState());
   const libp2pConnectedRef = useRef(false);
@@ -37,12 +41,12 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   const refreshInFlightRef = useRef(false);
   const pendingRefreshRef = useRef(false);
   const peerGenerationRef = useRef(0);
+  const openChatEnabledRef = useRef(enabled);
+  openChatEnabledRef.current = enabled;
+  const activePeerRef = useRef<string | null>(null);
 
   const pollMs = enabled ? REACHABILITY_OPEN_CHAT_POLL_MS : REACHABILITY_POLL_MS;
   const minRedialMs = enabled ? REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS : REACHABILITY_MIN_REDIAL_MS;
-  const hysteresisOpts = enabled
-    ? { stablePathPolls: REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS }
-    : undefined;
 
   const applyReading = useCallback(
     (next: PeerConnectionInfo, generation: number, opts?: { immediate?: boolean }) => {
@@ -55,14 +59,14 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       const result = applyReachabilityHysteresis(hysteresisRef.current, next, now, {
         offlineGraceMs: REACHABILITY_OFFLINE_GRACE_MS,
         immediate: opts?.immediate,
-        ...hysteresisOpts,
+        ...(openChatEnabledRef.current ? OPEN_CHAT_HYSTERESIS_OPTS : undefined),
       });
       hysteresisRef.current = result.state;
       if (result.shouldUpdate && result.info) {
         setInfo(result.info);
       }
     },
-    [hysteresisOpts],
+    [],
   );
 
   const runRefresh = useCallback(
@@ -147,6 +151,10 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   useEffect(() => {
     if (!enabled || !peerOwnerId || !nodeService.isConnected || !nodeService.isReady) {
       setChecking(false);
+      if (!peerOwnerId) {
+        setInfo({ connected: false, direct: false });
+        activePeerRef.current = null;
+      }
       return;
     }
 
@@ -157,6 +165,16 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     lastRelayUpgradeAtRef.current = 0;
     libp2pConnectedRef.current = false;
     libp2pDirectRef.current = false;
+    refreshInFlightRef.current = false;
+    pendingRefreshRef.current = false;
+
+    const peerChanged = activePeerRef.current !== peerOwnerId;
+    activePeerRef.current = peerOwnerId;
+    if (peerChanged) {
+      // Pessimistic Offline — avoids Checking… ↔ Offline flash while the silent snapshot runs.
+      setInfo({ connected: false, direct: false });
+      setChecking(false);
+    }
 
     let deferredWarmTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -165,10 +183,11 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         return;
       }
       if (!libp2pConnectedRef.current) {
-        // Background dial after chat history loads — show Checking… while warming.
+        // Background dial after chat history loads. Keep Offline label — do not flip
+        // back to Checking… while the warm runs (silent).
         deferredWarmTimer = setTimeout(() => {
           if (generation !== peerGenerationRef.current) return;
-          void runRefresh(generation, { warm: true });
+          void runRefresh(generation, { warm: true, silent: true });
         }, OPEN_CHAT_DEFERRED_WARM_MS);
       } else if (!libp2pDirectRef.current) {
         // Prefer direct LAN/TCP when available instead of staying on relay.

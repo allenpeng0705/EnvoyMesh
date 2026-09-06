@@ -68,7 +68,10 @@ export function applyReachabilityHysteresis(
   const label = reachabilityLabel(next);
   let { displayedLabel, lastConnectedAt, streakLabel, streakCount } = state;
 
-  if (options?.immediate) {
+  // First reading after a reset (or explicit immediate) must apply — otherwise a
+  // reused chat panel can keep showing the previous contact's Online · Relay while
+  // offline polls are held back by stable-offline / grace hysteresis.
+  if (options?.immediate || displayedLabel === null) {
     displayedLabel = label;
     if (next.connected) {
       lastConnectedAt = now;

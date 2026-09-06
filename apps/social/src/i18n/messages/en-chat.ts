@@ -190,6 +190,8 @@ export const contactChatMessages = {
     "Direct path not verified recently — the first message may take a moment to reconnect.",
   attachFileTitle: "Send image or file",
   attachFileAria: "Send image or file",
+  moreAttachTitle: "Add attachment",
+  moreAttachAria: "Add attachment",
   emojiPickerTitle: "Insert emoji",
   emojiPickerAria: "Open emoji picker",
   extAgentSlashSuggestAria: "Ext Agent slash commands",

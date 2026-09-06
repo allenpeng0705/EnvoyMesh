@@ -8,7 +8,7 @@ import {
   filterExtAgentSlashCommands,
   isExtAgentSlashSuggestInput,
 } from "../lib/ext-agent-slash-commands.js";
-import { SmileIcon } from "../icons.js";
+import { SendIcon, SmileIcon } from "../icons.js";
 
 const MAX_TEXTAREA_HEIGHT_PX = 120;
 
@@ -222,7 +222,7 @@ export function ChatComposer({
         {showEmoji ? (
           <button
             type="button"
-            className={`secondary chat-emoji-btn${pickerOpen ? " is-active" : ""}`}
+            className={`chat-composer-icon-btn chat-emoji-btn${pickerOpen ? " is-active" : ""}`}
             title={t("contactChat.emojiPickerTitle")}
             aria-label={t("contactChat.emojiPickerAria")}
             aria-expanded={pickerOpen}
@@ -327,8 +327,15 @@ export function ChatComposer({
           </div>
         ) : null}
       </div>
-      <button type="button" onClick={onSend} disabled={!canSend}>
-        {sendLabel}
+      <button
+        type="button"
+        className="chat-composer-icon-btn chat-send-btn"
+        onClick={onSend}
+        disabled={!canSend}
+        title={sendLabel}
+        aria-label={sendLabel}
+      >
+        <SendIcon size={18} />
       </button>
     </>
   );

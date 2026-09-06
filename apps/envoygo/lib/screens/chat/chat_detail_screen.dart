@@ -1533,7 +1533,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                                   }
                                 },
                         ),
-                        if (!_isAgent && !_isRoom && !_isFamily)
+                        if (!_isAgent && !_isRoom)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 2, right: 4),
                             child: Tooltip(

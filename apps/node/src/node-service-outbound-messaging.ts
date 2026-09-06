@@ -973,13 +973,30 @@ export async function getPeerConnectionInfoViaRuntime(
   }
 
   try {
-    const { transportPeerId } = await ctx.resolvePeerTransportForOwner(peerOwnerId);
-    if (transportPeerId === mesh.peerId) {
+    // UI badges must only reflect a *live* connection attributed to this owner.
+    // Full resolvePeerTransportForOwner also returns offline dial targets and
+    // mutates the transport cache — that let one contact's Online · Relay bleed
+    // onto other bonds when directory/cache rows were cross-wired.
+    const records = await raceWithTimeout(
+      ctx.peerDirectoryStore.listPeerRecords(),
+      25_000,
+      "listPeerRecords",
+    );
+    const live = pickConnectedTransportForOwner(
+      records,
+      peerOwnerId,
+      mesh.getConnectedPeerIds(),
+      ctx.getTransportCache(),
+    );
+    if (!live) {
+      return { connected: false, direct: false };
+    }
+    if (live.peerId === mesh.peerId) {
       return { connected: true, direct: true };
     }
     // Fast libp2p snapshot for UI badges — no stream probe here (probe runs on send via
     // warmContactConnection verifyConnection / prepareOutboundPeerConnection).
-    return withPathVerified(mesh, transportPeerId, mesh.getPeerConnectionInfo(transportPeerId));
+    return withPathVerified(mesh, live.peerId, mesh.getPeerConnectionInfo(live.peerId));
   } catch (err) {
     console.warn(
       `[getPeerConnectionInfo] no route to ${peerOwnerId.slice(0, 24)}…:`,

@@ -240,6 +240,7 @@ export function ChatView({
               </div>
             ) : (
               <ContactChatPanel
+                key={selectedContact}
                 selectedContact={selectedContact}
                 onSelectContact={onSelectedContactChange}
                 onOpenChains={onOpenChains}

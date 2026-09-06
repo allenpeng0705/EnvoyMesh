@@ -114,4 +114,27 @@ describe("pickConnectedTransportForOwner", () => {
     );
     expect(picked?.peerId).toBe("12D3KooWWinLiveInbound");
   });
+
+  it("ignores cache pointing at another owner's live peer", () => {
+    const ownerA = "envoy:owner:alice";
+    const ownerB = "envoy:owner:bob";
+    const peerA = "12D3KooWAliceLive";
+    const records = [
+      {
+        ownerId: ownerA,
+        peerId: peerA,
+        lastSeenAt: "2026-05-29T12:00:00.000Z",
+      },
+      {
+        ownerId: ownerB,
+        peerId: "12D3KooWBobOffline",
+        lastSeenAt: "2026-05-29T12:00:00.000Z",
+      },
+    ];
+    const cache = new Map([
+      [ownerB, { peerId: peerA, listenAddrs: [] }],
+    ]);
+    const picked = pickConnectedTransportForOwner(records, ownerB, [peerA], cache);
+    expect(picked).toBeUndefined();
+  });
 });

@@ -29,8 +29,9 @@ import { ChatFileAttachment } from "../ChatFileAttachment.js";
 import { ChatAudioAttachment } from "../ChatAudioAttachment.js";
 import { VoiceNoteRecorderBar } from "../VoiceNoteRecorderBar.js";
 import { useVoiceNoteRecorder } from "../../hooks/useVoiceNoteRecorder.js";
-import { ChatIcon, EditIcon, AttachIcon, RemoveIcon } from "../../icons.js";
+import { ChatIcon, EditIcon, RemoveIcon } from "../../icons.js";
 import { ChatComposer } from "../ChatComposer.js";
+import { ChatComposerAttachMenu } from "../ChatComposerAttachMenu.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
@@ -801,62 +802,58 @@ export function GroupChatPanel({
             </div>
           </div>
         ) : null}
-        {voiceRecorder.phase !== "idle" ? (
-          <VoiceNoteRecorderBar
-            isCapturing={voiceRecorder.isCapturing}
-            recordingSeconds={voiceRecorder.recordingSeconds}
-            maxSeconds={voiceRecorder.maxSeconds}
-            sending={voiceRecorder.phase === "sending"}
-            onCancel={voiceRecorder.cancel}
-            onSend={() => void handleSendVoiceNote()}
-          />
-        ) : null}
         <footer className="chat-input">
-          <ChatComposer
-            value={chatInput}
-            onChange={setChatInput}
-            onSend={handleSend}
-            placeholder={nodeMeshOnline ? t("groupChat.inputPlaceholder") : t("contactChat.inputOffline")}
-            sendLabel={t("contactChat.send")}
-            disabled={!nodeMeshOnline}
-            leading={
-              <>
-                <button
-                  type="button"
-                  className="secondary chat-attach-file-btn"
-                  title={t("contactChat.attachFileTitle")}
-                  aria-label={t("contactChat.attachFileAria")}
-                  disabled={!nodeMeshOnline || attachBusy}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <AttachIcon size={18} />
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="chat-file-input-hidden"
-                  accept="*/*"
-                  aria-hidden
-                  tabIndex={-1}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void handleAttachFile(file);
-                  }}
-                />
-                {/* Voice note mic button — starts the recorder bar above */}
-                <button
-                  type="button"
-                  className="secondary chat-mic-btn"
-                  title={t("chat.audioMessage.record")}
-                  aria-label={t("chat.audioMessage.record")}
-                  disabled={!nodeMeshOnline || voiceRecorder.phase !== "idle"}
-                  onClick={() => void voiceRecorder.start()}
-                >
-                  🎤
-                </button>
-              </>
-            }
-          />
+          {voiceRecorder.phase !== "idle" ? (
+            <VoiceNoteRecorderBar
+              isCapturing={voiceRecorder.isCapturing}
+              recordingSeconds={voiceRecorder.recordingSeconds}
+              maxSeconds={voiceRecorder.maxSeconds}
+              sending={voiceRecorder.phase === "sending"}
+              onCancel={voiceRecorder.cancel}
+              onSend={() => void handleSendVoiceNote()}
+            />
+          ) : (
+            <ChatComposer
+              value={chatInput}
+              onChange={setChatInput}
+              onSend={handleSend}
+              placeholder={nodeMeshOnline ? t("groupChat.inputPlaceholder") : t("contactChat.inputOffline")}
+              sendLabel={t("contactChat.send")}
+              disabled={!nodeMeshOnline}
+              leading={
+                <>
+                  <button
+                    type="button"
+                    className="chat-composer-icon-btn chat-mic-btn"
+                    title={t("chat.audioMessage.record")}
+                    aria-label={t("chat.audioMessage.record")}
+                    disabled={!nodeMeshOnline}
+                    onClick={() => void voiceRecorder.start()}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                  </button>
+                  <ChatComposerAttachMenu
+                    attachDisabled={!nodeMeshOnline || attachBusy}
+                    showShareVault={false}
+                    onAttachFile={() => fileInputRef.current?.click()}
+                  />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="chat-file-input-hidden"
+                    accept="*/*"
+                    aria-hidden
+                    tabIndex={-1}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleAttachFile(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </>
+              }
+            />
+          )}
         </footer>
       </div>
 

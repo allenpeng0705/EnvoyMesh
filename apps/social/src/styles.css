@@ -1508,29 +1508,30 @@ textarea::placeholder {
   box-shadow: var(--shadow-ring);
 }
 
-/* Send (and other direct footer actions) — not nested composer controls. */
-.chat-input > button {
-  padding: 0.625rem 1.125rem;
-  background: var(--color-primary);
-  color: var(--color-primary-on, #052e16);
-  border: 1px solid color-mix(in srgb, var(--color-primary-active, #05944a) 35%, transparent);
+/* Send — dedicated primary control (not mic / + / emoji icon buttons). */
+.chat-input > button.chat-send-btn {
+  padding: 0;
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  color: var(--color-primary);
+  border: 1px solid transparent;
   border-radius: var(--radius-full);
   cursor: pointer;
-  font-size: var(--text-sm);
+  font-size: inherit;
   font-weight: var(--font-semibold);
-  box-shadow: var(--shadow-sm);
-  transition: background var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+  box-shadow: none;
+  transition: background var(--transition-fast), transform var(--transition-fast), color var(--transition-fast);
 }
 
-.chat-input > button:hover:not(:disabled) {
-  background: var(--color-primary-hover);
+.chat-input > button.chat-send-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  color: var(--color-primary);
 }
 
-.chat-input > button:active:not(:disabled) {
+.chat-input > button.chat-send-btn:active:not(:disabled) {
   transform: scale(0.97);
 }
 
-.chat-input > button:disabled,
+.chat-input > button.chat-send-btn:disabled,
 .chat-input input:disabled {
   opacity: 0.65;
   cursor: not-allowed;

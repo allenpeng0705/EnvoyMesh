@@ -560,6 +560,35 @@ describe("getPeerConnectionInfoViaRuntime", () => {
     expect(info.direct).toBe(true);
     expect(info.pathVerified).toBe(false);
   });
+
+  it("does not report Online for an offline owner when another bond is live", async () => {
+    const otherOwner = "envoy:owner:other-offline";
+    const ctx = makeCtx({
+      peerDirectoryStore: {
+        listPeerRecords: async () => [
+          {
+            ownerId: OWNER_ID,
+            peerId: TRANSPORT_ID,
+            listenAddrs: [],
+            lastSeenAt: "2026-06-20T12:00:00.000Z",
+          },
+          {
+            ownerId: otherOwner,
+            peerId: "12D3KooWOtherOfflinePeer",
+            listenAddrs: [],
+            lastSeenAt: "2026-06-20T12:00:00.000Z",
+          },
+        ],
+        getPeerByOwnerId: async () => undefined,
+        mergeListenAddrsForPeerId: vi.fn(async () => {}),
+      } as never,
+    });
+    // Poison cache as if a prior resolve wired the live peer onto the offline owner.
+    ctx.setTransportCache(otherOwner, { peerId: TRANSPORT_ID, listenAddrs: [] });
+
+    const info = await getPeerConnectionInfoViaRuntime(ctx, otherOwner);
+    expect(info.connected).toBe(false);
+  });
 });
 
 describe("sendChatViaRuntime", () => {

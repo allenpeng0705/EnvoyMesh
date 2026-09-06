@@ -3502,11 +3502,10 @@
   height: min(22rem, 50vh);
 }
 
-.chat-input > button[type="button"]:last-child {
+.chat-input > button.chat-send-btn {
   border-radius: var(--radius-full);
-  padding: var(--space-3) var(--space-5);
-  font-weight: var(--font-semibold);
-  min-height: 44px;
+  min-height: 2.25rem;
+  min-width: 2.25rem;
 }
 
 .context-menu {
@@ -3632,39 +3631,6 @@
   /* Hide emoji button on mobile — keyboards have emoji pickers built-in */
   .chat-emoji-btn {
     display: none;
-  }
-
-  /* Reduce leading button padding on mobile so more width is available for the textarea */
-  .chat-input > button[type="button"]:not(:last-child) {
-    padding: var(--space-2);
-    min-height: 36px;
-    min-width: 36px;
-  }
-
-  /* Send button: icon-only on mobile to maximize textarea width */
-  .chat-input > button[type="button"]:last-child {
-    padding: var(--space-2);
-    min-height: 36px;
-    min-width: 36px;
-    font-size: 0;
-  }
-
-  /* Show send icon (text is hidden via font-size:0 above) */
-  .chat-input > button[type="button"]:last-child::before {
-    content: "";
-    display: block;
-    width: 18px;
-    height: 18px;
-    background: currentColor;
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='22' y1='2' x2='11' y2='13'/%3E%3Cpolygon points='22 2 15 22 11 13 2 9 22 2'/%3E%3C/svg%3E");
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    mask-position: center;
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='22' y1='2' x2='11' y2='13'/%3E%3Cpolygon points='22 2 15 22 11 13 2 9 22 2'/%3E%3C/svg%3E");
-    -webkit-mask-size: contain;
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-position: center;
-    margin: auto;
   }
 
   .chat-view-inbox-panel {
@@ -3931,6 +3897,132 @@
 
 .chat-file-input-hidden {
   display: none;
+}
+
+.chat-composer-icon-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  box-shadow: none;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+/* Win over legacy .chat-input > button chrome (padding was clipping SVGs to 0). */
+.chat-input > button.chat-composer-icon-btn {
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid transparent;
+  box-shadow: none;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.chat-input > button.chat-composer-icon-btn:hover:not(:disabled) {
+  background: var(--color-surface-elevated, var(--color-bg));
+  color: var(--color-text);
+}
+
+.chat-composer-icon-btn:hover:not(:disabled) {
+  background: var(--color-surface-elevated, var(--color-bg));
+  color: var(--color-text);
+}
+
+.chat-composer-icon-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.chat-composer-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chat-composer-icon-btn.is-active,
+.chat-emoji-btn.is-active,
+.chat-attach-menu-btn.is-active {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.chat-input > button.chat-composer-icon-btn.chat-send-btn:not(:disabled),
+.chat-send-btn:not(:disabled) {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+
+.chat-input > button.chat-composer-icon-btn.chat-send-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  color: var(--color-primary);
+}
+
+.chat-composer-icon-btn svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.chat-attach-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.chat-attach-menu-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.4rem);
+  z-index: var(--z-dropdown, 40);
+  min-width: 13.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--color-border-subtle, var(--color-border));
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated, var(--color-surface));
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--color-text) 12%, transparent);
+}
+
+.chat-attach-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-attach-menu-item:hover:not(:disabled),
+.chat-attach-menu-item:focus-visible {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  outline: none;
+}
+
+.chat-attach-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .chat-attach-file-btn,
@@ -5851,27 +5943,42 @@
   border-color: var(--color-primary, #07c160);
   box-shadow: 0 0 0 2px var(--color-primary-subtle, #e8f8ef);
 }
-/* The send button gets the green square chrome. Exclude the attach
-   button: it renders as a direct child of `.eh-composer-row` (via the
-   composer's `leading` fragment) and must keep the `.secondary`
-   outline style shared with EnvoyAI / Ext Agent. */
-.eh-composer-row > button:not(.eh-composer-inject):not(.chat-attach-file-btn) {
+/* Icon-only send — match contact / group composers (no green text pill). */
+.eh-composer-row > button.chat-composer-icon-btn.chat-send-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 2.25rem;
   height: 2.25rem;
-  border: none;
-  border-radius: 0.625rem;
-  background: var(--color-primary, #07c160);
-  color: var(--color-on-primary-text, #052e16);
-  font-size: 1.1rem;
-  font-weight: 700;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-primary, #07c160) 14%, transparent);
+  color: var(--color-primary, #07c160);
+  font-size: inherit;
+  font-weight: inherit;
+  box-shadow: none;
   cursor: pointer;
 }
-.eh-composer-row > button:not(.eh-composer-inject):disabled {
+.eh-composer-row > button.chat-composer-icon-btn.chat-send-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary, #07c160) 22%, transparent);
+  color: var(--color-primary, #07c160);
+}
+.eh-composer-row > button.chat-composer-icon-btn.chat-send-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.eh-composer-row > button.chat-composer-icon-btn.chat-attach-file-btn {
+  background: transparent;
+  color: var(--color-text-muted, #64748b);
+  border: 1px solid transparent;
+  box-shadow: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: var(--radius-full);
 }
 
 .eh-chat-composer-wrap {
