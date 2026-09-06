@@ -6335,15 +6335,17 @@
   cursor: pointer;
 }
 
-.eh-ehui-shell .ehui-resume-row:hover:not(:disabled),
-.eh-ehui-modal-panel .ehui-resume-row:hover:not(:disabled) {
+.eh-ehui-shell .ehui-resume-row:hover:not([aria-disabled="true"]),
+.eh-ehui-modal-panel .ehui-resume-row:hover:not([aria-disabled="true"]) {
   background: var(--color-surface-muted, #f8fafc);
 }
 
-.eh-ehui-shell .ehui-resume-row:disabled,
-.eh-ehui-modal-panel .ehui-resume-row:disabled {
+.eh-ehui-shell .ehui-resume-row[aria-disabled="true"],
+.eh-ehui-modal-panel .ehui-resume-row[aria-disabled="true"],
+.eh-ehui-shell .ehui-resume-row--unavailable,
+.eh-ehui-modal-panel .ehui-resume-row--unavailable {
   opacity: 0.65;
-  cursor: default;
+  cursor: not-allowed;
 }
 
 .eh-ehui-shell .ehui-resume-title,
