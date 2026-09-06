@@ -337,6 +337,7 @@ export type RpcMethods =
     | "getEnvoyHarnessCommandCatalog"
     | "recordEnvoyHarnessUxEvent"
     | "resetEnvoyHarnessChat"
+    | "resumeEnvoyHarnessSession"
     | "listEnvoyHarnessPeers"
     | "setEnvoyHarnessProjectPath"
     | "invokeEnvoyHarnessEhui"

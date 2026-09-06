@@ -534,6 +534,10 @@ export interface NodeServiceClient {
   resetEnvoyHarnessChat(
     chatId?: string,
   ): Promise<import("@envoymesh/api").EhChatHistory>;
+  resumeEnvoyHarnessSession(opts: {
+    sessionId: string;
+    chatId?: string;
+  }): Promise<import("@envoymesh/api").EhChatHistory>;
   ehRespondToPermission(params: {
     requestId: string;
     allowed: boolean;
@@ -2022,6 +2026,19 @@ function createWsNodeServiceClient(
       return wsClient.rpc(
         "resetEnvoyHarnessChat",
         chatId ? { chatId } : {},
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EhChatHistory>;
+    },
+    async resumeEnvoyHarnessSession(opts: {
+      sessionId: string;
+      chatId?: string;
+    }) {
+      return wsClient.rpc(
+        "resumeEnvoyHarnessSession",
+        {
+          sessionId: opts.sessionId,
+          ...(opts.chatId ? { chatId: opts.chatId } : {}),
+        },
         { timeoutMs: 30_000 },
       ) as Promise<import("@envoymesh/api").EhChatHistory>;
     },

@@ -174,6 +174,7 @@ const CODING_GATED_RPC = new Set<string>([
   "getEnvoyHarnessCommandCatalog",
   "recordEnvoyHarnessUxEvent",
   "resetEnvoyHarnessChat",
+  "resumeEnvoyHarnessSession",
   "getEnvoyHarnessStatus",
   "setEnvoyHarnessProjectPath",
   "listEnvoyHarnessPeers",
@@ -1563,6 +1564,11 @@ export async function routeRpcMethod(
       return ns.resetEnvoyHarnessChat(
         typeof params.chatId === "string" ? params.chatId : undefined,
       );
+    case "resumeEnvoyHarnessSession":
+      return ns.resumeEnvoyHarnessSession({
+        sessionId: String(params.sessionId ?? ""),
+        ...(typeof params.chatId === "string" ? { chatId: params.chatId } : {}),
+      });
     case "listEnvoyHarnessPeers":
       return ns.listEnvoyHarnessPeers();
     case "setEnvoyHarnessProjectPath":

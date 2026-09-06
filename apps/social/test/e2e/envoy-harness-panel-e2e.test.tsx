@@ -17,6 +17,7 @@ const cancelEnvoyHarnessTurn = vi.fn()
 const getEnvoyHarnessChatHistory = vi.fn()
 const openEnvoyHarnessChat = vi.fn()
 const resetEnvoyHarnessChat = vi.fn()
+const resumeEnvoyHarnessSession = vi.fn()
 const ehRespondToPermission = vi.fn()
 const listEnvoyHarnessPeers = vi.fn()
 const setEnvoyHarnessProjectPath = vi.fn()
@@ -38,10 +39,15 @@ vi.mock("../../src/components/ehui/EnvoyHarnessEhuiRail.js", () => {
   }
 })
 
-vi.mock("@envoymesh/envoy-harness-ehui", () => ({
-  EhuiPanelModal: () => null,
-  EhuiCommandLinks: () => null,
-}))
+vi.mock("@envoymesh/envoy-harness-ehui", () => {
+  const React = require("react")
+  return {
+    EhuiPanelModal: () => null,
+    EhuiCommandLinks: () => null,
+    EhuiShell: () =>
+      React.createElement("div", { "data-testid": "ehui-shell" }),
+  }
+})
 
 vi.mock("../../src/components/HomeFolderPicker.js", () => ({
   HomeFolderPicker: ({
@@ -68,6 +74,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     getEnvoyHarnessChatHistory,
     openEnvoyHarnessChat,
     resetEnvoyHarnessChat,
+    resumeEnvoyHarnessSession,
     ehRespondToPermission,
     listEnvoyHarnessPeers,
     setEnvoyHarnessProjectPath,
@@ -99,6 +106,7 @@ beforeEach(() => {
   getEnvoyHarnessChatHistory.mockReset()
   openEnvoyHarnessChat.mockReset()
   resetEnvoyHarnessChat.mockReset()
+  resumeEnvoyHarnessSession.mockReset()
   ehRespondToPermission.mockReset()
   listEnvoyHarnessPeers.mockReset()
   setEnvoyHarnessProjectPath.mockReset()

@@ -3277,6 +3277,15 @@ export interface NodeService {
     chatId?: string,
   ): Promise<import("./eh-chat-history.js").EhChatHistory>;
 
+  /**
+   * Bind this chat/project to an existing persisted session id and reload
+   * its transcript (EHUI Resume picker / `/resume`).
+   */
+  resumeEnvoyHarnessSession(opts: {
+    sessionId: string;
+    chatId?: string;
+  }): Promise<import("./eh-chat-history.js").EhChatHistory>;
+
   /** Allow/deny an in-flight EH tool permission (`eh:permission`). */
   ehRespondToPermission(
     params: import("./eh-permission.js").EhRespondToPermissionParams,

@@ -1022,6 +1022,13 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.resetEnvoyHarnessChat(chatId);
   }
 
+  async resumeEnvoyHarnessSession(opts: {
+    sessionId: string;
+    chatId?: string;
+  }) {
+    return this._ns.resumeEnvoyHarnessSession(opts);
+  }
+
   async ehRespondToPermission(params: { requestId: string; allowed: boolean }) {
     return this._ns.ehRespondToPermission(params);
   }

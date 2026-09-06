@@ -667,6 +667,43 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     }
   }, [chatId, clearQueue, nodeService, setSystem, status?.cwd])
 
+  /** Bind this chat to a persisted harness session (EHUI Resume picker). */
+  const resumeSession = useCallback(
+    async (sessionId: string) => {
+      if (busy) {
+        setSystem(
+          t("eh.slashWhileBusy", "Finish or /cancel the current turn first."),
+          "info",
+        )
+        return
+      }
+      try {
+        const history = await nodeService.resumeEnvoyHarnessSession({
+          sessionId,
+          ...(chatId ? { chatId } : {}),
+        })
+        setTurns(historyTurnsToPanelTurns(history.turns))
+        timelineReplaceRef.current(history.timeline ?? [])
+        setEhuiRefreshKey((k) => k + 1)
+        const short =
+          sessionId.length > 12 ? `${sessionId.slice(0, 10)}…` : sessionId
+        setSystem(
+          t("eh.sessionResumed", "Resumed session {id}.", { id: short }),
+          "success",
+        )
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setSystem(
+          t("eh.sessionResumeFailed", "Failed to resume session: {error}", {
+            error: msg,
+          }),
+          "error",
+        )
+      }
+    },
+    [busy, chatId, nodeService, setSystem, t],
+  )
+
   /** Persist a new permission policy (always-confirm | safe-only | off | never). */
   const applyPolicy = useCallback(
     async (policy: string) => {
@@ -1220,6 +1257,7 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
           <EnvoyHarnessEhuiRail
             refreshKey={ehuiRefreshKey}
             {...(effectiveChatId ? { chatId: effectiveChatId } : {})}
+            onResumeSession={resumeSession}
           />
         </div>
       </header>
@@ -1518,6 +1556,7 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
           dataSource={ehuiDataSource}
           refreshKey={ehuiRefreshKey}
           className="eh-ehui-shell"
+          onResumeSession={resumeSession}
         />
       ) : (
         <p className="eh-ehui-placeholder-text">

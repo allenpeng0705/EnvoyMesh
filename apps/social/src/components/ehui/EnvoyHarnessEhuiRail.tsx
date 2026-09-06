@@ -16,12 +16,15 @@ export interface EnvoyHarnessEhuiRailProps {
   /** Scope EHUI session ops to this Envoy Harness chat id. */
   chatId?: string;
   className?: string;
+  /** Host loads a selected persisted session from the Resume panel. */
+  onResumeSession?: (sessionId: string) => void;
 }
 
 export function EnvoyHarnessEhuiRail({
   refreshKey,
   chatId,
   className,
+  onResumeSession,
 }: EnvoyHarnessEhuiRailProps) {
   const nodeService = useNodeService();
   const [status, setStatus] = useState<EnvoyHarnessStatus | null>(null);
@@ -71,6 +74,9 @@ export function EnvoyHarnessEhuiRail({
           panelClassName="modal-panel eh-ehui-modal-panel"
           closeButtonClassName="modal-close"
           inputClassName="pi-chat-input eh-ehui-field"
+          {...(onResumeSession !== undefined
+            ? { onResumeSession }
+            : {})}
         />
       ) : null}
     </>

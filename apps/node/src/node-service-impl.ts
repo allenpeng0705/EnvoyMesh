@@ -6792,6 +6792,45 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  /**
+   * EHUI Resume / `/resume` — bind chat cwd to an existing session and reload.
+   */
+  async resumeEnvoyHarnessSession(opts: {
+    sessionId: string;
+    chatId?: string;
+  }): Promise<import("@envoymesh/api").EhChatHistory> {
+    const sessionId = opts.sessionId.trim();
+    if (!sessionId) {
+      throw new Error("envoy_harness_session_id_required");
+    }
+    const chat = await this._resolveEhChat(opts.chatId ?? null);
+    if (chat && this._ehChatRuntime.hasTurnForChat(chat.id)) {
+      throw new Error("envoy_harness_turn_busy");
+    }
+    const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
+    const normalized = normalizeEhWorkspaceCwd(cwd);
+    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    if (!(await sessionStore.exists(sessionId))) {
+      throw new Error(`envoy_harness_session_not_found: ${sessionId}`);
+    }
+    if (chat) {
+      await this._activateEhChat(chat);
+      this._ehChatRuntime.removeHost(chat.id);
+    } else {
+      this._closeEnvoyHarnessPersistentAcpHost();
+    }
+    await this._persistEhSessionMapping(cwd, sessionId, chat?.id);
+    const history = await loadEhChatHistoryFromStore({
+      sessionStore,
+      sessionId,
+      cwd,
+    });
+    return {
+      ...history,
+      ...(chat ? { chatId: chat.id } : {}),
+    };
+  }
+
   private async _persistEhSessionMapping(
     cwd: string,
     sessionId: string,

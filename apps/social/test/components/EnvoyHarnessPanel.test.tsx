@@ -19,6 +19,7 @@ const setEnvoyHarnessAutoRunPolicy = vi.fn()
 const getEnvoyHarnessChatHistory = vi.fn()
 const openEnvoyHarnessChat = vi.fn()
 const resetEnvoyHarnessChat = vi.fn()
+const resumeEnvoyHarnessSession = vi.fn()
 const listEnvoyHarnessChats = vi.fn()
 const ehRespondToPermission = vi.fn()
 const listEnvoyHarnessPeers = vi.fn()
@@ -47,6 +48,22 @@ vi.mock("@envoymesh/envoy-harness-ehui", () => {
   return {
     EhuiPanelModal: () => null,
     EhuiCommandLinks: () => null,
+    EhuiShell: (props: {
+      onResumeSession?: (sessionId: string) => void
+    }) =>
+      React.createElement(
+        "div",
+        { "data-testid": "ehui-shell" },
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            "data-testid": "ehui-resume-pick",
+            onClick: () => props.onResumeSession?.("sess-resume-1"),
+          },
+          "Resume sess-resume-1",
+        ),
+      ),
   }
 })
 
@@ -60,6 +77,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     getEnvoyHarnessChatHistory,
     openEnvoyHarnessChat,
     resetEnvoyHarnessChat,
+    resumeEnvoyHarnessSession,
     listEnvoyHarnessChats,
     ehRespondToPermission,
     listEnvoyHarnessPeers,
@@ -123,6 +141,7 @@ beforeEach(() => {
   getEnvoyHarnessChatHistory.mockReset()
   openEnvoyHarnessChat.mockReset()
   resetEnvoyHarnessChat.mockReset()
+  resumeEnvoyHarnessSession.mockReset()
   listEnvoyHarnessChats.mockReset()
   ehRespondToPermission.mockReset()
   listEnvoyHarnessPeers.mockReset()
@@ -166,6 +185,14 @@ beforeEach(() => {
     sessionId: "sess-new",
     cwd: "/projects/app",
     turns: [],
+  })
+  resumeEnvoyHarnessSession.mockResolvedValue({
+    sessionId: "sess-resume-1",
+    cwd: "/projects/app",
+    turns: [
+      { id: "eh-msg-0", role: "user", text: "prior question" },
+      { id: "eh-msg-1", role: "assistant", text: "prior answer" },
+    ],
   })
   listEnvoyHarnessChats.mockResolvedValue([])
   listEnvoyHarnessPeers.mockResolvedValue([
@@ -574,6 +601,20 @@ describe("EnvoyHarnessPanel", () => {
     await waitFor(() =>
       expect(resetEnvoyHarnessChat).toHaveBeenCalledWith("chat-a"),
     )
+  })
+
+  it("EHUI resume pick binds the open chat via resumeEnvoyHarnessSession", async () => {
+    renderWithI18n(<EnvoyHarnessPanel chatId="chat-a" />)
+    await screen.findByText("Ready")
+    const pick = await screen.findByTestId("ehui-resume-pick")
+    fireEvent.click(pick)
+    await waitFor(() =>
+      expect(resumeEnvoyHarnessSession).toHaveBeenCalledWith({
+        sessionId: "sess-resume-1",
+        chatId: "chat-a",
+      }),
+    )
+    expect(await screen.findByText("prior answer")).toBeDefined()
   })
 
   it("shows a context-size reminder when the transcript is large and dismisses", async () => {
