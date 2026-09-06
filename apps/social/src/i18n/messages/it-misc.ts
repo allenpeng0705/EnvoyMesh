@@ -5,6 +5,9 @@ export const itErrorBoundaryMessages = {
   title: "Qualcosa è andato storto",
   unexpected: "Si è verificato un errore inatteso.",
   tryAgain: "Riprova",
+  providerLost:
+    "L'app ha perso lo stato della sessione. Ricaricare di solito risolve dopo un uso prolungato.",
+  reload: "Ricarica",
 } as const;
 
 export const itProfileMessages = {

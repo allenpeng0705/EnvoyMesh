@@ -21,4 +21,17 @@ describe("createRemoteEhuiDataSource chatId", () => {
       chatId: "c1",
     });
   });
+
+  it("forwards listConfiguredPeers", async () => {
+    const invoke = vi.fn(async () => [
+      { id: "peer-a", endpoint: "127.0.0.1:18789" },
+    ]);
+    const ds = createRemoteEhuiDataSource({
+      invokeEnvoyHarnessEhui: invoke,
+    });
+    await expect(ds.listConfiguredPeers()).resolves.toEqual([
+      { id: "peer-a", endpoint: "127.0.0.1:18789" },
+    ]);
+    expect(invoke).toHaveBeenCalledWith({ op: "listConfiguredPeers" });
+  });
 });

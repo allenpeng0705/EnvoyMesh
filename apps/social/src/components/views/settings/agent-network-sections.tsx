@@ -588,16 +588,25 @@ export function WorkersStatusSection() {
 /* Worker membership                                                          */
 /* -------------------------------------------------------------------------- */
 
-export function WorkerMembershipSection() {
+export function WorkerMembershipSection(props: {
+  /** Home Team jobs: Join toggle only — profile editor stays in Manage workers. */
+  joinOnly?: boolean;
+  onOpenManageWorkers?: () => void;
+} = {}) {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, refreshNodeConfig } = useNodeState();
   const enabled = nodeConfig?.capabilityProviderEnabled === true;
+  const joinOnly = props.joinOnly === true;
 
   return (
     <section className="settings-section" data-testid="agent-network-membership-section">
-      <h4>{t("settings.agentNetwork.membership.heading")}</h4>
-      <p className="section-desc">{t("settings.agentNetwork.membership.desc")}</p>
+      {joinOnly ? null : (
+        <>
+          <h4>{t("settings.agentNetwork.membership.heading")}</h4>
+          <p className="section-desc">{t("settings.agentNetwork.membership.desc")}</p>
+        </>
+      )}
       <div className="settings-field">
         <label className="settings-checkbox-row">
           <input
@@ -615,9 +624,26 @@ export function WorkerMembershipSection() {
           />
           <span>{t("settings.agentNetwork.membership.joinLabel")}</span>
         </label>
-        <p className="field-desc">{t("settings.agentNetwork.membership.joinHint")}</p>
+        <p className="field-desc">
+          {joinOnly
+            ? t("chains.workerProfile.joinHomeHint")
+            : t("settings.agentNetwork.membership.joinHint")}
+        </p>
       </div>
-      <AgentNetworkProfilePanel enabled={enabled} />
+      {joinOnly ? (
+        props.onOpenManageWorkers ? (
+          <button
+            type="button"
+            className="secondary btn-sm"
+            data-testid="chains-worker-profile-manage"
+            onClick={props.onOpenManageWorkers}
+          >
+            {t("chains.workerProfile.editInManage")}
+          </button>
+        ) : null
+      ) : (
+        <AgentNetworkProfilePanel enabled={enabled} />
+      )}
     </section>
   );
 }

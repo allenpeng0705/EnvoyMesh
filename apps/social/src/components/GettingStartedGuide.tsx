@@ -10,6 +10,7 @@
  * affordance, overlay click, or Esc.
  */
 import { useEffect, useRef } from "react";
+import { ENVOYMESH_VERSION } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { ModalPortal } from "./ModalPortal.js";
 import {
@@ -82,7 +83,12 @@ export function GettingStartedGuide({ onClose, onNavigate }: GettingStartedGuide
           onClick={(e) => e.stopPropagation()}
         >
           <header className="getting-started-guide__header">
-            <h2 id="getting-started-title">{t("guide.title")}</h2>
+            <div className="getting-started-guide__heading">
+              <h2 id="getting-started-title">{t("guide.title")}</h2>
+              <p className="getting-started-guide__version" data-testid="guide-version">
+                {t("guide.version", { version: ENVOYMESH_VERSION })}
+              </p>
+            </div>
             <button
               type="button"
               className="icon-btn getting-started-guide__close"
@@ -169,7 +175,7 @@ export function GettingStartedGuide({ onClose, onNavigate }: GettingStartedGuide
 
           <footer className="getting-started-guide__footer">
             <p className="getting-started-guide__hint">{t("guide.reopenHint")}</p>
-            <button type="button" className="primary" onClick={onClose}>
+            <button type="button" className="primary getting-started-guide__done" onClick={onClose}>
               {t("guide.done")}
             </button>
           </footer>

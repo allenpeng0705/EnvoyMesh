@@ -131,6 +131,7 @@ export const fr = mergeMessages(
     lede: "Voici la visite de 30 secondes. Vous pouvez la rouvrir à tout moment depuis le bouton ? dans la barre supérieure.",
     reopenHint: "Astuce : rouvrez ce guide à tout moment depuis le bouton ? dans la barre supérieure.",
     done: "Compris",
+    version: "EnvoyMesh {version}",
     discover: {
       title: "Trouver des gens",
       body: "Ouvrez Découvrir pour rechercher sur le maillage par nom, intérêt ou emplacement. Nous avons déjà cherché des gens qui partagent vos intérêts — dites bonjour pour vous connecter.",

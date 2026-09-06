@@ -1,5 +1,4 @@
 import {
-  createContext,
   useContext,
   useState,
   useEffect,
@@ -25,91 +24,22 @@ import {
   type AssistantMode,
 } from "../lib/storage.js";
 import type {
-  BondRecord,
   BridgeStatus,
   ChatMessage,
   ConnectionStatus,
   HelloProfile,
-  HelloRequest,
   HumanProfile,
   NodeConfig,
   NodeStatus,
   PeerSearchResult,
-  RelayConfig,
   SendHelloOptions,
-  SocialIntroProposal,
 } from "@envoymesh/api";
 import { isFamilyThreadKey, OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
 import { parseNodeStatusFromRpc } from "../lib/effective-node-status.js";
 import { isStrangerInboxCandidate } from "../lib/inbox-pending-filter.js";
+import { NodeStateContext, type NodeStateValue } from "./node-state-context.js";
 
-interface NodeStateValue {
-  // Connection
-  /** WebSocket/mobile transport connected to node's API (daemon may still be stopped). */
-  isConnected: boolean;
-  /** False until the first getNodeStatus completes after transport is up. */
-  nodeStatusHydrated: boolean;
-  nodeStatus: NodeStatus;
-  peerId: string;
-
-  // Configuration
-  nodeConfig: NodeConfig | null;
-
-  // Identity
-  humanProfile: HumanProfile | null;
-
-  // Social
-  bonds: BondRecord[];
-  pendingHellOs: HelloRequest[];
-  pendingIntroProposals: SocialIntroProposal[];
-  connectionStatus: ConnectionStatus | null;
-
-  // Discovery
-  discoveredPeers: PeerSearchResult[];
-  /** One-shot LAN scan; replaces the Discover nearby list (no live churn). */
-  refreshDiscoveredPeers: () => Promise<{
-    peered: number;
-    resolved: number;
-    unreachable: number;
-  }>;
-
-  // Inbox
-  pendingMessages: ChatMessage[];
-
-  // App settings (persisted)
-  appSettings: AppSettings;
-
-  // Agent bridge
-  bridgeStatus: BridgeStatus | null;
-
-  // Paired diagnostics snapshot from the home node (debug bar in MobileApp).
-  // `null` when the transport is closed or the call has not yet returned.
-  pairedDiag: Record<string, unknown> | null;
-
-  // Per-contact AI modes (persisted)
-  contactAiModes: Record<string, AssistantMode>;
-
-  // Mutations
-  setAppSettings: (settings: AppSettings) => void;
-  refreshNodeConfig: () => Promise<void>;
-  refreshHumanProfile: () => Promise<void>;
-  refreshConnectionStatus: () => Promise<void>;
-  acceptHello: (messageId: string) => Promise<void>;
-  declineHello: (messageId: string, reason?: string) => Promise<void>;
-  approveIntroCommitment: (messageId: string) => Promise<void>;
-  declineIntroProposal: (messageId: string) => Promise<void>;
-  setContactAiModes: (modes: Record<string, AssistantMode>) => void;
-  sendHello: (
-    targetOwnerId: string,
-    profile: HelloProfile,
-    message: string,
-    opts?: SendHelloOptions,
-  ) => Promise<void>;
-  removePendingMessage: (messageId: string) => void;
-  clearPendingMessages: () => void;
-}
-
-const NodeStateContext = createContext<NodeStateValue | null>(null);
+export type { NodeStateValue } from "./node-state-context.js";
 
 // ---------------------------------------------------------------------------
 // Provider

@@ -131,6 +131,7 @@ export const de = mergeMessages(
     lede: "Hier ist die 30-Sekunden-Tour. Sie können sie jederzeit über die ?-Schaltfläche in der oberen Leiste erneut öffnen.",
     reopenHint: "Tipp: Öffnen Sie diesen Leitfaden jederzeit über die ?-Schaltfläche in der oberen Leiste erneut.",
     done: "Verstanden",
+    version: "EnvoyMesh {version}",
     discover: {
       title: "Leute finden",
       body: "Öffnen Sie Entdecken, um das Mesh nach Name, Interesse oder Standort zu durchsuchen. Wir haben bereits nach Leuten gesucht, die Ihre Interessen teilen — sagen Sie Hallo, um sich zu verbinden.",

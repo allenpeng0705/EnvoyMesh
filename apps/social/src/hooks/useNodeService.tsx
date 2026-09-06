@@ -1,6 +1,17 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createWsClient } from "../ws-client.js";
 import { DEFAULT_APP_SETTINGS, loadAppSettings } from "../lib/storage.js";
+import {
+  DesktopConnectionPrefsContext,
+  ModelProviderUiScopeContext,
+  NodeServiceContext,
+  TerminalSessionsContext,
+  TransportWsContext,
+  type DesktopConnectionPrefs,
+  type ModelProviderUiScope,
+  type TerminalSessionsContextValue,
+} from "./node-service-contexts.js";
+export type { DesktopConnectionPrefs, ModelProviderUiScope } from "./node-service-contexts.js";
 import type {
   AgentShareProposal,
   BondRecord,
@@ -942,41 +953,16 @@ export interface NodeServiceClient {
   ): Promise<boolean>;
 }
 
-const NodeServiceContext = createContext<NodeServiceClient | null>(null);
-
-type TerminalSessionsContextValue = {
-  sessions: import("@envoymesh/api").TerminalSessionSummary[];
-  refresh: () => Promise<void>;
-};
-
-const TerminalSessionsContext = createContext<TerminalSessionsContextValue | null>(null);
-
 /** True when WebSocket/mobile transport is up (daemon may still be stopped). Separate from mesh "online". */
-const TransportWsContext = createContext(false);
-
 export function useTransportWsOpen(): boolean {
   return useContext(TransportWsContext);
 }
-
-/** Mobile shell only exposes cloud-friendly provider modes in Settings; desktop uses full. */
-export type ModelProviderUiScope = "full" | "cloud-only";
-
-const ModelProviderUiScopeContext = createContext<ModelProviderUiScope>("full");
 
 export function useModelProviderUiScope(): ModelProviderUiScope {
   return useContext(ModelProviderUiScopeContext);
 }
 
 type WsClientType = ReturnType<typeof createWsClient>;
-
-export interface DesktopConnectionPrefs {
-  wsUrl: string;
-  autoConnect: boolean;
-}
-
-const DesktopConnectionPrefsContext = createContext<{
-  updatePrefs: (patch: Partial<DesktopConnectionPrefs>) => void;
-} | null>(null);
 
 /** Sync App-tab connection settings into the WebSocket client (desktop only). */
 export function useDesktopConnectionPrefsSync() {
@@ -3149,7 +3135,7 @@ export function useNodeService(): NodeServiceClient {
   if (!ctx) {
     throw new Error("useNodeService must be used within NodeServiceProvider");
   }
-  return ctx;
+  return ctx as NodeServiceClient;
 }
 
 export function useConnectionStatus() {

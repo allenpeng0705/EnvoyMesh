@@ -2,6 +2,9 @@ export const errorBoundaryMessages = {
   title: "Something went wrong",
   unexpected: "An unexpected error occurred.",
   tryAgain: "Try Again",
+  providerLost:
+    "The app lost its session state. Reloading usually fixes this after a long run.",
+  reload: "Reload",
 } as const;
 
 export const profileMessages = {
@@ -1081,6 +1084,65 @@ export const knowledgeViewMessages = {
     futureDesc:
       "Future connectors will appear here with the same Install / Use hints. Mesh share always stays vault-backed.",
     futureEmpty: "More connectors will appear here when registered.",
+  },
+  howTo: {
+    open: "How it works",
+    title: "How Knowledge works",
+    intro:
+      "Knowledge is your local vault on this home node. Notes under notes/ power Ask and EnvoyAI. Publish chooses what bonded contacts may query on the mesh. Obsidian and Notion are optional connectors under Plugins — they never replace the vault as the source of truth for sharing.",
+    beforeTitle: "Before you start",
+    before1: "Open Knowledge (top nav). Browse lists files; Ask answers from your vault; Plugins connects Obsidian/Notion; Setup manages embeddings and the index.",
+    before2: "For Ask / RAG: download the local embedding model once under Setup (Browse works without it).",
+    before3: "Create a note in Browse, or import a document — imports land as private Markdown under notes/imports/.",
+    before4: "Publish only what you want peers to query. Mesh answers use published vault content, not live Notion/MCP cards.",
+    basicsTitle: "Example 1 — Ask your vault (no plugins)",
+    basicsMode: "Path: Browse + Ask only. Good first day.",
+    basicsGoal: "Goal: “Find what I wrote about onboarding and summarize the checklist.”",
+    basicsFlowTitle: "Step by step",
+    basicsStep1: "Browse → create a note titled Onboarding, write a short checklist, save.",
+    basicsStep2: "Open Setup → enable vault knowledge if needed → Rebuild index (waits for embedding model).",
+    basicsStep3: "Back to Browse → Ask: type your question → Ask.",
+    basicsStep4: "Read the answer and sources. For multi-turn chat with tools, use “Open in EnvoyAI”.",
+    basicsStep5: "Optional: Publish the note so bonded contacts can query it via knowledge.query — they still cannot see private drafts.",
+    basicsResult: "Result: one private vault Q&A on this node, with optional mesh publish when you choose.",
+    obsidianTitle: "Example 2 — Work with Obsidian (desktop optional)",
+    obsidianMode:
+      "Path: Plugins → Obsidian. Envoy already manages notes/. The Obsidian app is optional; Sync/Import keep both worlds in sync.",
+    obsidianGoal:
+      "Goal: “Keep research notes in Obsidian, still Ask them in EnvoyMesh, and publish a cleaned summary to friends.”",
+    obsidianRosterTitle: "What you need",
+    obsidianNode1: "This home computer (where the Envoy node runs).",
+    obsidianNode2: "Optional: Obsidian desktop with a vault folder on disk.",
+    obsidianNode3: "Knowledge → Plugins → Obsidian card kept Active.",
+    obsidianFlowTitle: "Step by step",
+    obsidianStep1: "Open Knowledge → Plugins → Obsidian. Confirm Active. Home Obsidian vaults often auto-link; otherwise Add vault folder…",
+    obsidianStep2: "Optional: install Obsidian from obsidian.md → Open folder as vault → pick the linked folder (or your Envoy vault directory).",
+    obsidianStep3: "Edit notes in Obsidian (or in Envoy). When you finish in Obsidian, return here and click Sync now on the Obsidian card.",
+    obsidianStep4: "Browse → filter Obsidian to see linked/live files. Use Import all linked (or per-row import) to copy into notes/imports/obsidian/ when you want a vault mirror.",
+    obsidianStep5: "Ask can search linked Obsidian files for you (owner-only). Rebuild index under Setup also pulls linked notes into the vault mirror (up to the sync cap).",
+    obsidianStep6: "Publish from Browse only after content lives in the Envoy vault. Mesh peers never query raw linked Obsidian paths.",
+    obsidianResult:
+      "Result: you write where you like; EnvoyMesh Ask and Publish stay vault-backed. Unlink a row to stop auto-link for that vault.",
+    notionTitle: "Example 3 — Notion via MCP (no local vault folder)",
+    notionMode:
+      "Path: Plugins → Notion (via MCP). Knowledge sync uses an MCP server URL — not the Notion app login inside Envoy.",
+    notionGoal:
+      "Goal: “Pull project pages from Notion into my vault, Ask them locally, keep cloud pages out of mesh Publish until I import.”",
+    notionRosterTitle: "What you need",
+    notionNode1: "An MCP server that can talk to Notion (or Memex / similar) with an http(s) URL.",
+    notionNode2: "Optional: Notion desktop/web app for reading pages (Open Notion on the card).",
+    notionNode3: "Knowledge → Plugins → Notion card with MCP search enabled.",
+    notionFlowTitle: "Step by step",
+    notionStep1: "Run your Notion MCP server and copy its URL (and search tool name if required by your setup).",
+    notionStep2: "Knowledge → Plugins → Notion → paste the MCP URL → turn MCP search On. Soft-fail is OK: without a URL, Browse/Ask simply use the local vault.",
+    notionStep3: "Browse → filter Notion. Live MCP cards appear when the server responds.",
+    notionStep4: "Select useful cards → Import visible cards (or per-row import). Files save under notes/mcp/ as private Markdown by default.",
+    notionStep5: "Rebuild index under Setup so Ask/RAG includes the imported pages. Optionally Export to Notion/MCP when write-back is configured.",
+    notionStep6: "Publish imported notes only if you want peers to query them. Live MCP search feeds owner EnvoyAI — it does not replace mesh knowledge.query.",
+    notionResult:
+      "Result: Notion stays in the cloud; your vault holds imported copies you control. No MCP URL means cloud Notion is skipped, not an error.",
+    tip: "Tip: Browse without embeddings; Ask needs Setup’s embedding model once. Mesh Publish is always vault-backed — import Obsidian/Notion first when you want peers to see that content.",
+    done: "Got it",
   },
 } as const;
 

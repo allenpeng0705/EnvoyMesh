@@ -2088,11 +2088,31 @@ textarea::placeholder {
   max-width: min(1100px, 100%);
 }
 
+.knowledge-view__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 0.4rem;
+  flex-wrap: nowrap;
+}
+
 .knowledge-view__header h2 {
   font-size: clamp(1.55rem, 2.2vw, 1.85rem);
   font-weight: 650;
   letter-spacing: -0.02em;
-  margin: 0 0 0.4rem;
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.knowledge-view__howto-btn {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
 }
 
 .knowledge-view__lede,
@@ -12888,6 +12908,7 @@ button:disabled {
 }
 
 .chains-view__manage-btn,
+.chains-view__howto-btn,
 .chains-view__new-btn {
   min-height: 36px;
   padding: var(--space-1) var(--space-4);
@@ -12926,6 +12947,31 @@ button:disabled {
   text-align: left;
   cursor: pointer;
   transition: background var(--transition-fast);
+}
+
+.chains-view__inline-toggle-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.chains-view__join-chip {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+  line-height: 1.4;
+}
+
+.chains-view__join-chip--on {
+  background: color-mix(in srgb, var(--color-success, #15803d) 16%, transparent);
+  color: var(--color-success, #15803d);
+}
+
+.chains-view__join-chip--off {
+  background: color-mix(in srgb, var(--color-text-muted) 14%, transparent);
+  color: var(--color-text-muted);
 }
 
 .chains-view__inline-toggle:hover {
@@ -13626,29 +13672,62 @@ button:disabled {
 /* ---- Phase 58A fleet readiness checklist ---- */
 
 .fleet-readiness {
+  text-align: left;
   padding: var(--space-4);
-  border: 1px solid var(--color-border, var(--color-slate-200));
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle, var(--color-border));
+  border-radius: calc(var(--radius-lg) + 2px);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--color-surface) 92%, var(--color-bg)) 0%,
+      var(--color-surface) 100%
+    );
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-bg) 55%, transparent);
 }
 
 .fleet-readiness--compact {
-  padding: var(--space-3);
-  margin-top: var(--space-3);
+  padding: var(--space-4);
+  margin: var(--space-4) auto 0;
+  width: 100%;
+  max-width: 42rem;
+}
+
+.fleet-readiness__header {
+  margin-bottom: var(--space-3);
 }
 
 .fleet-readiness__title {
-  margin: 0 0 var(--space-1);
+  margin: 0;
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
   color: var(--color-text);
+  letter-spacing: 0.01em;
 }
 
+.fleet-readiness__lead,
 .fleet-readiness__desc {
-  margin: 0 0 var(--space-3);
+  margin: var(--space-1) 0 0;
   font-size: var(--text-xs);
   line-height: var(--leading-relaxed);
   color: var(--color-text-muted);
+}
+
+.fleet-readiness__howto-link {
+  display: inline-block;
+  margin-top: var(--space-2);
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-accent, var(--color-primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.fleet-readiness__howto-link:hover {
+  color: var(--color-text);
 }
 
 .fleet-readiness__list {
@@ -13658,39 +13737,68 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  counter-reset: none;
 }
 
 .fleet-readiness__row {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle, var(--color-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg) 35%, var(--color-surface));
+  border-left-width: 3px;
+}
+
+.fleet-readiness__row--pass {
+  border-left-color: var(--color-success, #16a34a);
+}
+
+.fleet-readiness__row--warn {
+  border-left-color: var(--color-warning, #ca8a04);
+}
+
+.fleet-readiness__row--fail {
+  border-left-color: var(--color-danger, #dc2626);
+}
+
+.fleet-readiness__row--skip {
+  border-left-color: var(--color-border);
+  opacity: 0.72;
+}
+
+.fleet-readiness__row-main {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .fleet-readiness__glyph {
-  flex: 0 0 1.25rem;
-  width: 1.25rem;
-  height: 1.25rem;
+  flex: 0 0 1.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-top: 0.05rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .fleet-readiness__row--pass .fleet-readiness__glyph {
-  background: color-mix(in srgb, var(--color-success, #16a34a) 18%, transparent);
+  background: color-mix(in srgb, var(--color-success, #16a34a) 16%, transparent);
   color: var(--color-success, #16a34a);
 }
 
 .fleet-readiness__row--warn .fleet-readiness__glyph {
-  background: color-mix(in srgb, var(--color-warning, #ca8a04) 18%, transparent);
+  background: color-mix(in srgb, var(--color-warning, #ca8a04) 16%, transparent);
   color: var(--color-warning, #ca8a04);
 }
 
 .fleet-readiness__row--fail .fleet-readiness__glyph {
-  background: color-mix(in srgb, var(--color-danger, #dc2626) 18%, transparent);
+  background: color-mix(in srgb, var(--color-danger, #dc2626) 14%, transparent);
   color: var(--color-danger, #dc2626);
 }
 
@@ -13699,11 +13807,14 @@ button:disabled {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  align-items: flex-start;
+  gap: var(--space-1);
 }
 
 .fleet-readiness__label {
   font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-snug, 1.35);
   color: var(--color-text);
 }
 
@@ -13714,34 +13825,37 @@ button:disabled {
 }
 
 .fleet-readiness__cta {
-  flex-shrink: 0;
+  margin-top: var(--space-1);
   font-size: var(--text-xs);
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  align-self: flex-start;
 }
 
 .fleet-readiness__gaps {
   list-style: none;
   margin: var(--space-3) 0 0;
-  padding: var(--space-2) 0 0;
-  border-top: 1px solid var(--color-border, var(--color-slate-200));
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--color-border-subtle, var(--color-border));
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
 .fleet-readiness__gap {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg) 40%, var(--color-surface));
+  border: 1px solid var(--color-border-subtle, var(--color-border));
   font-size: var(--text-xs);
 }
 
 .fleet-readiness__gap-body {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .fleet-readiness__gap-name {
@@ -13752,6 +13866,134 @@ button:disabled {
 .fleet-readiness__gap-reason {
   color: var(--color-text-muted);
   line-height: var(--leading-relaxed);
+}
+
+/* ---- Team jobs how-to guide modal ---- */
+
+.team-jobs-howto,
+.howto-modal {
+  max-width: min(42rem, calc(100vw - 2rem));
+  max-height: min(90vh, 52rem);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+}
+
+.team-jobs-howto .modal-header,
+.howto-modal .modal-header {
+  flex-shrink: 0;
+}
+
+.team-jobs-howto__body,
+.howto-modal__body {
+  padding: 0 var(--space-1) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.team-jobs-howto__intro,
+.howto-modal__intro {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text);
+}
+
+.team-jobs-howto__section,
+.howto-modal__section {
+  margin: 0;
+}
+
+.team-jobs-howto__section--example,
+.howto-modal__section--example {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle, var(--color-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg) 40%, var(--color-surface));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.team-jobs-howto__heading,
+.howto-modal__heading {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+.team-jobs-howto__subheading,
+.howto-modal__subheading {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
+.team-jobs-howto__mode,
+.howto-modal__mode {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-muted);
+}
+
+.team-jobs-howto__roster,
+.howto-modal__roster {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text);
+}
+
+.team-jobs-howto__steps,
+.howto-modal__steps {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text);
+}
+
+.team-jobs-howto__example-goal,
+.howto-modal__example-goal {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text);
+}
+
+.team-jobs-howto__example-result,
+.team-jobs-howto__tip,
+.howto-modal__example-result,
+.howto-modal__tip {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-muted);
+}
+
+.team-jobs-howto__footer,
+.howto-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle, var(--color-border));
 }
 
 /* ---- Bonded contacts / worker candidates list ---- */
@@ -14101,6 +14343,117 @@ button:disabled {
   max-width: 42rem;
 }
 
+/* Compact Team jobs home roster (no skill chips; scrollable). */
+.team-jobs-contacts__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.team-jobs-contacts__header .chains-empty__contacts-title {
+  margin: 0;
+}
+
+.team-jobs-contacts__count {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-weight: var(--font-medium);
+}
+
+.team-jobs-contacts__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: calc(2.25rem * 9 + 2px);
+  overflow-y: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.team-jobs-contacts__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.team-jobs-contacts__row:last-child {
+  border-bottom: none;
+}
+
+.team-jobs-contacts__avatar {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-semibold);
+}
+
+.team-jobs-contacts__name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-jobs-contacts__online {
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-text-subtle);
+}
+
+.team-jobs-contacts__online--online {
+  background: var(--color-success, #15803d);
+}
+
+.team-jobs-contacts__online--offline {
+  background: var(--color-error, #b91c1c);
+}
+
+.team-jobs-contacts__online--unknown {
+  background: var(--color-text-subtle, #94a3b8);
+}
+
+.team-jobs-contacts__status {
+  flex-shrink: 0;
+  max-width: 11rem;
+  font-size: var(--text-2xs);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-jobs-contacts__status--ready {
+  color: var(--color-success, #15803d);
+}
+
+.team-jobs-contacts__manage {
+  margin-top: var(--space-3);
+}
+
 /* ---- Agent Network settings modal (Tier 2 + 3 — fleet onboarding) ----
    Reuses .modal-overlay / .modal-panel / .modal-header from chat.css.
    This block only adds the accordion groups + intro that are specific to
@@ -14312,6 +14665,39 @@ button:disabled {
 .agent-network-profile-panel .form-group,
 .agent-network-profile-panel .an-profile__presets {
   margin-bottom: 0;
+}
+
+/* MAP toggle — form-group rules force input { width: 100% }, which blows up
+ * the checkbox; keep a compact checkbox + readable label row. */
+.agent-network-profile-panel .agent-network-map-path .settings-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text);
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.agent-network-profile-panel .agent-network-map-path .settings-checkbox-row input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+}
+
+.agent-network-profile-panel .agent-network-map-path .settings-checkbox-row span {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-network-profile-panel .agent-network-map-path > .field-desc {
+  margin-top: var(--space-1);
 }
 
 /* Strength toggle chips — grouped by domain (Analytical / STEM / Language

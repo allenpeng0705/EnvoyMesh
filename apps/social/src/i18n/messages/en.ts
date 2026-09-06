@@ -136,6 +136,7 @@ export const en = {
     lede: "A quick tour of the major features. Reopen anytime from the ? button in the top bar — or ask EnvoyAI with /about, /terminal, /team, and more.",
     reopenHint: "Tip: reopen this guide anytime from the ? button. In EnvoyAI, type / for feature commands.",
     done: "Got it",
+    version: "EnvoyMesh {version}",
     discover: {
       title: "Find people",
       body: "Open Social → Explore → Discover to search the mesh by name, interest, or location. Say hello to bond — each contact gets a trust tier that controls what they can access.",

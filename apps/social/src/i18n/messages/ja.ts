@@ -132,6 +132,7 @@ export const ja = mergeMessages(
     lede: "30 秒のツアーです。トップバーの ? ボタンからいつでも再度開くことができます。",
     reopenHint: "ヒント: トップバーの ? ボタンからいつでもこのガイドを再度開くことができます。",
     done: "了解",
+    version: "EnvoyMesh {version}",
     discover: {
       title: "人を探す",
       body: "「発見」を開いて、名前、興味、場所でメッシュを検索します。同じ興味を持つ人を既に検索しました — 挨拶して接続してください。",

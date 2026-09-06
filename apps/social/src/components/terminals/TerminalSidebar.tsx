@@ -109,12 +109,11 @@ export function TerminalSidebar({
   return (
     <aside className="terminal-sidebar">
       <div className="terminal-sidebar-header">
-        <h3>{t("terminals.sessions")}</h3>
         <div className="terminal-sidebar-header-actions">
           {onStartEnvoy ? (
             <button
               type="button"
-              className="primary"
+              className="primary terminal-sidebar-mode-btn"
               disabled={busy || disabled}
               onClick={() => onStartEnvoy()}
               title={t("eh.startEnvoyTitle", "Start the Envoy TUI (choose project folder)")}
@@ -125,7 +124,7 @@ export function TerminalSidebar({
           {onStartPi ? (
             <button
               type="button"
-              className="primary"
+              className="primary terminal-sidebar-mode-btn"
               disabled={busy || disabled}
               onClick={() => onStartPi()}
               title={t("pi.startPiTitle", "Start a Pi coding terminal (choose project folder)")}
@@ -133,8 +132,16 @@ export function TerminalSidebar({
               {t("pi.startPi", "π Pi")}
             </button>
           ) : null}
-          <button type="button" className="primary" disabled={busy || disabled} onClick={() => void handleNew()}>
-            {t("terminals.new")}
+          <button
+            type="button"
+            className="primary terminal-sidebar-new"
+            disabled={busy || disabled}
+            onClick={() => void handleNew()}
+            aria-label={t("terminals.newAria", t("terminals.new"))}
+            title={t("terminals.newAria", t("terminals.new"))}
+            data-testid="terminals-new"
+          >
+            +
           </button>
         </div>
       </div>

@@ -291,9 +291,8 @@ export function AgentNetworkProfilePanel({ enabled }: { enabled: boolean }) {
 
       {/* ---- MAP worker path (OpenClaw engine only; Phase 41 opt-in) ---- */}
       {workerEngine === "openclaw" ? (
-        <div className="form-group" data-testid="agent-network-map-worker-path">
-          <label htmlFor="anp-use-map">{t(`${K}.mapLabel`)}</label>
-          <label className="settings-checkbox-row">
+        <div className="form-group agent-network-map-path" data-testid="agent-network-map-worker-path">
+          <label className="settings-checkbox-row" htmlFor="anp-use-map">
             <input
               type="checkbox"
               id="anp-use-map"

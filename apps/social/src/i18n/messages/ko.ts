@@ -132,6 +132,7 @@ export const ko = mergeMessages(
     lede: "30초 둘러보기입니다. 상단의 ? 버튼으로 언제든 다시 열 수 있습니다.",
     reopenHint: "팁: 상단 ? 버튼으로 언제든 이 가이드를 다시 열 수 있습니다.",
     done: "확인",
+    version: "EnvoyMesh {version}",
     discover: {
       title: "사람 찾기",
       body: "「찾기」를 열어 이름, 관심사, 위치로 메시를 검색하세요. 이미 같은 관심사를 가진 사람들을 검색했습니다 — 인사하여 연결하세요.",

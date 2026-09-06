@@ -428,6 +428,19 @@
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
+.terminal-panel-toolbar-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: nowrap;
+}
+
+.terminal-panel-howto {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .terminal-panel-title {
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
@@ -5039,8 +5052,20 @@
   justify-content: space-between;
   gap: var(--space-3);
 }
+.getting-started-guide__heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
 .getting-started-guide__header h2 {
   margin: 0;
+}
+.getting-started-guide__version {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 .getting-started-guide__close {
   flex-shrink: 0;
@@ -5108,6 +5133,11 @@
   margin: 0;
   font-size: 0.8125rem;
   color: var(--color-text-muted);
+  min-width: 0;
+}
+.getting-started-guide__done {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 @media (max-width: 30rem) {
   .getting-started-guide__hint {

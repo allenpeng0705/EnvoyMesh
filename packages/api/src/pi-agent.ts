@@ -466,6 +466,7 @@ type EhuiInvokeOp =
   | { op: "gitStatus" }
   | { op: "clusterStatus" }
   | { op: "listPeers" }
+  | { op: "listConfiguredPeers" }
   | { op: "teamJobs" }
   | { op: "scoreboardSummary" }
   | { op: "listSessions" }

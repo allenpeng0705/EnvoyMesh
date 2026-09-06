@@ -135,6 +135,7 @@ export const zh = mergeMessages(en, {
     lede: "主要功能快速导览。随时可点顶部栏 ? 重新打开 — 也可在 EnvoyAI 里用 /about、/terminal、/team 等命令了解更多。",
     reopenHint: "提示：随时可点顶部栏 ? 打开本指南。在 EnvoyAI 输入 / 可查看功能命令。",
     done: "明白了",
+    version: "EnvoyMesh {version}",
     discover: {
       title: "找人",
       body: "打开 社交 → 探索 → 发现，按姓名、兴趣或位置搜索网格。打个招呼即可建立联结 — 每位联系人有信任等级，控制可访问内容。",

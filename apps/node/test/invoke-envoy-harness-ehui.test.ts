@@ -25,6 +25,12 @@ describe("parseEhuiInvokeRequest", () => {
     ).toEqual({ op: "gitDiff", staged: true, stat: true });
   });
 
+  it("parses listConfiguredPeers", () => {
+    expect(parseEhuiInvokeRequest({ op: "listConfiguredPeers" })).toEqual({
+      op: "listConfiguredPeers",
+    });
+  });
+
   it("rejects unknown op", () => {
     expect(() => parseEhuiInvokeRequest({ op: "evil" })).toThrow(/unknown op/);
   });

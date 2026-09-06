@@ -131,6 +131,7 @@ export const it = mergeMessages(
     lede: "Ecco il tour di 30 secondi. Puoi riaprirlo in qualsiasi momento dal pulsante ? nella barra in alto.",
     reopenHint: "Suggerimento: riapri questa guida in qualsiasi momento dal pulsante ? nella barra in alto.",
     done: "Capito",
+    version: "EnvoyMesh {version}",
     discover: {
       title: "Trova persone",
       body: "Apri Scopri per cercare sulla mesh per nome, interesse o posizione. Abbiamo già cercato persone che condividono i tuoi interessi — saluta per connetterti.",

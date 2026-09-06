@@ -65,6 +65,8 @@ export function parseEhuiInvokeRequest(raw: unknown): EhuiInvokeRequest {
       return withChatId({ op: "clusterStatus" }, raw);
     case "listPeers":
       return withChatId({ op: "listPeers" }, raw);
+    case "listConfiguredPeers":
+      return withChatId({ op: "listConfiguredPeers" }, raw);
     case "teamJobs":
       return withChatId({ op: "teamJobs" }, raw);
     case "scoreboardSummary":

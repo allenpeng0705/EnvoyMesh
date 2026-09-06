@@ -41,6 +41,7 @@ import { ChainReportView } from "../ChainReportView.js";
 import { ChainStartDialog } from "../ChainStartDialog.js";
 import type { WorkerCandidate } from "../ChainStartDialog.js";
 import { FleetReadinessPanel } from "../FleetReadinessPanel.js";
+import { AgentNetworkSkillsPreview } from "../AgentNetworkSkillsPreview.js";
 import {
   buildFleetReadinessChecklist,
   summarizeFleetReadinessInput,
@@ -49,7 +50,7 @@ import { collectFleetWorkerGaps } from "../../lib/fleet-worker-gaps.js";
 import { classifyObservedJobBadge } from "../../lib/observed-job-badge.js";
 import { ChainDetailPanel } from "../ChainDetailPanel.js";
 import { AgentNetworkSettingsModal } from "../AgentNetworkSettingsModal.js";
-import { AgentNetworkSkillsPreview } from "../AgentNetworkSkillsPreview.js";
+import { TeamJobsHowToModal } from "../TeamJobsHowToModal.js";
 import { WorkerMembershipSection } from "./settings/agent-network-sections.js";
 
 type ComposerAttachment = {
@@ -400,6 +401,7 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
   // Agent Network settings modal (fleet onboarding + advanced) — opened from
   // the "Manage workers" button in the header.
   const [showSettings, setShowSettings] = useState(false);
+  const [showHowTo, setShowHowTo] = useState(false);
 
   // Collapsible "Join Agent Network" inline section (Tier 1).
   const [showMembership, setShowMembership] = useState(false);
@@ -788,11 +790,6 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
 
   const openWorkerProfileForRole = useCallback(() => {
     setShowMembership(true);
-    window.setTimeout(() => {
-      const el = document.getElementById("anp-primary-role") ?? document.getElementById("anp-custom-role");
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      if (el instanceof HTMLElement) el.focus();
-    }, 50);
   }, []);
 
   const attachmentsUploading = composerAttachments.some((a) => a.uploading);
@@ -941,6 +938,14 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
           >
             {t("chains.start.newChain")}
           </button>
+          <button
+            type="button"
+            className="secondary btn-sm chains-view__howto-btn"
+            data-testid="chains-howto-open"
+            onClick={() => setShowHowTo(true)}
+          >
+            {t("chains.howTo.open")}
+          </button>
         </div>
       </div>
 
@@ -951,11 +956,24 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
           className="chains-view__inline-toggle"
           aria-expanded={showMembership}
           onClick={() => setShowMembership((v) => !v)}
+          data-testid="chains-worker-profile-toggle"
         >
           <span className="chains-view__inline-chevron">
             {showMembership ? "▾" : "▸"}
           </span>
-          {t("chains.workerProfile.title")}
+          <span className="chains-view__inline-toggle-label">
+            {t("chains.workerProfile.title")}
+          </span>
+          <span
+            className={`chains-view__join-chip chains-view__join-chip--${
+              nodeConfig?.capabilityProviderEnabled === true ? "on" : "off"
+            }`}
+            data-testid="chains-worker-profile-join-chip"
+          >
+            {nodeConfig?.capabilityProviderEnabled === true
+              ? t("chains.workerProfile.joinOn")
+              : t("chains.workerProfile.joinOff")}
+          </span>
         </button>
         {showMembership ? (
           <div className="chains-view__inline-body">
@@ -1209,10 +1227,13 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
         <AgentNetworkSettingsModal onClose={() => setShowSettings(false)} />
       ) : null}
 
+      {showHowTo ? (
+        <TeamJobsHowToModal onClose={() => setShowHowTo(false)} />
+      ) : null}
+
       {activeChains.length === 0 && !composing ? (
         <div className="chains-empty">
           <p>{t("chains.active.empty")}</p>
-          <p className="chains-empty__hint">{t("chains.active.prerequisite")}</p>
           {fleetReadiness.blocked ? (
             <FleetReadinessPanel
               readiness={fleetReadiness}
@@ -1221,24 +1242,21 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
               onManageWorkers={() => setShowSettings(true)}
               onOpenSettingsAi={onOpenSettingsAi}
               onOpenDiscover={onOpenDiscover}
+              onOpenHowTo={() => setShowHowTo(true)}
               onRefreshCards={() => {
                 void nodeService.refreshAgentNetworkWorkers().catch(() => undefined);
               }}
               onRetryProbe={() => void loadReachability()}
             />
-          ) : null}
-          {teamListedCandidates.length > 0 || workerCandidates.length > 0 ? (
+          ) : (
+            <p className="chains-empty__hint">{t("chains.active.prerequisite")}</p>
+          )}
+          {teamListedCandidates.length > 0 ? (
             <div className="chains-empty__contacts">
               <h4 className="chains-empty__contacts-title">{t("chains.start.contactsTitle")}</h4>
-              <p className="chains-empty__contacts-desc">
-                {teamListedCandidates.length > 0
-                  ? t("chains.start.contactsDesc")
-                  : t("chains.start.contactsNotReady")}
-              </p>
+              <p className="chains-empty__contacts-desc">{t("chains.start.contactsDesc")}</p>
               <ul className="chain-workers__list">
-                {(teamListedCandidates.length > 0 ? teamListedCandidates : workerCandidates)
-                  .slice(0, 6)
-                  .map(({ bond, card, health, isSelf }) => {
+                {teamListedCandidates.slice(0, 6).map(({ bond, card, health, isSelf }) => {
                   const displayName = isSelf
                     ? t("chains.start.youLabel")
                     : (bond.displayName ?? bond.libp2pPeerId?.slice(0, 10) ?? bond.peerOwnerId.slice(0, 10));
@@ -1265,11 +1283,6 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
                           {" "}
                           {t(`chains.start.contact${health.cardStatus.charAt(0).toUpperCase() + health.cardStatus.slice(1)}`)}
                         </span>
-                        {!health.optIn ? (
-                          <span className="chain-worker-card__caps muted">
-                            {t("chains.start.notOptedInReason")}
-                          </span>
-                        ) : null}
                         {isSelf && health.engineReady === false ? (
                           <span className="chain-worker-card__caps muted">
                             {t("chains.start.engineOfflineReason")}
@@ -1282,7 +1295,7 @@ export function ChainsView({ onBack, onOpenDiscover, onOpenSettingsAi }: ChainsV
                 );})}
               </ul>
             </div>
-          ) : (
+          ) : fleetReadiness.blocked ? null : (
             <p className="chains-empty__hint">{t("chains.start.contactsEmpty")}</p>
           )}
         </div>

@@ -33,13 +33,13 @@ export const agentNetworkSettingsMessages = {
       "Uses the local Envoy Harness runtime and its configured model for Team job steps. Readiness is checked before work is awarded.",
     workerEngineSaved: "Team job engine saved",
     mapLabel: "MAP worker path (adapter)",
-    mapToggleLabel: "Run subtasks through the Mesh Adapter Path",
+    mapToggleLabel: "Use adapter path for Team job steps",
     mapStatusPrimary:
-      "Status: primary — subtasks run through the adapter path (shadow trail still available with ENVOYMESH_MAP_SHADOW=1).",
+      "On — Team job steps on this node use the adapter path.",
     mapStatusLegacy:
-      "Status: legacy — subtasks run through the legacy engine path. Turn on to switch to the adapter path.",
+      "Off — Team job steps use the legacy engine path.",
     mapHint:
-      "Mesh Adapter Pattern (MAP) normalizes capability advertisement, result delivery, and verification across runtimes. Applies to the OpenClaw engine. Live rollback: ENVOYMESH_MAP_ROLLBACK=1 forces the legacy path.",
+      "The adapter path keeps capability ads, results, and checks consistent across runtimes (OpenClaw). Advanced rollback: ENVOYMESH_MAP_ROLLBACK=1.",
     mapSavedOn: "MAP worker path enabled — adapter is now the primary executor",
     mapSavedOff: "MAP worker path disabled — legacy engine restored",
     primaryRole: "Collaboration role",

@@ -13,7 +13,16 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
+function isProviderContextError(error: Error | null): boolean {
+  const msg = error?.message ?? "";
+  return (
+    /must be used within (NodeStateProvider|NodeServiceProvider|CallSessionProvider)/i.test(msg) ||
+    /must be inside <(I18nProvider|ToastProvider)>/i.test(msg)
+  );
+}
+
 function ErrorFallback({ error, onReset }: { error: Error | null; onReset: () => void }) {
+  const providerError = isProviderContextError(error);
   return (
     <I18nContext.Consumer>
       {(ctx) => {
@@ -23,10 +32,26 @@ function ErrorFallback({ error, onReset }: { error: Error | null; onReset: () =>
             <div className="error-boundary-card">
               <h2>{t("errorBoundary.title")}</h2>
               <p className="error-boundary-message">
-                {error?.message ?? t("errorBoundary.unexpected")}
+                {providerError
+                  ? t(
+                      "errorBoundary.providerLost",
+                      "The app lost its session state. Reloading usually fixes this after a long run.",
+                    )
+                  : (error?.message ?? t("errorBoundary.unexpected"))}
               </p>
-              <button className="primary" onClick={onReset}>
-                {t("errorBoundary.tryAgain")}
+              <button
+                className="primary"
+                onClick={() => {
+                  if (providerError && typeof window !== "undefined") {
+                    window.location.reload();
+                    return;
+                  }
+                  onReset();
+                }}
+              >
+                {providerError
+                  ? t("errorBoundary.reload", "Reload")
+                  : t("errorBoundary.tryAgain")}
               </button>
             </div>
           </div>

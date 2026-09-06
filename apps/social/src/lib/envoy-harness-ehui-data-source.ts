@@ -58,6 +58,10 @@ export function createRemoteEhuiDataSource(
     clusterStatus: () =>
       invoke({ op: "clusterStatus" }) as Promise<ClientClusterStatus>,
     listPeers: () => invoke({ op: "listPeers" }) as Promise<ClientPeerInfo[]>,
+    listConfiguredPeers: () =>
+      invoke({ op: "listConfiguredPeers" }) as Promise<
+        Array<{ id: string; endpoint: string }>
+      >,
     teamJobs: () => invoke({ op: "teamJobs" }) as Promise<ClientTeamJob[]>,
     scoreboardSummary: () =>
       invoke({ op: "scoreboardSummary" }) as Promise<ClientScoreboardEntry[]>,

@@ -482,7 +482,9 @@ export const chainsMessages = {
     advancedGroup: "Advanced",
   },
   readiness: {
-    title: "Get workers ready",
+    title: "Get ready to collaborate",
+    compactLead: "Handle the items below, then start a new team job.",
+    howToLink: "How Team jobs work",
     desc: "Team jobs need Join Agent Network on, then bonded contacts who joined and are online. Fix each item below.",
     ctaManageWorkers: "Manage workers",
     ctaOpenSettingsAi: "Open AI settings",
@@ -490,38 +492,38 @@ export const chainsMessages = {
     ctaRefreshCards: "Refresh cards",
     ctaRetryProbe: "Check again",
     row: {
-      join: "Join Agent Network on this node",
-      engine: "Local agent engine running",
-      bonds: "At least one bonded contact",
-      peerJoin: "A contact joined Agent Network",
-      freshCard: "Fresh agent card from a contact",
-      online: "A contact is online now",
-      otherReady: "Another ready worker (besides you)",
+      join: "Join Agent Network on this device",
+      engine: "Start the local team-job engine",
+      bonds: "Bond at least one contact",
+      peerJoin: "A bonded contact has joined",
+      freshCard: "Contact agent info is up to date",
+      online: "A joined contact is online",
+      otherReady: "Another worker is ready (besides you)",
     },
     hint: {
       join: {
-        fail: "Turn on Join so your agent can work on team jobs.",
+        fail: "Turn on Join so your agent can take team jobs.",
       },
       engine: {
-        fail: "Start your Team jobs engine (OpenClaw or Ext Agent) in Settings → AI.",
+        fail: "In Settings → AI, start OpenClaw or Ext Agent.",
         warn: "Could not confirm the engine is running.",
       },
       bonds: {
-        fail: "Bond with someone in Discover first.",
+        fail: "Find someone in Discover and bond first.",
       },
       peerJoin: {
-        fail: "Ask a bonded contact to enable Join Agent Network on their node.",
+        fail: "Ask a bonded contact to turn on Join Agent Network.",
       },
       freshCard: {
         fail: "No usable agent card yet — refresh after they join.",
-        warn: "Some agent cards are stale — refresh to pull the latest.",
+        warn: "Some agent cards are outdated — refresh to pull the latest.",
       },
       online: {
         fail: "Joined contacts look offline — ask them to open EnvoyMesh, then check again.",
-        warn: "Still checking reachability, or no peer is online yet.",
+        warn: "Still checking who is online.",
       },
       otherReady: {
-        fail: "No selectable workers yet — finish the steps above.",
+        fail: "No other worker is selectable yet — finish the steps above.",
         warn: "Only your agent is ready. Bond a peer who joined for multi-home jobs.",
       },
     },
@@ -537,8 +539,81 @@ export const chainsMessages = {
       offline: "Looks offline — ask them to open EnvoyMesh, then check again.",
     },
   },
+  howTo: {
+    open: "How it works",
+    title: "How Team jobs work",
+    intro:
+      "A Team job takes one goal, splits it into steps, and runs those steps on your agent plus bonded contacts who joined Agent Network. You get one combined report — not separate chats. Choose Skill-based or Role-based when you start the job.",
+    beforeTitle: "Before you start",
+    before1:
+      "On every node: turn on Join Agent Network (Team jobs → Your worker profile).",
+    before2:
+      "Start the Team jobs engine in Settings → AI (OpenClaw, Ext Agent, or Envoy Harness).",
+    before3:
+      "Bond contacts in Discover, ask them to Join, and keep EnvoyMesh open so they stay online.",
+    before4:
+      "On each node, set skills and/or a collaboration role under Your worker profile so matching has something to work with.",
+    skillTitle: "Example A — Skill-based (4 nodes)",
+    skillMode:
+      "Mode: Skill-based. EnvoyMesh matches each step to whoever advertised the best skills for that work.",
+    skillGoal:
+      "Goal: “Plan a weekend family trip to Kyoto — flights/trains, two lodging options, a 3-day itinerary, a packing list, and a one-page budget summary.”",
+    skillRosterTitle: "Who is online and what they listed",
+    skillNode1: "You — skills: writing, planning. Home laptop.",
+    skillNode2: "Alice — skills: research, travel. Desktop at her place.",
+    skillNode3: "Bob — skills: coding, data. Mini PC on the LAN.",
+    skillNode4: "Carol — skills: design, writing. Tablet paired to her home.",
+    skillFlowTitle: "How they collaborate",
+    skillStep1:
+      "You click New team job, paste the goal, keep Skill-based selected, then Preview plan.",
+    skillStep2:
+      "EnvoyMesh proposes steps such as: gather transport options → shortlist lodging → draft itinerary → build budget table → write packing list → synthesize final brief.",
+    skillStep3:
+      "Alice’s research skill wins transport + lodging lookups. She returns options with notes.",
+    skillStep4:
+      "Bob’s data/coding skill builds the budget table from Alice’s numbers. Carol drafts the packing list in clear language.",
+    skillStep5:
+      "Your planning/writing skill stitches the itinerary narrative and the final one-page brief from everyone’s outputs.",
+    skillStep6:
+      "Watch progress under Team jobs. When it finishes, open the report — one family trip plan assembled across four homes.",
+    skillResult:
+      "Why skills: nobody needed a fixed job title. Steps went to the people who listed research, data, design, or writing.",
+    roleTitle: "Example B — Role-based (5 nodes)",
+    roleMode:
+      "Mode: Role-based. EnvoyMesh prefers each worker’s collaboration role (PM, programmer, tester…). Skills still help as a fallback.",
+    roleGoal:
+      "Goal: “Ship a small private ‘family photo captions’ helper — short product brief, simple UI sketch notes, a tiny script prototype, tests for the happy path, and a handoff checklist for the owner.”",
+    roleRosterTitle: "Who is online and their roles",
+    roleNode1: "You — role: project_manager. Coordinates scope and the final handoff.",
+    roleNode2: "Dana — role: researcher. Clarifies requirements and edge cases.",
+    roleNode3: "Evan — role: designer. UI sketch notes and caption-review flow.",
+    roleNode4: "Fay — role: programmer. Tiny script / glue code for the prototype.",
+    roleNode5: "Gus — role: tester. Happy-path checks and a short bug list.",
+    roleFlowTitle: "How they collaborate",
+    roleStep1:
+      "Everyone sets a collaboration role on their worker profile. You start New team job, choose Role-based, paste the goal, then Preview plan.",
+    roleStep2:
+      "The plan seats work by role: researcher gathers requirements → designer outlines the flow → programmer builds a small prototype → tester verifies → PM writes the handoff checklist.",
+    roleStep3:
+      "Dana (researcher) produces a short requirements note: who uploads photos, what a good caption looks like, and what must stay private.",
+    roleStep4:
+      "Evan (designer) turns that into UI sketch notes. Fay (programmer) implements a minimal prototype against those notes.",
+    roleStep5:
+      "Gus (tester) runs the happy path and lists gaps. You (PM) collect their outputs into the owner handoff: what shipped, what’s next, and how to run it.",
+    roleStep6:
+      "Open the Team jobs report when it completes — one delivery package from five roles, still without a shared cloud account.",
+    roleResult:
+      "Why roles: the same people might have overlapping skills; roles make the seating clear (who leads, who builds, who checks).",
+    tip: "Tip: Skill-based is great when specialties differ. Role-based is great for product-style work with a clear cast. You can still run a job with only your own agent when peers are offline.",
+    done: "Got it",
+  },
   workerProfile: {
     title: "Your worker profile",
+    joinOn: "Join on",
+    joinOff: "Join off",
+    joinHomeHint:
+      "Turn this on so bonded peers can recruit your agent. Skills and role live under Manage workers.",
+    editInManage: "Edit skills & role…",
   },
   strategy: {
     balanced: "Balanced",

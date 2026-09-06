@@ -5,6 +5,9 @@ export const deErrorBoundaryMessages = {
   title: "Etwas ist schiefgelaufen",
   unexpected: "Ein unerwarteter Fehler ist aufgetreten.",
   tryAgain: "Erneut versuchen",
+  providerLost:
+    "Die App hat ihren Sitzungszustand verloren. Nach längerem Betrieb hilft meist ein Neuladen.",
+  reload: "Neu laden",
 } as const;
 
 export const deProfileMessages = {

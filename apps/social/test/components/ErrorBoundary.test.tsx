@@ -52,16 +52,28 @@ describe("ErrorBoundary", () => {
     spy.mockRestore();
   });
 
-  it("resets error state on Try Again click", () => {
+  it("offers Reload for missing-provider context errors", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const reload = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, reload },
+    });
+
+    function ProviderBomb(): null {
+      throw new Error("useNodeState must be used within NodeStateProvider");
+    }
 
     render(
       <ErrorBoundary>
-        <Bomb shouldThrow={false} />
+        <ProviderBomb />
       </ErrorBoundary>,
     );
 
-    // Simulate error state directly via re-render with different children
+    expect(screen.getByText(/lost its session state/i)).toBeDefined();
+    fireEvent.click(screen.getByText("Reload"));
+    expect(reload).toHaveBeenCalled();
+
     spy.mockRestore();
   });
 });

@@ -248,6 +248,8 @@ export default defineConfig({
     port: 5173,
   },
   resolve: {
+    // Prevent duplicate React copies when linking file: packages (envoy-harness-ehui, etc.).
+    dedupe: ["react", "react-dom"],
     alias: {
       "@envoymesh/api/did-import": resolve(repoRoot, "packages/api/src/did-import.ts"),
       "@envoymesh/api/community-relay-join": resolve(

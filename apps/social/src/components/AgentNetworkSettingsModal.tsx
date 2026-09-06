@@ -28,6 +28,7 @@ import {
   PairingKioskSection,
   SetupSponsorFriendSection,
   AgentNetworkTestSection,
+  WorkerMembershipSection,
   WorkersStatusSection,
 } from "./views/settings/agent-network-sections.js";
 
@@ -95,6 +96,10 @@ export function AgentNetworkSettingsModal({ onClose }: AgentNetworkSettingsModal
             <p className="an-modal__intro">{t("chains.manageWorkers.intro")}</p>
 
               <OfficeLanPresetSection />
+
+              {/* Join + skills/role — daily Join also lives on Team jobs home;
+                  full profile editing stays here so the home screen stays light. */}
+              <WorkerMembershipSection />
 
               <WorkersStatusSection />
 

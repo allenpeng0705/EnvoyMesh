@@ -33,13 +33,11 @@ export const zhAgentNetworkSettingsMessages = {
       "使用本机 Envoy Harness 及其已配置模型执行协作任务步骤。任务分配前会先检查运行时就绪状态。",
     workerEngineSaved: "协作任务引擎已保存",
     mapLabel: "MAP 工作路径（适配器）",
-    mapToggleLabel: "子任务通过网格适配器路径执行",
-    mapStatusPrimary:
-      "状态：主路径 — 子任务经由适配器路径执行（设置 ENVOYMESH_MAP_SHADOW=1 仍可保留影子对比轨迹）。",
-    mapStatusLegacy:
-      "状态：旧路径 — 子任务经由传统引擎路径执行。开启后切换到适配器路径。",
+    mapToggleLabel: "协作任务步骤使用适配器路径",
+    mapStatusPrimary: "已开启 — 本节点的协作任务步骤走适配器路径。",
+    mapStatusLegacy: "已关闭 — 协作任务步骤走传统引擎路径。",
     mapHint:
-      "网格适配器模式（MAP）统一不同运行时在能力宣告、结果交付与验证上的差异。仅适用于 OpenClaw 引擎。实时回滚：在节点上设置 ENVOYMESH_MAP_ROLLBACK=1 即可强制回到传统路径。",
+      "适配器路径让不同运行时在能力宣告、结果交付与校验上更一致（适用于 OpenClaw）。高级回滚：ENVOYMESH_MAP_ROLLBACK=1。",
     mapSavedOn: "已启用 MAP 工作路径 — 适配器成为主执行器",
     mapSavedOff: "已关闭 MAP 工作路径 — 恢复传统引擎",
     primaryRole: "协作角色",

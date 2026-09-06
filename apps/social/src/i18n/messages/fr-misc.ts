@@ -5,6 +5,9 @@ export const frErrorBoundaryMessages = {
   title: "Une erreur est survenue",
   unexpected: "Une erreur inattendue s'est produite.",
   tryAgain: "Réessayer",
+  providerLost:
+    "L'application a perdu l'état de session. Un rechargement corrige souvent cela après une longue utilisation.",
+  reload: "Recharger",
 } as const;
 
 export const frProfileMessages = {

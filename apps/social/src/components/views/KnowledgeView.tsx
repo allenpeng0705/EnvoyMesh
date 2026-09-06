@@ -18,6 +18,7 @@ import {
 } from "../../lib/content-knowledge-nav.js";
 import { openEnvoyAi } from "../../lib/open-envoy-ai-nav.js";
 import { localizeEnvoyLocalDownloadProgress } from "../../lib/localize-envoy-local-progress.js";
+import { KnowledgeHowToModal } from "../KnowledgeHowToModal.js";
 import { LibraryView } from "./LibraryView.js";
 import { FriendsFilesPanel } from "../discover/FriendsFilesPanel.js";
 import { KnowledgePluginsPanel } from "./KnowledgePluginsPanel.js";
@@ -55,6 +56,7 @@ export function KnowledgeView({ initialPanel = "browse" }: KnowledgeViewProps) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
   const [askBusy, setAskBusy] = useState(false);
+  const [showHowTo, setShowHowTo] = useState(false);
   const obsidianAutoTried = useRef(false);
 
   const knowledgeBase = {
@@ -132,8 +134,18 @@ export function KnowledgeView({ initialPanel = "browse" }: KnowledgeViewProps) {
     <div className="knowledge-view" data-testid="knowledge-view">
       <header className="knowledge-view__header">
         <h2>{t("knowledge.title")}</h2>
-        <p className="knowledge-view__lede">{t("knowledge.lede")}</p>
+        <button
+          type="button"
+          className="secondary btn-sm knowledge-view__howto-btn"
+          data-testid="knowledge-howto-open"
+          onClick={() => setShowHowTo(true)}
+        >
+          {t("knowledge.howTo.open")}
+        </button>
       </header>
+      <p className="knowledge-view__lede">{t("knowledge.lede")}</p>
+
+      {showHowTo ? <KnowledgeHowToModal onClose={() => setShowHowTo(false)} /> : null}
 
       {embed.blocked ? (
         <p className="knowledge-view__embed-strip" data-testid="knowledge-embed-strip" role="status">

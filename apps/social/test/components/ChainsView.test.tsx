@@ -127,6 +127,9 @@ describe("ChainsView", () => {
       expect(screen.getByText(/No active team jobs yet/)).toBeDefined();
       expect(screen.getAllByText(/Join Agent Network/i).length).toBeGreaterThan(0);
     });
+    expect(screen.getByTestId("chains-worker-profile-join-chip").textContent).toMatch(
+      /Join off/i,
+    );
   });
 
   it("renders active chains with budget info", async () => {

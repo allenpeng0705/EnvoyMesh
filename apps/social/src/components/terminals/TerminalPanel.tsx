@@ -29,6 +29,7 @@ import { EhTurnReviewModal } from "../ehui/EhTurnReviewModal.js";
 import { EhuiPanelModal } from "@envoymesh/envoy-harness-ehui";
 import { createRemoteEhuiDataSource } from "../../lib/envoy-harness-ehui-data-source.js";
 import { useEhTurnReview } from "../../hooks/useEhTurnReview.js";
+import { TerminalsHowToModal } from "../TerminalsHowToModal.js";
 
 interface TerminalPanelProps {
   session: TerminalSessionSummary | null;
@@ -71,6 +72,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
   const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<string>("");
   const [mode, setMode] = useState<TerminalPanelMode>("manual");
+  const [showHowTo, setShowHowTo] = useState(false);
   const [inlineSuggestEnabled, setInlineSuggestEnabled] = useState(false);
   const [xtermSlashIntercept, setXtermSlashIntercept] = useState(false);
   const [execPaneEnabled, setExecPaneEnabled] = useState(false);
@@ -843,7 +845,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
   }, []);
 
   const emptyMessage = !session
-    ? { title: t("terminals.selectSession"), desc: t("terminals.selectSessionDesc") }
+    ? null
     : homeOffline
       ? { title: session.title, desc: t("terminals.homeOffline") }
       : session.state !== "running"
@@ -861,29 +863,40 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
         />
       ) : null}
       <div className="terminal-panel-toolbar">
-        <span className="terminal-panel-title">{session?.title ?? t("terminals.selectSession")}</span>
-        {sessionReady && !isPiSession && !isEnvoyHarnessSession ? (
-          <div className="terminal-mode-toggle" role="tablist" aria-label={t("terminals.agent.modeLabel")}>
-            <button
-              type="button"
-              className={mode === "manual" ? "active" : ""}
-              onClick={() => setMode("manual")}
-            >
-              {t("terminals.agent.manual")}
-            </button>
-            <button
-              type="button"
-              className={mode === "agent" ? "active" : ""}
-              onClick={() => setMode("agent")}
-            >
-              {t("terminals.agent.agent")}
-            </button>
-          </div>
-        ) : null}
-        {isPiSession ? <span className="terminal-panel-badge">{t("pi.title", "Pi")}</span> : null}
-        {useHomeRemote ? <span className="terminal-panel-badge">{t("terminals.runningOnHome")}</span> : null}
-        {status ? <span className="terminal-panel-status">{status}</span> : null}
+        <span className="terminal-panel-title">{session?.title ?? ""}</span>
+        <div className="terminal-panel-toolbar-actions">
+          {sessionReady && !isPiSession && !isEnvoyHarnessSession ? (
+            <div className="terminal-mode-toggle" role="tablist" aria-label={t("terminals.agent.modeLabel")}>
+              <button
+                type="button"
+                className={mode === "manual" ? "active" : ""}
+                onClick={() => setMode("manual")}
+              >
+                {t("terminals.agent.manual")}
+              </button>
+              <button
+                type="button"
+                className={mode === "agent" ? "active" : ""}
+                onClick={() => setMode("agent")}
+              >
+                {t("terminals.agent.agent")}
+              </button>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="secondary btn-sm terminal-panel-howto"
+            data-testid="terminals-howto-open"
+            onClick={() => setShowHowTo(true)}
+          >
+            {t("terminals.howTo.open")}
+          </button>
+          {isPiSession ? <span className="terminal-panel-badge">{t("pi.title", "Pi")}</span> : null}
+          {useHomeRemote ? <span className="terminal-panel-badge">{t("terminals.runningOnHome")}</span> : null}
+          {status ? <span className="terminal-panel-status">{status}</span> : null}
+        </div>
       </div>
+      {showHowTo ? <TerminalsHowToModal onClose={() => setShowHowTo(false)} /> : null}
       {showNestedMultiplexerTip && sessionReady ? (
         <div className="terminal-nested-multiplexer-tip" role="status">
           <p>{t("terminals.nestedMultiplexerTip")}</p>

@@ -7269,6 +7269,7 @@ class NodeServiceImpl implements NodeService {
         return await this._envoyHarnessPeerTraceSnapshot();
       case "clusterStatus":
       case "listPeers":
+      case "listConfiguredPeers":
       case "teamJobs":
       case "scoreboardSummary":
       case "plan":
@@ -7295,6 +7296,9 @@ class NodeServiceImpl implements NodeService {
               : {}),
             health: p.health,
           }));
+        }
+        if (request.op === "listConfiguredPeers") {
+          return await ds.listConfiguredPeers();
         }
         if (request.op === "teamJobs") {
           return await ds.teamJobs();

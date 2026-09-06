@@ -5,6 +5,9 @@ export const koErrorBoundaryMessages = {
   title: "문제가 발생했습니다",
   unexpected: "예기치 않은 오류가 발생했습니다.",
   tryAgain: "다시 시도",
+  providerLost:
+    "앱 세션 상태가 사라졌습니다. 오래 실행한 뒤에는 새로고침으로 대개 해결됩니다.",
+  reload: "새로고침",
 } as const;
 
 export const koProfileMessages = {

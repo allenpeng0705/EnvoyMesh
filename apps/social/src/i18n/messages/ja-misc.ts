@@ -5,6 +5,9 @@ export const jaErrorBoundaryMessages = {
   title: "問題が発生しました",
   unexpected: "予期しないエラーが発生しました。",
   tryAgain: "再試行",
+  providerLost:
+    "アプリのセッション状態が失われました。長時間動作後は再読み込みで直ることが多いです。",
+  reload: "再読み込み",
 } as const;
 
 export const jaProfileMessages = {
