@@ -407,10 +407,14 @@ class NodeServiceClient {
 
   /// v0.3 §3.3 — read stored family-media bytes lazily (on demand).
   ///
-  /// Pass [offset] + [maxBytes] for a range read. When [offset] is set,
-  /// [sizeBytes] in the result is the full stored size and [truncated] is
-  /// true while more bytes remain beyond `offset + maxBytes`; omitting both
-  /// does a whole-file read (files cap at 25 MiB).
+  /// Reads are ALWAYS sliced: pass [offset] + [maxBytes] for a range read;
+  /// when [offset] is set, [sizeBytes] in the result is the full stored size
+  /// and [truncated] is true while more bytes remain beyond
+  /// `offset + maxBytes`. Omitting both starts at offset 0 with the server's
+  /// default slice — the home node caps every response at 1 MiB
+  /// (`FAMILY_MEDIA_READ_DEFAULT_MAX_BYTES`), so a large file must be fetched
+  /// in multiple range reads (see `fetchFamilyAttachmentContent`). There is no
+  /// whole-file read.
   Future<Map<String, dynamic>> readFamilyAttachment({
     required String id,
     int? offset,

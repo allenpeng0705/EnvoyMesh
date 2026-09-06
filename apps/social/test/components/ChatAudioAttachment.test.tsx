@@ -15,13 +15,16 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
 afterEach(() => {
   cleanup();
   mockReadLibraryItemContent.mockClear();
+  mockReadFamilyAttachment.mockClear();
 });
 
 const mockReadLibraryItemContent = vi.fn();
+const mockReadFamilyAttachment = vi.fn();
 
 function mockNodeService(overrides: Partial<ReturnType<typeof useNodeService>> = {}) {
   (useNodeService as any).mockReturnValue({
     readLibraryItemContent: mockReadLibraryItemContent,
+    readFamilyAttachment: mockReadFamilyAttachment,
     isConnected: true,
     ...overrides,
   });
@@ -164,6 +167,87 @@ describe("ChatAudioAttachment — Phase 37", () => {
         }}
       />,
     );
+    expect(mockReadLibraryItemContent).not.toHaveBeenCalled();
+    expect(screen.getByText(/loading/i)).toBeDefined();
+  });
+
+  it("fetches family-media audio by id and plays a blob (no vault path)", async () => {
+    mockNodeService();
+    mockReadFamilyAttachment.mockResolvedValue({
+      contentBase64: btoa("family-audio-bytes"),
+      sizeBytes: "family-audio-bytes".length,
+      truncated: false,
+    });
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:mock-family-audio");
+    try {
+      renderWithI18n(
+        <ChatAudioAttachment
+          attachment={{
+            id: "fam-att-1",
+            filename: "voice.webm",
+            mimeType: "audio/webm",
+            sizeBytes: "family-audio-bytes".length,
+            sensitivity: "private",
+            contentHash: "abc123",
+          }}
+        />,
+      );
+      await waitFor(() => {
+        const source = document.querySelector("audio source");
+        expect(source?.getAttribute("src")).toBe("blob:mock-family-audio");
+        expect(source?.getAttribute("type")).toBe("audio/webm");
+      });
+      // Family-media audio must never hit the vault reader.
+      expect(mockReadLibraryItemContent).not.toHaveBeenCalled();
+      expect(mockReadFamilyAttachment).toHaveBeenCalled();
+      expect(createObjectURL).toHaveBeenCalled();
+      const blob = createObjectURL.mock.calls[0]?.[0] as Blob;
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe("audio/webm");
+    } finally {
+      createObjectURL.mockRestore();
+    }
+  });
+
+  it("shows unavailable when the family-media read fails", async () => {
+    mockNodeService();
+    mockReadFamilyAttachment.mockRejectedValue(new Error("family read failed"));
+    renderWithI18n(
+      <ChatAudioAttachment
+        attachment={{
+          id: "fam-att-2",
+          filename: "note.m4a",
+          mimeType: "audio/mp4",
+          sizeBytes: 1024,
+          sensitivity: "private",
+          contentHash: "def456",
+        }}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/unavailable/i)).toBeDefined();
+    });
+    expect(mockReadFamilyAttachment).toHaveBeenCalled();
+  });
+
+  it("still waits when vaultRelativePath is missing WITHOUT contentHash", async () => {
+    mockNodeService();
+    renderWithI18n(
+      <ChatAudioAttachment
+        attachment={{
+          id: "mesh-pending-1",
+          filename: "voice.webm",
+          mimeType: "audio/webm",
+          sizeBytes: 24000,
+          sensitivity: "friends",
+        }}
+      />,
+    );
+    // A no-path row that is NOT family-media (no contentHash) is a pending
+    // mesh upload — the family reader must not be invoked.
+    expect(mockReadFamilyAttachment).not.toHaveBeenCalled();
     expect(mockReadLibraryItemContent).not.toHaveBeenCalled();
     expect(screen.getByText(/loading/i)).toBeDefined();
   });

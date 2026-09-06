@@ -13,9 +13,11 @@ import '../../ext_agent/agent_attachments.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_message.dart';
 import '../../models/chat_thread.dart';
+import '../../models/family_attachment.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../services/family_content_fetch.dart';
 import '../../services/vault_content_fetch.dart';
 import '../../widgets/agent_attachment_bar.dart';
 import '../../widgets/chat_bubble.dart';
@@ -1177,6 +1179,105 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     }
   }
 
+  /// v0.3 family-media loader for chat bubbles: returns base64 bytes for a
+  /// family attachment fetched by id (`readFamilyAttachment`, chunked through
+  /// [fetchFamilyAttachmentContent]). Family threads only — mesh/AI threads
+  /// keep the vault path ([_loadAudioForAttachment]) and leave this null.
+  Future<String?> _loadFamilyAttachment(ChatAttachment attachment) async {
+    final nodeService = ref.read(nodeServiceProvider);
+    if (nodeService == null) return null;
+    try {
+      final fetched = await fetchFamilyAttachmentContent(
+        ({required id, int? offset, int? maxBytes}) =>
+            nodeService.readFamilyAttachment(
+              id: id,
+              offset: offset,
+              maxBytes: maxBytes,
+            ),
+        id: attachment.id,
+      );
+      if (fetched.bytes.isEmpty) return null;
+      return base64Encode(fetched.bytes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Upload [bytes] to the home family-media area scoped to this thread (DM
+  /// pair or family room), then send the returned descriptor via the family
+  /// send RPC. Any text already typed in the composer rides along as the
+  /// caption (family sends may carry text and/or attachments). Composer text
+  /// is cleared only after a successful send so a failed upload never loses
+  /// the draft.
+  Future<void> _sendFamilyImage(
+    List<int> bytes, {
+    required String name,
+    String? mimeType,
+  }) async {
+    final nodeService = ref.read(nodeServiceProvider);
+    if (nodeService == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not connected to home node')),
+      );
+      return;
+    }
+    final roomId = _isFamilyRoom ? widget.chatRoomId : null;
+    final toProfileId =
+        (_isFamily && !_isFamilyRoom) ? widget.contactOwnerId : null;
+    final FamilyAttachmentScope scope;
+    if (roomId != null && roomId.isNotEmpty) {
+      scope = FamilyAttachmentScope.room(roomId);
+    } else if (toProfileId != null && toProfileId.isNotEmpty) {
+      scope = FamilyAttachmentScope.dm(toProfileId);
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot attach here — no family thread')),
+      );
+      return;
+    }
+
+    final caption = _textController.text.trim();
+    setState(() => _attachBusy = true);
+    try {
+      final uploaded = await nodeService.uploadFamilyAttachment(
+        scope: scope,
+        filename: name,
+        mimeType: mimeType ?? 'application/octet-stream',
+        contentBase64: base64Encode(bytes),
+      );
+      final descriptor = familyAttachmentDescriptorFromUpload(uploaded);
+      final chat = ref.read(chatProvider.notifier);
+      if (scope.isDm) {
+        await chat.sendFamilyMessage(
+          toProfileId!,
+          caption.isEmpty ? null : caption,
+          attachments: [descriptor],
+        );
+      } else {
+        await chat.sendFamilyRoomMessage(
+          roomId!,
+          caption.isEmpty ? null : caption,
+          attachments: [descriptor],
+        );
+      }
+      if (!mounted) return;
+      _textController.clear();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Photo send failed: ${e.toString().replaceFirst('Bad state: ', '')}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _attachBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -1335,6 +1436,13 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                           message: msg,
                           isOutbound: msg.isOutbound,
                           onLoadAudio: _loadAudioForAttachment,
+                          // Family DM / room bubbles load inline previews and
+                          // audio from the home family-media area by id; mesh
+                          // and agent threads keep vault-path behavior (null).
+                          onLoadFamilyAttachment:
+                              (_isFamily || _isFamilyRoom)
+                              ? _loadFamilyAttachment
+                              : null,
                         ),
                       );
                     },
@@ -1497,6 +1605,20 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     );
     if (picked == null) return;
     final bytes = await File(picked.path).readAsBytes();
+    final name = picked.name.isNotEmpty
+        ? picked.name
+        : 'photo-${DateTime.now().millisecondsSinceEpoch}.jpg';
+    // Family DM / family-room threads: EM-F2 — upload bytes to the home
+    // family-media area (scoped to this thread) and send the returned
+    // descriptor; the optimistic bubble previews it via readFamilyAttachment.
+    if (_isFamily || _isFamilyRoom) {
+      await _sendFamilyImage(
+        bytes,
+        name: name,
+        mimeType: 'image/jpeg',
+      );
+      return;
+    }
     final base64 = base64Encode(bytes);
     // Send as a data URI so ChatBubble can detect and render it.
     // Do not touch the text composer — image path is independent of typed draft.

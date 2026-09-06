@@ -41,19 +41,55 @@
 // silently regress to the old UX. The source-level guard catches
 // the regression in <5 ms without mounting a widget tree.
 
+// These source-level guards read the Dart sources with plain relative paths
+// (CWD == apps/envoygo under `flutter test`). To stay robust when the test is
+// launched from another CWD (repo root, CI wrapper, IDEs that run from a
+// subdirectory), resolve the EnvoyGo package root against [Directory.current]
+// (see [_envoygoAppRoot]). That anchors both in-package files and the
+// extracted thin-client package file
+// (`../../packages/envoy-thin-client-dart/...`) to the real package root
+// instead of the process CWD.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-const _progressSrcPath =
-    'lib/screens/pairing/pairing_progress_screen.dart';
-const _confirmSrcPath = 'lib/screens/pairing/pairing_confirm_screen.dart';
-const _nodeProviderSrcPath = 'lib/providers/node_provider.dart';
-const _homeRemoteClientSrcPath =
+/// Directory that contains `lib/screens/pairing/pairing_progress_screen.dart`
+/// (the EnvoyGo app root), resolved from [Directory.current] robustly:
+///   1. `<cwd>/lib/screens/pairing/pairing_progress_screen.dart` — CWD is the
+///      EnvoyGo app itself (`flutter test` from apps/envoygo).
+///   2. `<ancestor>/apps/envoygo/lib/screens/pairing/pairing_progress_screen.dart`
+///      while walking up from the CWD — CWD is the EnvoyMesh repo root (or any
+///      directory beneath it), where the app lives BELOW the CWD.
+/// Falls back to [Directory.current] (historical behavior) when neither is
+/// found.
+String _envoygoAppRoot() {
+  var dir = Directory.current;
+  while (true) {
+    if (File(
+      '${dir.path}/lib/screens/pairing/pairing_progress_screen.dart',
+    ).existsSync()) {
+      return dir.path;
+    }
+    if (File(
+      '${dir.path}/apps/envoygo/lib/screens/pairing/pairing_progress_screen.dart',
+    ).existsSync()) {
+      return '${dir.path}/apps/envoygo';
+    }
+    final parent = dir.parent;
+    if (parent.path == dir.path) break; // reached the filesystem root
+    dir = parent;
+  }
+  return Directory.current.path;
+}
+
+const _progressRel = 'lib/screens/pairing/pairing_progress_screen.dart';
+const _confirmRel = 'lib/screens/pairing/pairing_confirm_screen.dart';
+const _nodeProviderRel = 'lib/providers/node_provider.dart';
+const _homeRemoteClientRel =
     '../../packages/envoy-thin-client-dart/lib/services/home_remote_client.dart';
 
 String _readSrc(String relPath) {
-  return File(relPath).readAsStringSync();
+  return File('${_envoygoAppRoot()}/$relPath').readAsStringSync();
 }
 
 void main() {
@@ -61,7 +97,7 @@ void main() {
     test(
       'screen is a ConsumerStatefulWidget (Riverpod + local ticker state)',
       () {
-        final src = _readSrc(_progressSrcPath);
+        final src = _readSrc(_progressRel);
         expect(
           src,
           contains('ConsumerStatefulWidget'),
@@ -76,7 +112,7 @@ void main() {
     test(
       'Timer.periodic updates the elapsed counter every second',
       () {
-        final src = _readSrc(_progressSrcPath);
+        final src = _readSrc(_progressRel);
         // The progress feedback contract: an elapsed-time counter
         // visible to the user, updated at least once per second.
         final hasTicker = RegExp(
@@ -108,7 +144,7 @@ void main() {
     test(
       'stage hints evolve with elapsed time (4+ branches)',
       () {
-        final src = _readSrc(_progressSrcPath);
+        final src = _readSrc(_progressRel);
         // We need a stage function with at least 4 thresholds
         // (initial / connecting / handshaking / verifying) so the
         // user gets progressively more useful hints.
@@ -145,7 +181,7 @@ void main() {
     test(
       'live "now connecting via …" line is driven by the transport hook',
       () {
-        final src = _readSrc(_progressSrcPath);
+        final src = _readSrc(_progressRel);
         // The progress screen must pass the onConnectingCandidate hook into
         // pairWithNode so it learns which transport is being attempted
         // (LAN → P2P → relay) instead of only estimating by elapsed time.
@@ -188,7 +224,7 @@ void main() {
     test(
       'reassurance banner and troubleshooting card appear at long-wait thresholds',
       () {
-        final src = _readSrc(_progressSrcPath);
+        final src = _readSrc(_progressRel);
         // Reassurance banner after ~30 s: tells the reviewer a slow first
         // pairing is expected and the app is still working.
         expect(
@@ -234,7 +270,7 @@ void main() {
     test(
       'cancel button shows confirmation dialog before aborting',
       () {
-        final src = _readSrc(_progressSrcPath);
+        final src = _readSrc(_progressRel);
         // The cancel UX contract: tap Cancel → confirmation dialog →
         // user confirms → cancelPairing() is called.
         expect(
@@ -282,7 +318,7 @@ void main() {
     test(
       'system back is blocked during handshake (PopScope canPop: false)',
       () {
-        final src = _readSrc(_progressSrcPath);
+        final src = _readSrc(_progressRel);
         expect(
           src,
           contains('PopScope('),
@@ -308,7 +344,7 @@ void main() {
     test(
       'screen returns PairingProgressResult so confirm screen can react',
       () {
-        final src = _readSrc(_progressSrcPath);
+        final src = _readSrc(_progressRel);
         // Define the result class with the three states.
         expect(
           src,
@@ -346,7 +382,7 @@ void main() {
     test(
       'screen kicks off pairWithNode via postFrameCallback (no blank frame)',
       () {
-        final src = _readSrc(_progressSrcPath);
+        final src = _readSrc(_progressRel);
         // The handshake must start AFTER the first frame so the
         // spinner paints for at least one frame before any async work.
         final hasPostFrame = RegExp(
@@ -374,7 +410,7 @@ void main() {
     test(
       'file is well-formed Dart (braces balance)',
       () {
-        final src = _readSrc(_progressSrcPath);
+        final src = _readSrc(_progressRel);
         var open = 0;
         var inSingle = false;
         var inDouble = false;
@@ -459,7 +495,7 @@ void main() {
     test(
       'old inline CircularProgressIndicator inside _pairing is removed',
       () {
-        final src = _readSrc(_confirmSrcPath);
+        final src = _readSrc(_confirmRel);
         // The bug: `if (_pairing) CircularProgressIndicator() else FilledButton`
         // regresses to "2-3 min silent spinner with no cancel".
         final hasOldBranch = RegExp(
@@ -480,7 +516,7 @@ void main() {
     test(
       'confirm screen no longer declares the _pairing field',
       () {
-        final src = _readSrc(_confirmSrcPath);
+        final src = _readSrc(_confirmRel);
         final hasField = RegExp(
           r'bool\s+_pairing\s*=\s*false\s*;',
         ).hasMatch(src);
@@ -499,7 +535,7 @@ void main() {
     test(
       'confirm screen pushes PairingProgressScreen via Navigator.push',
       () {
-        final src = _readSrc(_confirmSrcPath);
+        final src = _readSrc(_confirmRel);
         expect(
           src,
           contains("import 'pairing_progress_screen.dart'"),
@@ -540,7 +576,7 @@ void main() {
     test(
       'options expose onCandidateTrying and it fires before each connect attempt',
       () {
-        final src = _readSrc(_homeRemoteClientSrcPath);
+        final src = _readSrc(_homeRemoteClientRel);
         expect(
           src,
           contains('onCandidateTrying'),
@@ -575,7 +611,7 @@ void main() {
     test(
       'pairWithNode accepts and forwards onConnectingCandidate to the transport',
       () {
-        final src = _readSrc(_nodeProviderSrcPath);
+        final src = _readSrc(_nodeProviderRel);
         expect(
           src,
           contains(
@@ -599,7 +635,7 @@ void main() {
     test(
       'cancelPairing method is defined and idempotent on non-connecting state',
       () {
-        final src = _readSrc(_nodeProviderSrcPath);
+        final src = _readSrc(_nodeProviderRel);
         expect(
           src,
           contains('void cancelPairing()'),
@@ -630,7 +666,7 @@ void main() {
     test(
       'cancelPairing disposes the in-flight transport (force-closes WebSocket)',
       () {
-        final src = _readSrc(_nodeProviderSrcPath);
+        final src = _readSrc(_nodeProviderRel);
         // The abort mechanism: disposing the transport causes the
         // pending RPC to throw, which pairWithNode's catch block
         // catches, and the awaiter in PairingProgressScreen then

@@ -88,6 +88,9 @@ String chatTextKey(String? text) => (text ?? '').trim();
 ///
 /// - Drops optimistic `temp_*` rows with the same trimmed text (the usual
 ///   EnvoyAI / DM echo path).
+/// - Drops optimistic `temp_*` rows whose attachment-id set equals an
+///   outbound attachment-only echo (empty text — family-media sends; the
+///   text match cannot see them).
 /// - When the home echo is an attachment-expanded prompt, keeps the local
 ///   display bubble (short text + chips) and adopts the server message id.
 /// - When [collapseMatchingOutbound] is true (AI threads), also drops any
@@ -178,6 +181,34 @@ List<ChatMessage> reconcileChatMessages({
   if (showAsMine &&
       incoming.attachments?.any((a) => a.isAudio) == true) {
     list = list.where((m) => !m.id.startsWith('pending-voice-')).toList();
+  }
+
+  // Attachment-only sends (v0.3 family media; also any file row with an empty
+  // text body) never match chatTextKey either. When the home echoes an
+  // outbound row that carries attachment descriptors, drop the optimistic
+  // `temp_*` copy whose attachment-id set equals the echo's — each upload id
+  // is unique per send, so an exact id-set match is that row's confirmation.
+  // (When the RPC response survived, sendFamilyMessage / sendFamilyRoomMessage
+  // already promote the temp row to the server message id and the messageId
+  // dedup below returns early; this covers the echo-first / lost-response
+  // case.)
+  if (showAsMine && (incoming.attachments?.isNotEmpty ?? false)) {
+    final echoIds = <String>{
+      for (final a in incoming.attachments!)
+        if (a.id.isNotEmpty) a.id,
+    };
+    if (echoIds.isNotEmpty) {
+      list = list.where((m) {
+        if (!m.id.startsWith('temp_')) return true;
+        final localIds = <String>{
+          for (final a in m.attachments ?? const <ChatAttachment>[])
+            if (a.id.isNotEmpty) a.id,
+        };
+        if (localIds.isEmpty) return true;
+        if (localIds.length != echoIds.length) return true;
+        return !localIds.containsAll(echoIds);
+      }).toList();
+    }
   }
 
   // History / other-device attachment echoes: show stripped text, not the dump.
@@ -273,6 +304,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   void _persistMessage(ChatMessage msg) {
     unawaited(_localDb.insertMessage(msg.toJson()));
+  }
+
+  /// Replace an optimistic `temp_*` row with the server-issued [serverId]
+  /// (mirrors the mesh room promotion in [sendRoomMessage]). No-op when the
+  /// row is already gone (echo arrived first / thread cleared). A later push
+  /// echo of the same messageId is then deduped by the id checks in
+  /// [onChatMessage] / [onRoomMessage], so the sender never sees both the
+  /// optimistic row and the server row.
+  void _promoteTempMessage(String tempId, String threadId, String serverId) {
+    final list = state.messages[threadId];
+    if (list == null) return;
+    final idx = list.indexWhere((m) => m.id == tempId);
+    if (idx < 0) return;
+    final promoted = _copyMessage(list[idx], id: serverId);
+    final next = [...list];
+    next[idx] = promoted;
+    state = state.copyWith(
+      messages: {...state.messages, threadId: next},
+    );
+    unawaited(_localDb.replaceMessage(tempId, promoted.toJson()));
   }
 
   /// Load cached threads from local storage. Self-threads (the
@@ -541,11 +592,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
 
     try {
-      await nodeService.sendFamilyMessage(
+      final result = await nodeService.sendFamilyMessage(
         toProfileId: toId,
         text: trimmed.isEmpty ? null : trimmed,
         attachments: hasAttachments ? attachments : null,
       );
+      // Promote the optimistic row to the server id so an attachment-only
+      // echo (empty text) cannot duplicate the sender's bubble.
+      final serverId = result['messageId']?.toString();
+      if (serverId != null && serverId.isNotEmpty) {
+        _promoteTempMessage(tempMsg.id, threadId, serverId);
+      }
     } catch (e) {
       final err = e.toString();
       final looksLikeSelf = err.contains('yourself') ||
@@ -561,11 +618,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
           final live = _liveNodeService();
           if (live != null) {
             try {
-              await live.sendFamilyMessage(
+              final result = await live.sendFamilyMessage(
                 toProfileId: toId,
                 text: trimmed.isEmpty ? null : trimmed,
                 attachments: hasAttachments ? attachments : null,
               );
+              final serverId = result['messageId']?.toString();
+              if (serverId != null && serverId.isNotEmpty) {
+                _promoteTempMessage(tempMsg.id, threadId, serverId);
+              }
               return;
             } catch (_) {
               rollbackOptimistic();
@@ -1985,11 +2046,33 @@ class ChatNotifier extends StateNotifier<ChatState> {
       lastMessageAt: DateTime.now(),
     );
 
-    await nodeService.sendFamilyRoomMessage(
-      roomId: roomId,
-      text: trimmed.isEmpty ? null : trimmed,
-      attachments: hasAttachments ? attachments : null,
-    );
+    try {
+      final result = await nodeService.sendFamilyRoomMessage(
+        roomId: roomId,
+        text: trimmed.isEmpty ? null : trimmed,
+        attachments: hasAttachments ? attachments : null,
+      );
+      // Promote the optimistic row to the server id so an attachment-only
+      // echo (empty text) cannot duplicate the sender's bubble.
+      final serverId = result['messageId']?.toString();
+      if (serverId != null && serverId.isNotEmpty) {
+        _promoteTempMessage(tempMsg.id, threadId, serverId);
+      }
+    } catch (e) {
+      // Roll the optimistic row back so a failed send never leaves a stuck
+      // "delivered" bubble (mirrors the family DM rollback path).
+      unawaited(_localDb.deleteMessage(tempMsg.id));
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          threadId: [
+            for (final m in state.messages[threadId] ?? const <ChatMessage>[])
+              if (m.id != tempMsg.id) m,
+          ],
+        },
+      );
+      rethrow;
+    }
   }
 
   /// Invite a contact to a room.

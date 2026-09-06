@@ -38,6 +38,19 @@ class ChatBubble extends StatelessWidget {
       ) ??
       false;
 
+  /// Whether [a] lives in the home's family-media area (fetched by id via
+  /// `readFamilyAttachment`). Family descriptors carry no vault path plus a
+  /// `contentHash`; on a family thread ([onLoadFamilyAttachment] != null) any
+  /// attachment without a vault path is family-media — bytes never route
+  /// through the owner vault there — so rows that predate `contentHash` on
+  /// descriptors still preview correctly. Mesh/AI threads leave this null and
+  /// keep vault-path handling.
+  bool _isFamilyBacked(ChatAttachment a) {
+    if (a.isFamilyStored) return true;
+    if (onLoadFamilyAttachment == null) return false;
+    return a.vaultRelativePath == null || a.vaultRelativePath!.isEmpty;
+  }
+
   /// Whether this message has a voice note (vault or family-media).
   bool get _hasAudio =>
       !_hasAgentHomeAttach &&
@@ -58,7 +71,7 @@ class ChatBubble extends StatelessWidget {
     final familyImageAtt = onLoadFamilyAttachment != null &&
             message.attachments != null
         ? message.attachments!
-            .where((a) => !_hasAgentHomeAttach && a.isFamilyStored && a.isImage)
+            .where((a) => !_hasAgentHomeAttach && _isFamilyBacked(a) && a.isImage)
             .firstOrNull
         : null;
 

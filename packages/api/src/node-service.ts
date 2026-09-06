@@ -440,6 +440,13 @@ export interface ChatAttachment {
   sensitivity: "public" | "friends" | "private";
   /** Local vault-relative path — used to open or reveal the file in Library / chat. */
   vaultRelativePath?: string;
+  /**
+   * v0.3 family-media SHA-256 content hash (hex). Present on descriptors whose
+   * bytes live in the home node's `family-media` area (upload response and
+   * message/event/history rows); mesh vault attachments leave it absent.
+   * Client-side dedupe aid only — each upload stores a fresh copy.
+   */
+  contentHash?: string;
 }
 
 export interface ChatMessage {

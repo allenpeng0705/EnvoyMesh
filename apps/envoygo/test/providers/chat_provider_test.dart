@@ -292,6 +292,119 @@ void main() {
       );
       expect(next.single.text, 'hello');
     });
+
+    test(
+        'drops temp_* optimistic row when outbound attachment-only echo '
+        'carries the same attachment ids (family media)', () {
+      ChatAttachment att(String id, {String? contentHash}) => ChatAttachment(
+            id: id,
+            filename: 'pic.jpg',
+            mimeType: 'image/jpeg',
+            sizeBytes: 42,
+            sensitivity: 'private',
+            contentHash: contentHash,
+          );
+      final optimistic = ChatMessage(
+        id: 'temp_1',
+        threadId: 'node1:family:owner:mom',
+        text: null,
+        isOutbound: true,
+        senderOwnerId: 'mom',
+        createdAt: '2026-07-31T12:00:00.000Z',
+        attachments: [att('upload_1', contentHash: 'hashA')],
+      );
+      final echo = ChatMessage(
+        id: 'srv_1',
+        threadId: 'node1:family:owner:mom',
+        text: '',
+        isOutbound: true,
+        senderOwnerId: 'mom',
+        createdAt: '2026-07-31T12:00:01.000Z',
+        attachments: [att('upload_1', contentHash: 'hashA')],
+      );
+      final next = reconcileChatMessages(
+        existing: [optimistic],
+        incoming: echo,
+        showAsMine: true,
+        collapseMatchingOutbound: false,
+      );
+      expect(next.map((m) => m.id), ['srv_1']);
+    });
+
+    test(
+        'keeps temp_* optimistic row when the echo attachment id set differs '
+        '(concurrent sends)', () {
+      ChatAttachment att(String id) => ChatAttachment(
+            id: id,
+            filename: 'pic.jpg',
+            mimeType: 'image/jpeg',
+            sizeBytes: 42,
+            sensitivity: 'private',
+          );
+      final optimistic = ChatMessage(
+        id: 'temp_2',
+        threadId: 'node1:family:owner:mom',
+        text: null,
+        isOutbound: true,
+        senderOwnerId: 'mom',
+        createdAt: '2026-07-31T12:00:00.000Z',
+        attachments: [att('upload_1')],
+      );
+      // Echo for a DIFFERENT send (upload_2) must not remove temp_2.
+      final echo = ChatMessage(
+        id: 'srv_2',
+        threadId: 'node1:family:owner:mom',
+        text: '',
+        isOutbound: true,
+        senderOwnerId: 'mom',
+        createdAt: '2026-07-31T12:00:01.000Z',
+        attachments: [att('upload_2')],
+      );
+      final next = reconcileChatMessages(
+        existing: [optimistic],
+        incoming: echo,
+        showAsMine: true,
+        collapseMatchingOutbound: false,
+      );
+      expect(next.map((m) => m.id), ['srv_2', 'temp_2']);
+    });
+
+    test(
+        'attachment-id reconcile does not drop non-temp server rows or '
+        'inbound copies', () {
+      ChatAttachment att(String id) => ChatAttachment(
+            id: id,
+            filename: 'pic.jpg',
+            mimeType: 'image/jpeg',
+            sizeBytes: 42,
+            sensitivity: 'private',
+          );
+      final realServerRow = ChatMessage(
+        id: 'srv_prev',
+        threadId: 'node1:family:owner:mom',
+        text: '',
+        isOutbound: true,
+        senderOwnerId: 'mom',
+        createdAt: '2026-07-31T11:59:00.000Z',
+        attachments: [att('upload_0')],
+      );
+      final echo = ChatMessage(
+        id: 'srv_3',
+        threadId: 'node1:family:owner:mom',
+        text: '',
+        isOutbound: true,
+        senderOwnerId: 'mom',
+        createdAt: '2026-07-31T12:00:01.000Z',
+        attachments: [att('upload_0')],
+      );
+      final next = reconcileChatMessages(
+        existing: [realServerRow],
+        incoming: echo,
+        showAsMine: true,
+        collapseMatchingOutbound: false,
+      );
+      expect(next.map((m) => m.id), ['srv_3', 'srv_prev']);
+    });
   });
 
   group('filenameForMime', () {

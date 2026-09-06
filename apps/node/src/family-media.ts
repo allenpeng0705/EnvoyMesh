@@ -156,7 +156,17 @@ function isDmPairMember(scopeKey: string, profileId: string): boolean {
   return pair !== null && (pair.profileIdA === profileId || pair.profileIdB === profileId)
 }
 
-/** Read ACL: DM pair membership / room membership / owner may read any family thread. */
+/**
+ * Read ACL: DM pair membership / room membership / owner may read any family thread.
+ *
+ * NOTE — deliberate DM-vs-room asymmetry on `active`:
+ *   - DM scopes check membership only and do NOT gate on either profile's
+ *     `active` flag. This mirrors family DM *messages*: deactivated profiles
+ *     keep read access so their history (and the attachments in it) stays
+ *     reachable after they go offline.
+ *   - Room scopes require `room.active !== false`: an inactive room is not
+ *     readable, mirroring room message sends which refuse inactive rooms.
+ */
 async function mayReadScope(deps: FamilyMediaDeps, scopeKey: string): Promise<boolean> {
   const caller = resolveCaller()
   if (caller.isOwnerProfile) return true
@@ -164,6 +174,7 @@ async function mayReadScope(deps: FamilyMediaDeps, scopeKey: string): Promise<bo
   if (!profileId) return false
   const dmPair = parseFamilyDmScopeKey(scopeKey)
   if (dmPair) {
+    // Membership only — no `active` check (see asymmetry note above).
     return dmPair.profileIdA === profileId || dmPair.profileIdB === profileId
   }
   const roomId = parseFamilyRoomScopeKey(scopeKey)
@@ -425,6 +436,9 @@ export async function resolveFamilyMessageAttachmentsViaRuntime(
       mimeType: meta.mimeType,
       sizeBytes: meta.sizeBytes,
       sensitivity: "private",
+      // Family descriptors must carry the stored content hash so clients can
+      // (a) tell family-media rows from vault rows and (b) dedupe locally.
+      contentHash: meta.contentHash,
     })
   }
   return out

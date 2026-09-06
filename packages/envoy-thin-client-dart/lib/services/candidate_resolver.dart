@@ -160,7 +160,7 @@ class CandidateResolver {
       addBase(peer);
     }
 
-    final homePeerId = node.homePeerId?.trim();
+    final String? homePeerId = node.homePeerId.trim();
     for (var i = 0; i < bases.length; i++) {
       final relayBase = bases[i];
       var relayUrl = relayBase;
@@ -186,11 +186,6 @@ class CandidateResolver {
 
     return result;
   }
-
-  /// The relay's well-known libp2p peer ID. This must match what the relay
-  /// advertises (/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo).
-  static const _relayPeerId =
-      '12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo';
 
   /// The community relay's public IP (well-known).
   static const _communityRelayHost = '47.93.11.212';
@@ -224,7 +219,7 @@ class CandidateResolver {
     // addresses. If unavailable, we cannot build circuit relay candidates.
     print(
         '[_buildLibp2pCandidates] ENTERING — _communityHomePeerId=$_communityHomePeerId, node.homePeerId=${node.homePeerId}, node.bootstrapPeers=${node.bootstrapPeers}');
-    final homePeerId = node.homePeerId?.trim();
+    final String? homePeerId = node.homePeerId.trim();
     if (homePeerId == null || homePeerId.isEmpty) {
       print(
           '[_buildLibp2pCandidates] node.homePeerId is null/empty, cannot build circuit relay candidates');
@@ -402,24 +397,13 @@ class CandidateResolver {
   /// know about the home node (i.e., the home node must have connected to
   /// the community relay at least once). This is configured via the
   /// `--bootstrap-preset cn-relay` flag on the home node.
-  static String? _communityHomePeerId = null;
+  static String? _communityHomePeerId;
 
   /// Set the community relay's home peer ID. Called by the node provider
   /// after loading the stored node so the community relay candidate
   /// includes the correct peer ID for peer routing.
   static void setCommunityHomePeerId(String? peerId) {
     _communityHomePeerId = peerId;
-  }
-
-  /// Extract the relay host from a relay WebSocket URL.
-  /// E.g. ws://47.93.11.212:15432/ws → 47.93.11.212
-  String? _extractRelayHost(String relayWsUrl) {
-    try {
-      final uri = Uri.parse(relayWsUrl);
-      return uri.host;
-    } catch (_) {
-      return null;
-    }
   }
 
   /// Remove any `token` query parameter from a URL.

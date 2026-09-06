@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
+import { fetchFamilyAttachmentBase64 } from "../lib/family-content.js";
 import type { ChatAttachment } from "@envoymesh/api";
 
 export interface ChatAudioAttachmentProps {
@@ -69,6 +70,13 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const vaultPath = attachment.vaultRelativePath?.replace(/^[\\/]+/, "");
+  // v0.3 family-media audio (EM-F3): no vault path + a contentHash means the
+  // bytes live in the home `family-media` area, addressed by attachment id via
+  // `readFamilyAttachment`. A missing vault path WITHOUT a contentHash is a
+  // mesh voice-note still being uploaded — keep the waiting state and never
+  // touch the family-media reader for it.
+  const familyStored =
+    !vaultPath && (attachment.contentHash?.trim().length ?? 0) > 0;
 
   const revokeObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -85,19 +93,36 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
   }, []);
 
   const loadAudio = useCallback(async () => {
-    if (!vaultPath) return;
+    // Pending mesh voice-note upload (no vault path yet, not family-media):
+    // nothing to read — stay in the waiting state.
+    if (!vaultPath && !familyStored) return;
     setLoading(true);
     setError(false);
     revokeObjectUrl();
     setAudioUrl(null);
     setDurationSec(null);
     try {
-      const result = await nodeService.readLibraryItemContent({ relativePath: vaultPath });
+      let contentBase64: string;
+      let fallbackMime: string | undefined;
+      if (vaultPath) {
+        const result = await nodeService.readLibraryItemContent({ relativePath: vaultPath });
+        contentBase64 = result.contentBase64;
+        fallbackMime = result.mimeType;
+      } else {
+        // Family-media attachment: page through `readFamilyAttachment` slices
+        // (each response is capped at 1 MiB on the node) exactly like the
+        // ChatFileAttachment family branch.
+        const fetched = await fetchFamilyAttachmentBase64(
+          (params) => nodeService.readFamilyAttachment(params),
+          attachment.id,
+        );
+        contentBase64 = fetched.contentBase64;
+      }
       const mime = normalizeChatAudioMime(
-        attachment.mimeType || result.mimeType,
+        attachment.mimeType || fallbackMime,
         attachment.filename,
       );
-      const bytes = base64ToUint8Array(result.contentBase64);
+      const bytes = base64ToUint8Array(contentBase64);
       if (bytes.byteLength === 0) {
         throw new Error("empty audio");
       }
@@ -115,6 +140,8 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
   }, [
     nodeService,
     vaultPath,
+    familyStored,
+    attachment.id,
     attachment.mimeType,
     attachment.filename,
     revokeObjectUrl,
@@ -152,7 +179,9 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
 
   return (
     <div className="chat-audio-attachment">
-      {!vaultPath ? (
+      {!vaultPath && !familyStored ? (
+        // Mesh voice-note still being uploaded — no vault path yet and not a
+        // family-media row (no contentHash): wait for the real row.
         <span className="chat-audio-loading">{t("chat.audioMessage.loading", "Loading audio…")}</span>
       ) : loading ? (
         <span className="chat-audio-loading">{t("chat.audioMessage.loading", "Loading audio…")}</span>
