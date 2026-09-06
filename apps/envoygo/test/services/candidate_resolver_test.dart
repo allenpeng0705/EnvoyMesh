@@ -1,5 +1,5 @@
-import 'package:envoygo/models/stored_node.dart';
-import 'package:envoygo/services/candidate_resolver.dart';
+import 'package:envoy_thin_client/models/stored_node.dart';
+import 'package:envoy_thin_client/services/candidate_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

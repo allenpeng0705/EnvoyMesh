@@ -1,4 +1,4 @@
-// Typed exceptions raised by EnvoyGo's network / RPC layer.
+// Typed exceptions raised by the thin-client network / RPC layer.
 //
 // Keeping these in a single file makes the contract between
 // [HomeRemoteClient] and its callers explicit, and gives the

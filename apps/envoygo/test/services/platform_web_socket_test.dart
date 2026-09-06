@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:envoygo/services/platform_web_socket.dart';
+import 'package:envoy_thin_client/services/platform_web_socket.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

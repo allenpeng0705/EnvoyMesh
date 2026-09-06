@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:envoygo/services/exceptions.dart';
-import 'package:envoygo/services/home_remote_client.dart';
-import 'package:envoygo/services/web_socket_like.dart';
+import 'package:envoy_thin_client/services/exceptions.dart';
+import 'package:envoy_thin_client/services/home_remote_client.dart';
+import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A controllable mock WebSocket for testing HomeRemoteClient.

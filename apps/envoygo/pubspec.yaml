@@ -12,6 +12,9 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  # Shared thin-client core (pure-Dart workspace package).
+  envoy_thin_client:
+    path: ../../packages/envoy-thin-client-dart
   # Transport
   web_socket_channel: ^3.0.2
   # State

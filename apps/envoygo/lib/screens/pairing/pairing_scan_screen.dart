@@ -1,7 +1,7 @@
+import 'package:envoy_thin_client/models/stored_node.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../l10n/app_localizations.dart';
-import '../../models/stored_node.dart';
 import '../../services/pairing_service.dart';
 import '../../utils/open_external_url.dart';
 import 'pairing_confirm_screen.dart';

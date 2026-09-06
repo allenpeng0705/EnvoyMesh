@@ -49,7 +49,8 @@ const _progressSrcPath =
     'lib/screens/pairing/pairing_progress_screen.dart';
 const _confirmSrcPath = 'lib/screens/pairing/pairing_confirm_screen.dart';
 const _nodeProviderSrcPath = 'lib/providers/node_provider.dart';
-const _homeRemoteClientSrcPath = 'lib/services/home_remote_client.dart';
+const _homeRemoteClientSrcPath =
+    '../../packages/envoy-thin-client-dart/lib/services/home_remote_client.dart';
 
 String _readSrc(String relPath) {
   return File(relPath).readAsStringSync();

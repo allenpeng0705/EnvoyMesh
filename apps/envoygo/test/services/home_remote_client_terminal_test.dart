@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:envoygo/services/home_remote_client.dart';
-import 'package:envoygo/services/web_socket_like.dart';
+import 'package:envoy_thin_client/services/home_remote_client.dart';
+import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A `WebSocketLike` that records everything sent so a test can

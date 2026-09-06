@@ -17,10 +17,10 @@ library;
 
 import 'dart:convert';
 
+import 'package:envoy_thin_client/services/home_remote_client.dart';
+import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:envoygo/providers/node_provider.dart';
 import 'package:envoygo/screens/chains/recent_chains_screen.dart';
-import 'package:envoygo/services/home_remote_client.dart';
-import 'package:envoygo/services/web_socket_like.dart';
 import 'package:envoygo/storage/local_database.dart';
 import 'package:envoygo/storage/secure_storage.dart';
 import 'package:flutter/material.dart';

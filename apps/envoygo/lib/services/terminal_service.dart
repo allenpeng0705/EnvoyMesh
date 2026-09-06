@@ -1,7 +1,8 @@
 import 'dart:typed_data';
 
+import 'package:envoy_thin_client/services/home_remote_client.dart';
+
 import '../models/terminal_session.dart';
-import 'home_remote_client.dart';
 import 'node_service_client.dart';
 
 /// Terminal PTY service — manages terminal lifecycle and I/O.

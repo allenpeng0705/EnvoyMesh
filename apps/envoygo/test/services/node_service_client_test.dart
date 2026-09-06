@@ -8,9 +8,9 @@
 // Replaces the previous TODO-only stub.
 
 import 'dart:convert';
-import 'package:envoygo/services/home_remote_client.dart';
+import 'package:envoy_thin_client/services/home_remote_client.dart';
+import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:envoygo/services/node_service_client.dart';
-import 'package:envoygo/services/web_socket_like.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Controllable mock WebSocket — same pattern as

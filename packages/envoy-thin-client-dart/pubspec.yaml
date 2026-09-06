@@ -1,0 +1,19 @@
+name: envoy_thin_client
+description: >-
+  Pure-Dart thin-client core for pairing to and talking with an Envoy home
+  node over WebSocket / relay transports (shared by EnvoyGo and third-party
+  Flutter apps such as Veda).
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  # Transport
+  web_socket_channel: ^3.0.2
+  # Compression (gzip decoding for compressed pairing tokens)
+  archive: ^3.6.1
+
+dev_dependencies:
+  lints: ^4.0.0

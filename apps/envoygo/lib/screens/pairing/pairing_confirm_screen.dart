@@ -1,13 +1,13 @@
 import 'dart:async';
 
+import 'package:envoy_thin_client/models/stored_node.dart';
+import 'package:envoy_thin_client/services/candidate_resolver.dart';
+import 'package:envoy_thin_client/services/home_remote_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
-import '../../models/stored_node.dart';
 import '../../providers/node_provider.dart';
-import '../../services/candidate_resolver.dart';
-import '../../services/home_remote_client.dart';
 import '../../services/pairing_service.dart';
 import 'pairing_progress_screen.dart';
 

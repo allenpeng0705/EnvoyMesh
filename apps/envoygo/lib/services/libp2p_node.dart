@@ -11,8 +11,8 @@ import 'package:dart_libp2p/core/crypto/ed25519.dart' as crypto_ed25519;
 import 'package:dart_libp2p/p2p/transport/tcp_transport.dart';
 import 'package:dart_libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
 import 'package:dart_libp2p/p2p/host/resource_manager/limiter.dart';
+import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:envoygo/storage/secure_storage.dart';
-import 'web_socket_like.dart';
 
 /// A minimal libp2p host for the EnvoyGo thin client.
 ///

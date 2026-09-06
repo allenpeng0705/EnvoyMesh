@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
-import 'web_socket_like.dart';
-import 'exceptions.dart';
+
+import 'package:envoy_thin_client/services/exceptions.dart';
+import 'package:envoy_thin_client/services/web_socket_like.dart';
 
 // -- Wire protocol (mirrors packages/api/src/terminal-wire.ts v1) --
 
@@ -215,14 +215,14 @@ class HomeRemoteClient {
   Future<void> ensureConnected() {
     if (_disposed) {
       final stack = StackTrace.current;
-      debugPrint('[HomeRemoteClient] ensureConnected: ALREADY DISPOSED!\n$stack');
+      print('[HomeRemoteClient] ensureConnected: ALREADY DISPOSED!\n$stack');
       return Future.error(Exception('homeRemote.disposed'));
     }
     if (_ws?.readyState == wsOpen && _homeOnline) return Future.value();
     if (_connectCompleter != null) return _connectCompleter!.future;
     final completer = Completer<void>();
     _connectCompleter = completer;
-    debugPrint('[HomeRemoteClient] ensureConnected: starting connection');
+    print('[HomeRemoteClient] ensureConnected: starting connection');
     _connectInternal().then((_) {
       completer.complete();
       _connectCompleter = null;
@@ -236,7 +236,7 @@ class HomeRemoteClient {
   /// Connect to the home node, trying candidates in priority order.
   Future<void> _connectInternal() async {
     final candidates = await _options.resolveCandidates();
-    debugPrint('[HomeRemoteClient] _connectInternal: ${candidates.length} candidates: ${candidates.map((c) => '${c.name}=${c.url}').join(', ')}');
+    print('[HomeRemoteClient] _connectInternal: ${candidates.length} candidates: ${candidates.map((c) => '${c.name}=${c.url}').join(', ')}');
     if (_disposed) throw Exception('homeRemote.disposed');
     if (candidates.isEmpty) throw Exception('homeRemote.notConfigured');
 
@@ -257,7 +257,7 @@ class HomeRemoteClient {
             name == 'bootstrap';
         if (isFallback) {
           startIndex = 0;
-          debugPrint(
+          print(
             '[HomeRemoteClient] ignoring sticky $name — re-try LAN/P2P first',
           );
         } else {
@@ -480,7 +480,7 @@ class HomeRemoteClient {
   /// client must not be reused.
   void dispose() {
     final stack = StackTrace.current;
-    debugPrint('[HomeRemoteClient] dispose() called, current _disposed=$_disposed\n$stack');
+    print('[HomeRemoteClient] dispose() called, current _disposed=$_disposed\n$stack');
     _disposed = true;
     _disposed = true;
     _reconnectTimer?.cancel();

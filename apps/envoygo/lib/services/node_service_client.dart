@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:envoy_thin_client/services/home_remote_client.dart';
+
 import '../models/chain_active.dart';
 import '../models/chain_report.dart';
 import '../models/chat_message.dart';
@@ -12,7 +14,6 @@ import '../models/library_read.dart';
 import '../models/peer_search_result.dart';
 import '../models/terminal_session.dart';
 import '../models/web_content.dart';
-import 'home_remote_client.dart';
 
 /// Typed wrappers around the home node's JSON-RPC methods.
 ///

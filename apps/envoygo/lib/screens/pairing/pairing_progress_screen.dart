@@ -1,10 +1,10 @@
 import 'dart:async';
 
+import 'package:envoy_thin_client/services/home_remote_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/node_provider.dart';
-import '../../services/home_remote_client.dart';
 import '../../services/pairing_service.dart';
 
 /// Outcome of the pairing progress screen, returned via `Navigator.pop`.

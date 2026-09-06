@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'web_socket_like.dart';
+
+import 'package:envoy_thin_client/services/web_socket_like.dart';
 
 /// Production WebSocket wrapping `dart:io`'s built-in WebSocket.
 ///
@@ -53,12 +53,10 @@ class PlatformWebSocket implements WebSocketLike {
   PlatformWebSocket._();
 
   /// Test seam: no real network — feed frames via [deliverForTest].
-  @visibleForTesting
   PlatformWebSocket.forTest() {
     readyState = wsOpen;
   }
 
-  @visibleForTesting
   void deliverForTest(String text) => _deliver(text);
 
   void _deliver(String text) {

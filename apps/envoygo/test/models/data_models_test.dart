@@ -1,6 +1,6 @@
+import 'package:envoy_thin_client/models/json_rpc.dart';
+import 'package:envoy_thin_client/models/stored_node.dart';
 import 'package:envoygo/models/contact.dart';
-import 'package:envoygo/models/json_rpc.dart';
-import 'package:envoygo/models/stored_node.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

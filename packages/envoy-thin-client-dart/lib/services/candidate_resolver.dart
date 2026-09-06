@@ -1,6 +1,5 @@
-import 'package:flutter/foundation.dart';
-import '../models/stored_node.dart';
-import 'home_remote_client.dart';
+import 'package:envoy_thin_client/models/stored_node.dart';
+import 'package:envoy_thin_client/services/home_remote_client.dart';
 
 /// Builds transport candidate URLs from stored pairing data.
 ///
@@ -46,7 +45,7 @@ class CandidateResolver {
               '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo');
           break;
         default:
-          debugPrint(
+          print(
               '[CandidateResolver] Unknown bootstrap preset: $preset');
       }
     }
@@ -223,11 +222,11 @@ class CandidateResolver {
     // Use node.homePeerId as the circuit relay destination. This is the
     // home node's libp2p peer ID — required for building /p2p-circuit/p2p/<home>
     // addresses. If unavailable, we cannot build circuit relay candidates.
-    debugPrint(
+    print(
         '[_buildLibp2pCandidates] ENTERING — _communityHomePeerId=$_communityHomePeerId, node.homePeerId=${node.homePeerId}, node.bootstrapPeers=${node.bootstrapPeers}');
     final homePeerId = node.homePeerId?.trim();
     if (homePeerId == null || homePeerId.isEmpty) {
-      debugPrint(
+      print(
           '[_buildLibp2pCandidates] node.homePeerId is null/empty, cannot build circuit relay candidates');
       return result;
     }
@@ -243,12 +242,12 @@ class CandidateResolver {
     // node.bootstrapPeers may contain either:
     // 1. Full libp2p multiaddrs (e.g., /dnsaddr/am6.bootstrap.libp2p.io/p2p/...)
     // 2. Preset names (e.g., "public-libp2p-am6") — resolve to multiaddrs
-    debugPrint(
+    print(
         '[_buildLibp2pCandidates] node.bootstrapPeers: ${node.bootstrapPeers}');
     for (final peer in node.bootstrapPeers) {
       if (peer.startsWith('/')) {
         // Full multiaddr — use directly
-        debugPrint(
+        print(
             '[_buildLibp2pCandidates] full multiaddr: $peer');
         if (!relayMultiaddrs.containsValue(peer)) {
           final name = _extractRelayName(peer);
@@ -257,7 +256,7 @@ class CandidateResolver {
       } else {
         // Preset name — resolve to multiaddrs
         final resolved = resolveBootstrapPresets([peer]);
-        debugPrint(
+        print(
             '[_buildLibp2pCandidates] preset "$peer" resolved to: $resolved');
         for (final addr in resolved) {
           if (!relayMultiaddrs.containsValue(addr)) {
@@ -283,7 +282,7 @@ class CandidateResolver {
       final circuitAddr =
           '/p2p/$relayPeerId/p2p-circuit/p2p/$homePeerId';
 
-      debugPrint(
+      print(
           '[_buildLibp2pCandidates] adding relay candidate: name=$relayName, addr=$circuitAddr');
 
       result.add(HomeRemoteCandidate(

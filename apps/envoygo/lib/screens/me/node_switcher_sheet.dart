@@ -1,6 +1,6 @@
+import 'package:envoy_thin_client/models/stored_node.dart';
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
-import '../../models/stored_node.dart';
 
 /// Bottom sheet for switching between paired home nodes.
 class NodeSwitcherSheet extends StatelessWidget {

@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:envoygo/models/stored_node.dart';
-import 'package:envoygo/services/exceptions.dart';
-import 'package:envoygo/services/reconnect_supervisor.dart';
+import 'package:envoy_thin_client/models/stored_node.dart';
+import 'package:envoy_thin_client/services/exceptions.dart';
+import 'package:envoy_thin_client/services/reconnect_supervisor.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Minimal in-memory `StoredNode` for tests.

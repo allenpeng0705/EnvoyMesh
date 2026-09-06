@@ -1,4 +1,4 @@
-import 'package:envoygo/services/exceptions.dart';
+import 'package:envoy_thin_client/services/exceptions.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

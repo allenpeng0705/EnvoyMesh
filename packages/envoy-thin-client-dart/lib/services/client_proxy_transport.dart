@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+
+import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'web_socket_like.dart';
 
 /// Transport that connects through the relay's libp2p circuit to the
 /// home node, speaking the client-proxy handshake protocol.

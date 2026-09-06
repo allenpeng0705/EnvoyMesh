@@ -1,7 +1,7 @@
-import 'package:envoygo/models/stored_node.dart';
+import 'package:envoy_thin_client/models/stored_node.dart';
 import 'package:envoygo/providers/node_provider.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('NodeNotifier', () {

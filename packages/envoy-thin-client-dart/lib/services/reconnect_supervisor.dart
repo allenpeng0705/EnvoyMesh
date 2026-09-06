@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:math';
 
-import '../models/stored_node.dart';
-import '../services/exceptions.dart';
+import 'package:envoy_thin_client/models/stored_node.dart';
+import 'package:envoy_thin_client/services/exceptions.dart';
 
 /// Persistent retry loop for an `initial` connection attempt to a
 /// paired home node.
