@@ -129,8 +129,12 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
   } = ehReview;
 
   const ehuiDataSource = useMemo(
-    () => createRemoteEhuiDataSource(nodeService),
-    [nodeService],
+    () =>
+      createRemoteEhuiDataSource(
+        nodeService,
+        terminalChatId ? { chatId: terminalChatId } : {},
+      ),
+    [nodeService, terminalChatId],
   );
 
   useEffect(() => {
@@ -852,6 +856,8 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
       {isEnvoyHarnessSession && sessionReady ? (
         <EnvoyHarnessEhuiRail
           className="eh-ehui-command-bar terminal-ehui-command-bar contact-web-content__actions contact-web-content__actions--links"
+          refreshKey={ehuiRefreshKey}
+          {...(terminalChatId ? { chatId: terminalChatId } : {})}
         />
       ) : null}
       <div className="terminal-panel-toolbar">

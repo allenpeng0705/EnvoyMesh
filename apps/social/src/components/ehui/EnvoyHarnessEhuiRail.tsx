@@ -13,19 +13,26 @@ import { createRemoteEhuiDataSource } from "../../lib/envoy-harness-ehui-data-so
 export interface EnvoyHarnessEhuiRailProps {
   /** Bump after chat turns to refresh panel bodies. */
   refreshKey?: number;
+  /** Scope EHUI session ops to this Envoy Harness chat id. */
+  chatId?: string;
   className?: string;
 }
 
 export function EnvoyHarnessEhuiRail({
   refreshKey,
+  chatId,
   className,
 }: EnvoyHarnessEhuiRailProps) {
   const nodeService = useNodeService();
   const [status, setStatus] = useState<EnvoyHarnessStatus | null>(null);
   const [openPanel, setOpenPanel] = useState<EhuiPanelId | null>(null);
   const dataSource = useMemo(
-    () => createRemoteEhuiDataSource(nodeService),
-    [nodeService],
+    () =>
+      createRemoteEhuiDataSource(
+        nodeService,
+        chatId !== undefined ? { chatId } : {},
+      ),
+    [nodeService, chatId],
   );
 
   useEffect(() => {

@@ -7139,8 +7139,10 @@ class NodeServiceImpl implements NodeService {
     return { host, sessionId: started.sessionId };
   }
 
-  private async _ensureEnvoyHarnessPersistentAcpHost(): Promise<void> {
-    const activeChat = await this._resolveEhChat(undefined);
+  private async _ensureEnvoyHarnessPersistentAcpHost(
+    chatId?: string,
+  ): Promise<void> {
+    const activeChat = await this._resolveEhChat(chatId);
     const cwd = activeChat?.cwd ?? (await this._envoyHarnessResolvedCwd());
     if (activeChat) {
       await this._ensureEhChatHost(activeChat.id, cwd);
@@ -7235,7 +7237,7 @@ class NodeServiceImpl implements NodeService {
       case "gitDiff":
       case "gitStatus":
       case "listSessions":
-        await this._ensureEnvoyHarnessPersistentAcpHost();
+        await this._ensureEnvoyHarnessPersistentAcpHost(request.chatId);
         const host = this._envoyHarnessPersistentAcpHost;
         if (host === undefined) {
           throw new Error("envoy-harness persistent ACP host failed to start");

@@ -454,7 +454,7 @@ export type EnsureEnvoyTerminalResult =
   | { ok: false; code: EnsureEnvoyTerminalFailureCode; reason: string }
 
 /** EHUI panel invoke — routed by NodeServiceImpl.invokeEnvoyHarnessEhui. */
-export type EhuiInvokeRequest =
+type EhuiInvokeOp =
   | { op: "plan"; action: string; text?: string; reason?: string }
   | {
       op: "memory";
@@ -469,4 +469,7 @@ export type EhuiInvokeRequest =
   | { op: "teamJobs" }
   | { op: "scoreboardSummary" }
   | { op: "listSessions" }
-  | { op: "discoverySnapshot" }
+  | { op: "discoverySnapshot" };
+
+/** Optional `chatId` scopes session ops (plan/memory/git) to that EH chat cwd. */
+export type EhuiInvokeRequest = EhuiInvokeOp & { chatId?: string };

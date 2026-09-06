@@ -495,8 +495,12 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
   })
 
   const ehuiDataSource = useMemo(
-    () => createRemoteEhuiDataSource(nodeService),
-    [nodeService],
+    () =>
+      createRemoteEhuiDataSource(
+        nodeService,
+        effectiveChatId ? { chatId: effectiveChatId } : {},
+      ),
+    [nodeService, effectiveChatId],
   )
 
   // Poll while the runtime is down (matches Pi/OpenClaw patterns).
@@ -1210,7 +1214,10 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
             </button>
           </div>
         </div>
-        <EnvoyHarnessEhuiRail refreshKey={ehuiRefreshKey} />
+        <EnvoyHarnessEhuiRail
+          refreshKey={ehuiRefreshKey}
+          {...(effectiveChatId ? { chatId: effectiveChatId } : {})}
+        />
       </header>
 
       <div className="pi-chat-thread" ref={threadRef}>

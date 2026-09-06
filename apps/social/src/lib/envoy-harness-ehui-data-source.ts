@@ -17,14 +17,23 @@ export interface EnvoyHarnessEhuiNodeService {
   invokeEnvoyHarnessEhui(request: EhuiInvokeRequest): Promise<unknown>;
 }
 
+export interface CreateRemoteEhuiDataSourceOptions {
+  /** Scope plan/memory/git/sessions to this EH chat workspace. */
+  chatId?: string;
+}
+
 export function createRemoteEhuiDataSource(
   nodeService: EnvoyHarnessEhuiNodeService,
+  options: CreateRemoteEhuiDataSourceOptions = {},
 ): EhuiDataSource {
+  const chatId = options.chatId;
   const invoke = (request: EhuiInvokeRequest): Promise<unknown> =>
-    nodeService.invokeEnvoyHarnessEhui(request);
+    nodeService.invokeEnvoyHarnessEhui(
+      chatId !== undefined ? { ...request, chatId } : request,
+    );
 
   return {
-    sessionId: "envoy-mesh",
+    sessionId: chatId ?? "envoy-mesh",
     plan: (action, options) =>
       invoke({
         op: "plan",
