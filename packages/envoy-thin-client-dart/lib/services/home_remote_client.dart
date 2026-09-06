@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:envoy_thin_client/services/exceptions.dart';
+import 'package:envoy_thin_client/services/redaction.dart';
 import 'package:envoy_thin_client/services/web_socket_like.dart';
 
 // -- Wire protocol (mirrors packages/api/src/terminal-wire.ts v1) --
@@ -156,6 +157,7 @@ class HomeRemoteClient {
   Timer? _upgradeSweepTimer;
   late int _reconnectDelayMs;
   bool _disposed = false;
+  bool _sessionRevoked = false;
   bool _homeOnline = false;
   HomeRemoteCandidate? _activeCandidate;
   bool _upgrading = false;
@@ -184,6 +186,15 @@ class HomeRemoteClient {
     final ws = _ws;
     return ws != null && ws.readyState == wsOpen;
   }
+
+  /// Whether the home node proved the stored session dead (token expired or
+  /// revoked) via an `UNAUTHORIZED` RPC rejection.
+  ///
+  /// Once set, the client stops its reconnect loop: further attempts with a
+  /// dead token are wasted (and would keep surfacing auth errors forever).
+  /// The owning layer observes the same `UnauthorizedException` on the RPC
+  /// call and tears the session down (delete token, re-pair UI).
+  bool get sessionRevoked => _sessionRevoked;
 
   // -- Event system --
 
@@ -218,6 +229,9 @@ class HomeRemoteClient {
       print('[HomeRemoteClient] ensureConnected: ALREADY DISPOSED!\n$stack');
       return Future.error(Exception('homeRemote.disposed'));
     }
+    if (_sessionRevoked) {
+      return Future.error(Exception('homeRemote.sessionRevoked'));
+    }
     if (_ws?.readyState == wsOpen && _homeOnline) return Future.value();
     if (_connectCompleter != null) return _connectCompleter!.future;
     final completer = Completer<void>();
@@ -236,7 +250,8 @@ class HomeRemoteClient {
   /// Connect to the home node, trying candidates in priority order.
   Future<void> _connectInternal() async {
     final candidates = await _options.resolveCandidates();
-    print('[HomeRemoteClient] _connectInternal: ${candidates.length} candidates: ${candidates.map((c) => '${c.name}=${c.url}').join(', ')}');
+    print('[HomeRemoteClient] _connectInternal: ${candidates.length} candidates: '
+        '${candidates.map((c) => redactedCandidateLabel(c.name, c.url)).join(', ')}');
     if (_disposed) throw Exception('homeRemote.disposed');
     if (candidates.isEmpty) throw Exception('homeRemote.notConfigured');
 
@@ -303,7 +318,8 @@ class HomeRemoteClient {
       }
     }
 
-    final tried = candidates.map((c) => '${c.name}=${c.url}').join(', ');
+    final tried =
+        candidates.map((c) => redactedCandidateLabel(c.name, c.url)).join(', ');
     throw Exception(
         'homeRemote.connectFailed — tried: [$tried] — last error: $lastError');
   }
@@ -389,10 +405,16 @@ class HomeRemoteClient {
         pending.timer.cancel();
         if (msg.containsKey('error')) {
           final err = msg['error'] as Map<String, dynamic>?;
+          final decoded = _decodeRpcError(err);
+          if (decoded is UnauthorizedException) {
+            // The home proved the session dead. Stop retrying with the dead
+            // token: cancel any pending reconnect and refuse future connects.
+            _sessionRevoked = true;
+            _reconnectTimer?.cancel();
+            _reconnectTimer = null;
+          }
           if (!pending.completer.isCompleted) {
-            pending.completer.completeError(
-              _decodeRpcError(err),
-            );
+            pending.completer.completeError(decoded);
           }
         } else {
           if (!pending.completer.isCompleted) {
@@ -424,7 +446,9 @@ class HomeRemoteClient {
         }
       }
       _pending.clear();
-      _scheduleReconnect();
+      // A revoked session must not be redialed — the token is provably dead
+      // (see [sessionRevoked]). Everything else schedules a reconnect.
+      if (!_sessionRevoked) _scheduleReconnect();
     };
 
     ws.onError = () {
@@ -529,14 +553,17 @@ class HomeRemoteClient {
   // -- Reconnection --
 
   void _scheduleReconnect() {
-    if (_disposed || _reconnectTimer != null) return;
+    if (_disposed || _sessionRevoked || _reconnectTimer != null) return;
     _reconnectTimer = Timer(Duration(milliseconds: _reconnectDelayMs), () {
       _reconnectTimer = null;
       ensureConnected().then((_) {
         // Connected — backoff resets in _openSocket on 'connected' event.
         // Notify listener so it can resync data after reconnection.
         _options.onReconnect?.call();
-      }).catchError((_) {
+      }).catchError((Object e) {
+        // A revoked session stops the loop entirely (see [sessionRevoked]);
+        // any other failure backs off and retries.
+        if (_sessionRevoked || e is UnauthorizedException) return;
         _reconnectDelayMs = min(_reconnectDelayMs * 2, 30000);
         _scheduleReconnect();
       });
@@ -547,7 +574,7 @@ class HomeRemoteClient {
 
   /// Periodically try to upgrade to a higher-priority candidate.
   void _maybeUpgradeTransport() {
-    if (_disposed) return;
+    if (_disposed || _sessionRevoked) return;
     if (_ws?.readyState != wsOpen) return;
 
     _options.resolveCandidates().then((candidates) {

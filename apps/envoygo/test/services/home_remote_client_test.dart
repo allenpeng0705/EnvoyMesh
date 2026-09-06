@@ -419,6 +419,97 @@ void main() {
         final newCount = createdSockets.length;
         expect(newCount, greaterThanOrEqualTo(2));
       });
+
+      test('stops reconnecting once the home revokes the session', () async {
+        candidates = [
+          const HomeRemoteCandidate(
+              name: 'relay', url: 'wss://relay.example.com'),
+        ];
+        final client = await connectClient(
+            perCandidateTimeoutMs: 200, initialReconnectDelayMs: 20);
+
+        // Home rejects an RPC with UNAUTHORIZED — the token is provably dead.
+        final callFuture = client.call('getBonds');
+        callFuture.catchError((_) {}); // handled below / intentionally dropped
+        await Future.delayed(Duration.zero);
+        final sent = jsonDecode(createdSockets[0].sentMessages.last)
+            as Map<String, dynamic>;
+        createdSockets[0].simulateMessage({
+          'id': sent['id'],
+          'error': {'code': 'UNAUTHORIZED', 'message': 'Authentication required'},
+        });
+        await Future.delayed(Duration.zero);
+        expect(client.sessionRevoked, isTrue);
+
+        // Socket drops afterwards — no reconnect may be scheduled with the
+        // dead token.
+        createdSockets[0].simulateClose();
+        await Future.delayed(const Duration(milliseconds: 80));
+        expect(createdSockets.length, 1);
+
+        // And the client refuses to redial the dead session.
+        await expectLater(
+          client.ensureConnected(),
+          throwsA(predicate(
+              (e) => e.toString().contains('homeRemote.sessionRevoked'))),
+        );
+      });
+
+      test('does not redial after a revoked reconnect attempt fails', () async {
+        candidates = [
+          const HomeRemoteCandidate(
+              name: 'relay', url: 'wss://relay.example.com'),
+        ];
+        final client = await connectClient(
+            perCandidateTimeoutMs: 200, initialReconnectDelayMs: 20);
+
+        // Revoke via an unauthorized RPC, then close: reconnect is suppressed.
+        final callFuture = client.call('getBonds');
+        callFuture.catchError((_) {});
+        await Future.delayed(Duration.zero);
+        final sent = jsonDecode(createdSockets[0].sentMessages.last)
+            as Map<String, dynamic>;
+        createdSockets[0].simulateMessage({
+          'id': sent['id'],
+          'error': {'code': 'UNAUTHORIZED', 'message': 'Authentication required'},
+        });
+        await Future.delayed(Duration.zero);
+        createdSockets[0].simulateClose();
+        await Future.delayed(const Duration(milliseconds: 80));
+
+        // The revoked state also short-circuits a late ensureConnected that
+        // an app layer might trigger on resume.
+        expect(client.sessionRevoked, isTrue);
+        await expectLater(
+          client.ensureConnected(),
+          throwsA(predicate(
+              (e) => e.toString().contains('homeRemote.sessionRevoked'))),
+        );
+      });
+    });
+
+    group('redaction', () {
+      test('connectFailed text hides token query values', () async {
+        candidates = [
+          const HomeRemoteCandidate(
+            name: 'relay',
+            url: 'wss://relay.example.com/ws?token=supersecret',
+          ),
+        ];
+        final client = HomeRemoteClient(createOptions());
+        final future = client.ensureConnected();
+        await Future.delayed(Duration.zero);
+        createdSockets[0].simulateError();
+        await expectLater(
+          future,
+          throwsA(predicate((Object e) {
+            final text = e.toString();
+            return text.contains('homeRemote.connectFailed') &&
+                text.contains('token=<redacted>') &&
+                !text.contains('supersecret');
+          })),
+        );
+      });
     });
 
     group('dispose', () {

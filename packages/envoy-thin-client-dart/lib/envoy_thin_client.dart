@@ -23,4 +23,5 @@ export 'services/exceptions.dart';
 export 'services/home_remote_client.dart';
 export 'services/pairing_uri.dart';
 export 'services/reconnect_supervisor.dart';
+export 'services/redaction.dart';
 export 'services/web_socket_like.dart';

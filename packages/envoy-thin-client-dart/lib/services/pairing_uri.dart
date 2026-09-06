@@ -54,6 +54,17 @@ PairingData? parsePairingUri(String uri) {
 
 // ─── Compressed token decoding ─────────────────────────────────────────────
 
+/// Ceiling on the *compressed* pairing blob (base64-decoded bytes) accepted
+/// by [_decodePairingToken]. QR codes top out around 3 KiB; even a pasted
+/// invite stays well under this. Bounding the input first keeps a hostile
+/// (or corrupt) blob from driving a decompression-bomb allocation.
+const int _maxPairingCompressedBytes = 8 * 1024;
+
+/// Ceiling on the decompressed pairing JSON. A real blob is ~1–2 KiB;
+/// anything larger is not a pairing payload, so refuse it rather than parse
+/// it (defense against inflated gzip output).
+const int _maxPairingDecompressedBytes = 64 * 1024;
+
 PairingData? _decodePairingToken(String token) {
   if (token.isEmpty) return null;
 
@@ -151,7 +162,10 @@ List<int>? _gzipDecompress(String base64url) {
       base64 += '=';
     }
     final bytes = base64Decode(base64);
+    // Bound the compressed input before inflating (see constants above).
+    if (bytes.length > _maxPairingCompressedBytes) return null;
     final archive = GZipDecoder().decodeBytes(bytes);
+    if (archive.length > _maxPairingDecompressedBytes) return null;
     return archive;
   } catch (_) {
     return null;
