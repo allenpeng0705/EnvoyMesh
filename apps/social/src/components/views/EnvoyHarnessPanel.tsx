@@ -41,8 +41,9 @@ import { EhChatComposer } from "../ehui/EhChatComposer.js"
 import { EhComposerDockStack } from "../ehui/EhComposerDockStack.js"
 import { EnvoyHarnessEhuiRail } from "../ehui/EnvoyHarnessEhuiRail.js"
 import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeading.js"
-import { EhuiPanelModal } from "@envoymesh/envoy-harness-ehui"
 import {
+  EhuiPanelModal,
+  EhuiShell,
   formatCluster,
   formatDiscoveryEvent,
   formatTeamJobs,
@@ -1049,6 +1050,7 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     peers.length > 0 || (status != null && status.peers.failed > 0)
 
   return (
+    <div className="eh-panel-layout">
     <section
       className="pi-chat-panel chat-area eh-panel"
       aria-label={t("eh.title", "envoy-harness")}
@@ -1214,10 +1216,12 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
             </button>
           </div>
         </div>
-        <EnvoyHarnessEhuiRail
-          refreshKey={ehuiRefreshKey}
-          {...(effectiveChatId ? { chatId: effectiveChatId } : {})}
-        />
+        <div className="eh-ehui-rail-narrow">
+          <EnvoyHarnessEhuiRail
+            refreshKey={ehuiRefreshKey}
+            {...(effectiveChatId ? { chatId: effectiveChatId } : {})}
+          />
+        </div>
       </header>
 
       <div className="pi-chat-thread" ref={threadRef}>
@@ -1508,5 +1512,19 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         />
       ) : null}
     </section>
+    <aside className="eh-ehui-side-dock" aria-label={t("eh.ehuiDock", "EHUI panels")}>
+      {status?.state === "ready" ? (
+        <EhuiShell
+          dataSource={ehuiDataSource}
+          refreshKey={ehuiRefreshKey}
+          className="eh-ehui-shell"
+        />
+      ) : (
+        <p className="eh-ehui-placeholder-text">
+          {status?.error ?? t("eh.ehuiDockWaiting", "envoy-harness is not ready.")}
+        </p>
+      )}
+    </aside>
+    </div>
   )
 }
