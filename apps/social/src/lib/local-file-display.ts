@@ -32,11 +32,18 @@ export type KnowledgeBrowseFilter =
   | "published"
   | "obsidian"
   | "notion"
+  | "veda"
   | "blog";
 
 export function isKnowledgeNotesPath(relativePath: string): boolean {
   const p = normalizeVaultRelativePath(relativePath).toLowerCase();
   return p === "notes" || p.startsWith("notes/");
+}
+
+/** Veda (aiNotes) synced notes — private Markdown under `notes/veda/`. */
+export function isKnowledgeVedaPath(relativePath: string): boolean {
+  const p = normalizeVaultRelativePath(relativePath).toLowerCase();
+  return p === "notes/veda" || p.startsWith("notes/veda/");
 }
 
 /** Saved Notion/MCP write-back notes (`notes/mcp/…`) or live MCP remote cards. */
@@ -53,9 +60,10 @@ export function isKnowledgeBlogPath(relativePath: string): boolean {
 }
 
 /**
- * Obsidian-managed vault notes: under `notes/` but not MCP write-back or blog mirrors.
- * Also includes read-only linked Obsidian vault overlays (`linked-obsidian/…`)
- * and imported mirrors under `notes/imports/obsidian/`.
+ * Obsidian-managed vault notes: under `notes/` but not MCP write-back, blog
+ * mirrors, or Veda (aiNotes) sync copies. Also includes read-only linked
+ * Obsidian vault overlays (`linked-obsidian/…`) and imported mirrors under
+ * `notes/imports/obsidian/`.
  */
 export function isKnowledgeObsidianPath(relativePath: string): boolean {
   const p = normalizeVaultRelativePath(relativePath).toLowerCase();
@@ -64,7 +72,8 @@ export function isKnowledgeObsidianPath(relativePath: string): boolean {
   return (
     isKnowledgeNotesPath(relativePath) &&
     !isKnowledgeNotionPath(relativePath) &&
-    !isKnowledgeBlogPath(relativePath)
+    !isKnowledgeBlogPath(relativePath) &&
+    !isKnowledgeVedaPath(relativePath)
   );
 }
 
@@ -73,7 +82,13 @@ export function isKnowledgeDocumentsPath(relativePath: string): boolean {
   return !isKnowledgeNotesPath(relativePath);
 }
 
-export type KnowledgeBrowseSource = "notion" | "obsidian" | "blog" | "note" | "document";
+export type KnowledgeBrowseSource =
+  | "notion"
+  | "obsidian"
+  | "veda"
+  | "blog"
+  | "note"
+  | "document";
 
 /** Linked vault vs imported copy (both browse as source "obsidian"). */
 export type KnowledgeObsidianOrigin = "linked" | "imported";
@@ -93,6 +108,7 @@ export function knowledgeBrowseSource(
   relativePath: string,
 ): KnowledgeBrowseSource {
   if (isKnowledgeNotionPath(relativePath)) return "notion";
+  if (isKnowledgeVedaPath(relativePath)) return "veda";
   if (isKnowledgeBlogPath(relativePath)) return "blog";
   if (knowledgeObsidianOrigin(relativePath)) return "obsidian";
   if (isKnowledgeNotesPath(relativePath)) return "note";
@@ -132,6 +148,7 @@ export function knowledgeBrowseDisplayPath(relativePath: string): string {
     strip("notes/imports/blog") ??
     strip("mcp-remote") ??
     strip("notes/mcp") ??
+    strip("notes/veda") ??
     raw
   );
 }
@@ -156,6 +173,7 @@ export function matchesKnowledgeBrowseFilter(
   if (filter === "notion") {
     return item.source === "mcp-remote" || isKnowledgeNotionPath(item.relativePath);
   }
+  if (filter === "veda") return isKnowledgeVedaPath(item.relativePath);
   if (filter === "blog") return isKnowledgeBlogPath(item.relativePath);
   return true;
 }

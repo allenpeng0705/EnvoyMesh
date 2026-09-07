@@ -968,11 +968,13 @@ export const knowledgeViewMessages = {
     filterObsidian: "Obsidian",
     filterNotion: "Notion",
     filterBlog: "Blog",
+    filterVeda: "Veda",
     filterDocuments: "Documents",
     filterPublished: "Published",
     sourceObsidian: "Obsidian",
     sourceNotion: "Notion",
     sourceBlog: "Blog",
+    sourceVeda: "Veda",
     sourceNote: "Note",
     sourceDocument: "File",
     emptyAll:
@@ -986,6 +988,8 @@ export const knowledgeViewMessages = {
     mcpListError: "Notion/MCP: {error}",
     emptyBlog:
       "No blog knowledge yet. Publish a Blog post, or create a note with “Also publish as public blog”.",
+    emptyVeda:
+      "No Veda notes yet. Turn on Sync to Home in the Veda (aiNotes) app — notes land under notes/veda/.",
     emptyDocuments:
       "No documents outside notes/. Import PDFs and Office files — originals stay in the vault.",
     emptyPublished:

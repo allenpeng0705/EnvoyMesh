@@ -168,7 +168,9 @@ describe("handleInboundDiscoveryIntent", () => {
       if (result.ok && result.responsePayload) {
         const libs = result.responsePayload.matches[0]?.libraryMatches;
         expect(libs?.length).toBe(1);
-        expect(libs?.[0]?.title).toBe("hello");
+        // Title match is case-insensitive; the vault derives a markdown title
+        // from its leading `# ` heading ("Hello") instead of the file stem.
+        expect(libs?.[0]?.title).toBe("Hello");
       }
     } finally {
       await rm(vaultDir, { recursive: true, force: true });

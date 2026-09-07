@@ -101,6 +101,31 @@ describe("vault", () => {
     expect(index.chunks[0].relativePath).toBe("notes/distributed.md");
   });
 
+  it("prefers a leading markdown heading or title: frontmatter for .md titles", async () => {
+    // Veda sync copies are named by a stable uuid (`notes/veda/<uuid>.md`) but
+    // start with `# <note title>` — the KB should show the note's own name.
+    await mkdir(join(vaultDir, "notes", "veda"), { recursive: true });
+    await mkdir(join(vaultDir, "notes", "imports", "blog"), { recursive: true });
+    await writeFile(join(vaultDir, "notes", "veda", "abc-123.md"), "# My first note\n\nBody.\n", "utf8");
+    // A `title:` frontmatter wins over the heading (blog/Obsidian mirror style).
+    await writeFile(
+      join(vaultDir, "notes", "imports", "blog", "hello.md"),
+      "---\ntitle: Hello World\n---\n# Hello World\n\nBody.\n",
+      "utf8",
+    );
+
+    const index = await buildVaultIndex({ rootDir: vaultDir });
+    const byPath = new Map(index.documents.map((d) => [d.relativePath, d]));
+    expect(byPath.get("notes/veda/abc-123.md")?.title).toBe("My first note");
+    expect(byPath.get("notes/imports/blog/hello.md")?.title).toBe("Hello World");
+  });
+
+  it("keeps filename-stem titles for .txt / non-heading text files", async () => {
+    await writeFile(join(vaultDir, "notes", "plain.txt"), "# Not a heading title\nstill prose\n", "utf8");
+    const index = await buildVaultIndex({ rootDir: vaultDir });
+    expect(index.documents[0]).toMatchObject({ relativePath: "notes/plain.txt", title: "plain" });
+  });
+
   it("indexes binary files without search chunks but with stable identities", async () => {
     const raw = Buffer.from([0xa0, 0xb0, 0xc0]);
     await writeFile(join(vaultDir, "asset.bin"), raw);

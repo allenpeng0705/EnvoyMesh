@@ -31,6 +31,7 @@ const BROWSE_FILTERS: KnowledgeBrowseFilter[] = [
   "obsidian",
   "notion",
   "blog",
+  "veda",
   "documents",
   "published",
 ];
@@ -183,6 +184,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     if (browseFilter === "obsidian") return t("knowledge.browse.emptyObsidian");
     if (browseFilter === "notion") return t("knowledge.browse.emptyNotion");
     if (browseFilter === "blog") return t("knowledge.browse.emptyBlog");
+    if (browseFilter === "veda") return t("knowledge.browse.emptyVeda");
     return t("knowledge.browse.emptyPublished");
   })();
 
@@ -193,6 +195,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     if (id === "obsidian") return t("knowledge.browse.filterObsidian");
     if (id === "notion") return t("knowledge.browse.filterNotion");
     if (id === "blog") return t("knowledge.browse.filterBlog");
+    if (id === "veda") return t("knowledge.browse.filterVeda");
     return t("knowledge.browse.filterPublished");
   };
 
@@ -210,6 +213,7 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
       return t("knowledge.browse.sourceObsidian");
     }
     if (src === "blog") return t("knowledge.browse.sourceBlog");
+    if (src === "veda") return t("knowledge.browse.sourceVeda", "Veda");
     if (src === "note") return t("knowledge.browse.sourceNote", "Note");
     return t("knowledge.browse.sourceDocument");
   };
@@ -439,7 +443,8 @@ export function LibraryView({ embedded = false }: { embedded?: boolean }) {
     const source = knowledgeBrowseSource(row.relativePath);
     const filterImpliesSource =
       (browseFilter === "obsidian" && source === "obsidian") ||
-      (browseFilter === "notion" && source === "notion");
+      (browseFilter === "notion" && source === "notion") ||
+      (browseFilter === "veda" && source === "veda");
     const showSourceBadge =
       embedded && source !== "document" && !filterImpliesSource;
     const titleNode = (

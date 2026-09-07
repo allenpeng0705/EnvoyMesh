@@ -3166,13 +3166,20 @@ textarea::placeholder {
   border-color: color-mix(in srgb, #0b6e4f 24%, transparent);
 }
 
+.library-view-source--veda {
+  color: var(--color-text, #0f172a);
+  background: color-mix(in srgb, #b45309 10%, transparent);
+  border-color: color-mix(in srgb, #b45309 24%, transparent);
+}
+
 :root[data-theme="dark"] .library-view-source {
   color: var(--color-text-muted, #94a3b8);
 }
 
 :root[data-theme="dark"] .library-view-source--obsidian,
 :root[data-theme="dark"] .library-view-source--notion,
-:root[data-theme="dark"] .library-view-source--blog {
+:root[data-theme="dark"] .library-view-source--blog,
+:root[data-theme="dark"] .library-view-source--veda {
   color: var(--color-text, #e2e8f0);
 }
 

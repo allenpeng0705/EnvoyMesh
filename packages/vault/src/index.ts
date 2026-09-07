@@ -16,6 +16,7 @@ import {
   type VaultExtractableExtension,
   type VaultTextChunkExtension,
 } from "./vault-formats.js";
+import { markdownTitleFromContent } from "./markdown-title.js";
 
 export const DEFAULT_SHARED_VAULT_DIR = "shared_vault";
 
@@ -275,11 +276,19 @@ export async function buildVaultIndex(options: BuildVaultIndexOptions): Promise<
       const contentString = raw.toString("utf8");
       const contentHashLegacy = hashContent(contentString);
       const documentId = createLegacyUtf8ChunkDocumentId(relativePath, contentString);
+      // Markdown rows get a content-derived display title (frontmatter
+      // `title:` → first `# ` heading → basename); .txt/.json/.csv keep the
+      // filename stem so the change only affects human-authored notes.
+      const fallbackTitle = titleFromRelativePath(relativePath);
+      const title =
+        extension === ".md"
+          ? markdownTitleFromContent(contentString, fallbackTitle)
+          : fallbackTitle;
       const metadata: VaultDocumentMetadata = {
         documentId,
         relativePath,
         extension,
-        title: titleFromRelativePath(relativePath),
+        title,
         byteLength: raw.byteLength,
         contentHash: contentHashLegacy,
         updatedAt: fileStat.mtime.toISOString(),

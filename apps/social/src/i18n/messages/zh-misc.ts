@@ -788,11 +788,13 @@ export const zhKnowledgeViewMessages = {
     filterObsidian: "Obsidian",
     filterNotion: "Notion",
     filterBlog: "博客",
+    filterVeda: "Veda",
     filterDocuments: "文档",
     filterPublished: "已发布",
     sourceObsidian: "Obsidian",
     sourceNotion: "Notion",
     sourceBlog: "博客",
+    sourceVeda: "Veda",
     sourceNote: "笔记",
     sourceDocument: "文件",
     emptyAll: "资料库还是空的。新建笔记或导入文档，开始构建知识库。",
@@ -805,6 +807,8 @@ export const zhKnowledgeViewMessages = {
     mcpListError: "Notion/MCP：{error}",
     emptyBlog:
       "还没有博客知识。发布一篇博客，或新建笔记并勾选「同时发布为公开博客」。",
+    emptyVeda:
+      "还没有 Veda 笔记。请在 Veda（aiNotes）应用里开启「同步到 Home」— 笔记会保存到 notes/veda/。",
     emptyDocuments: "notes/ 之外还没有文档。可导入 PDF、Office 等原件。",
     emptyPublished: "还没有已发布内容。在浏览中发布笔记后，联系人才能在网格上查询。",
     openPlugins: "打开插件",

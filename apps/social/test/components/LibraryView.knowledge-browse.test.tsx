@@ -85,6 +85,17 @@ const items: LocalFileItem[] = [
     contentHash: "h4",
     published: false,
   },
+  {
+    source: "vault",
+    relativePath: "notes/veda/59753d7e-0636-4f9e-8065-749c1fa575f6.md",
+    title: "My first note",
+    extension: ".md",
+    byteLength: 138,
+    updatedAt: "2026-05-20T12:00:00.000Z",
+    documentId: "n4",
+    contentHash: "h5",
+    published: false,
+  },
 ];
 
 afterEach(() => {
@@ -136,6 +147,14 @@ describe("LibraryView Knowledge Browse filters", () => {
     fireEvent.click(screen.getByTestId("knowledge-browse-filter-notion"));
     expect(screen.getAllByTitle("notes/mcp/notion-hit.md").length).toBeGreaterThan(0);
     expect(screen.queryAllByTitle("notes/hello.md")).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId("knowledge-browse-filter-veda"));
+    expect(
+      screen.getAllByTitle("notes/veda/59753d7e-0636-4f9e-8065-749c1fa575f6.md")
+        .length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryAllByTitle("notes/hello.md")).toHaveLength(0);
+    expect(screen.queryAllByTitle("notes/mcp/notion-hit.md")).toHaveLength(0);
 
     fireEvent.click(screen.getByTestId("knowledge-browse-filter-documents"));
     expect(screen.getAllByTitle("documents/resume.pdf").length).toBeGreaterThan(0);

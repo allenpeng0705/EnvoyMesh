@@ -7,6 +7,7 @@ import {
   isKnowledgeNotesPath,
   isKnowledgeNotionPath,
   isKnowledgeObsidianPath,
+  isKnowledgeVedaPath,
   isProfileMediaFile,
   knowledgeBrowseSource,
   knowledgeBrowseDisplayPath,
@@ -71,6 +72,7 @@ describe("knowledge browse filters", () => {
   it("matches KnowledgeBrowseFilter", () => {
     const note = { relativePath: "notes/a.md", published: false };
     const mcp = { relativePath: "notes/mcp/notion-hit.md", published: false };
+    const veda = { relativePath: "notes/veda/abc-123.md", published: false };
     const blog = { relativePath: "notes/imports/blog/hello.md", published: false };
     const linked = { relativePath: "linked-obsidian/Vault/x.md", published: false };
     const doc = { relativePath: "documents/a.pdf", published: false };
@@ -89,6 +91,9 @@ describe("knowledge browse filters", () => {
     expect(matchesKnowledgeBrowseFilter(blog, "obsidian")).toBe(false);
     expect(matchesKnowledgeBrowseFilter(blog, "blog")).toBe(true);
     expect(matchesKnowledgeBrowseFilter(note, "blog")).toBe(false);
+    expect(matchesKnowledgeBrowseFilter(veda, "veda")).toBe(true);
+    expect(matchesKnowledgeBrowseFilter(veda, "obsidian")).toBe(false);
+    expect(matchesKnowledgeBrowseFilter(note, "veda")).toBe(false);
     expect(matchesKnowledgeBrowseFilter(linked, "obsidian")).toBe(true);
     const remote = {
       relativePath: "mcp-remote/abc-card.md",
@@ -97,6 +102,19 @@ describe("knowledge browse filters", () => {
     };
     expect(matchesKnowledgeBrowseFilter(remote, "notion")).toBe(true);
     expect(matchesKnowledgeBrowseFilter(remote, "obsidian")).toBe(false);
+  });
+
+  it("classifies Veda notes separately from Obsidian/generic note rows", () => {
+    expect(isKnowledgeVedaPath("notes/veda/x.md")).toBe(true);
+    expect(isKnowledgeVedaPath("notes/veda")).toBe(true);
+    expect(isKnowledgeVedaPath("notes/veda/family-profile/xyz.md")).toBe(true);
+    expect(isKnowledgeVedaPath("notes/x.md")).toBe(false);
+    expect(isKnowledgeVedaPath("notes/imports/obsidian/x.md")).toBe(false);
+    expect(isKnowledgeObsidianPath("notes/veda/x.md")).toBe(false);
+    expect(knowledgeBrowseSource("notes/veda/x.md")).toBe("veda");
+    expect(knowledgeBrowseDisplayPath("notes/veda/abc-123.md")).toBe("abc-123.md");
+    expect(knowledgeBrowseDisplayPath("notes/veda/family/xyz.md")).toBe("family/xyz.md");
+    expect(knowledgeBrowseDisplayPath("notes/x.md")).toBe("notes/x.md");
   });
 
   it("classifies Obsidian vs Notion note paths", () => {

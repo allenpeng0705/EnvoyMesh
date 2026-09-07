@@ -316,8 +316,10 @@ describe("E2E document agent (two-node libp2p)", () => {
 
     await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
 
-    const results = await alice.service.discoverPublishedLibrary({ fileTitleQuery: "kubo-parity" });
-    expect(results.some((r) => r.files.some((f) => f.title.includes("kubo-parity")))).toBe(true);
+    // Vault titles prefer the leading `# ` heading, so the file's content title
+    // ("kubo parity checklist") is what discovery returns and matches on.
+    const results = await alice.service.discoverPublishedLibrary({ fileTitleQuery: "kubo parity" });
+    expect(results.some((r) => r.files.some((f) => f.title.includes("kubo parity")))).toBe(true);
   }, 30_000);
 
   it("request share from peer delivers chat message over libp2p", async () => {

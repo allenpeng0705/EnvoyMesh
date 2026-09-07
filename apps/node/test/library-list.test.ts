@@ -48,7 +48,10 @@ describe("NodeServiceImpl listLibraryItems (FS-A)", () => {
     const items = await svc.listLibraryItems();
     expect(items).toHaveLength(1);
     expect(items[0].relativePath).toBe("notes/hello.md");
-    expect(items[0].title).toBe("hello");
+    // Vault markdown titles prefer a leading `# ` heading over the filename
+    // stem (frontmatter `title:` → first heading → basename), so a file named
+    // hello.md whose body starts `# Hello` is titled "Hello".
+    expect(items[0].title).toBe("Hello");
     expect(items[0].documentId).toBe(index.documents[0].documentId);
     expect(items[0].contentHash).toBe(index.documents[0].contentHash);
     expect(items[0].published).toBe(false);
