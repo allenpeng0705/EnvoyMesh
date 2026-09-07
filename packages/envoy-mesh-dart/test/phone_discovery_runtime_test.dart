@@ -207,5 +207,93 @@ void main() {
       backend.replaceWanSearch(null);
       expect(await backend.searchPeers(), isEmpty);
     });
+
+    test('searchPeers merges WAN multiaddrs into known local peer', () async {
+      final persona = PhonePersona(
+        owner: generateOwnerIdentity(),
+        device: generateDeviceIdentity(),
+      );
+      final backend = PhoneSocialBackend(
+        persona: persona,
+        transport: FakeMeshEnvelopeTransport(),
+        wanSearch: ({topic, interests, maxResults = 20}) async => [
+          const MeshPeerHit(
+            nodeId: '12D3KooLocal',
+            ownerId: 'envoy:owner:local',
+            displayName: 'Updated',
+            multiaddrs: ['/ip4/10.0.0.2/tcp/4001/p2p/12D3KooLocal'],
+          ),
+        ],
+      );
+      await backend.rememberPeer(const PhonePeerRecord(
+        ownerId: 'envoy:owner:local',
+        libp2pPeerId: '12D3KooLocal',
+        displayName: 'Local',
+        devicePeerId: 'envoy_devicekey',
+        multiaddrs: ['/ip4/10.0.0.1/tcp/4001/p2p/12D3KooLocal'],
+      ));
+      final hits = await backend.searchPeers(maxResults: 10);
+      expect(hits, hasLength(1));
+      expect(hits.single.displayName, 'Updated');
+      expect(hits.single.multiaddrs, contains('/ip4/10.0.0.2/tcp/4001/p2p/12D3KooLocal'));
+      expect(hits.single.multiaddrs, contains('/ip4/10.0.0.1/tcp/4001/p2p/12D3KooLocal'));
+      final stored = backend.store.peerFor('envoy:owner:local');
+      expect(stored?.devicePeerId, 'envoy_devicekey');
+    });
+  });
+
+  group('upsertPeer merge', () {
+    test('preserves devicePeerId when discovery refreshes addrs', () {
+      final store = PhoneSocialStore();
+      store.upsertPeer(const PhonePeerRecord(
+        ownerId: 'envoy:owner:x',
+        libp2pPeerId: '12D3KooX',
+        devicePeerId: 'envoy_dev',
+        displayName: 'X',
+        profile: {'bio': 'hi'},
+      ));
+      store.upsertPeer(const PhonePeerRecord(
+        ownerId: 'envoy:owner:x',
+        libp2pPeerId: '12D3KooX',
+        multiaddrs: ['/ip4/1.2.3.4/tcp/4001/p2p/12D3KooX'],
+      ));
+      final p = store.peerFor('envoy:owner:x')!;
+      expect(p.devicePeerId, 'envoy_dev');
+      expect(p.displayName, 'X');
+      expect(p.profile['bio'], 'hi');
+      expect(p.multiaddrs, isNotEmpty);
+    });
+  });
+
+  group('relay lookup response gate', () {
+    test('accepts placeholder only when dialed trusted relay', () {
+      final placeholder = <String, Object?>{
+        'intent': 'relay.lookup.response',
+        'signature': relayControlResponsePlaceholder,
+        'senderPublicKey': relayControlResponsePlaceholder,
+        'payload': {'peers': []},
+      };
+      expect(
+        isAcceptableRelayLookupResponse(
+          placeholder,
+          dialedTrustedRelay: true,
+        ),
+        isTrue,
+      );
+      expect(
+        isAcceptableRelayLookupResponse(
+          placeholder,
+          dialedTrustedRelay: false,
+        ),
+        isFalse,
+      );
+      expect(
+        isAcceptableRelayLookupResponse(
+          {...placeholder, 'intent': 'chat.message'},
+          dialedTrustedRelay: true,
+        ),
+        isFalse,
+      );
+    });
   });
 }

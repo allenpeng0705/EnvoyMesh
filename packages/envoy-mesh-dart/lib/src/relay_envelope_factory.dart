@@ -1,6 +1,7 @@
 /// Relay control envelopes (`relay.checkin` / `relay.lookup`) — system role.
 library;
 
+import 'envoy_envelope.dart';
 import 'envoy_identity.dart';
 
 String _newMessageId() =>
@@ -115,4 +116,27 @@ List<Map<String, dynamic>> parseRelayLookupPeers(Object? payload) {
     for (final p in peers)
       if (p is Map) Map<String, dynamic>.from(p),
   ];
+}
+
+/// Placeholder used by community relays for unsigned control replies.
+/// Must match `RENDEZVOUS_RESPONSE_PLACEHOLDER_*` in `@envoymesh/protocol`.
+const String relayControlResponsePlaceholder =
+    'relay:rendezvous-response/unsigned-placeholder';
+
+/// Accept a dialed-relay `relay.lookup.response` (placeholder or signed).
+///
+/// Placeholder replies are only accepted when [dialedTrustedRelay] is true
+/// (caller dialed a known bootstrap relay multiaddr).
+bool isAcceptableRelayLookupResponse(
+  Map<String, Object?> envelope, {
+  required bool dialedTrustedRelay,
+}) {
+  if (envelope['intent'] != 'relay.lookup.response') return false;
+  final sig = envelope['signature'];
+  final pub = envelope['senderPublicKey'];
+  if (sig == relayControlResponsePlaceholder &&
+      pub == relayControlResponsePlaceholder) {
+    return dialedTrustedRelay;
+  }
+  return verifyEnvoyEnvelope(envelope);
 }

@@ -222,9 +222,17 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
               expectReply: true,
             );
             if (!result.ok || result.replyEnvelope == null) continue;
-            final peers = parseRelayLookupPeers(
-              result.replyEnvelope!['payload'],
-            );
+            final reply = Map<String, Object?>.from(result.replyEnvelope!);
+            if (!isAcceptableRelayLookupResponse(
+              reply,
+              dialedTrustedRelay: true,
+            )) {
+              debugPrint(
+                '[PhoneDiscoverySession] lookup rejected (untrusted reply) $relayAddr',
+              );
+              continue;
+            }
+            final peers = parseRelayLookupPeers(reply['payload']);
             final candidates = [
               for (final p in peers) RelayLookupCandidate.fromJson(p),
             ];

@@ -311,12 +311,11 @@ class PhoneDiscoveryRuntime {
     final bScore = (b.ownerId.isNotEmpty ? 4 : 0) +
         (b.displayName != null && b.displayName!.isNotEmpty ? 2 : 0) +
         (b.multiaddrs.isNotEmpty ? 1 : 0);
-    final richer = bScore > aScore ? b : a;
+    // On a tie, prefer [b] (later / WAN) for fresher display metadata.
+    final richer = bScore >= aScore ? b : a;
     final other = identical(richer, b) ? a : b;
     final addrs = {...richer.multiaddrs, ...other.multiaddrs}.toList();
-    final interests = richer.interests.isNotEmpty
-        ? {...richer.interests, ...other.interests}.toList()
-        : other.interests;
+    final interests = {...richer.interests, ...other.interests}.toList();
     return MeshPeerHit(
       nodeId: richer.nodeId.isNotEmpty ? richer.nodeId : other.nodeId,
       ownerId: richer.ownerId.isNotEmpty ? richer.ownerId : other.ownerId,

@@ -97,7 +97,26 @@ class PhoneSocialStore {
   PhonePeerRecord? peerFor(String ownerId) => peersByOwner[ownerId];
 
   void upsertPeer(PhonePeerRecord peer) {
-    peersByOwner[peer.ownerId] = peer;
+    final prev = peersByOwner[peer.ownerId];
+    if (prev == null) {
+      peersByOwner[peer.ownerId] = peer;
+      return;
+    }
+    // Merge so discovery refresh doesn't wipe devicePeerId / profile.
+    peersByOwner[peer.ownerId] = PhonePeerRecord(
+      ownerId: peer.ownerId,
+      libp2pPeerId: peer.libp2pPeerId.isNotEmpty
+          ? peer.libp2pPeerId
+          : prev.libp2pPeerId,
+      devicePeerId: peer.devicePeerId ?? prev.devicePeerId,
+      displayName: peer.displayName ?? prev.displayName,
+      multiaddrs: peer.multiaddrs.isEmpty
+          ? prev.multiaddrs
+          : {...prev.multiaddrs, ...peer.multiaddrs}.toList(),
+      profile: peer.profile.isEmpty
+          ? prev.profile
+          : {...prev.profile, ...peer.profile},
+    );
   }
 
   void upsertBond(BondContact contact) {

@@ -12,6 +12,7 @@ import 'envoy_envelope.dart';
 import 'mesh_envelope_transport.dart';
 import 'mesh_protocols.dart';
 import 'models.dart';
+import 'phone_discovery_runtime.dart';
 import 'phone_identity_store.dart';
 import 'phone_social_store.dart';
 import 'social_backend.dart';
@@ -172,25 +173,13 @@ class PhoneSocialBackend implements SocialBackend {
       return local;
     }
 
-    // Prefer local (known dial map / trust) then fill from WAN.
-    final byOwner = <String, MeshPeerHit>{
-      for (final h in local)
-        if (h.ownerId.isNotEmpty) h.ownerId: h,
-    };
-    final byPeer = <String, MeshPeerHit>{
-      for (final h in local)
-        if (h.ownerId.isEmpty && h.nodeId.isNotEmpty) h.nodeId: h,
-    };
-    for (final h in remote) {
-      if (h.ownerId.isNotEmpty) {
-        byOwner.putIfAbsent(h.ownerId, () => h);
-      } else if (h.nodeId.isNotEmpty) {
-        byPeer.putIfAbsent(h.nodeId, () => h);
-      }
-    }
-    final merged = [...byOwner.values, ...byPeer.values];
-    if (merged.length <= maxResults) return merged;
-    return merged.take(maxResults).toList(growable: false);
+    // Prefer richer of local vs WAN (union multiaddrs); do not block WAN updates.
+    return PhoneDiscoveryRuntime.mergeHits(
+      [...local, ...remote],
+      selfLibp2pPeerId: '',
+      selfOwnerId: ownerId,
+      maxResults: maxResults,
+    );
   }
 
   String _dialTargetFor(PhonePeerRecord peer) {
