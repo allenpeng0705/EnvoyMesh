@@ -1508,23 +1508,23 @@ textarea::placeholder {
   box-shadow: var(--shadow-ring);
 }
 
-/* Send — dedicated primary control (not mic / + / emoji icon buttons). */
+/* Send — same muted icon chrome as mic / + / emoji (no green fill). */
 .chat-input > button.chat-send-btn {
   padding: 0;
-  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
-  color: var(--color-primary);
+  background: transparent;
+  color: var(--color-text-muted);
   border: 1px solid transparent;
   border-radius: var(--radius-full);
   cursor: pointer;
   font-size: inherit;
-  font-weight: var(--font-semibold);
+  font-weight: inherit;
   box-shadow: none;
   transition: background var(--transition-fast), transform var(--transition-fast), color var(--transition-fast);
 }
 
 .chat-input > button.chat-send-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
-  color: var(--color-primary);
+  background: var(--color-surface-elevated, var(--color-bg));
+  color: var(--color-text);
 }
 
 .chat-input > button.chat-send-btn:active:not(:disabled) {

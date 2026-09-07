@@ -14,9 +14,11 @@ import '../../l10n/app_localizations.dart';
 import '../../models/chat_message.dart';
 import '../../models/chat_thread.dart';
 import '../../models/family_attachment.dart';
+import '../../models/web_content.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../services/chat_voice_note.dart';
 import '../../services/family_content_fetch.dart';
 import '../../services/vault_content_fetch.dart';
 import '../../widgets/agent_attachment_bar.dart';
@@ -118,6 +120,13 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         .firstOrNull;
     return thread?.type == ChatThreadType.familyGroup;
   }
+
+  /// Human threads (contact / mesh group / family DM / family room) — not agents.
+  bool get _isHumanMediaChat => !_isAgent;
+
+  /// Vault share only for bonded mesh DMs (matches Social ContactChatPanel).
+  bool get _supportsVaultShare =>
+      !_isAgent && !_isRoom && !_isFamily && _resolvedContactOwnerId != null;
 
   /// Prefer explicit contactOwnerId; fall back to thread id suffix.
   String? get _resolvedContactOwnerId {
@@ -1057,81 +1066,29 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         return;
       }
       final bytes = await file.readAsBytes();
-      final base64 = base64Encode(bytes);
       const mimeType = 'audio/wav';
-      final durationSec =
-          _recordingSeconds > 0 ? _recordingSeconds : 1;
+      final durationSec = _recordingSeconds > 0 ? _recordingSeconds : 1;
 
-      final nodeService = ref.read(nodeServiceProvider);
-      if (nodeService == null || _resolvedContactOwnerId == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.chatVoiceSendFailed)),
-          );
-        }
-        return;
-      }
-
-      final targetOwnerId = _resolvedContactOwnerId!;
-      final chatNotifier = ref.read(chatProvider.notifier);
-      // Show a bubble immediately (duration known); vault path fills in
-      // when the RPC returns / WS echo arrives.
-      final pendingId = chatNotifier.insertPendingVoiceNote(
-        targetOwnerId: targetOwnerId,
-        durationSec: durationSec,
-        sizeBytes: bytes.length,
+      await _sendHumanAttachmentBytes(
+        bytes,
+        name: 'voice-note.wav',
+        mimeType: mimeType,
+        voiceDurationSec: durationSec,
+        manageBusy: false,
       );
 
-      try {
-        final result = await nodeService.sendChatAttachment(
-          targetOwnerId: targetOwnerId,
-          filename: 'voice-note.wav',
-          contentBase64: base64,
-          mimeType: mimeType,
-          chatText: '',
+      sent = true;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.chatVoiceSent)),
         );
-        final vaultPath = result['vaultRelativePath'] as String?;
-        final messageId = (result['messageId'] as String?)?.trim();
-        final attachmentId =
-            (result['attachmentId'] as String?) ?? pendingId;
-        if (vaultPath != null && vaultPath.isNotEmpty) {
-          // Prefer server messageId; if the home omitted it (older router),
-          // still keep a playable row keyed by attachment id.
-          chatNotifier.upsertOutboundVoiceNote(
-            targetOwnerId: targetOwnerId,
-            messageId: (messageId != null && messageId.isNotEmpty)
-                ? messageId
-                : 'voice-$attachmentId',
-            vaultRelativePath: vaultPath,
-            attachmentId: attachmentId,
-            sizeBytes: bytes.length,
-            mimeType: mimeType,
-            durationSec: durationSec,
-          );
-          if (pendingId.isNotEmpty) {
-            chatNotifier.removePendingVoiceNote(targetOwnerId, pendingId);
-          }
-        }
-        // If we got neither vault path nor messageId, leave the pending
-        // bubble so the user can see something went wrong / retry later.
-        sent = true;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.chatVoiceSent)),
-          );
-        }
-        try {
-          if (await file.exists()) await file.delete();
-        } catch (_) {}
-        _activeRecordingPath = null;
-        if (mounted) {
-          setState(() => _recordingSeconds = 0);
-        }
-      } catch (e) {
-        if (pendingId.isNotEmpty) {
-          chatNotifier.removePendingVoiceNote(targetOwnerId, pendingId);
-        }
-        rethrow;
+      }
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+      _activeRecordingPath = null;
+      if (mounted) {
+        setState(() => _recordingSeconds = 0);
       }
     } catch (e) {
       // Keep _activeRecordingPath + duration so the bar stays in ready/retry.
@@ -1203,16 +1160,16 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     }
   }
 
-  /// Upload [bytes] to the home family-media area scoped to this thread (DM
-  /// pair or family room), then send the returned descriptor via the family
-  /// send RPC. Any text already typed in the composer rides along as the
-  /// caption (family sends may carry text and/or attachments). Composer text
-  /// is cleared only after a successful send so a failed upload never loses
-  /// the draft.
-  Future<void> _sendFamilyImage(
+  /// Upload [bytes] for the active human thread (contact / mesh room / family).
+  /// Matches Social: `sendChatAttachment`, `sendChatRoomAttachment`, or
+  /// family-media upload + send. Voice notes pass [voiceDurationSec] for the
+  /// bonded-contact optimistic bubble.
+  Future<void> _sendHumanAttachmentBytes(
     List<int> bytes, {
     required String name,
     String? mimeType,
+    int? voiceDurationSec,
+    bool manageBusy = true,
   }) async {
     final l10n = AppLocalizations.of(context);
     final nodeService = ref.read(nodeServiceProvider);
@@ -1223,6 +1180,123 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       );
       return;
     }
+    if (bytes.length > maxAgentAttachmentBytes) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.chatFileTooLarge(name, '25'))),
+      );
+      return;
+    }
+
+    final resolvedMime = mimeType ?? guessMimeFromName(name);
+    final caption = _textController.text.trim();
+    if (manageBusy) setState(() => _attachBusy = true);
+    try {
+      if (_isFamily || _isFamilyRoom) {
+        await _sendFamilyAttachmentBytes(
+          bytes,
+          name: name,
+          mimeType: resolvedMime,
+          caption: caption.isEmpty ? null : caption,
+        );
+        return;
+      }
+
+      if (_isRoom && widget.chatRoomId != null) {
+        await nodeService.sendChatRoomAttachment(
+          roomId: widget.chatRoomId!,
+          filename: name,
+          contentBase64: base64Encode(bytes),
+          mimeType: resolvedMime,
+          caption: caption.isEmpty ? null : caption,
+        );
+        if (caption.isNotEmpty) _textController.clear();
+        await ref.read(chatProvider.notifier).loadHistory(
+              widget.threadId,
+              chatRoomId: widget.chatRoomId,
+            );
+        return;
+      }
+
+      final targetOwnerId = _resolvedContactOwnerId;
+      if (targetOwnerId == null) {
+        throw StateError('No contact for attachment');
+      }
+
+      final chatNotifier = ref.read(chatProvider.notifier);
+      final voiceSec = voiceDurationSec;
+      final isVoice = voiceSec != null;
+      var pendingId = '';
+      if (voiceSec != null) {
+        pendingId = chatNotifier.insertPendingVoiceNote(
+          targetOwnerId: targetOwnerId,
+          durationSec: voiceSec,
+          sizeBytes: bytes.length,
+        );
+      }
+
+      try {
+        final result = await nodeService.sendChatAttachment(
+          targetOwnerId: targetOwnerId,
+          filename: name,
+          contentBase64: base64Encode(bytes),
+          mimeType: resolvedMime,
+          chatText: isVoice ? '' : null,
+          caption: isVoice ? null : (caption.isEmpty ? null : caption),
+        );
+        if (!isVoice && caption.isNotEmpty) _textController.clear();
+        if (isVoice) {
+          final vaultPath = result['vaultRelativePath'] as String?;
+          final messageId = (result['messageId'] as String?)?.trim();
+          final attachmentId =
+              (result['attachmentId'] as String?) ?? pendingId;
+          if (vaultPath != null && vaultPath.isNotEmpty) {
+            chatNotifier.upsertOutboundVoiceNote(
+              targetOwnerId: targetOwnerId,
+              messageId: (messageId != null && messageId.isNotEmpty)
+                  ? messageId
+                  : 'voice-$attachmentId',
+              vaultRelativePath: vaultPath,
+              attachmentId: attachmentId,
+              sizeBytes: bytes.length,
+              mimeType: resolvedMime,
+              durationSec: voiceSec,
+            );
+            if (pendingId.isNotEmpty) {
+              chatNotifier.removePendingVoiceNote(targetOwnerId, pendingId);
+            }
+          }
+        } else {
+          await chatNotifier.loadHistory(
+            widget.threadId,
+            contactOwnerId: targetOwnerId,
+          );
+        }
+      } catch (e) {
+        if (pendingId.isNotEmpty) {
+          chatNotifier.removePendingVoiceNote(targetOwnerId, pendingId);
+        }
+        rethrow;
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      if (manageBusy && mounted) setState(() => _attachBusy = false);
+    }
+  }
+
+  /// Family DM / room: upload to family-media then send descriptor.
+  Future<void> _sendFamilyAttachmentBytes(
+    List<int> bytes, {
+    required String name,
+    required String mimeType,
+    String? caption,
+  }) async {
+    final l10n = AppLocalizations.of(context);
+    final nodeService = ref.read(nodeServiceProvider);
+    if (nodeService == null) {
+      throw StateError(l10n.commonNotConnectedHome);
+    }
     final roomId = _isFamilyRoom ? widget.chatRoomId : null;
     final toProfileId =
         (_isFamily && !_isFamilyRoom) ? widget.contactOwnerId : null;
@@ -1232,52 +1306,32 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     } else if (toProfileId != null && toProfileId.isNotEmpty) {
       scope = FamilyAttachmentScope.dm(toProfileId);
     } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.chatFamilyAttachNoThread)),
-      );
-      return;
+      throw StateError(l10n.chatFamilyAttachNoThread);
     }
 
-    final caption = _textController.text.trim();
-    setState(() => _attachBusy = true);
-    try {
-      final uploaded = await nodeService.uploadFamilyAttachment(
-        scope: scope,
-        filename: name,
-        mimeType: mimeType ?? 'application/octet-stream',
-        contentBase64: base64Encode(bytes),
+    final uploaded = await nodeService.uploadFamilyAttachment(
+      scope: scope,
+      filename: name,
+      mimeType: mimeType,
+      contentBase64: base64Encode(bytes),
+    );
+    final descriptor = familyAttachmentDescriptorFromUpload(uploaded);
+    final chat = ref.read(chatProvider.notifier);
+    if (scope.isDm) {
+      await chat.sendFamilyMessage(
+        toProfileId!,
+        caption,
+        attachments: [descriptor],
       );
-      final descriptor = familyAttachmentDescriptorFromUpload(uploaded);
-      final chat = ref.read(chatProvider.notifier);
-      if (scope.isDm) {
-        await chat.sendFamilyMessage(
-          toProfileId!,
-          caption.isEmpty ? null : caption,
-          attachments: [descriptor],
-        );
-      } else {
-        await chat.sendFamilyRoomMessage(
-          roomId!,
-          caption.isEmpty ? null : caption,
-          attachments: [descriptor],
-        );
-      }
-      if (!mounted) return;
+    } else {
+      await chat.sendFamilyRoomMessage(
+        roomId!,
+        caption,
+        attachments: [descriptor],
+      );
+    }
+    if (caption != null && caption.isNotEmpty && mounted) {
       _textController.clear();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            l10n.chatPhotoSendFailed(
-              e.toString().replaceFirst('Bad state: ', ''),
-            ),
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _attachBusy = false);
     }
   }
 
@@ -1457,9 +1511,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               child: (_isRecording ||
                           _isSendingVoice ||
                           _hasPendingVoice) &&
-                      !_isAgent &&
-                      !_isRoom &&
-                      !_isFamily
+                      _isHumanMediaChat
                   ? VoiceNoteRecorderBar(
                       isCapturing: _isRecording,
                       isSending: _isSendingVoice,
@@ -1510,51 +1562,35 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                                       }),
                             ),
                           ),
-                        IconButton(
-                          icon: Icon(
-                            (_isExtAgent || _isEnvoyAi)
-                                ? Icons.attach_file
-                                : Icons.image_outlined,
+                        // Social parity: human = mic + "+" (attach / optional vault);
+                        // agents keep the attach sheet.
+                        if (_isExtAgent || _isEnvoyAi)
+                          IconButton(
+                            icon: const Icon(Icons.attach_file),
+                            tooltip: l10n.chatAttachFilesAgent,
+                            onPressed: (_mmxBusy ||
+                                    _attachBusy ||
+                                    _agentSendBusy ||
+                                    !ref.watch(nodeProvider).isOwnerProfile)
+                                ? null
+                                : () => unawaited(_showAgentAttachSheet()),
+                          )
+                        else if (_isHumanMediaChat) ...[
+                          IconButton(
+                            icon: const Icon(Icons.mic_none_outlined),
+                            tooltip: l10n.chatRecordVoice,
+                            onPressed: (_mmxBusy || _attachBusy)
+                                ? null
+                                : () => unawaited(_startRecording()),
                           ),
-                          tooltip: (_isExtAgent || _isEnvoyAi)
-                              ? 'Attach files'
-                              : l10n.chatTypeMessage,
-                          onPressed: (_mmxBusy ||
-                                  _attachBusy ||
-                                  _agentSendBusy ||
-                                  ((_isExtAgent || _isEnvoyAi) &&
-                                      !ref.watch(nodeProvider).isOwnerProfile))
-                              ? null
-                              : () {
-                                  if (_isExtAgent || _isEnvoyAi) {
-                                    unawaited(_showAgentAttachSheet());
-                                  } else {
-                                    unawaited(_pickAndSendImage());
-                                  }
-                                },
-                        ),
-                        if (!_isAgent && !_isRoom)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 2, right: 4),
-                            child: Tooltip(
-                              message: l10n.chatRecordVoice,
-                              child: Material(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .primaryContainer,
-                                shape: const CircleBorder(),
-                                child: InkWell(
-                                  customBorder: const CircleBorder(),
-                                  onTap: () => unawaited(_startRecording()),
-                                  child: const SizedBox(
-                                    width: 48,
-                                    height: 48,
-                                    child: Icon(Icons.mic, size: 26),
-                                  ),
-                                ),
-                              ),
-                            ),
+                          IconButton(
+                            icon: const Icon(Icons.add),
+                            tooltip: l10n.chatMoreAttach,
+                            onPressed: (_mmxBusy || _attachBusy)
+                                ? null
+                                : () => unawaited(_showHumanAttachSheet()),
                           ),
+                        ],
                         Expanded(
                           child: TextField(
                             controller: _textController,
@@ -1565,9 +1601,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                               hintText: _mmxBusy
                                   ? 'MiniMax running…'
                                   : _attachBusy
-                                      ? 'Uploading…'
+                                      ? l10n.chatUploading
                                       : _agentSendBusy
-                                          ? 'Sending…'
+                                          ? l10n.chatSending
                                           : l10n.chatTypeMessage,
                               border: const OutlineInputBorder(
                                 borderRadius:
@@ -1598,6 +1634,50 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     );
   }
 
+  /// Compact "+" menu — attach photo/file; vault share only for bonded DMs.
+  Future<void> _showHumanAttachSheet() async {
+    final l10n = AppLocalizations.of(context);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: Text(l10n.chatAttachPhoto),
+              onTap: () => Navigator.pop(ctx, 'photo'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file_outlined),
+              title: Text(l10n.chatAttachFile),
+              onTap: () => Navigator.pop(ctx, 'file'),
+            ),
+            if (_supportsVaultShare)
+              ListTile(
+                leading: const Icon(Icons.folder_shared_outlined),
+                title: Text(l10n.filesShareWith),
+                subtitle: Text(l10n.chatShareFromVault),
+                onTap: () => Navigator.pop(ctx, 'vault'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'photo') {
+      await _pickAndSendImage();
+      return;
+    }
+    if (choice == 'file') {
+      await _pickAndSendFile();
+      return;
+    }
+    if (choice == 'vault') {
+      await _shareVaultFileToContact();
+    }
+  }
+
   Future<void> _pickAndSendImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
@@ -1611,22 +1691,154 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     final name = picked.name.isNotEmpty
         ? picked.name
         : 'photo-${DateTime.now().millisecondsSinceEpoch}.jpg';
-    // Family DM / family-room threads: EM-F2 — upload bytes to the home
-    // family-media area (scoped to this thread) and send the returned
-    // descriptor; the optimistic bubble previews it via readFamilyAttachment.
-    if (_isFamily || _isFamilyRoom) {
-      await _sendFamilyImage(
+    try {
+      await _sendHumanAttachmentBytes(
         bytes,
         name: name,
         mimeType: 'image/jpeg',
       );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).chatPhotoSendFailed(
+              e.toString().replaceFirst('Bad state: ', ''),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickAndSendFile() async {
+    final picked = await FilePicker.platform.pickFiles(
+      withData: true,
+      allowMultiple: false,
+      type: FileType.any,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+    final file = picked.files.first;
+    final bytes = file.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      // Some platforms only give a path.
+      final path = file.path;
+      if (path == null || path.isEmpty) return;
+      final diskBytes = await File(path).readAsBytes();
+      try {
+        await _sendHumanAttachmentBytes(
+          diskBytes,
+          name: file.name,
+          mimeType: guessMimeFromName(file.name),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).chatPhotoSendFailed(
+                e.toString().replaceFirst('Bad state: ', ''),
+              ),
+            ),
+          ),
+        );
+      }
       return;
     }
-    final base64 = base64Encode(bytes);
-    // Send as a data URI so ChatBubble can detect and render it.
-    // Do not touch the text composer — image path is independent of typed draft.
-    final text = 'data:image/jpeg;base64,$base64';
-    await _sendText(text, restoreComposerOnFailure: false);
+    try {
+      await _sendHumanAttachmentBytes(
+        bytes,
+        name: file.name,
+        mimeType: guessMimeFromName(file.name),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).chatPhotoSendFailed(
+              e.toString().replaceFirst('Bad state: ', ''),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _shareVaultFileToContact() async {
+    final targetOwnerId = _resolvedContactOwnerId;
+    if (targetOwnerId == null) return;
+    final l10n = AppLocalizations.of(context);
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.commonNotConnectedHome)),
+      );
+      return;
+    }
+    ListAllLocalFilesResult listed;
+    try {
+      listed = await client.listAllLocalFiles();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.filesShareFailed('$e'))),
+      );
+      return;
+    }
+    final shareable = listed.items
+        .where(
+          (i) =>
+              i.source == 'vault' &&
+              i.relativePath.isNotEmpty &&
+              !isHiddenFromLibraryList(i.relativePath),
+        )
+        .toList();
+    if (!mounted) return;
+    if (shareable.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.chatNoVaultFilesToShare)),
+      );
+      return;
+    }
+    final chosen = await showModalBottomSheet<LocalFileItem>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(title: Text(l10n.filesShareWith)),
+            for (final item in shareable)
+              ListTile(
+                title: Text(
+                  item.title.trim().isNotEmpty ? item.title : item.relativePath,
+                ),
+                subtitle: Text(item.relativePath),
+                onTap: () => Navigator.pop(ctx, item),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    try {
+      await client.shareFile(
+        targetOwnerId: targetOwnerId,
+        path: chosen.relativePath,
+        sensitivity: 'friends',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.filesShareSent)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.filesShareFailed('$e'))),
+      );
+    }
   }
 
   /// Phase 42F — start an outbound voice or video call from this chat.
@@ -1813,39 +2025,41 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   }
 
   Future<void> _showAgentAttachSheet() async {
+    final l10n = AppLocalizations.of(context);
     if (!ref.read(nodeProvider).isOwnerProfile) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Only the node owner can attach files to agent chats.'),
-        ),
+        SnackBar(content: Text(l10n.chatAgentAttachOwnerOnly)),
       );
       return;
     }
     final choice = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.folder_open),
-              title: const Text('Home file'),
-              onTap: () => Navigator.pop(ctx, 'home'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Photo'),
-              onTap: () => Navigator.pop(ctx, 'photo'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.insert_drive_file_outlined),
-              title: const Text('Phone file'),
-              onTap: () => Navigator.pop(ctx, 'file'),
-            ),
-          ],
-        ),
-      ),
+      builder: (ctx) {
+        final sheetL10n = AppLocalizations.of(ctx);
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.folder_open),
+                title: Text(sheetL10n.chatAttachHomeFile),
+                onTap: () => Navigator.pop(ctx, 'home'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: Text(sheetL10n.chatAttachPhoto),
+                onTap: () => Navigator.pop(ctx, 'photo'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.insert_drive_file_outlined),
+                title: Text(sheetL10n.chatAttachPhoneFile),
+                onTap: () => Navigator.pop(ctx, 'file'),
+              ),
+            ],
+          ),
+        );
+      },
     );
     if (!mounted || choice == null) return;
     if (choice == 'home') {
@@ -1878,10 +2092,11 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     String? mimeType,
     bool manageBusy = true,
   }) async {
+    final l10n = AppLocalizations.of(context);
     if (bytes.length > maxAgentAttachmentBytes) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$name: file too large (max 25 MiB)')),
+        SnackBar(content: Text(l10n.chatFileTooLarge(name, '25'))),
       );
       return;
     }

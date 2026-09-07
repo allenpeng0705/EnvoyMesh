@@ -546,6 +546,24 @@
   "chatAiDisabledAskOwner": "ファミリーチャット用の AI モデルをホーム所有者に有効にしてもらってください。",
   "chatFamilyAttachNoThread": "ここには添付できません — ファミリーの会話がありません",
   "chatPhotoSendFailed": "写真の送信に失敗しました: {error}",
+  "chatMoreAttach": "添付を追加",
+  "chatAttachPhoto": "写真",
+  "chatAttachFile": "ファイル",
+  "chatShareFromVault": "ボルトから共有",
+  "chatNoVaultFilesToShare": "共有できるボルトファイルがありません",
+  "chatAttachFilesAgent": "ファイルを添付",
+  "chatUploading": "アップロード中…",
+  "chatSending": "送信中…",
+  "chatFileTooLarge": "{name}: ファイルが大きすぎます（最大 {maxMb} MiB）",
+  "@chatFileTooLarge": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "maxMb": { "type": "String" }
+    }
+  },
+  "chatAgentAttachOwnerOnly": "エージェントチャットにファイルを添付できるのはノード所有者のみです。",
+  "chatAttachHomeFile": "ホームのファイル",
+  "chatAttachPhoneFile": "スマホのファイル",
   "pairingLoadProfilesFailed": "既存のプロフィールを読み込めません: {error}",
   "pairingFailed": "ペアリングに失敗: {error}",
   "pairingFailedHomeTimeout": "ペアリングを完了できませんでした — ホームのパソコンが時間内に応答しませんでした。EnvoyAI を開いたままオンラインにし、新しい QR をスキャンしてください。",

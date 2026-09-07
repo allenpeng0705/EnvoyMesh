@@ -546,6 +546,24 @@
   "chatAiDisabledAskOwner": "Bitten Sie den Heimbesitzer, ein KI-Modell für den Familienchat zu aktivieren.",
   "chatFamilyAttachNoThread": "Hier nicht möglich — kein Familien-Chat",
   "chatPhotoSendFailed": "Foto konnte nicht gesendet werden: {error}",
+  "chatMoreAttach": "Anhang hinzufügen",
+  "chatAttachPhoto": "Foto",
+  "chatAttachFile": "Datei",
+  "chatShareFromVault": "Aus dem Tresor teilen",
+  "chatNoVaultFilesToShare": "Keine Tresordateien zum Teilen",
+  "chatAttachFilesAgent": "Dateien anhängen",
+  "chatUploading": "Wird hochgeladen…",
+  "chatSending": "Wird gesendet…",
+  "chatFileTooLarge": "{name}: Datei zu groß (max. {maxMb} MiB)",
+  "@chatFileTooLarge": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "maxMb": { "type": "String" }
+    }
+  },
+  "chatAgentAttachOwnerOnly": "Nur der Knotenbesitzer kann Dateien an Agent-Chats anhängen.",
+  "chatAttachHomeFile": "Heimdatei",
+  "chatAttachPhoneFile": "Telefondatei",
   "pairingLoadProfilesFailed": "Vorhandene Profile konnten nicht geladen werden: {error}",
   "pairingFailed": "Kopplung fehlgeschlagen: {error}",
   "pairingFailedHomeTimeout": "Kopplung nicht abgeschlossen — der Heimcomputer hat nicht rechtzeitig geantwortet. EnvoyAI offen und online lassen, dann einen neuen QR-Code scannen.",

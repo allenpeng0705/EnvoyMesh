@@ -3230,6 +3230,45 @@ class AppLocalizationsIt extends AppLocalizations {
   }
 
   @override
+  String get chatMoreAttach => 'Aggiungi allegato';
+
+  @override
+  String get chatAttachPhoto => 'Foto';
+
+  @override
+  String get chatAttachFile => 'File';
+
+  @override
+  String get chatShareFromVault => 'Condividi dal vault';
+
+  @override
+  String get chatNoVaultFilesToShare => 'Nessun file del vault da condividere';
+
+  @override
+  String get chatAttachFilesAgent => 'Allega file';
+
+  @override
+  String get chatUploading => 'Caricamento…';
+
+  @override
+  String get chatSending => 'Invio…';
+
+  @override
+  String chatFileTooLarge(String name, String maxMb) {
+    return '$name: file troppo grande (max $maxMb MiB)';
+  }
+
+  @override
+  String get chatAgentAttachOwnerOnly =>
+      'Solo il proprietario del nodo può allegare file alle chat agente.';
+
+  @override
+  String get chatAttachHomeFile => 'File home';
+
+  @override
+  String get chatAttachPhoneFile => 'File telefono';
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return 'Impossibile caricare i profili esistenti: $error';
   }

@@ -12,13 +12,17 @@ const mocks = vi.hoisted(() => ({
   vaultIndex: { documents: [] as Array<Record<string, unknown>> },
 }));
 
-vi.mock("@envoymesh/vault", () => ({
-  buildVaultIndex: async (input: { rootDir: string }) => {
-    if (!input.rootDir) throw new Error("no vault dir");
-    return mocks.vaultIndex;
-  },
-  assertPathInsideVault: (_root: string, candidate: string) => candidate,
-}));
+vi.mock("@envoymesh/vault", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@envoymesh/vault")>();
+  return {
+    ...actual,
+    buildVaultIndex: async (input: { rootDir: string }) => {
+      if (!input.rootDir) throw new Error("no vault dir");
+      return mocks.vaultIndex;
+    },
+    assertPathInsideVault: (_root: string, candidate: string) => candidate,
+  };
+});
 
 vi.mock("@envoymesh/api", async () => {
   const actual = await vi.importActual<typeof import("@envoymesh/api")>("@envoymesh/api");
@@ -194,6 +198,43 @@ describe("listLibraryItemsViaRuntime", () => {
         published: false,
       },
     ]);
+  });
+
+  it("hides chat/ and profile/ blobs from library lists", async () => {
+    mocks.vaultIndex = {
+      documents: [
+        {
+          documentId: "note",
+          relativePath: "notes/hello.md",
+          title: "Hello",
+          extension: ".md",
+          byteLength: 10,
+          contentHash: "n1",
+          updatedAt: "2026-06-30T00:00:00Z",
+        },
+        {
+          documentId: "voice",
+          relativePath: "chat/out/att-1/voice-note.wav",
+          title: "voice-note",
+          extension: ".wav",
+          byteLength: 1000,
+          contentHash: "v1",
+          updatedAt: "2026-06-30T00:00:01Z",
+        },
+        {
+          documentId: "avatar",
+          relativePath: "profile/thumbnail.jpg",
+          title: "thumbnail",
+          extension: ".jpg",
+          byteLength: 200,
+          contentHash: "p1",
+          updatedAt: "2026-06-30T00:00:02Z",
+        },
+      ],
+    };
+    publishedStoreMocks.loadDocumentIds.mockResolvedValue(new Set());
+    const items = await listLibraryItemsViaRuntime(makeContext());
+    expect(items.map((i) => i.relativePath)).toEqual(["notes/hello.md"]);
   });
 
   it("filters by query (case-insensitive) on title or relative path", async () => {

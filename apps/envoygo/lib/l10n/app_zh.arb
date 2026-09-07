@@ -497,6 +497,23 @@
   "chatVoiceSendFailed": "发送语音失败",
   "chatMicDenied": "麦克风权限被拒绝",
   "chatRecordFailed": "开始录制失败",
+  "chatFamilyAttachNoThread": "无法在此添加附件 — 没有家庭会话",
+  "chatPhotoSendFailed": "发送照片失败：{error}",
+  "chatMoreAttach": "添加附件",
+  "chatAttachPhoto": "照片",
+  "chatAttachFile": "文件",
+  "chatShareFromVault": "从资料库分享",
+  "chatNoVaultFilesToShare": "没有可分享的资料库文件",
+  "chatAttachFilesAgent": "附加文件",
+  "chatUploading": "正在上传…",
+  "chatSending": "正在发送…",
+  "chatFileTooLarge": "{name}：文件过大（最大 {maxMb} MiB）",
+  "@chatFileTooLarge": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "maxMb": { "type": "String" }
+    }
+  },
   "chatCallFailed": "发起通话失败",
   "chatAiDisabled": "AI 模型已禁用。请在设置 → AI 中启用模型提供方。",
   "chatAiDisabledFamily": "此家庭档案无法使用 AI。",
@@ -1022,6 +1039,9 @@
   "chatsBotSavedHint": "已保存在家庭节点。准备好后即可聊天。",
   "chatsBotNotFound": "家庭节点上未找到该机器人",
   "chatAiDisabledAskOwner": "请让家庭机主为家庭聊天启用 AI 模型。",
+  "chatAgentAttachOwnerOnly": "只有节点所有者能为代理聊天附加文件。",
+  "chatAttachHomeFile": "家庭电脑文件",
+  "chatAttachPhoneFile": "手机文件",
   "pairingLoadProfilesFailed": "无法加载已有档案：{error}",
   "pairingFailed": "配对失败：{error}",
   "pairingFailedHomeTimeout": "配对未能完成 — 家庭电脑没有及时响应。请保持电脑上的 EnvoyAI 已打开且在线，然后重新扫描新的二维码。",

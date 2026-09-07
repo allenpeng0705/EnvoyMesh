@@ -3963,15 +3963,17 @@
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
+/* Send matches mic / + / emoji — muted icon chrome, no green fill. */
 .chat-input > button.chat-composer-icon-btn.chat-send-btn:not(:disabled),
 .chat-send-btn:not(:disabled) {
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  color: var(--color-text-muted);
+  background: transparent;
 }
 
-.chat-input > button.chat-composer-icon-btn.chat-send-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
-  color: var(--color-primary);
+.chat-input > button.chat-composer-icon-btn.chat-send-btn:hover:not(:disabled),
+.chat-send-btn:hover:not(:disabled) {
+  background: var(--color-surface-elevated, var(--color-bg));
+  color: var(--color-text);
 }
 
 .chat-composer-icon-btn svg {
@@ -5943,8 +5945,9 @@
   border-color: var(--color-primary, #07c160);
   box-shadow: 0 0 0 2px var(--color-primary-subtle, #e8f8ef);
 }
-/* Icon-only send — match contact / group composers (no green text pill). */
-.eh-composer-row > button.chat-composer-icon-btn.chat-send-btn {
+/* EH send/attach: inherit shared .chat-composer-icon-btn / .chat-send-btn (no green override). */
+.eh-composer-row > button.chat-composer-icon-btn.chat-send-btn,
+.eh-composer-row > button.chat-composer-icon-btn.chat-attach-file-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5955,30 +5958,22 @@
   padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-primary, #07c160) 14%, transparent);
-  color: var(--color-primary, #07c160);
+  background: transparent;
+  color: var(--color-text-muted);
   font-size: inherit;
   font-weight: inherit;
   box-shadow: none;
   cursor: pointer;
 }
-.eh-composer-row > button.chat-composer-icon-btn.chat-send-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-primary, #07c160) 22%, transparent);
-  color: var(--color-primary, #07c160);
+.eh-composer-row > button.chat-composer-icon-btn.chat-send-btn:hover:not(:disabled),
+.eh-composer-row > button.chat-composer-icon-btn.chat-attach-file-btn:hover:not(:disabled) {
+  background: var(--color-surface-elevated, var(--color-bg));
+  color: var(--color-text);
 }
-.eh-composer-row > button.chat-composer-icon-btn.chat-send-btn:disabled {
-  opacity: 0.5;
+.eh-composer-row > button.chat-composer-icon-btn.chat-send-btn:disabled,
+.eh-composer-row > button.chat-composer-icon-btn.chat-attach-file-btn:disabled {
+  opacity: 0.45;
   cursor: not-allowed;
-}
-.eh-composer-row > button.chat-composer-icon-btn.chat-attach-file-btn {
-  background: transparent;
-  color: var(--color-text-muted, #64748b);
-  border: 1px solid transparent;
-  box-shadow: none;
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
-  border-radius: var(--radius-full);
 }
 
 .eh-chat-composer-wrap {

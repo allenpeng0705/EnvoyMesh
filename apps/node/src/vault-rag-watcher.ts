@@ -13,6 +13,10 @@ const IGNORE_DIR_NAMES = new Set([
   "temp",
   "node_modules",
   ".trash",
+  // Chat attachments + profile media are vault blobs for transfer/UI only —
+  // never trigger knowledge reindex churn.
+  "chat",
+  "profile",
 ]);
 
 const IGNORE_FILE_NAMES = new Set([".ds_store", "thumbs.db", "desktop.ini"]);

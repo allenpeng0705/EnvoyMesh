@@ -19,6 +19,8 @@ describe("vault-rag-watcher", () => {
     expect(shouldIgnoreVaultWatchPath(vault, "temp/staging.bin")).toBe(true);
     expect(shouldIgnoreVaultWatchPath(vault, "notes/.DS_Store")).toBe(true);
     expect(shouldIgnoreVaultWatchPath(vault, "notes/hello.md")).toBe(false);
+    expect(shouldIgnoreVaultWatchPath(vault, "chat/out/a1/voice-note.wav")).toBe(true);
+    expect(shouldIgnoreVaultWatchPath(vault, "profile/thumbnail.jpg")).toBe(true);
   });
 
   it("debounces bursts into one onChange", async () => {

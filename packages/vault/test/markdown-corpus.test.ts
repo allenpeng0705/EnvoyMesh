@@ -34,6 +34,20 @@ describe("resolveImportDestinationPath", () => {
     );
   });
 
+  it("classifies chat/profile paths as library-hidden", async () => {
+    const {
+      isVaultChatAttachmentPath,
+      isVaultLibraryHiddenPath,
+      isVaultChatVoiceNotePath,
+    } = await import("../src/markdown-corpus.js");
+    expect(isVaultChatAttachmentPath("chat/out/a/voice-note.wav")).toBe(true);
+    expect(isVaultChatVoiceNotePath("chat/out/a/voice-note.wav")).toBe(true);
+    expect(isVaultChatVoiceNotePath("chat/out/a/photo.jpg")).toBe(false);
+    expect(isVaultLibraryHiddenPath("chat/out/a/x.pdf")).toBe(true);
+    expect(isVaultLibraryHiddenPath("profile/thumbnail.jpg")).toBe(true);
+    expect(isVaultLibraryHiddenPath("notes/hello.md")).toBe(false);
+  });
+
   it("preserves profile media paths", () => {
     expect(resolveImportDestinationPath("profile/gallery/p1.jpg")).toBe("profile/gallery/p1.jpg");
   });

@@ -46,6 +46,31 @@ export const VAULT_IMPORT_PRESERVE_PREFIXES = [
   ".envoy/",
 ] as const;
 
+/** Chat transfer blobs (`chat/out/…`, `chat/in/…`) — chat history only, not My Files / Knowledge. */
+export function isVaultChatAttachmentPath(relativePath: string): boolean {
+  const p = normalizeVaultRelativePath(relativePath);
+  return p === "chat" || p.startsWith("chat/");
+}
+
+/** Profile avatar / gallery blobs — Profile UI only. */
+export function isVaultProfileMediaPath(relativePath: string): boolean {
+  const p = normalizeVaultRelativePath(relativePath);
+  return p === "profile" || p.startsWith("profile/");
+}
+
+/** Paths that must not appear in library / knowledge browse lists. */
+export function isVaultLibraryHiddenPath(relativePath: string): boolean {
+  return isVaultChatAttachmentPath(relativePath) || isVaultProfileMediaPath(relativePath);
+}
+
+/** Voice-note filenames under chat/ (mesh outbound/inbound audio messages). */
+export function isVaultChatVoiceNotePath(relativePath: string): boolean {
+  return (
+    isVaultChatAttachmentPath(relativePath) &&
+    /(^|\/)voice-note\.(webm|m4a|wav)$/i.test(normalizeVaultRelativePath(relativePath))
+  );
+}
+
 /** Normalize to forward-slash vault-relative path without leading slash. */
 export function normalizeVaultRelativePath(relativePath: string): string {
   return relativePath

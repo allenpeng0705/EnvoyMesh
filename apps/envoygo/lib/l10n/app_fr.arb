@@ -546,6 +546,24 @@
   "chatAiDisabledAskOwner": "Demandez au propriétaire d'activer un modèle IA pour le chat familial.",
   "chatFamilyAttachNoThread": "Impossible de joindre ici — aucune discussion familiale",
   "chatPhotoSendFailed": "Échec de l'envoi de la photo : {error}",
+  "chatMoreAttach": "Ajouter une pièce jointe",
+  "chatAttachPhoto": "Photo",
+  "chatAttachFile": "Fichier",
+  "chatShareFromVault": "Partager depuis le coffre",
+  "chatNoVaultFilesToShare": "Aucun fichier du coffre à partager",
+  "chatAttachFilesAgent": "Joindre des fichiers",
+  "chatUploading": "Envoi…",
+  "chatSending": "Envoi en cours…",
+  "chatFileTooLarge": "{name} : fichier trop volumineux (max. {maxMb} Mo)",
+  "@chatFileTooLarge": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "maxMb": { "type": "String" }
+    }
+  },
+  "chatAgentAttachOwnerOnly": "Seul le propriétaire du nœud peut joindre des fichiers aux chats d'agent.",
+  "chatAttachHomeFile": "Fichier du domicile",
+  "chatAttachPhoneFile": "Fichier du téléphone",
   "pairingLoadProfilesFailed": "Impossible de charger les profils : {error}",
   "pairingFailed": "Échec de l'association : {error}",
   "pairingFailedHomeTimeout": "Association interrompue — l'ordinateur domestique n'a pas répondu à temps. Gardez EnvoyAI ouvert et en ligne, puis scannez un nouveau QR.",

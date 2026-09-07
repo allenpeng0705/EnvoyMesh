@@ -151,6 +151,8 @@ export const frContactChatMessages = {
   pathUnverifiedHint: "Chemin direct non vérifié récemment — le premier message peut prendre un moment pour se reconnecter.",
   attachFileTitle: "Envoyer une image ou un fichier",
   attachFileAria: "Envoyer une image ou un fichier",
+  moreAttachTitle: "Ajouter une pièce jointe",
+  moreAttachAria: "Ajouter une pièce jointe",
   emojiPickerTitle: "Insérer un emoji",
   emojiPickerAria: "Ouvrir le sélecteur d'emoji",
   shareVaultTitle: "Partager un fichier du coffre",

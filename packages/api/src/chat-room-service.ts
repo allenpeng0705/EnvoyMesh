@@ -993,10 +993,6 @@ export async function sendChatRoomAttachmentImpl(
   }
 
   const wireText = stripModelThinking(input.text);
-  if (!wireText.trim()) {
-    throw new Error("Message text is required");
-  }
-
   const wireAttachments: ChatRoomAttachment[] = [
     {
       id: input.attachment.id,
@@ -1006,6 +1002,11 @@ export async function sendChatRoomAttachmentImpl(
       sensitivity: input.attachment.sensitivity,
     },
   ];
+  // Attachment-only sends (e.g. voice notes) may have empty text — they are
+  // chat history, not knowledge documents.
+  if (!wireText.trim() && wireAttachments.length === 0) {
+    throw new Error("Message text is required");
+  }
 
   const meshPeerId = deps.requireMeshPeerId();
   const selfHuman = await deps.humanProfileStore.loadHumanProfile();

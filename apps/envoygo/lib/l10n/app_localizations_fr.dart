@@ -3237,6 +3237,45 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String get chatMoreAttach => 'Ajouter une pièce jointe';
+
+  @override
+  String get chatAttachPhoto => 'Photo';
+
+  @override
+  String get chatAttachFile => 'Fichier';
+
+  @override
+  String get chatShareFromVault => 'Partager depuis le coffre';
+
+  @override
+  String get chatNoVaultFilesToShare => 'Aucun fichier du coffre à partager';
+
+  @override
+  String get chatAttachFilesAgent => 'Joindre des fichiers';
+
+  @override
+  String get chatUploading => 'Envoi…';
+
+  @override
+  String get chatSending => 'Envoi en cours…';
+
+  @override
+  String chatFileTooLarge(String name, String maxMb) {
+    return '$name : fichier trop volumineux (max. $maxMb Mo)';
+  }
+
+  @override
+  String get chatAgentAttachOwnerOnly =>
+      'Seul le propriétaire du nœud peut joindre des fichiers aux chats d\'agent.';
+
+  @override
+  String get chatAttachHomeFile => 'Fichier du domicile';
+
+  @override
+  String get chatAttachPhoneFile => 'Fichier du téléphone';
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return 'Impossible de charger les profils : $error';
   }

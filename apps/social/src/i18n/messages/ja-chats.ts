@@ -151,6 +151,8 @@ export const jaContactChatMessages = {
   pathUnverifiedHint: "直接パスが最近確認されていません — 最初のメッセージで再接続に少し時間がかかる場合があります。",
   attachFileTitle: "画像またはファイルを送信",
   attachFileAria: "画像またはファイルを送信",
+  moreAttachTitle: "添付を追加",
+  moreAttachAria: "添付を追加",
   emojiPickerTitle: "絵文字を挿入",
   emojiPickerAria: "絵文字ピッカーを開く",
   shareVaultTitle: "ボルトライブラリファイルを共有",

@@ -3101,6 +3101,44 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get chatMoreAttach => '添付を追加';
+
+  @override
+  String get chatAttachPhoto => '写真';
+
+  @override
+  String get chatAttachFile => 'ファイル';
+
+  @override
+  String get chatShareFromVault => 'ボルトから共有';
+
+  @override
+  String get chatNoVaultFilesToShare => '共有できるボルトファイルがありません';
+
+  @override
+  String get chatAttachFilesAgent => 'ファイルを添付';
+
+  @override
+  String get chatUploading => 'アップロード中…';
+
+  @override
+  String get chatSending => '送信中…';
+
+  @override
+  String chatFileTooLarge(String name, String maxMb) {
+    return '$name: ファイルが大きすぎます（最大 $maxMb MiB）';
+  }
+
+  @override
+  String get chatAgentAttachOwnerOnly => 'エージェントチャットにファイルを添付できるのはノード所有者のみです。';
+
+  @override
+  String get chatAttachHomeFile => 'ホームのファイル';
+
+  @override
+  String get chatAttachPhoneFile => 'スマホのファイル';
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return '既存のプロフィールを読み込めません: $error';
   }

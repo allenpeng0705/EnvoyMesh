@@ -546,6 +546,24 @@
   "chatAiDisabledAskOwner": "가족 채팅용 AI 모델을 홈 소유자에게 요청하세요.",
   "chatFamilyAttachNoThread": "여기에 첨부할 수 없습니다 — 가족 대화가 없습니다",
   "chatPhotoSendFailed": "사진 전송 실패: {error}",
+  "chatMoreAttach": "첨부 추가",
+  "chatAttachPhoto": "사진",
+  "chatAttachFile": "파일",
+  "chatShareFromVault": "볼트에서 공유",
+  "chatNoVaultFilesToShare": "공유할 볼트 파일이 없습니다",
+  "chatAttachFilesAgent": "파일 첨부",
+  "chatUploading": "업로드 중…",
+  "chatSending": "보내는 중…",
+  "chatFileTooLarge": "{name}: 파일이 너무 큽니다(최대 {maxMb} MiB)",
+  "@chatFileTooLarge": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "maxMb": { "type": "String" }
+    }
+  },
+  "chatAgentAttachOwnerOnly": "에이전트 채팅에 파일을 첨부할 수 있는 것은 노드 소유자뿐입니다.",
+  "chatAttachHomeFile": "홈 파일",
+  "chatAttachPhoneFile": "폰 파일",
   "pairingLoadProfilesFailed": "기존 프로필을 불러올 수 없음: {error}",
   "pairingFailed": "페어링 실패: {error}",
   "pairingFailedHomeTimeout": "페어링을 끝내지 못했습니다 — 홈 컴퓨터가 제때 응답하지 않았습니다. EnvoyAI를 열어 두고 온라인 상태로 유지한 뒤 새 QR을 스캔하세요.",

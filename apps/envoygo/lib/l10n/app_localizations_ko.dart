@@ -3096,6 +3096,44 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get chatMoreAttach => '첨부 추가';
+
+  @override
+  String get chatAttachPhoto => '사진';
+
+  @override
+  String get chatAttachFile => '파일';
+
+  @override
+  String get chatShareFromVault => '볼트에서 공유';
+
+  @override
+  String get chatNoVaultFilesToShare => '공유할 볼트 파일이 없습니다';
+
+  @override
+  String get chatAttachFilesAgent => '파일 첨부';
+
+  @override
+  String get chatUploading => '업로드 중…';
+
+  @override
+  String get chatSending => '보내는 중…';
+
+  @override
+  String chatFileTooLarge(String name, String maxMb) {
+    return '$name: 파일이 너무 큽니다(최대 $maxMb MiB)';
+  }
+
+  @override
+  String get chatAgentAttachOwnerOnly => '에이전트 채팅에 파일을 첨부할 수 있는 것은 노드 소유자뿐입니다.';
+
+  @override
+  String get chatAttachHomeFile => '홈 파일';
+
+  @override
+  String get chatAttachPhoneFile => '폰 파일';
+
+  @override
   String pairingLoadProfilesFailed(String error) {
     return '기존 프로필을 불러올 수 없음: $error';
   }

@@ -3062,13 +3062,50 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatAiDisabledAskOwner => '请让家庭机主为家庭聊天启用 AI 模型。';
 
   @override
-  String get chatFamilyAttachNoThread =>
-      'Cannot attach here — no family thread';
+  String get chatFamilyAttachNoThread => '无法在此添加附件 — 没有家庭会话';
 
   @override
   String chatPhotoSendFailed(String error) {
-    return 'Photo send failed: $error';
+    return '发送照片失败：$error';
   }
+
+  @override
+  String get chatMoreAttach => '添加附件';
+
+  @override
+  String get chatAttachPhoto => '照片';
+
+  @override
+  String get chatAttachFile => '文件';
+
+  @override
+  String get chatShareFromVault => '从资料库分享';
+
+  @override
+  String get chatNoVaultFilesToShare => '没有可分享的资料库文件';
+
+  @override
+  String get chatAttachFilesAgent => '附加文件';
+
+  @override
+  String get chatUploading => '正在上传…';
+
+  @override
+  String get chatSending => '正在发送…';
+
+  @override
+  String chatFileTooLarge(String name, String maxMb) {
+    return '$name：文件过大（最大 $maxMb MiB）';
+  }
+
+  @override
+  String get chatAgentAttachOwnerOnly => '只有节点所有者能为代理聊天附加文件。';
+
+  @override
+  String get chatAttachHomeFile => '家庭电脑文件';
+
+  @override
+  String get chatAttachPhoneFile => '手机文件';
 
   @override
   String pairingLoadProfilesFailed(String error) {

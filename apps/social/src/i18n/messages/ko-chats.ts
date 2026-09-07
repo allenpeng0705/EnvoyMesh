@@ -156,6 +156,8 @@ export const koContactChatMessages = {
   pathUnverifiedHint: "직접 경로가 최근에 확인되지 않음 — 첫 메시지에 재연결이 잠시 필요할 수 있습니다.",
   attachFileTitle: "이미지 또는 파일 보내기",
   attachFileAria: "이미지 또는 파일 보내기",
+  moreAttachTitle: "첨부 추가",
+  moreAttachAria: "첨부 추가",
   emojiPickerTitle: "이모지 삽입",
   emojiPickerAria: "이모지 선택기 열기",
   shareVaultTitle: "볼트 라이브러리 파일 공유",

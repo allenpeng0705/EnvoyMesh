@@ -1483,6 +1483,24 @@
   },
   "chatFamilyAttachNoThread": "Cannot attach here — no family thread",
   "chatPhotoSendFailed": "Photo send failed: {error}",
+  "chatMoreAttach": "Add attachment",
+  "chatAttachPhoto": "Photo",
+  "chatAttachFile": "File",
+  "chatShareFromVault": "Share from vault",
+  "chatNoVaultFilesToShare": "No vault files to share",
+  "chatAttachFilesAgent": "Attach files",
+  "chatUploading": "Uploading…",
+  "chatSending": "Sending…",
+  "chatFileTooLarge": "{name}: file too large (max {maxMb} MiB)",
+  "@chatFileTooLarge": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "maxMb": { "type": "String" }
+    }
+  },
+  "chatAgentAttachOwnerOnly": "Only the node owner can attach files to agent chats.",
+  "chatAttachHomeFile": "Home file",
+  "chatAttachPhoneFile": "Phone file",
   "pairingLoadProfilesFailed": "Could not load existing profiles: {error}",
   "pairingFailed": "Pairing failed: {error}",
   "pairingFailedHomeTimeout": "Couldn't finish pairing — your home computer didn't respond in time. Keep EnvoyAI open and online, then scan a fresh QR.",

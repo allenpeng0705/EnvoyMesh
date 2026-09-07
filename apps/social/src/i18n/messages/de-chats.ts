@@ -151,6 +151,8 @@ export const deContactChatMessages = {
   pathUnverifiedHint: "Direkter Pfad wurde kürzlich nicht verifiziert — die erste Nachricht kann einen Moment brauchen, um sich zu verbinden.",
   attachFileTitle: "Bild oder Datei senden",
   attachFileAria: "Bild oder Datei senden",
+  moreAttachTitle: "Anhang hinzufügen",
+  moreAttachAria: "Anhang hinzufügen",
   emojiPickerTitle: "Emoji einfügen",
   emojiPickerAria: "Emoji-Auswahl öffnen",
   shareVaultTitle: "Bibliotheksdatei teilen",

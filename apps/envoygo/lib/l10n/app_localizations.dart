@@ -5886,6 +5886,78 @@ abstract class AppLocalizations {
   /// **'Photo send failed: {error}'**
   String chatPhotoSendFailed(String error);
 
+  /// No description provided for @chatMoreAttach.
+  ///
+  /// In en, this message translates to:
+  /// **'Add attachment'**
+  String get chatMoreAttach;
+
+  /// No description provided for @chatAttachPhoto.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo'**
+  String get chatAttachPhoto;
+
+  /// No description provided for @chatAttachFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get chatAttachFile;
+
+  /// No description provided for @chatShareFromVault.
+  ///
+  /// In en, this message translates to:
+  /// **'Share from vault'**
+  String get chatShareFromVault;
+
+  /// No description provided for @chatNoVaultFilesToShare.
+  ///
+  /// In en, this message translates to:
+  /// **'No vault files to share'**
+  String get chatNoVaultFilesToShare;
+
+  /// No description provided for @chatAttachFilesAgent.
+  ///
+  /// In en, this message translates to:
+  /// **'Attach files'**
+  String get chatAttachFilesAgent;
+
+  /// No description provided for @chatUploading.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading…'**
+  String get chatUploading;
+
+  /// No description provided for @chatSending.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending…'**
+  String get chatSending;
+
+  /// No description provided for @chatFileTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}: file too large (max {maxMb} MiB)'**
+  String chatFileTooLarge(String name, String maxMb);
+
+  /// No description provided for @chatAgentAttachOwnerOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the node owner can attach files to agent chats.'**
+  String get chatAgentAttachOwnerOnly;
+
+  /// No description provided for @chatAttachHomeFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Home file'**
+  String get chatAttachHomeFile;
+
+  /// No description provided for @chatAttachPhoneFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone file'**
+  String get chatAttachPhoneFile;
+
   /// No description provided for @pairingLoadProfilesFailed.
   ///
   /// In en, this message translates to:

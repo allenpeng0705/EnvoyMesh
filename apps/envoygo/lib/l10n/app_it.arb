@@ -546,6 +546,24 @@
   "chatAiDisabledAskOwner": "Chiedi al proprietario di casa di abilitare un modello IA per la chat famiglia.",
   "chatFamilyAttachNoThread": "Impossibile allegare qui — nessuna chat di famiglia",
   "chatPhotoSendFailed": "Invio della foto non riuscito: {error}",
+  "chatMoreAttach": "Aggiungi allegato",
+  "chatAttachPhoto": "Foto",
+  "chatAttachFile": "File",
+  "chatShareFromVault": "Condividi dal vault",
+  "chatNoVaultFilesToShare": "Nessun file del vault da condividere",
+  "chatAttachFilesAgent": "Allega file",
+  "chatUploading": "Caricamento…",
+  "chatSending": "Invio…",
+  "chatFileTooLarge": "{name}: file troppo grande (max {maxMb} MiB)",
+  "@chatFileTooLarge": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "maxMb": { "type": "String" }
+    }
+  },
+  "chatAgentAttachOwnerOnly": "Solo il proprietario del nodo può allegare file alle chat agente.",
+  "chatAttachHomeFile": "File home",
+  "chatAttachPhoneFile": "File telefono",
   "pairingLoadProfilesFailed": "Impossibile caricare i profili esistenti: {error}",
   "pairingFailed": "Associazione non riuscita: {error}",
   "pairingFailedHomeTimeout": "Associazione non completata — il computer di casa non ha risposto in tempo. Tieni EnvoyAI aperto e online, poi scansiona un nuovo QR.",

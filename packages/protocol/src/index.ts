@@ -1725,13 +1725,21 @@ export const ChatRoomMessagePayloadSchema = z
   .object({
     roomId: z.string().uuid(),
     senderOwnerId: z.string().min(1),
-    text: z.string().min(1).max(128000),
+    // Empty text allowed when attachments are present (voice notes / file-only).
+    text: z.string().max(128000),
     attachments: z.array(ChatRoomAttachmentSchema).max(8).optional(),
     deviceCertificate: DeviceCertificateSchema.optional(),
     ownerPublicKeyPem: z.string().min(1).optional(),
   })
   .superRefine((value, ctx) => {
     refineChatSenderDeviceFields(value, ctx);
+    if (!value.text.trim() && (value.attachments?.length ?? 0) === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Message text or attachments required",
+        path: ["text"],
+      });
+    }
   });
 
 export const MandateActionSchema = z.enum([

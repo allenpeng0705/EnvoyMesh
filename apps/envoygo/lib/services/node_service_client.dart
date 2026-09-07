@@ -726,6 +726,28 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  /// Mesh group room file/voice attach (mirrors Social `sendChatRoomAttachment`).
+  Future<Map<String, dynamic>> sendChatRoomAttachment({
+    required String roomId,
+    required String filename,
+    required String contentBase64,
+    String? mimeType,
+    String? caption,
+  }) async {
+    return await _client.call(
+          'sendChatRoomAttachment',
+          {
+            'roomId': roomId,
+            'filename': filename,
+            'contentBase64': contentBase64,
+            if (mimeType != null) 'mimeType': mimeType,
+            if (caption != null) 'caption': caption,
+          },
+          const Duration(seconds: 120),
+        )
+        as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> createChatRoom(
     String name, {
     List<String> memberOwnerIds = const [],

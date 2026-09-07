@@ -180,6 +180,8 @@ export const zhContactChatMessages = {
   pathUnverifiedHint: "直连路径最近未验证 — 首条消息可能需要片刻重新连接。",
   attachFileTitle: "发送图片或文件",
   attachFileAria: "发送图片或文件",
+  moreAttachTitle: "添加附件",
+  moreAttachAria: "添加附件",
   emojiPickerTitle: "插入表情",
   emojiPickerAria: "打开表情选择器",
   extAgentSlashSuggestAria: "扩展代理斜杠命令",

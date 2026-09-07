@@ -9446,6 +9446,8 @@ class NodeServiceImpl implements NodeService {
   async sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult> {
     // EM-P — mesh chat attachments write into the owner vault (chat/out/…) and
     // go out over mesh chat: owner-only, never routed to a profile area.
+    // They are chat-history blobs (hidden from My Files / Knowledge lists), not
+    // knowledge-base documents — see isVaultLibraryHiddenPath.
     this._denyFamilySession("mesh chat attachments are limited to the node owner");
     this._assertOnline();
     this.recordOwnerActivity();
@@ -9479,9 +9481,19 @@ class NodeServiceImpl implements NodeService {
       vaultRelativePath,
     };
 
+    // Voice notes (and any audio) must stay chat messages with attachments —
+    // never the "Sent filename" file-share chat stub that looks like library activity.
+    const isVoiceOrAudio =
+      mimeType.split(";")[0]?.trim().toLowerCase().startsWith("audio/") === true ||
+      /^voice-note\.(webm|m4a|wav)$/i.test(filename);
+
     let chatMessageId: string | undefined;
-    if (params.chatText !== undefined) {
-      const sendResult = await this.sendChat(params.targetOwnerId, params.chatText, [wireAttachment]);
+    if (params.chatText !== undefined || isVoiceOrAudio) {
+      const sendResult = await this.sendChat(
+        params.targetOwnerId,
+        params.chatText ?? "",
+        [wireAttachment],
+      );
       chatMessageId = sendResult.messageId;
     } else if (params.recordInChat !== false) {
       void this._recordFileShareInChat({
@@ -9533,7 +9545,12 @@ class NodeServiceImpl implements NodeService {
     const vaultRelativePath = imported.relativePath;
 
     const caption = params.caption?.trim();
-    const text = caption || `Sent ${filename}`;
+    const isVoiceOrAudio =
+      mimeType.split(";")[0]?.trim().toLowerCase().startsWith("audio/") === true ||
+      /^voice-note\.(webm|m4a|wav)$/i.test(filename);
+    // Voice/audio: empty body so RAG chat-index skips them; UI plays the attachment.
+    // Other files keep a short "Sent …" label when no caption was typed.
+    const text = caption || (isVoiceOrAudio ? "" : `Sent ${filename}`);
     const result = await sendChatRoomAttachmentImpl(this._chatRoomDeps(), {
       roomId: params.roomId,
       text,

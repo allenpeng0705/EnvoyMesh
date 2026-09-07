@@ -14,6 +14,7 @@ import {
   assertPathInsideVault,
   resolveImportDestinationPath,
   isVaultExtractableExtension,
+  isVaultLibraryHiddenPath,
 } from "@envoymesh/vault";
 import {
   bondTrustRank,
@@ -163,6 +164,9 @@ export async function listLibraryItemsViaRuntime(
   let docs = familyProfileId
     ? index.documents.filter((d) => isWithinOwnArea(d.relativePath, familyProfileId))
     : index.documents;
+  // Chat transfer blobs + profile media stay on disk for playback/UI, but are
+  // not knowledge / My Files entries (voice notes especially).
+  docs = docs.filter((d) => !isVaultLibraryHiddenPath(d.relativePath));
   if (q) {
     docs = docs.filter(
       (d) =>
