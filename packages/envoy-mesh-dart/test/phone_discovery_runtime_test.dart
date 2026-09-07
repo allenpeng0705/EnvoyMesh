@@ -263,6 +263,25 @@ void main() {
       expect(p.profile['bio'], 'hi');
       expect(p.multiaddrs, isNotEmpty);
     });
+
+    test('real owner removes provisional lan: placeholder for same peer', () {
+      final store = PhoneSocialStore();
+      final libp2p = '12D3KooLanPeer';
+      store.upsertPeer(PhonePeerRecord(
+        ownerId: provisionalLanOwnerId(libp2p),
+        libp2pPeerId: libp2p,
+        displayName: 'Nearby',
+        multiaddrs: const ['/ip4/10.0.0.9/tcp/4001/p2p/12D3KooLanPeer'],
+      ));
+      expect(store.peersByOwner.keys, contains(provisionalLanOwnerId(libp2p)));
+      store.upsertPeer(PhonePeerRecord(
+        ownerId: 'envoy:owner:real',
+        libp2pPeerId: libp2p,
+        displayName: 'Real',
+      ));
+      expect(store.peerFor(provisionalLanOwnerId(libp2p)), isNull);
+      expect(store.peerFor('envoy:owner:real')?.displayName, 'Real');
+    });
   });
 
   group('relay lookup response gate', () {

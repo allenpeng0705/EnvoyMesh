@@ -82,6 +82,13 @@ void main() {
       expect(merged.single.ownerId, isEmpty);
       expect(merged.single.multiaddrs, isNotEmpty);
     });
+
+    test('provisional lan owner id enables Hello target', () {
+      final owner = provisionalLanOwnerId('12D3KooOnlyLan');
+      expect(isProvisionalLanOwnerId(owner), isTrue);
+      expect(owner, 'lan:12D3KooOnlyLan');
+      expect(shortLanPeerLabel('12D3KooOnlyLan'), contains('…'));
+    });
   });
 
   group('capability topic CID', () {
@@ -105,6 +112,9 @@ void main() {
 class _TinyHost implements Libp2pMeshHost {
   @override
   bool get isStarted => true;
+
+  @override
+  int get hostEpoch => 1;
 
   @override
   Set<String> get registeredProtocols => {};

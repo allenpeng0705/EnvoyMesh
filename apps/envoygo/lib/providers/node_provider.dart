@@ -285,19 +285,16 @@ class NodeNotifier extends StateNotifier<NodeState> {
   Future<Libp2pNode?> ensureLibp2pStarted() async {
     try {
       _libp2pNode ??= Libp2pNode(secureStorage: _secureStorage);
-      if (!_libp2pNode!.isStarted) {
-        final fromNode = state.activeNode?.bootstrapPeers ?? const <String>[];
-        final bootstrap = fromNode.isNotEmpty
-            ? fromNode
-            : defaultEnvoyCommunityRelayBootstrapAddrs;
-        await _libp2pNode!.start(
-          // Ephemeral TCP listen so phone Social can advertise via mDNS (S7).
-          // Circuit inbound still works when enableRelay is true.
-          listenAddrs: const ['/ip4/0.0.0.0/tcp/0'],
-          bootstrapAddrs: bootstrap,
-          enableRelay: true,
-        );
-      }
+      final fromNode = state.activeNode?.bootstrapPeers ?? const <String>[];
+      final bootstrap = fromNode.isNotEmpty
+          ? fromNode
+          : defaultEnvoyCommunityRelayBootstrapAddrs;
+      // Start (or restart without TCP listen) so mDNS can advertise.
+      await _libp2pNode!.ensureTcpListen(
+        listenAddrs: const ['/ip4/0.0.0.0/tcp/0'],
+        bootstrapAddrs: bootstrap,
+        enableRelay: true,
+      );
       return _libp2pNode;
     } catch (e) {
       _log('ensureLibp2pStarted failed: $e');
@@ -1268,19 +1265,13 @@ class NodeNotifier extends StateNotifier<NodeState> {
     final bootstrapPeers = nodeState.activeNode?.bootstrapPeers ?? <String>[];
     _log('[_createLibp2pTransport] DHT bootstrap peers from stored node: $bootstrapPeers');
 
-    // Start libp2p node if not already started.
+    // Start libp2p node if not already started (or restart for TCP listen).
     _libp2pNode ??= Libp2pNode(secureStorage: SecureStorage());
-    if (!_libp2pNode!.isStarted) {
-      await _libp2pNode!.start(
-        // Ephemeral TCP listen for mDNS advertise (S7) + local dialability.
-        listenAddrs: const ['/ip4/0.0.0.0/tcp/0'],
-        // DHT bootstrap: use the same bootstrap peers as the home node.
-        // Also used as circuit relay hop when dialing /p2p-circuit/.
-        bootstrapAddrs: bootstrapPeers,
-        // Required for CircuitV2Client (home circuit dials + phone mesh reserve).
-        enableRelay: true,
-      );
-    }
+    await _libp2pNode!.ensureTcpListen(
+      listenAddrs: const ['/ip4/0.0.0.0/tcp/0'],
+      bootstrapAddrs: bootstrapPeers,
+      enableRelay: true,
+    );
 
     const clientProxyProtocol = '/envoymesh/client-proxy/0.1.0';
 

@@ -28,6 +28,7 @@ typedef Libp2pStreamHandler = Future<void> Function(
 /// Testable surface used by [PhoneMeshSession] (shared host mesh controls).
 abstract class Libp2pMeshHost {
   bool get isStarted;
+  int get hostEpoch;
   Set<String> get registeredProtocols;
   String? get reservedRelayPeerId;
 
@@ -69,6 +70,12 @@ class Libp2pNode implements Libp2pMeshHost {
   final Map<String, PhoneDiscoveryProvider> _lanPeers = {};
   bool _mdnsActive = false;
 
+  /// Bumped on each successful [start] so sessions can detect host restart.
+  int _hostEpoch = 0;
+
+  /// Last bootstrap list (used when restarting for TCP listen).
+  List<String> _lastBootstrapAddrs = const [];
+
   Libp2pNode({required SecureStorage secureStorage})
       : _secureStorage = secureStorage;
 
@@ -79,11 +86,26 @@ class Libp2pNode implements Libp2pMeshHost {
   @override
   bool get isStarted => _started;
 
+  /// Host generation — increments when the underlying host is (re)started.
+  @override
+  int get hostEpoch => _hostEpoch;
+
   /// Whether circuit-relay client transport was enabled at [start].
   bool get relayEnabled => _enableRelay;
 
   /// Whether foreground mDNS advertise/browse is running (S7).
   bool get mdnsActive => _mdnsActive;
+
+  /// True when the host has a non-circuit TCP listen (needed for mDNS advertise).
+  bool get hasTcpListenAddrs {
+    final host = _host;
+    if (host == null) return false;
+    for (final addr in host.addrs) {
+      final s = addr.toString();
+      if (s.contains('/tcp/') && !s.contains('/p2p-circuit')) return true;
+    }
+    return false;
+  }
 
   /// PeerId of the active circuit reservation, if any.
   @override
@@ -123,6 +145,8 @@ class Libp2pNode implements Libp2pMeshHost {
     bool enableRelay = true,
   }) async {
     if (_started) return;
+
+    _lastBootstrapAddrs = List<String>.from(bootstrapAddrs);
 
     // Load persisted seed or generate a new one.
     // The seed is stored rather than the full keypair so it can be
@@ -172,6 +196,7 @@ class Libp2pNode implements Libp2pMeshHost {
     await _host!.start();
     _peerId = _host!.id;
     _started = true;
+    _hostEpoch++;
 
     // Initialize DHT client for peer discovery.
     // DHTMode.client means we query the DHT but don't respond to other peers' queries.
@@ -444,12 +469,19 @@ class Libp2pNode implements Libp2pMeshHost {
   /// Start libp2p mDNS advertise + browse (foreground phone Social only).
   ///
   /// Requires a TCP listen address on the host — otherwise advertise is a
-  /// no-op inside dart_libp2p (`host.addrs` empty).
+  /// no-op inside dart_libp2p (`host.addrs` empty). Prefer calling
+  /// [ensureTcpListen] first.
   Future<void> enableMdns() async {
     if (!_started || _host == null) {
       throw StateError('Libp2pNode must be started before enableMdns');
     }
     if (_mdnsActive) return;
+    if (!hasTcpListenAddrs) {
+      debugPrint(
+        '[Libp2pNode] enableMdns skipped — no TCP listen (call ensureTcpListen)',
+      );
+      return;
+    }
     try {
       final mdns = MdnsDiscovery(_host!);
       mdns.notifee = _Libp2pLanNotifee(this);
@@ -463,6 +495,30 @@ class Libp2pNode implements Libp2pMeshHost {
       debugPrint('[Libp2pNode] enableMdns failed: $e');
       rethrow;
     }
+  }
+
+  /// Ensure a TCP listen is active (restarts the host if started without one).
+  ///
+  /// Keeps the same identity seed / PeerId. Callers must re-bind mesh
+  /// handlers after a restart ([hostEpoch] increments).
+  Future<void> ensureTcpListen({
+    List<String> listenAddrs = const ['/ip4/0.0.0.0/tcp/0'],
+    List<String>? bootstrapAddrs,
+    bool enableRelay = true,
+  }) async {
+    final boot = bootstrapAddrs ?? _lastBootstrapAddrs;
+    if (_started && hasTcpListenAddrs) return;
+    if (_started && !hasTcpListenAddrs) {
+      debugPrint(
+        '[Libp2pNode] restarting host with TCP listen for LAN mDNS',
+      );
+      await stop();
+    }
+    await start(
+      listenAddrs: listenAddrs,
+      bootstrapAddrs: boot,
+      enableRelay: enableRelay,
+    );
   }
 
   /// Stop mDNS and clear the LAN peer cache.

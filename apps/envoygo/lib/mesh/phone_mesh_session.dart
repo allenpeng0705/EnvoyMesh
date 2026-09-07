@@ -21,10 +21,14 @@ class PhoneMeshSession {
   final Libp2pMeshHost _node;
 
   bool _active = false;
+  int? _boundEpoch;
   String? _reservedRelayPeerId;
   PhoneMeshStreamHandler? _handler;
 
-  bool get isActive => _active;
+  /// True when enabled and still bound to the current host epoch.
+  bool get isActive =>
+      _active && _boundEpoch != null && _boundEpoch == _node.hostEpoch;
+
   String? get reservedRelayPeerId => _reservedRelayPeerId;
 
   static const List<String> socialProtocols = [
@@ -41,6 +45,7 @@ class PhoneMeshSession {
       throw StateError('Libp2pNode must be started before enabling phone mesh');
     }
     _handler = onStream;
+    _boundEpoch = _node.hostEpoch;
 
     for (final protocol in socialProtocols) {
       _node.registerStreamHandler(protocol, (stream, remotePeer) async {
@@ -73,6 +78,7 @@ class PhoneMeshSession {
       debugPrint('[PhoneMeshSession] release reservation failed: $e');
     }
     _reservedRelayPeerId = null;
+    _boundEpoch = null;
     _active = false;
   }
 }

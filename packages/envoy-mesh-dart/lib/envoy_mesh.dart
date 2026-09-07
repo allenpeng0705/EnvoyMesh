@@ -11,6 +11,7 @@ export 'src/envelope_factory.dart';
 export 'src/envoy_envelope.dart';
 export 'src/envoy_identity.dart';
 export 'src/envoy_signing.dart';
+export 'src/lan_owner_id.dart';
 export 'src/mesh_envelope_transport.dart';
 export 'src/mesh_protocols.dart';
 export 'src/models.dart';

@@ -38,9 +38,11 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
   late final PhoneDiscoveryRuntime _runtime;
   Timer? _checkinTimer;
   bool _active = false;
+  int? _boundEpoch;
   MeshEnvelopeTransport? _transport;
 
-  bool get isActive => _active;
+  bool get isActive =>
+      _active && _boundEpoch != null && _boundEpoch == _node.hostEpoch;
   bool get mdnsActive => _node.mdnsActive;
   PhoneDiscoveryRuntime get runtime => _runtime;
 
@@ -67,6 +69,8 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
     if (!_node.isStarted || _node.peerId == null) {
       throw StateError('Libp2pNode must be started before discovery');
     }
+    // TCP listen is ensured by NodeNotifier.ensureLibp2pStarted / ensureTcpListen.
+    _boundEpoch = _node.hostEpoch;
     _active = true;
     _transport = Libp2pMeshEnvelopeTransport(_node);
     _backend.replaceWanSearch(_wanSearch);
@@ -97,6 +101,7 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
     } catch (e) {
       debugPrint('[PhoneDiscoverySession] mDNS stop failed: $e');
     }
+    _boundEpoch = null;
     _active = false;
   }
 
@@ -167,10 +172,16 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
     for (final p in _node.lanDiscoveredPeers(maxResults: maxResults)) {
       if (p.peerId.isEmpty || p.peerId == selfPeer) continue;
       final remembered = known[p.peerId];
+      final ownerId = (remembered != null && remembered.ownerId.isNotEmpty)
+          ? remembered.ownerId
+          : provisionalLanOwnerId(p.peerId);
       hits.add(MeshPeerHit(
         nodeId: p.peerId,
-        ownerId: remembered?.ownerId ?? '',
-        displayName: remembered?.displayName,
+        ownerId: ownerId,
+        displayName: remembered?.displayName ??
+            (isProvisionalLanOwnerId(ownerId)
+                ? 'Nearby (${shortLanPeerLabel(p.peerId)})'
+                : null),
         multiaddrs: p.multiaddrs.isNotEmpty
             ? p.multiaddrs
             : (remembered?.multiaddrs ?? const []),
@@ -252,9 +263,12 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
       }
     }
 
-    // Persist dial hints for hello (owner-bearing WAN + LAN enrich).
+    // Persist dial hints for hello (WAN + provisional LAN owners).
     for (final hit in [...relayHits, ...dhtHits, ...lanHits]) {
-      if (hit.ownerId.isEmpty || hit.multiaddrs.isEmpty) continue;
+      if (hit.ownerId.isEmpty) continue;
+      if (hit.multiaddrs.isEmpty && !isProvisionalLanOwnerId(hit.ownerId)) {
+        continue;
+      }
       try {
         await _backend.rememberPeer(PhonePeerRecord(
           ownerId: hit.ownerId,

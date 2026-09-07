@@ -4,9 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:envoy_mesh/envoy_mesh.dart';
 
 class FakeLibp2pMeshHost implements Libp2pMeshHost {
-  FakeLibp2pMeshHost({this.started = true});
+  FakeLibp2pMeshHost({this.started = true, this.epoch = 1});
 
   bool started;
+  int epoch;
   final Set<String> _protocols = {};
   final Map<String, Libp2pStreamHandler> handlers = {};
   String? _reserved;
@@ -16,6 +17,9 @@ class FakeLibp2pMeshHost implements Libp2pMeshHost {
 
   @override
   bool get isStarted => started;
+
+  @override
+  int get hostEpoch => epoch;
 
   @override
   Set<String> get registeredProtocols => Set.unmodifiable(_protocols);
@@ -94,6 +98,18 @@ void main() {
       expect(host.reserveCalls, isEmpty);
       expect(session.isActive, isTrue);
       expect(host.registeredProtocols, hasLength(2));
+    });
+
+    test('isActive becomes false when host epoch changes', () async {
+      final host = FakeLibp2pMeshHost(epoch: 1);
+      final session = PhoneMeshSession(host);
+      await session.enable(
+        onStream: (_, __, ___) async {},
+        reserveRelay: false,
+      );
+      expect(session.isActive, isTrue);
+      host.epoch = 2;
+      expect(session.isActive, isFalse);
     });
 
     test('reserve failure still leaves handlers active', () async {
