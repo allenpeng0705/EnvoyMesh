@@ -1,20 +1,23 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
+import 'package:dcid/dcid.dart';
 import 'package:dart_libp2p/dart_libp2p.dart';
-import 'package:dart_libp2p_kad_dht/dart_libp2p_kad_dht.dart';
-import 'package:dart_libp2p/p2p/host/basic/basic_host.dart' as p2p_host;
 import 'package:dart_libp2p/config/config.dart';
 import 'package:dart_libp2p/config/defaults.dart';
 import 'package:dart_libp2p/core/crypto/ed25519.dart' as crypto_ed25519;
-import 'package:dart_libp2p/p2p/transport/tcp_transport.dart';
-import 'package:dart_libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
+import 'package:dart_libp2p/p2p/discovery/mdns.dart';
+import 'package:dart_libp2p/p2p/host/basic/basic_host.dart' as p2p_host;
 import 'package:dart_libp2p/p2p/host/resource_manager/limiter.dart';
+import 'package:dart_libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
 import 'package:dart_libp2p/p2p/protocol/circuitv2/client/reservation.dart';
+import 'package:dart_libp2p/p2p/transport/tcp_transport.dart';
+import 'package:dart_libp2p_kad_dht/dart_libp2p_kad_dht.dart';
 import 'package:envoy_mesh/envoy_mesh.dart';
 import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:envoygo/storage/secure_storage.dart';
+import 'package:flutter/foundation.dart';
+
 
 /// Inbound stream handler for a registered protocol.
 typedef Libp2pStreamHandler = Future<void> Function(
@@ -61,6 +64,11 @@ class Libp2pNode implements Libp2pMeshHost {
   /// PeerId string of the relay we last successfully reserved, if any.
   String? _reservedRelayPeerId;
 
+  /// Foreground LAN mDNS (S7) — only while phone discovery is active.
+  MdnsDiscovery? _mdns;
+  final Map<String, PhoneDiscoveryProvider> _lanPeers = {};
+  bool _mdnsActive = false;
+
   Libp2pNode({required SecureStorage secureStorage})
       : _secureStorage = secureStorage;
 
@@ -73,6 +81,9 @@ class Libp2pNode implements Libp2pMeshHost {
 
   /// Whether circuit-relay client transport was enabled at [start].
   bool get relayEnabled => _enableRelay;
+
+  /// Whether foreground mDNS advertise/browse is running (S7).
+  bool get mdnsActive => _mdnsActive;
 
   /// PeerId of the active circuit reservation, if any.
   @override
@@ -377,9 +388,134 @@ class Libp2pNode implements Libp2pMeshHost {
     _reservedRelayPeerId = null;
   }
 
+  /// Circuit multiaddrs safe to publish in `relay.checkin`.
+  ///
+  /// Format: `/p2p/<relayPeerId>/p2p-circuit/p2p/<localPeerId>` when a
+  /// reservation is tracked; otherwise empty (checkin still carries topics).
+  List<String> relayAdvertisedMultiaddrs() {
+    final local = _peerId?.toString();
+    final relay = _reservedRelayPeerId;
+    if (local == null || relay == null) return const [];
+    return ['/p2p/$relay/p2p-circuit/p2p/$local'];
+  }
+
+  /// DHT provide for an Envoy capability topic (CID parity with desktop).
+  Future<void> provideCapabilityTopic(String topic) async {
+    if (_dht == null || !_started) {
+      throw StateError('Libp2pNode DHT not started');
+    }
+    final cid = CID.fromString(cidStringForCapabilityTopic(topic));
+    await _dht!.provide(cid, true);
+    debugPrint('[Libp2pNode] provided topic=$topic cid=${cid.toString()}');
+  }
+
+  /// DHT findProviders for a capability topic.
+  Future<List<PhoneDiscoveryProvider>> findCapabilityTopicProviders(
+    String topic, {
+    int maxResults = 20,
+  }) async {
+    if (_dht == null || !_started) return const [];
+    final cid = CID.fromString(cidStringForCapabilityTopic(topic));
+    final out = <PhoneDiscoveryProvider>[];
+    final seen = <String>{};
+    try {
+      await for (final info in _dht!.findProvidersAsync(cid, maxResults)) {
+        final id = info.id.toString();
+        if (!seen.add(id)) continue;
+        out.add(PhoneDiscoveryProvider(
+          peerId: id,
+          multiaddrs: info.addrs.map((a) => a.toString()).toList(),
+        ));
+        if (out.length >= maxResults) break;
+      }
+    } catch (e) {
+      debugPrint('[Libp2pNode] findProviders($topic) failed: $e');
+    }
+    return out;
+  }
+
+  /// Snapshot of peers learned via mDNS while discovery is active.
+  List<PhoneDiscoveryProvider> lanDiscoveredPeers({int maxResults = 32}) {
+    final list = _lanPeers.values.toList(growable: false);
+    if (list.length <= maxResults) return list;
+    return list.take(maxResults).toList(growable: false);
+  }
+
+  /// Start libp2p mDNS advertise + browse (foreground phone Social only).
+  ///
+  /// Requires a TCP listen address on the host — otherwise advertise is a
+  /// no-op inside dart_libp2p (`host.addrs` empty).
+  Future<void> enableMdns() async {
+    if (!_started || _host == null) {
+      throw StateError('Libp2pNode must be started before enableMdns');
+    }
+    if (_mdnsActive) return;
+    try {
+      final mdns = MdnsDiscovery(_host!);
+      mdns.notifee = _Libp2pLanNotifee(this);
+      await mdns.start();
+      _mdns = mdns;
+      _mdnsActive = true;
+      debugPrint(
+        '[Libp2pNode] mDNS started (listenAddrs=${_host!.addrs.length})',
+      );
+    } catch (e) {
+      debugPrint('[Libp2pNode] enableMdns failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Stop mDNS and clear the LAN peer cache.
+  Future<void> disableMdns() async {
+    final mdns = _mdns;
+    _mdns = null;
+    _mdnsActive = false;
+    _lanPeers.clear();
+    if (mdns == null) return;
+    try {
+      await mdns.stop();
+      debugPrint('[Libp2pNode] mDNS stopped');
+    } catch (e) {
+      debugPrint('[Libp2pNode] disableMdns failed: $e');
+    }
+  }
+
+  void _onLanPeerFound(AddrInfo peer) {
+    final id = peer.id.toString();
+    if (_peerId != null && id == _peerId.toString()) return;
+    final addrs = peer.addrs.map((a) => a.toString()).toList();
+    final prev = _lanPeers[id];
+    final merged = <String>{
+      ...?prev?.multiaddrs,
+      ...addrs,
+    }.toList();
+    _lanPeers[id] = PhoneDiscoveryProvider(peerId: id, multiaddrs: merged);
+    debugPrint('[Libp2pNode] mDNS peer found: $id addrs=${merged.length}');
+    // Keep dialable LAN paths in the peerstore for subsequent mesh dials.
+    unawaited(() async {
+      try {
+        await _host?.peerStore.addrBook.addAddrs(
+          peer.id,
+          peer.addrs,
+          const Duration(minutes: 10),
+        );
+      } catch (e) {
+        debugPrint('[Libp2pNode] peerStore addAddrs failed: $e');
+      }
+    }());
+  }
+
+  /// Test seam: inject a LAN peer as if mDNS found it.
+  @visibleForTesting
+  void debugInjectLanPeer(PhoneDiscoveryProvider peer) {
+    if (peer.peerId.isEmpty) return;
+    _lanPeers[peer.peerId] = peer;
+  }
+
   /// Stop the host and release all resources.
   Future<void> stop() async {
     removeAllStreamHandlers();
+    await disableMdns();
     await releaseRelayReservation();
     if (_dht != null) {
       await _dht!.close();
@@ -392,6 +528,15 @@ class Libp2pNode implements Libp2pMeshHost {
     _started = false;
     _enableRelay = false;
   }
+}
+
+class _Libp2pLanNotifee implements MdnsNotifee {
+  _Libp2pLanNotifee(this._node);
+
+  final Libp2pNode _node;
+
+  @override
+  void handlePeerFound(AddrInfo peer) => _node._onLanPeerFound(peer);
 }
 
 /// A WebSocket-like wrapper around a libp2p [P2PStream].

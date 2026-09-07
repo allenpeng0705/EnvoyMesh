@@ -434,7 +434,7 @@ packages:
     source: hosted
     version: "0.7.14"
   dcid:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: dcid
       sha256: a2158de2321b2fde06aae4c303a071de5821f2a46cdee6f3c6d91be0d4baa2d9

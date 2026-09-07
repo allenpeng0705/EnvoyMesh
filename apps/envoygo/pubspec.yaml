@@ -59,6 +59,8 @@ dependencies:
   dart_libp2p: ^1.0.1
   dart_libp2p_pubsub: ^1.1.0
   dart_libp2p_kad_dht: ^1.2.0
+  # CIDs for capability-topic DHT provide/find (S6)
+  dcid: ^1.0.0
   # Compression (gzip decoding for pairing token)
   archive: ^3.6.1
   # Push notifications (mobile only)

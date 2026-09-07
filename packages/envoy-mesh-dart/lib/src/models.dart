@@ -79,6 +79,7 @@ class MeshPeerHit {
     this.interests = const [],
     this.profileVisibility,
     this.trustLevel,
+    this.multiaddrs = const [],
   });
 
   final String nodeId;
@@ -87,4 +88,5 @@ class MeshPeerHit {
   final List<String> interests;
   final String? profileVisibility;
   final String? trustLevel;
+  final List<String> multiaddrs;
 }

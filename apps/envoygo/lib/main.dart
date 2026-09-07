@@ -12,6 +12,7 @@ import 'providers/chat_provider.dart';
 import 'providers/content_engage_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/node_provider.dart';
+import 'providers/social_context_provider.dart';
 import 'screens/browser/browser_screen.dart';
 import 'screens/chat/chat_detail_screen.dart';
 import 'screens/inbox/inbox_screen.dart';
@@ -300,11 +301,13 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final notifier = ref.read(nodeProvider.notifier);
+    final mesh = ref.read(phoneMeshRuntimeProvider.notifier);
     switch (state) {
       case AppLifecycleState.resumed:
         // Re-dial after background pause. kickReconnect short-circuits
         // when already connected; safe for notification-shade peeks.
         notifier.kickReconnect();
+        mesh.setForeground(true);
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
@@ -314,6 +317,8 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         // iOS usually suspends sooner; disconnecting both platforms is
         // safe and matches the push skip-if-online contract.
         unawaited(notifier.pauseForBackground());
+        // S6: stop phone WAN checkin/provide while backgrounded.
+        mesh.setForeground(false);
       case AppLifecycleState.inactive:
         // Notification shade / app switcher transition — keep the socket.
         break;

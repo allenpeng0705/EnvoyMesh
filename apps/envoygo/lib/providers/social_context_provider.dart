@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../mesh/home_social_backend.dart';
 import '../mesh/libp2p_mesh_envelope_transport.dart';
+import '../mesh/phone_discovery_session.dart';
 import '../mesh/phone_mesh_session.dart';
 import '../mesh/phone_social_local_db.dart';
 import '../services/node_service_client.dart';
@@ -239,10 +240,12 @@ class HomeRemoteClientKey {
 class PhoneMeshRuntimeState {
   const PhoneMeshRuntimeState({
     this.sessionActive = false,
+    this.discoveryActive = false,
     this.lastError,
   });
 
   final bool sessionActive;
+  final bool discoveryActive;
   final String? lastError;
 }
 
@@ -266,8 +269,17 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
 
   final Ref _ref;
   PhoneMeshSession? _session;
+  PhoneDiscoverySession? _discovery;
   bool _busy = false;
   bool _pending = false;
+  bool _foreground = true;
+
+  /// Pause WAN advertise/lookup when the app backgrounds (S6).
+  void setForeground(bool foreground) {
+    if (_foreground == foreground) return;
+    _foreground = foreground;
+    unawaited(_apply());
+  }
 
   Future<void> _apply() async {
     if (_busy) {
@@ -311,8 +323,23 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
             },
           );
         }
+
+        if (_foreground) {
+          _discovery ??= PhoneDiscoverySession(node: node, backend: backend);
+          if (!_discovery!.isActive) {
+            try {
+              await _discovery!.start();
+            } catch (e) {
+              debugPrint('[PhoneMeshRuntime] discovery start: $e');
+            }
+          }
+        } else {
+          await _stopDiscovery();
+        }
+
         state = PhoneMeshRuntimeState(
           sessionActive: _session!.isActive,
+          discoveryActive: _discovery?.isActive ?? false,
           lastError: _session!.reservedRelayPeerId == null
               ? 'Mesh online (relay reserve pending)'
               : null,
@@ -333,7 +360,20 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
     }
   }
 
+  Future<void> _stopDiscovery() async {
+    final discovery = _discovery;
+    _discovery = null;
+    if (discovery != null) {
+      try {
+        await discovery.stop();
+      } catch (e) {
+        debugPrint('[PhoneMeshRuntime] discovery stop: $e');
+      }
+    }
+  }
+
   Future<void> _teardown() async {
+    await _stopDiscovery();
     final session = _session;
     _session = null;
     if (session != null) {
@@ -343,13 +383,18 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
         debugPrint('[PhoneMeshRuntime] teardown: $e');
       }
     }
-    if (state.sessionActive || state.lastError != null) {
+    if (state.sessionActive ||
+        state.discoveryActive ||
+        state.lastError != null) {
       state = const PhoneMeshRuntimeState();
     }
   }
 
   @override
   void dispose() {
+    final discovery = _discovery;
+    _discovery = null;
+    unawaited(discovery?.stop() ?? Future.value());
     final session = _session;
     _session = null;
     session?.disable();

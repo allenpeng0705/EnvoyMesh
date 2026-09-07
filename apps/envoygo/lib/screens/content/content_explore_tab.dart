@@ -214,6 +214,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                       interests: h.interests,
                       profileVisibility: h.profileVisibility,
                       trustLevel: h.trustLevel,
+                      multiaddrs: h.multiaddrs,
                     ))
                 .toList(),
           ),
@@ -234,6 +235,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                     interests: h.interests,
                     profileVisibility: h.profileVisibility,
                     trustLevel: h.trustLevel,
+                    multiaddrs: h.multiaddrs,
                   ))
               .toList(),
         ),
@@ -390,6 +392,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                     interests: h.interests,
                     profileVisibility: h.profileVisibility,
                     trustLevel: h.trustLevel,
+                    multiaddrs: h.multiaddrs,
                   ))
               .toList(),
         );
@@ -493,6 +496,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
             ownerId: ownerId,
             libp2pPeerId: peer.nodeId,
             displayName: peer.displayName,
+            multiaddrs: peer.multiaddrs,
           ));
         }
         final profile = await backend.getHumanProfile() ??

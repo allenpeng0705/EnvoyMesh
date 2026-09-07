@@ -29,10 +29,11 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Scan pairing QR codes and use the camera during video calls.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Allow EnvoyGo and Flutter tools to discover peers and attach the Dart debugger on your local network.</string>
+	<string>EnvoyGo uses the local network to find nearby Envoy peers on the same Wi‑Fi while Social is open.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_dartVmService._tcp</string>
+		<string>_p2p._udp</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access is used for voice notes and voice/video calls.</string>

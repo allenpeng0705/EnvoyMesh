@@ -18,26 +18,41 @@ import 'social_backend.dart';
 
 typedef PhonePersistHook = Future<void> Function(PhoneSocialStore store);
 
+/// Optional live WAN discover (DHT + relay.lookup). Injected by EnvoyGo S6.
+typedef PhoneWanSearch = Future<List<MeshPeerHit>> Function({
+  String? topic,
+  List<String>? interests,
+  int maxResults,
+});
+
 class PhoneSocialBackend implements SocialBackend {
   PhoneSocialBackend({
     required PhonePersona persona,
     required MeshEnvelopeTransport transport,
     PhoneSocialStore? store,
     PhonePersistHook? onPersist,
+    PhoneWanSearch? wanSearch,
   })  : _persona = persona,
         _transport = transport,
         _store = store ?? PhoneSocialStore(),
-        _onPersist = onPersist;
+        _onPersist = onPersist,
+        _wanSearch = wanSearch;
 
   final PhonePersona _persona;
   MeshEnvelopeTransport _transport;
   final PhoneSocialStore _store;
   final PhonePersistHook? _onPersist;
+  PhoneWanSearch? _wanSearch;
   final _events = StreamController<SocialPushEvent>.broadcast();
 
   /// Swap dial transport (fake → live libp2p) without dropping store state.
   void replaceTransport(MeshEnvelopeTransport transport) {
     _transport = transport;
+  }
+
+  /// Attach / clear live WAN search (null = local directory only).
+  void replaceWanSearch(PhoneWanSearch? wanSearch) {
+    _wanSearch = wanSearch;
   }
 
   PhoneSocialStore get store => _store;
@@ -113,11 +128,10 @@ class PhoneSocialBackend implements SocialBackend {
     List<String>? interests,
     int maxResults = 20,
   }) async {
-    // MVP: local peer directory only (DHT topic provide comes with live mesh).
     final q = (topic ?? '').trim().toLowerCase();
     final interestSet =
         interests?.map((e) => e.toLowerCase()).toSet() ?? <String>{};
-    final hits = <MeshPeerHit>[];
+    final local = <MeshPeerHit>[];
     for (final peer in _store.peersByOwner.values) {
       if (peer.ownerId == ownerId) continue;
       final name = (peer.displayName ?? '').toLowerCase();
@@ -125,23 +139,58 @@ class PhoneSocialBackend implements SocialBackend {
           name.contains(q) ||
           peer.ownerId.toLowerCase().contains(q);
       final peerInterests = (peer.profile['interests'] is List)
-          ? (peer.profile['interests'] as List).map((e) => e.toString().toLowerCase())
+          ? (peer.profile['interests'] as List)
+              .map((e) => e.toString().toLowerCase())
           : const <String>[];
-      final matchesInterest = interestSet.isEmpty ||
-          peerInterests.any(interestSet.contains);
+      final matchesInterest =
+          interestSet.isEmpty || peerInterests.any(interestSet.contains);
       if (!matchesTopic || !matchesInterest) continue;
       final bond = _store.bondFor(peer.ownerId);
-      hits.add(MeshPeerHit(
+      local.add(MeshPeerHit(
         nodeId: peer.libp2pPeerId,
         ownerId: peer.ownerId,
         displayName: peer.displayName,
         interests: peerInterests.toList(),
         profileVisibility: 'public',
         trustLevel: bond?.bondLevel,
+        multiaddrs: peer.multiaddrs,
       ));
-      if (hits.length >= maxResults) break;
+      if (local.length >= maxResults) break;
     }
-    return hits;
+
+    final wan = _wanSearch;
+    if (wan == null) return local;
+
+    List<MeshPeerHit> remote = const [];
+    try {
+      remote = await wan(
+        topic: topic,
+        interests: interests,
+        maxResults: maxResults,
+      );
+    } catch (_) {
+      return local;
+    }
+
+    // Prefer local (known dial map / trust) then fill from WAN.
+    final byOwner = <String, MeshPeerHit>{
+      for (final h in local)
+        if (h.ownerId.isNotEmpty) h.ownerId: h,
+    };
+    final byPeer = <String, MeshPeerHit>{
+      for (final h in local)
+        if (h.ownerId.isEmpty && h.nodeId.isNotEmpty) h.nodeId: h,
+    };
+    for (final h in remote) {
+      if (h.ownerId.isNotEmpty) {
+        byOwner.putIfAbsent(h.ownerId, () => h);
+      } else if (h.nodeId.isNotEmpty) {
+        byPeer.putIfAbsent(h.nodeId, () => h);
+      }
+    }
+    final merged = [...byOwner.values, ...byPeer.values];
+    if (merged.length <= maxResults) return merged;
+    return merged.take(maxResults).toList(growable: false);
   }
 
   String _dialTargetFor(PhonePeerRecord peer) {

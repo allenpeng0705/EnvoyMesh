@@ -291,6 +291,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
             ? fromNode
             : defaultEnvoyCommunityRelayBootstrapAddrs;
         await _libp2pNode!.start(
+          // Ephemeral TCP listen so phone Social can advertise via mDNS (S7).
+          // Circuit inbound still works when enableRelay is true.
+          listenAddrs: const ['/ip4/0.0.0.0/tcp/0'],
           bootstrapAddrs: bootstrap,
           enableRelay: true,
         );
@@ -1269,6 +1272,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _libp2pNode ??= Libp2pNode(secureStorage: SecureStorage());
     if (!_libp2pNode!.isStarted) {
       await _libp2pNode!.start(
+        // Ephemeral TCP listen for mDNS advertise (S7) + local dialability.
+        listenAddrs: const ['/ip4/0.0.0.0/tcp/0'],
         // DHT bootstrap: use the same bootstrap peers as the home node.
         // Also used as circuit relay hop when dialing /p2p-circuit/.
         bootstrapAddrs: bootstrapPeers,
