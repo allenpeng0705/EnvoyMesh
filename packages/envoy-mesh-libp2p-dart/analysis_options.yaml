@@ -1,0 +1,6 @@
+# analysis_options.yaml
+include: package:lints/recommended.yaml
+
+linter:
+  rules:
+    depend_on_referenced_packages: false

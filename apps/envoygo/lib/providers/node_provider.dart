@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
-import 'package:dart_libp2p/dart_libp2p.dart';
-import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh_libp2p/envoy_mesh_libp2p.dart';
 import 'package:envoy_thin_client/models/stored_node.dart';
 import 'package:envoy_thin_client/services/candidate_resolver.dart';
 import 'package:envoy_thin_client/services/client_proxy_transport.dart';
@@ -14,8 +13,8 @@ import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../mesh/secure_storage_libp2p_seed_store.dart';
 import '../services/connectivity_observer.dart';
-import '../services/libp2p_node.dart';
 import '../services/library_read_cache.dart';
 import '../services/node_service_client.dart';
 import '../services/pairing_service.dart';
@@ -284,7 +283,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// community relay defaults so unpaired phone mesh can still reserve.
   Future<Libp2pNode?> ensureLibp2pStarted() async {
     try {
-      _libp2pNode ??= Libp2pNode(secureStorage: _secureStorage);
+      _libp2pNode ??= Libp2pNode(
+        seedStore: SecureStorageLibp2pSeedStore(_secureStorage),
+      );
       final fromNode = state.activeNode?.bootstrapPeers ?? const <String>[];
       final bootstrap = fromNode.isNotEmpty
           ? fromNode
@@ -1266,7 +1267,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _log('[_createLibp2pTransport] DHT bootstrap peers from stored node: $bootstrapPeers');
 
     // Start libp2p node if not already started (or restart for TCP listen).
-    _libp2pNode ??= Libp2pNode(secureStorage: SecureStorage());
+    _libp2pNode ??= Libp2pNode(
+      seedStore: SecureStorageLibp2pSeedStore(_secureStorage),
+    );
     await _libp2pNode!.ensureTcpListen(
       listenAddrs: const ['/ip4/0.0.0.0/tcp/0'],
       bootstrapAddrs: bootstrapPeers,

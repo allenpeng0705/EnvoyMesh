@@ -1,46 +1,60 @@
-# envoy_mesh — EnvoyMesh Dart social-lite SDK
+# envoy_mesh — Level-2 social-lite core (pure Dart)
 
-**Status:** S3 extraction (2026-09-07). Used by EnvoyGo; intended for reuse by
-other Flutter/Dart apps (thin client + independent social node).
+Ed25519 identity/signing, EMP envelopes, and an in-process **phone** social
+backend. No Flutter and no dart_libp2p — inject transport via
+[MeshEnvelopeTransport].
 
-## Two complementary packages
+## Two-tier SDK
 
-| Package | Role |
-|---------|------|
-| [`envoy_thin_client`](../envoy-thin-client-dart) | Pair to a **home node**; JSON-RPC over WS / client-proxy. No mesh signing. |
-| **`envoy_mesh`** (this package) | **On-device** Envoy owner/device identity, EMP sign/verify, phone social-lite backend (bonds, hello, 1:1 DM store). |
-
-An app can depend on either or both:
+| Level | Packages |
+|------:|----------|
+| **1** Thin client only | [`envoy_thin_client`](../envoy-thin-client-dart) |
+| **2** Thin client + mobile node | L1 + **this package** + [`envoy_mesh_libp2p`](../envoy-mesh-libp2p-dart) |
 
 ```
-OtherApp
-  ├─ envoy_thin_client  → Home Social / terminals / vault (RPC)
-  └─ envoy_mesh         → Independent “On this phone” social persona
+Level 2 app
+  ├─ envoy_thin_client   → Home persona (JSON-RPC)
+  ├─ envoy_mesh          → Phone persona (EMP, PhoneSocialBackend)  ← you are here
+  └─ envoy_mesh_libp2p   → libp2p host, discovery, live dial
 ```
 
-Inject live dial via `MeshEnvelopeTransport` (EnvoyGo: `Libp2pMeshEnvelopeTransport`).
-`PhoneSocialBackend.replaceTransport` swaps fake → live without dropping store state.
+## What this package provides
 
-## What stays in the app
+- `PhoneIdentityStore` / `PhonePersona` (Envoy owner + device PEMs)
+- `signEnvoyEnvelope` / `verifyEnvoyEnvelope` (TS golden parity)
+- `PhoneSocialBackend` implementing `SocialBackend` (profile, hello, bonds, 1:1 chat, local store)
+- Discovery helpers: capability-topic CIDs, relay checkin/lookup payloads, `PhoneDiscoveryRuntime`
+- Cross-persona suggestion matcher (ownerId equality; no auto-merge)
 
-- UI (Riverpod, screens)
-- `dart_libp2p` host wiring (`Libp2pNode`, relay reserve) — inject via `MeshEnvelopeTransport`
-- SQLite / secure storage adapters
-- Home-only features (Family, Knowledge, AI, Market seller)
+## What it does **not** provide
 
-## Public API
+- libp2p host / DHT / mDNS → **`envoy_mesh_libp2p`**
+- Home JSON-RPC → **`envoy_thin_client`**
+- UI / Riverpod / SQLite adapters → your app (see EnvoyGo)
+
+## Quick start (fake transport)
 
 ```dart
 import 'package:envoy_mesh/envoy_mesh.dart';
 
-final persona = await PhoneIdentityStore.memory().create();
+final persona = await PhoneIdentityStore.memory().loadOrCreate();
 final backend = PhoneSocialBackend(
   persona: persona,
-  transport: myLibp2pTransport, // implement MeshEnvelopeTransport
+  transport: FakeMeshEnvelopeTransport(),
 );
 await backend.updateHumanProfile({'displayName': 'Ada'});
-await backend.rememberPeer(...);
-await backend.sendHello(...);
 ```
 
-See ADR-0002 and `docs/envoygo-social-lite-wire-compat.md`.
+Swap in live dial without dropping store state:
+
+```dart
+backend.replaceTransport(Libp2pMeshEnvelopeTransport(node)); // from envoy_mesh_libp2p
+```
+
+## Encapsulation rules
+
+1. Home actions stay on the thin-client path; phone actions use this backend.
+2. Never sign Home-owner envelopes on the phone.
+3. Never auto-merge Home and phone contact/chat indexes.
+4. WAN/LAN advertise only while phone Social is active and the app is foregrounded
+   (wired by `PhoneDiscoverySession` in `envoy_mesh_libp2p`).

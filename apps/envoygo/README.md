@@ -99,12 +99,16 @@ lib/
 
 ## Architecture
 
-EnvoyGo is a **thin client** — it does not run a libp2p node, generate identity keys, or participate in the mesh. It connects to one home node at a time via secure WebSocket, calls JSON-RPC methods, and renders a minimal, chat-focused UI.
+EnvoyGo is a **Level-2** mobile app ([SDK tiers](../../packages/README-mobile-sdk.md)):
 
-See [docs/flutter-thin-client-design.md](../../docs/flutter-thin-client-design.md) for the full architecture.
+1. **Home** — thin client (`envoy_thin_client`): pair to a home node, JSON-RPC for Social / terminals / vault / …
+2. **On this phone** — separate social-lite persona (`envoy_mesh` + `envoy_mesh_libp2p`): own Envoy keys, shared libp2p host, foreground WAN/LAN discovery
+
+The two personas never auto-merge bonds or chats. See [ADR-0002](../../docs/adr/0002-envoygo-social-lite-dual-persona.md).
 
 ## Related
 
+- [Mobile SDK (L1 / L2)](../../packages/README-mobile-sdk.md)
 - [EnvoyMesh](../../README.md) — the main project
-- [Phase 31 implementation plan](../../docs/implementation-plan.md#phase-31--flutter-thin-client-envoygo-design)
 - [Satellite app ADR](../../docs/satellite-app-adr.md)
+- [Wire compat](../../docs/envoygo-social-lite-wire-compat.md)

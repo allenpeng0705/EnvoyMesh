@@ -3,14 +3,11 @@ library;
 
 import 'dart:async';
 
-import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh_libp2p/envoy_mesh_libp2p.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../mesh/home_social_backend.dart';
-import '../mesh/libp2p_mesh_envelope_transport.dart';
-import '../mesh/phone_discovery_session.dart';
-import '../mesh/phone_mesh_session.dart';
 import '../mesh/phone_social_local_db.dart';
 import '../services/node_service_client.dart';
 import '../storage/local_database.dart';

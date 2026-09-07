@@ -1,0 +1,27 @@
+name: envoy_mesh_libp2p
+description: >-
+  Level-2 EnvoyMesh mobile adapters: shared dart_libp2p host, phone mesh
+  session (handlers + relay reserve), WAN/LAN discovery session, and
+  MeshEnvelopeTransport over libp2p streams. Depends on envoy_mesh (social-lite)
+  and envoy_thin_client (WebSocketLike for home circuit dial). Use with
+  envoy_thin_client alone for Level-1 thin-client apps.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  crypto: ^3.0.3
+  dcid: ^1.0.0
+  meta: ^1.12.0
+  dart_libp2p: ^1.0.1
+  dart_libp2p_kad_dht: ^1.2.0
+  envoy_mesh:
+    path: ../envoy-mesh-dart
+  envoy_thin_client:
+    path: ../envoy-thin-client-dart
+
+dev_dependencies:
+  lints: ^4.0.0
+  test: ^1.25.0

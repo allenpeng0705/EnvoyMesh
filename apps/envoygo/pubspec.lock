@@ -370,7 +370,7 @@ packages:
     source: hosted
     version: "1.0.0+7.7.0"
   dart_libp2p:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: dart_libp2p
       sha256: "99ae1a2607540161cbbd0ca0f619bee4cfa3734645409703dd2a2fd024842d41"
@@ -378,21 +378,13 @@ packages:
     source: hosted
     version: "1.0.3"
   dart_libp2p_kad_dht:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: dart_libp2p_kad_dht
       sha256: d728c04cd5974640800ded6051e9fe415c3171c73490c5c111ac23fc25f2143c
       url: "https://pub.dev"
     source: hosted
     version: "1.2.0"
-  dart_libp2p_pubsub:
-    dependency: "direct main"
-    description:
-      name: dart_libp2p_pubsub
-      sha256: bbd86d19fc225a2af99379e0e039d6bdea6b3ff06a681b13b1891a312f06c91d
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.2.1"
   dart_multihash:
     dependency: transitive
     description:
@@ -434,7 +426,7 @@ packages:
     source: hosted
     version: "0.7.14"
   dcid:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: dcid
       sha256: a2158de2321b2fde06aae4c303a071de5821f2a46cdee6f3c6d91be0d4baa2d9
@@ -445,6 +437,13 @@ packages:
     dependency: "direct main"
     description:
       path: "../../packages/envoy-mesh-dart"
+      relative: true
+    source: path
+    version: "0.1.0"
+  envoy_mesh_libp2p:
+    dependency: "direct main"
+    description:
+      path: "../../packages/envoy-mesh-libp2p-dart"
       relative: true
     source: path
     version: "0.1.0"

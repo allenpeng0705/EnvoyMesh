@@ -18,6 +18,9 @@ dependencies:
   # Social-lite mesh SDK (identity, EMP, phone backend).
   envoy_mesh:
     path: ../../packages/envoy-mesh-dart
+  # Level-2 libp2p adapters (shared host, discovery, live dial).
+  envoy_mesh_libp2p:
+    path: ../../packages/envoy-mesh-libp2p-dart
   # Transport
   web_socket_channel: ^3.0.2
   # State
@@ -55,12 +58,6 @@ dependencies:
   json_annotation: ^4.9.0
   # Crypto
   pinenacl: ^0.6.0
-  # libp2p (P2P networking — circuit relay, noise, KAD-DHT)
-  dart_libp2p: ^1.0.1
-  dart_libp2p_pubsub: ^1.1.0
-  dart_libp2p_kad_dht: ^1.2.0
-  # CIDs for capability-topic DHT provide/find (S6)
-  dcid: ^1.0.0
   # Compression (gzip decoding for pairing token)
   archive: ^3.6.1
   # Push notifications (mobile only)
