@@ -106,6 +106,68 @@ describe("createRagService", () => {
     expect(rag.getIndexStatus().progress.indexed).toBe(0);
   });
 
+  it("purges chat voice-note paths from the vault RAG manifest", async () => {
+    const { loadRagVaultManifest, saveRagVaultManifest, ragVaultManifestKey } = await import(
+      "@envoymesh/rag"
+    );
+    await mkdir(join(vaultDir, "chat", "out", "att-1"), { recursive: true });
+    await writeFile(join(vaultDir, "chat", "out", "att-1", "voice-note.wav"), "audio-bytes");
+    await writeFile(
+      join(vaultDir, "knowledge", "product.md"),
+      "EnvoyMesh is a decentralized P2P mesh for autonomous AI agents.",
+    );
+
+    // Simulate a stale index entry from before chat/ was excluded from KB.
+    await saveRagVaultManifest(profileDir, {
+      version: "0.1",
+      documents: {
+        [ragVaultManifestKey("public", "chat/out/att-1/voice-note.wav")]: {
+          relativePath: "chat/out/att-1/voice-note.wav",
+          documentId: "voice-doc",
+          contentHash: "v1",
+          chunkCount: 1,
+          tier: "public",
+          modelKey: "mock",
+          chunkSizeChars: 1000,
+          chunkOverlapChars: 100,
+          indexedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    });
+
+    const vaultIndex = await buildVaultIndex({ rootDir: vaultDir });
+    const rag = await createRagService({
+      profileDir,
+      knowledgeBase: {
+        enabled: true,
+        ragMode: "vector",
+        embedding: { mode: "mock" },
+        publicVaultPaths: ["knowledge/", "chat/"],
+      },
+    });
+
+    expect(
+      (await loadRagVaultManifest(profileDir)).documents[
+        ragVaultManifestKey("public", "chat/out/att-1/voice-note.wav")
+      ],
+    ).toBeUndefined();
+
+    await rag.reindexVault({ vaultIndex });
+    const after = await loadRagVaultManifest(profileDir);
+    expect(after.documents[ragVaultManifestKey("public", "chat/out/att-1/voice-note.wav")]).toBeUndefined();
+    expect(
+      Object.values(after.documents).some((d) => d.relativePath.startsWith("knowledge/")),
+    ).toBe(true);
+
+    const hits = await rag.searchVaultKnowledgeBase({
+      vaultIndex,
+      query: "audio",
+      knowledgeAccess: "public",
+      knowledgeScope: "public",
+    });
+    expect(hits.every((h) => !h.document.relativePath.startsWith("chat/"))).toBe(true);
+  });
+
   it("probeEmbedding confirms mock provider without rebuilding", async () => {
     const rag = await createRagService({
       profileDir,

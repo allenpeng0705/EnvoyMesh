@@ -430,6 +430,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.readFamilyAttachment(params);
   }
 
+  async uploadFamilyAttachment(params: Parameters<NodeService["uploadFamilyAttachment"]>[0]) {
+    return this._ns.uploadFamilyAttachment(params);
+  }
+
   // Phase 45 — Web Content Browsing. Pulls raw content by URL path from
   // a bonded contact's published web directory. Used by the Browser view.
   // See docs/web-content-browsing-design.md §4.6.

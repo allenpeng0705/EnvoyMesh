@@ -9,7 +9,7 @@ import {
   type LocalChatLogStore,
   type ChatLogEnvelope,
 } from "@envoymesh/local-store";
-import { searchVault, type VaultIndex, type VaultSearchResult } from "@envoymesh/vault";
+import { searchVault, type VaultIndex, type VaultSearchResult, isVaultLibraryHiddenPath } from "@envoymesh/vault";
 
 // ---------------------------------------------------------------------------
 // Sensitivity levels (3-tier for knowledge base)
@@ -278,6 +278,7 @@ export function searchVaultKnowledgeBase(input: {
     for (const result of batch) {
       const key = `${result.document.documentId}:${result.chunk.index}`;
       if (seen.has(key)) continue;
+      if (isVaultLibraryHiddenPath(result.document.relativePath)) continue;
       if (!vaultPathMatches(result.document.relativePath, vaultPaths)) continue;
       seen.add(key);
       merged.push(result);

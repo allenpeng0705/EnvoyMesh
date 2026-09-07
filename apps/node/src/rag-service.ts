@@ -14,7 +14,12 @@ import type {
 import { DEFAULT_RAG_INDEX_PROGRESS, DEFAULT_RAG_INDEX_STATUS, resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
 import type { LocalChatLogStore } from "@envoymesh/local-store";
 import type { VaultDocumentMetadata, VaultIndex, VaultSearchResult } from "@envoymesh/vault";
-import { isVaultExtractableExtension, VAULT_CHUNK_ALGORITHM_ID, VAULT_TEXT_EXTRACTOR_ID } from "@envoymesh/vault";
+import {
+  isVaultExtractableExtension,
+  isVaultLibraryHiddenPath,
+  VAULT_CHUNK_ALGORITHM_ID,
+  VAULT_TEXT_EXTRACTOR_ID,
+} from "@envoymesh/vault";
 import {
   chatCollectionId,
   createEmbeddingProvider,
@@ -217,6 +222,15 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
   };
 
   await syncTrackedDocuments();
+
+  // Drop chat/profile blobs that were indexed before they were excluded from KB.
+  {
+    const purged = await purgeLibraryHiddenVaultEntries(store, input.profileDir);
+    if (purged > 0) {
+      console.log(`[rag] purged ${purged} chat/profile document(s) from knowledge index`);
+      await syncTrackedDocuments();
+    }
+  }
 
   const flushSoon = debounce(async () => {
     try {
@@ -499,6 +513,9 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
     async reindexVault({ vaultIndex, knowledgeBase: kbOverride, force = false, sensitivityOverrides, skipDocumentPaths }) {
       const kb = resolveAiKnowledgeBaseSettings(kbOverride ?? knowledgeBase);
       if (!kb.enabled || kb.ragMode === "lexical") {
+        // Still strip library-hidden paths from any leftover vector manifest.
+        const purged = await purgeLibraryHiddenVaultEntries(store, input.profileDir);
+        if (purged > 0) await syncTrackedDocuments();
         reportProgress({ phase: "idle", processed: 0, total: 0, indexed: 0, skipped: 0, removed: 0 });
         return;
       }
@@ -513,6 +530,12 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
             );
 
       const { embedder: activeEmbedder, store: activeStore } = await ensureRuntime();
+      {
+        const purged = await purgeLibraryHiddenVaultEntries(activeStore, input.profileDir);
+        if (purged > 0) {
+          console.log(`[rag] purged ${purged} chat/profile document(s) before vault reindex`);
+        }
+      }
       const manifest = await loadRagVaultManifest(input.profileDir);
       const overrides =
         sensitivityOverrides ?? (await loadKnowledgeSensitivityOverrides(input.profileDir));
@@ -736,6 +759,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
               (row) => row.documentId === documentId && row.index === chunkIndex,
             );
             if (!doc || !chunk) continue;
+            if (isVaultLibraryHiddenPath(doc.relativePath)) continue;
             merged.push({
               chunk,
               document: doc,
@@ -992,11 +1016,31 @@ function vaultDocumentsForPaths(vaultIndex: VaultIndex, paths: string[]): VaultD
   return vaultIndex.documents.filter((doc) => {
     if (doc.indexSkippedReason) return false;
     const rel = doc.relativePath.replace(/\\/g, "/");
+    if (isVaultLibraryHiddenPath(rel)) return false;
     return paths.some((prefix) => {
       const p = prefix.replace(/\\/g, "/").replace(/\/$/, "");
       return rel === p || rel.startsWith(`${p}/`);
     });
   });
+}
+
+/** Remove chat/profile transfer blobs that must never be knowledge documents. */
+async function purgeLibraryHiddenVaultEntries(
+  store: VectorStore,
+  profileDir: string,
+): Promise<number> {
+  const manifest = await loadRagVaultManifest(profileDir);
+  let removed = 0;
+  for (const [key, entry] of Object.entries(manifest.documents)) {
+    if (!isVaultLibraryHiddenPath(entry.relativePath)) continue;
+    await store.deleteByDocumentId(vaultCollectionId(entry.tier), entry.documentId);
+    delete manifest.documents[key];
+    removed += 1;
+  }
+  if (removed > 0) {
+    await saveRagVaultManifest(profileDir, manifest);
+  }
+  return removed;
 }
 
 function groupChunksByDocument(
