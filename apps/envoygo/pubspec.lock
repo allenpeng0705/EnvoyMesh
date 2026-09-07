@@ -441,6 +441,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.0"
+  envoy_mesh:
+    dependency: "direct main"
+    description:
+      path: "../../packages/envoy-mesh-dart"
+      relative: true
+    source: path
+    version: "0.1.0"
   envoy_thin_client:
     dependency: "direct main"
     description:

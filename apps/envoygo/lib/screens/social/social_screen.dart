@@ -5,9 +5,12 @@ import '../../knowledge/knowledge_nav.dart';
 import '../../l10n/app_localizations.dart';
 import '../../navigation/owner_tabs.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/contact_provider.dart';
 import '../../providers/content_engage_provider.dart';
 import '../../providers/feed_notify_provider.dart';
 import '../../widgets/connection_indicator.dart';
+import '../../widgets/social_context_switcher.dart';
+import '../../widgets/social_home_only_gate.dart';
 import '../browser/browser_screen.dart';
 import '../chat/chat_list_screen.dart';
 import '../content/content_blog_tab.dart';
@@ -74,6 +77,10 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(socialContextContactSyncProvider);
+    ref.watch(socialContextChatSyncProvider);
+    ref.watch(socialBackendEventsProvider);
+
     ref.listen<int?>(contentSurfaceRequestProvider, (_, next) {
       if (next == null || !mounted) return;
       ref.read(contentSurfaceRequestProvider.notifier).state = null;
@@ -149,6 +156,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
           ],
         ),
         actions: [
+          const SocialContextSwitcher(),
           IconButton(
             tooltip: l10n.navInbox,
             onPressed: () {
@@ -184,19 +192,31 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabs,
+      body: Column(
         children: [
-          const ChatListScreen(),
-          const ContentFeedTab(),
-          const ContentBlogTab(),
-          MarketScreen(
-            key: ValueKey('market-${preferShop ? 'shop' : 'browse'}'),
-            embedded: true,
-            initialPane: preferShop ? MarketPane.shop : MarketPane.browse,
+          const PhoneMeshForegroundBanner(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                const ChatListScreen(),
+                const HomeOnlyWhenNeeded(child: ContentFeedTab()),
+                const HomeOnlyWhenNeeded(child: ContentBlogTab()),
+                HomeOnlyWhenNeeded(
+                  child: MarketScreen(
+                    key: ValueKey('market-${preferShop ? 'shop' : 'browse'}'),
+                    embedded: true,
+                    initialPane:
+                        preferShop ? MarketPane.shop : MarketPane.browse,
+                  ),
+                ),
+                const ContentExploreTab(),
+                const HomeOnlyWhenNeeded(
+                  child: BrowserScreen(embedded: true),
+                ),
+              ],
+            ),
           ),
-          const ContentExploreTab(),
-          const BrowserScreen(embedded: true),
         ],
       ),
     );

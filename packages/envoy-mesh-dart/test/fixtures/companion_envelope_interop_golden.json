@@ -1,0 +1,40 @@
+{
+  "_testOnly": "Do not use in production; CI interop fixture",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+  "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIDebQoUrpXOw6RJJxZDpoJXtN9PEenAfOCzHyQWhlB7d\n-----END PRIVATE KEY-----\n",
+  "peerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+  "unsignedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "msg-interop-golden-01",
+    "correlationId": "corr-interop-01",
+    "createdAt": "2026-05-13T12:00:00.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "system",
+    "recipientPeerId": "envoy_peer_recv_test",
+    "recipientRole": "agent",
+    "intent": "system.ping",
+    "payload": {
+      "nonce": "golden-nonce-0001",
+      "message": "interop-golden"
+    }
+  },
+  "signatureBase64Url": "4S-rM0RITlyv6YcUQy06lmVY5Jt0rDFjyr8RrQzxvt09H6kipVg8ELFs9BgEvYApJyl848EJOlBXkrWNpGRNAw",
+  "signedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "msg-interop-golden-01",
+    "correlationId": "corr-interop-01",
+    "createdAt": "2026-05-13T12:00:00.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "system",
+    "recipientPeerId": "envoy_peer_recv_test",
+    "recipientRole": "agent",
+    "intent": "system.ping",
+    "payload": {
+      "nonce": "golden-nonce-0001",
+      "message": "interop-golden"
+    },
+    "signature": "4S-rM0RITlyv6YcUQy06lmVY5Jt0rDFjyr8RrQzxvt09H6kipVg8ELFs9BgEvYApJyl848EJOlBXkrWNpGRNAw"
+  }
+}

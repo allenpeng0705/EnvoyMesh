@@ -127,6 +127,13 @@ class SecureStorage {
     await _ensureStorage.write(key: key, value: value);
   }
 
+  /// Delete a raw key.
+  Future<void> delete(String key) async {
+    try {
+      await _ensureStorage.delete(key: key);
+    } catch (_) {}
+  }
+
   // ---- iCloud-synced storage (survives uninstall+reinstall) ----
 
   /// Read a synced value (device identity key). Survives uninstall.

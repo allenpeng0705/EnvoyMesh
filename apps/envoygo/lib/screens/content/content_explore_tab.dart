@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:envoy_mesh/envoy_mesh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,10 +8,12 @@ import '../../l10n/app_localizations.dart';
 import '../../models/peer_search_result.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../providers/social_context_provider.dart';
 import '../../services/envoy_url.dart';
 import '../../services/node_service_client.dart';
 import '../../services/parse_public_blog_index.dart';
 import '../../services/people_session_cache.dart';
+import '../../widgets/cross_persona_suggestions_section.dart';
 import '../browser/browser_screen.dart';
 
 const _sampleCap = 20;
@@ -94,10 +97,26 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   }
 
   Future<void> _refreshExclude() async {
+    final exclude = <String>{};
+    final socialCtx = ref.read(socialContextProvider);
+    final backend = ref.read(socialBackendProvider);
+    if (socialCtx.isPhone) {
+      final self = backend?.ownerId.trim() ?? '';
+      if (self.isNotEmpty) exclude.add(self);
+      if (backend != null) {
+        try {
+          for (final c in await backend.getBonds()) {
+            if (c.ownerId.isNotEmpty) exclude.add(c.ownerId);
+          }
+        } catch (_) {}
+      }
+      _excludeIds = exclude;
+      return;
+    }
+
     final client = ref.read(nodeServiceProvider);
     final nodeState = ref.read(nodeProvider);
     final self = nodeState.ownerId?.trim() ?? '';
-    final exclude = <String>{};
     if (self.isNotEmpty) exclude.add(self);
     if (client != null) {
       try {
@@ -177,7 +196,100 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     return out.take(_sampleCap).toList();
   }
 
+  Future<List<PeerSearchResult>> _samplePhoneMesh(SocialBackend backend) async {
+    final out = <PeerSearchResult>[];
+    final topics = List<String>.from(_suggestedTopics)..shuffle(Random());
+    for (final slug in topics.take(6)) {
+      if (out.length >= _sampleCap) break;
+      try {
+        final hits = await backend.searchPeers(topic: slug, maxResults: 8);
+        _merge(
+          out,
+          _filterNonBonded(
+            hits
+                .map((h) => PeerSearchResult(
+                      nodeId: h.nodeId,
+                      ownerId: h.ownerId,
+                      displayName: h.displayName,
+                      interests: h.interests,
+                      profileVisibility: h.profileVisibility,
+                      trustLevel: h.trustLevel,
+                    ))
+                .toList(),
+          ),
+        );
+      } catch (_) {}
+    }
+    // Also list remembered peers with empty topic.
+    try {
+      final all = await backend.searchPeers(maxResults: _sampleCap);
+      _merge(
+        out,
+        _filterNonBonded(
+          all
+              .map((h) => PeerSearchResult(
+                    nodeId: h.nodeId,
+                    ownerId: h.ownerId,
+                    displayName: h.displayName,
+                    interests: h.interests,
+                    profileVisibility: h.profileVisibility,
+                    trustLevel: h.trustLevel,
+                  ))
+              .toList(),
+        ),
+      );
+    } catch (_) {}
+    out.shuffle(Random());
+    return out.take(_sampleCap).toList();
+  }
+
   Future<void> _refreshSample({bool keepExisting = false}) async {
+    final socialCtx = ref.read(socialContextProvider);
+    if (socialCtx.isPhone) {
+      final backend = ref.read(socialBackendProvider);
+      if (backend == null) {
+        setState(() {
+          _loading = false;
+          _error = AppLocalizations.of(context).socialPhoneMeshStarting;
+        });
+        return;
+      }
+      setState(() {
+        if (!keepExisting) {
+          _loading = true;
+          _error = null;
+        } else {
+          _searching = true;
+        }
+      });
+      try {
+        await _refreshExclude();
+        final rows = await _samplePhoneMesh(backend);
+        if (!mounted) return;
+        setState(() {
+          _results = rows;
+          _fromSample = true;
+          _loading = false;
+          _searching = false;
+          _error = rows.isEmpty
+              ? AppLocalizations.of(context).peopleNoneFound
+              : null;
+        });
+        _persistSession();
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _searching = false;
+          if (!keepExisting) {
+            _results = const [];
+            _error = e.toString();
+          }
+        });
+      }
+      return;
+    }
+
     final client = ref.read(nodeServiceProvider);
     if (client == null) {
       setState(() {
@@ -238,14 +350,79 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   }
 
   Future<void> _runSearch() async {
-    final client = ref.read(nodeServiceProvider);
-    if (client == null) return;
     final l10n = AppLocalizations.of(context);
     final q = _queryCtrl.text.trim();
     if (q.isEmpty) {
       setState(() => _error = l10n.peopleEnterSearch);
       return;
     }
+
+    final socialCtx = ref.read(socialContextProvider);
+    if (socialCtx.isPhone) {
+      final backend = ref.read(socialBackendProvider);
+      if (backend == null) return;
+      setState(() {
+        _searching = true;
+        _error = null;
+      });
+      try {
+        await _refreshExclude();
+        final List<MeshPeerHit> hits;
+        if (_mode == _PeopleSearchMode.topic) {
+          final topic = _publishSearchTopic(q);
+          if (topic.isEmpty) {
+            setState(() {
+              _searching = false;
+              _error = l10n.peopleEnterSearch;
+            });
+            return;
+          }
+          hits = await backend.searchPeers(topic: topic, maxResults: 20);
+        } else {
+          hits = await backend.searchPeers(interests: [q], maxResults: 20);
+        }
+        var filtered = _filterNonBonded(
+          hits
+              .map((h) => PeerSearchResult(
+                    nodeId: h.nodeId,
+                    ownerId: h.ownerId,
+                    displayName: h.displayName,
+                    interests: h.interests,
+                    profileVisibility: h.profileVisibility,
+                    trustLevel: h.trustLevel,
+                  ))
+              .toList(),
+        );
+        var fromSample = false;
+        String? status;
+        if (filtered.isEmpty) {
+          filtered = await _samplePhoneMesh(backend);
+          fromSample = true;
+          status = filtered.isNotEmpty
+              ? l10n.peopleNoMatches
+              : l10n.peopleNoneFound;
+        }
+        if (!mounted) return;
+        setState(() {
+          _results = filtered;
+          _fromSample = fromSample;
+          _searching = false;
+          _error = status;
+        });
+        _persistSession();
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _searching = false;
+          _results = const [];
+          _error = e.toString();
+        });
+      }
+      return;
+    }
+
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
     setState(() {
       _searching = true;
       _error = null;
@@ -301,30 +478,58 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   }
 
   Future<void> _sayHello(PeerSearchResult peer) async {
-    final client = ref.read(nodeServiceProvider);
-    if (client == null || _helloBusyId != null) return;
+    if (_helloBusyId != null) return;
     final ownerId = peer.ownerId.trim();
     if (ownerId.isEmpty) return;
     final l10n = AppLocalizations.of(context);
     setState(() => _helloBusyId = ownerId);
     try {
-      final profile = await client.getHumanProfile();
-      final hobbies =
-          (profile['hobbies'] as List?)?.map((e) => e.toString()).toList() ??
-              const <String>[];
-      final knowledge =
-          (profile['knowledge'] as List?)?.map((e) => e.toString()).toList() ??
-              const <String>[];
-      await client.sendHello(
-        targetOwnerId: ownerId,
-        profile: {
-          'displayName': (profile['displayName'] as String?) ?? l10n.peopleEnvoyUser,
-          'bio': (profile['bio'] as String?) ?? '',
-          'interests': [...hobbies, ...knowledge],
-          'whatShares': <String>[],
-        },
-        message: l10n.peopleHelloMessage,
-      );
+      final socialCtx = ref.read(socialContextProvider);
+      if (socialCtx.isPhone) {
+        final backend = ref.read(socialBackendProvider);
+        if (backend == null) return;
+        if (backend is PhoneSocialBackend) {
+          await backend.rememberPeer(PhonePeerRecord(
+            ownerId: ownerId,
+            libp2pPeerId: peer.nodeId,
+            displayName: peer.displayName,
+          ));
+        }
+        final profile = await backend.getHumanProfile() ??
+            {'displayName': l10n.peopleEnvoyUser};
+        await backend.sendHello(
+          targetOwnerId: ownerId,
+          profile: {
+            'displayName':
+                (profile['displayName'] as String?) ?? l10n.peopleEnvoyUser,
+            'bio': (profile['bio'] as String?) ?? '',
+            'interests': peer.interests,
+            'whatShares': <String>[],
+          },
+          message: l10n.peopleHelloMessage,
+        );
+      } else {
+        final client = ref.read(nodeServiceProvider);
+        if (client == null) return;
+        final profile = await client.getHumanProfile();
+        final hobbies =
+            (profile['hobbies'] as List?)?.map((e) => e.toString()).toList() ??
+                const <String>[];
+        final knowledge =
+            (profile['knowledge'] as List?)?.map((e) => e.toString()).toList() ??
+                const <String>[];
+        await client.sendHello(
+          targetOwnerId: ownerId,
+          profile: {
+            'displayName':
+                (profile['displayName'] as String?) ?? l10n.peopleEnvoyUser,
+            'bio': (profile['bio'] as String?) ?? '',
+            'interests': [...hobbies, ...knowledge],
+            'whatShares': <String>[],
+          },
+          message: l10n.peopleHelloMessage,
+        );
+      }
       if (!mounted) return;
       setState(() {
         _outboundHellos.add(ownerId);
@@ -385,8 +590,9 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   Widget build(BuildContext context) {
     super.build(context);
     final l10n = AppLocalizations.of(context);
+    final socialCtx = ref.watch(socialContextProvider);
     final nodeState = ref.watch(nodeProvider);
-    if (nodeState.activeNode == null) {
+    if (!socialCtx.isPhone && nodeState.activeNode == null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -439,6 +645,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
+          const CrossPersonaSuggestionsSection(),
           const SizedBox(height: 12),
           SegmentedButton<_PeopleSearchMode>(
             segments: [

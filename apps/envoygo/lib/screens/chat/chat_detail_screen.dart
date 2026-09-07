@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:envoy_mesh/envoy_mesh.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +19,7 @@ import '../../models/web_content.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../providers/social_context_provider.dart';
 import '../../services/chat_voice_note.dart';
 import '../../services/family_content_fetch.dart';
 import '../../services/vault_content_fetch.dart';
@@ -122,11 +124,15 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   }
 
   /// Human threads (contact / mesh group / family DM / family room) — not agents.
-  bool get _isHumanMediaChat => !_isAgent;
+  /// Phone social-lite is text-only for now (no vault / voice attach path).
+  bool get _isHumanMediaChat =>
+      !_isAgent && !_isPhoneSocial;
 
-  /// Vault share only for bonded mesh DMs (matches Social ContactChatPanel).
-  bool get _supportsVaultShare =>
-      !_isAgent && !_isRoom && !_isFamily && _resolvedContactOwnerId != null;
+  /// Vault share only for bonded mesh DMs on Home (matches Social ContactChatPanel).
+  bool get _supportsVaultShare {
+    if (ref.watch(socialContextProvider).isPhone) return false;
+    return !_isAgent && !_isRoom && !_isFamily && _resolvedContactOwnerId != null;
+  }
 
   /// Prefer explicit contactOwnerId; fall back to thread id suffix.
   String? get _resolvedContactOwnerId {
@@ -134,9 +140,19 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       return widget.contactOwnerId;
     }
     if (_isAgent || _isRoom || _isFamily) return null;
-    final nodeId = ref.read(nodeProvider).activeNode?.id;
+    final thread = ref
+        .watch(chatProvider)
+        .threads
+        .where((t) => t.id == widget.threadId)
+        .firstOrNull;
+    final nodeId = thread?.nodeId ??
+        (ref.read(socialContextProvider).isPhone
+            ? phoneLocalContextId
+            : ref.read(nodeProvider).activeNode?.id);
     return threadPeerSuffix(widget.threadId, nodeId);
   }
+
+  bool get _isPhoneSocial => ref.watch(socialContextProvider).isPhone;
 
   bool _modelDisabled = false;
 

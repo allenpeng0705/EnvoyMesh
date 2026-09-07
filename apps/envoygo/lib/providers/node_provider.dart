@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:dart_libp2p/dart_libp2p.dart';
+import 'package:envoy_mesh/envoy_mesh.dart';
 import 'package:envoy_thin_client/models/stored_node.dart';
 import 'package:envoy_thin_client/services/candidate_resolver.dart';
 import 'package:envoy_thin_client/services/client_proxy_transport.dart';
@@ -28,6 +29,7 @@ import 'chat_provider.dart';
 import 'contact_provider.dart';
 import 'content_engage_provider.dart';
 import 'feed_notify_provider.dart';
+import 'social_context_provider.dart';
 import 'terminal_provider.dart';
 
 /// Log a message that is always visible, even in release builds.
@@ -272,6 +274,33 @@ class NodeNotifier extends StateNotifier<NodeState> {
         super(const NodeState());
 
   HomeRemoteClient? get client => _client;
+
+  /// Shared libp2p host (home dial + phone mesh). Null until first start.
+  Libp2pNode? get libp2pNode => _libp2pNode;
+
+  /// Start the shared libp2p host if needed (phone mesh or home circuit dial).
+  ///
+  /// Uses the active node's bootstrap peers when paired; otherwise the
+  /// community relay defaults so unpaired phone mesh can still reserve.
+  Future<Libp2pNode?> ensureLibp2pStarted() async {
+    try {
+      _libp2pNode ??= Libp2pNode(secureStorage: _secureStorage);
+      if (!_libp2pNode!.isStarted) {
+        final fromNode = state.activeNode?.bootstrapPeers ?? const <String>[];
+        final bootstrap = fromNode.isNotEmpty
+            ? fromNode
+            : defaultEnvoyCommunityRelayBootstrapAddrs;
+        await _libp2pNode!.start(
+          bootstrapAddrs: bootstrap,
+          enableRelay: true,
+        );
+      }
+      return _libp2pNode;
+    } catch (e) {
+      _log('ensureLibp2pStarted failed: $e');
+      return null;
+    }
+  }
 
   /// Load all paired nodes from local storage on app start.
   Future<void> loadPairedNodes() async {
@@ -818,7 +847,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
         terminalNotifier);
 
     // Sync contacts / mesh rooms / terminals — owner only (Phase 51E).
-    if (state.isOwnerProfile) {
+    // Skip when Social context is phone — phone persona uses SocialBackend.
+    if (state.isOwnerProfile &&
+        !_ref.read(socialContextProvider).isPhone) {
       _syncBondsDirect(nodeService, contactNotifier).then((_) {
         final node = state.activeNode;
         if (node != null) {
@@ -837,7 +868,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       // Phase 45E — pull persisted feed.notify Inbox rows from home.
       _ref.read(feedNotifyProvider.notifier).refresh();
       _ref.read(contentEngageProvider.notifier).refresh();
-    } else {
+    } else if (!state.isOwnerProfile) {
       // Family members: restore cached AI + family threads only.
       final node = state.activeNode;
       if (node != null) {
@@ -1111,6 +1142,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
         filtered.map((c) => c.toJson()).toList(),
       );
       // Update contact state directly (avoid nodeServiceProvider null cache).
+      // setBonds no-ops while Social context is phone (isolation).
       contactNotifier.setBonds(filtered);
     } catch (e) {
       _log('_syncBondsDirect failed: $e');
@@ -1240,6 +1272,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
         // DHT bootstrap: use the same bootstrap peers as the home node.
         // Also used as circuit relay hop when dialing /p2p-circuit/.
         bootstrapAddrs: bootstrapPeers,
+        // Required for CircuitV2Client (home circuit dials + phone mesh reserve).
+        enableRelay: true,
       );
     }
 
@@ -1332,27 +1366,32 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     // -- WebSocket push events --
     client.on('chat:message', (data) {
+      if (_ref.read(socialContextProvider).isPhone) return;
       _log('[push] chat:message received: $data');
       if (data is Map<String, dynamic>) {
         chatNotifier.onChatMessage(data);
       }
     });
     client.on('chat:room-message', (data) {
+      if (_ref.read(socialContextProvider).isPhone) return;
       if (data is Map<String, dynamic>) {
         chatNotifier.onRoomMessage(data);
       }
     });
     client.on('chat:delivered', (data) {
+      if (_ref.read(socialContextProvider).isPhone) return;
       if (data is Map<String, dynamic>) {
         chatNotifier.onChatDelivered(data);
       }
     });
     client.on('chat:delivery-failed', (data) {
+      if (_ref.read(socialContextProvider).isPhone) return;
       if (data is Map<String, dynamic>) {
         chatNotifier.onChatDeliveryFailed(data);
       }
     });
     client.on('chat:room-updated', (data) {
+      if (_ref.read(socialContextProvider).isPhone) return;
       // Mesh room events are owner-only; family rooms also arrive here
       // remapped — family members still need room-updated for groups.
       if (data is Map<String, dynamic>) {
@@ -1360,6 +1399,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       }
     });
     client.on('chat:room-removed', (data) {
+      if (_ref.read(socialContextProvider).isPhone) return;
       if (data is Map<String, dynamic>) {
         final roomId = data['roomId'] as String?;
         if (roomId != null && roomId.isNotEmpty) {
@@ -1368,10 +1408,12 @@ class NodeNotifier extends StateNotifier<NodeState> {
       }
     });
     client.on('bond:established', (_) {
+      if (_ref.read(socialContextProvider).isPhone) return;
       if (!state.isOwnerProfile) return;
       contactNotifier.onBondEstablished();
     });
     client.on('bond:revoked', (data) {
+      if (_ref.read(socialContextProvider).isPhone) return;
       if (!state.isOwnerProfile) return;
       if (data is Map<String, dynamic>) {
         contactNotifier

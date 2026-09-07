@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/node_provider.dart';
+import '../providers/social_context_provider.dart';
 
 /// Returns true if the transport avoids a relay server.
 /// - "lan" / "public": WebSocket directly to home (no relay)
@@ -60,6 +61,44 @@ class ConnectionIndicator extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
+    final socialCtx = ref.watch(socialContextProvider);
+    if (socialCtx.isPhone) {
+      final mesh = ref.watch(phoneMeshRuntimeProvider);
+      final color = mesh.sessionActive ? Colors.green : Colors.orange;
+      final tooltip = mesh.sessionActive
+          ? l10n.socialPhoneMeshForegroundHint
+          : (mesh.lastError ?? l10n.socialPhoneMeshStarting);
+      return Tooltip(
+        message: tooltip,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              mesh.sessionActive ? Icons.cell_tower : Icons.hourglass_top,
+              color: color,
+              size: 20,
+            ),
+            const SizedBox(width: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                l10n.socialContextPhone,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final nodeState = ref.watch(nodeProvider);
 
     IconData icon;

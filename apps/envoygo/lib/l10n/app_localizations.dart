@@ -138,6 +138,114 @@ abstract class AppLocalizations {
   /// **'Social'**
   String get navSocial;
 
+  /// No description provided for @socialContextPhone.
+  ///
+  /// In en, this message translates to:
+  /// **'On this phone'**
+  String get socialContextPhone;
+
+  /// No description provided for @socialContextHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get socialContextHome;
+
+  /// No description provided for @socialContextSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Social identity'**
+  String get socialContextSheetTitle;
+
+  /// No description provided for @socialContextPhoneSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Independent mesh persona on this device'**
+  String get socialContextPhoneSubtitle;
+
+  /// No description provided for @socialContextHomeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use your home node (thin client)'**
+  String get socialContextHomeSubtitle;
+
+  /// No description provided for @socialContextNoHome.
+  ///
+  /// In en, this message translates to:
+  /// **'No home paired yet — pair a computer to use Home Social.'**
+  String get socialContextNoHome;
+
+  /// No description provided for @socialHomeOnlyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Available on Home'**
+  String get socialHomeOnlyTitle;
+
+  /// No description provided for @socialHomeOnlyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch Social identity to a paired home computer for this feature. On this phone supports chats, contacts, and discover.'**
+  String get socialHomeOnlyBody;
+
+  /// No description provided for @socialPhoneMeshForegroundHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Mesh is on while EnvoyGo is open. Keep the app in the foreground to send and receive.'**
+  String get socialPhoneMeshForegroundHint;
+
+  /// No description provided for @socialPhoneMeshStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting phone mesh…'**
+  String get socialPhoneMeshStarting;
+
+  /// No description provided for @crossPersonaSuggestionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'From your other identity'**
+  String get crossPersonaSuggestionsTitle;
+
+  /// No description provided for @crossPersonaSuggestionsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'People you already bonded on the other Social identity. Saying Hello here does not merge chats — it starts a new bond on this identity.'**
+  String get crossPersonaSuggestionsSubtitle;
+
+  /// No description provided for @crossPersonaFromHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Bonded on Home'**
+  String get crossPersonaFromHome;
+
+  /// No description provided for @crossPersonaFromPhone.
+  ///
+  /// In en, this message translates to:
+  /// **'Bonded on this phone'**
+  String get crossPersonaFromPhone;
+
+  /// No description provided for @crossPersonaSayHello.
+  ///
+  /// In en, this message translates to:
+  /// **'Say Hello'**
+  String get crossPersonaSayHello;
+
+  /// No description provided for @crossPersonaDismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get crossPersonaDismiss;
+
+  /// No description provided for @crossPersonaHelloSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Hello sent. They still need to accept on this identity.'**
+  String get crossPersonaHelloSent;
+
+  /// No description provided for @crossPersonaHelloFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not send Hello.'**
+  String get crossPersonaHelloFailed;
+
   /// No description provided for @navTerminal.
   ///
   /// In en, this message translates to:

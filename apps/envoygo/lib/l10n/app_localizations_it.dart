@@ -24,6 +24,66 @@ class AppLocalizationsIt extends AppLocalizations {
   String get navSocial => 'Social';
 
   @override
+  String get socialContextPhone => 'On this phone';
+
+  @override
+  String get socialContextHome => 'Home';
+
+  @override
+  String get socialContextSheetTitle => 'Social identity';
+
+  @override
+  String get socialContextPhoneSubtitle =>
+      'Independent mesh persona on this device';
+
+  @override
+  String get socialContextHomeSubtitle => 'Use your home node (thin client)';
+
+  @override
+  String get socialContextNoHome =>
+      'No home paired yet — pair a computer to use Home Social.';
+
+  @override
+  String get socialHomeOnlyTitle => 'Available on Home';
+
+  @override
+  String get socialHomeOnlyBody =>
+      'Switch Social identity to a paired home computer for this feature. On this phone supports chats, contacts, and discover.';
+
+  @override
+  String get socialPhoneMeshForegroundHint =>
+      'Mesh is on while EnvoyGo is open. Keep the app in the foreground to send and receive.';
+
+  @override
+  String get socialPhoneMeshStarting => 'Starting phone mesh…';
+
+  @override
+  String get crossPersonaSuggestionsTitle => 'From your other identity';
+
+  @override
+  String get crossPersonaSuggestionsSubtitle =>
+      'People you already bonded on the other Social identity. Saying Hello here does not merge chats — it starts a new bond on this identity.';
+
+  @override
+  String get crossPersonaFromHome => 'Bonded on Home';
+
+  @override
+  String get crossPersonaFromPhone => 'Bonded on this phone';
+
+  @override
+  String get crossPersonaSayHello => 'Say Hello';
+
+  @override
+  String get crossPersonaDismiss => 'Dismiss';
+
+  @override
+  String get crossPersonaHelloSent =>
+      'Hello sent. They still need to accept on this identity.';
+
+  @override
+  String get crossPersonaHelloFailed => 'Could not send Hello.';
+
+  @override
   String get navTerminal => 'Terminale';
 
   @override

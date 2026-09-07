@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../mesh/social_model_adapters.dart';
 import '../models/contact.dart';
 import '../services/node_service_client.dart';
 import '../storage/local_database.dart';
 import 'node_provider.dart';
+import 'social_context_provider.dart';
 
 /// State for the contacts subsystem.
 class ContactState {
@@ -52,31 +54,48 @@ class ContactNotifier extends StateNotifier<ContactState> {
 
   ContactNotifier(this._ref) : super(const ContactState());
 
-  /// Sync bonded contacts from the home node via RPC.
+  /// Sync bonded contacts from the active SocialBackend (Home RPC or phone mesh).
   Future<void> syncBonds() async {
     final nodeProviderNotifier = _ref.read(nodeProvider.notifier);
     final nodeState = _ref.read(nodeProvider);
-
-    final client = nodeProviderNotifier.client;
-    if (client == null || nodeState.activeNode == null) return;
+    final ctx = _ref.read(socialContextProvider);
+    final backend = _ref.read(socialBackendProvider);
 
     try {
       state = state.copyWith(isLoading: true);
-      final bonds = await _ref
-          .read(nodeServiceProvider)!
-          .getBonds();
 
-      // Cache in local DB.
-      await _localDb.upsertContacts(
-        nodeState.activeNode!.id,
-        bonds.map((c) => c.toJson()).toList(),
-      );
+      // Phone context must never fall back to Home bonds (isolation).
+      if (ctx.isPhone) {
+        if (backend == null) {
+          state = state.copyWith(bonds: const [], isLoading: false);
+          return;
+        }
+        final bonds =
+            (await backend.getBonds()).map(contactFromBond).toList();
+        state = state.copyWith(bonds: bonds, isLoading: false);
+        return;
+      }
 
-      // Filter out self-identity "Mobile" shared-identity contact.
-      // See [filterSelfBonds] for the rule; this must stay in sync
-      // with the equivalent filter in `NodeNotifier._syncBondsDirect`.
+      List<Contact> bonds;
+      if (backend != null) {
+        bonds = (await backend.getBonds()).map(contactFromBond).toList();
+      } else {
+        final client = nodeProviderNotifier.client;
+        if (client == null || nodeState.activeNode == null) {
+          state = state.copyWith(isLoading: false);
+          return;
+        }
+        bonds = await _ref.read(nodeServiceProvider)!.getBonds();
+      }
+
+      if (nodeState.activeNode != null) {
+        await _localDb.upsertContacts(
+          nodeState.activeNode!.id,
+          bonds.map((c) => c.toJson()).toList(),
+        );
+      }
+
       final filtered = filterSelfBonds(bonds, nodeState.ownerId);
-
       state = state.copyWith(bonds: filtered, isLoading: false);
     } catch (e) {
       state = state.copyWith(isLoading: false);
@@ -99,8 +118,11 @@ class ContactNotifier extends StateNotifier<ContactState> {
     );
   }
 
-  /// Update bonds directly (used by NodeProvider after fetching).
+  /// Update bonds directly (used by NodeProvider after fetching Home bonds).
+  /// No-op while Social context is phone — Home reconnect must not clobber
+  /// the phone-persona contact list.
   void setBonds(List<Contact> bonds) {
+    if (_ref.read(socialContextProvider).isPhone) return;
     state = state.copyWith(bonds: bonds, isLoading: false);
   }
 
@@ -128,4 +150,13 @@ final nodeServiceProvider = Provider<NodeServiceClient?>((ref) {
   final client = ref.read(nodeProvider.notifier).client;
   if (client == null) return null;
   return NodeServiceClient(client);
+});
+
+/// Rebuild contact list when Social context switches Home ↔ phone.
+final socialContextContactSyncProvider = Provider<void>((ref) {
+  ref.listen(socialContextProvider, (prev, next) {
+    if (prev != next) {
+      ref.read(contactProvider.notifier).syncBonds();
+    }
+  });
 });

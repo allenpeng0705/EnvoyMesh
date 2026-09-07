@@ -15,6 +15,9 @@ dependencies:
   # Shared thin-client core (pure-Dart workspace package).
   envoy_thin_client:
     path: ../../packages/envoy-thin-client-dart
+  # Social-lite mesh SDK (identity, EMP, phone backend).
+  envoy_mesh:
+    path: ../../packages/envoy-mesh-dart
   # Transport
   web_socket_channel: ^3.0.2
   # State

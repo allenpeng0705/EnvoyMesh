@@ -11,29 +11,55 @@ import 'package:dart_libp2p/core/crypto/ed25519.dart' as crypto_ed25519;
 import 'package:dart_libp2p/p2p/transport/tcp_transport.dart';
 import 'package:dart_libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
 import 'package:dart_libp2p/p2p/host/resource_manager/limiter.dart';
+import 'package:dart_libp2p/p2p/protocol/circuitv2/client/reservation.dart';
+import 'package:envoy_mesh/envoy_mesh.dart';
 import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:envoygo/storage/secure_storage.dart';
 
-/// A minimal libp2p host for the EnvoyGo thin client.
+/// Inbound stream handler for a registered protocol.
+typedef Libp2pStreamHandler = Future<void> Function(
+  P2PStream stream,
+  PeerId remotePeer,
+);
+
+/// Testable surface used by [PhoneMeshSession] (shared host mesh controls).
+abstract class Libp2pMeshHost {
+  bool get isStarted;
+  Set<String> get registeredProtocols;
+  String? get reservedRelayPeerId;
+
+  void registerStreamHandler(String protocolId, Libp2pStreamHandler handler);
+  void removeStreamHandler(String protocolId);
+  Future<void> reserveRelay(String relayMultiaddr);
+  Future<void> releaseRelayReservation();
+}
+
+/// A minimal libp2p host for the EnvoyGo thin client **and** phone social-lite.
 ///
 /// Creates a libp2p node with:
 /// - TCP transport
 /// - Noise XX handshake (X25519 key exchange + ChaChaPoly)
 /// - Stream muxing (yamux)
 /// - Kademlia DHT client for peer discovery
-/// - Circuit relay support for NAT traversal
+/// - Circuit relay support for NAT traversal (`enableRelay`)
 ///
-/// The node maintains its own Ed25519 peer identity. On first startup it
-/// generates a key pair and persists the seed to [secureStorage]. On
-/// subsequent runs it loads the seed and recreates the same peer ID, so the
-/// home node can find this mobile via DHT and dial it back directly.
-class Libp2pNode {
+/// Shared host: one PeerId from [secureStorage] seed serves (a) client-proxy
+/// dial to home and (b) phone-mesh handlers/reservation when Social context is
+/// **On this phone**. Envoy owner/device keys are separate (see PhoneIdentityStore).
+class Libp2pNode implements Libp2pMeshHost {
   p2p_host.BasicHost? _host;
   IpfsDHT? _dht;
   PeerId? _peerId;
   bool _started = false;
+  bool _enableRelay = false;
   final SecureStorage _secureStorage;
   static const _seedKey = 'libp2p_identity_seed';
+
+  /// Protocols currently registered via [registerStreamHandler].
+  final Set<String> _registeredProtocols = {};
+
+  /// PeerId string of the relay we last successfully reserved, if any.
+  String? _reservedRelayPeerId;
 
   Libp2pNode({required SecureStorage secureStorage})
       : _secureStorage = secureStorage;
@@ -42,7 +68,19 @@ class Libp2pNode {
   PeerId? get peerId => _peerId;
 
   /// Whether the node is running.
+  @override
   bool get isStarted => _started;
+
+  /// Whether circuit-relay client transport was enabled at [start].
+  bool get relayEnabled => _enableRelay;
+
+  /// PeerId of the active circuit reservation, if any.
+  @override
+  String? get reservedRelayPeerId => _reservedRelayPeerId;
+
+  /// Snapshot of registered protocol IDs (for tests / debugging).
+  @override
+  Set<String> get registeredProtocols => Set.unmodifiable(_registeredProtocols);
 
   /// Load a key pair from [seed], or generate a fresh one.
   Future<KeyPair> _loadOrCreateKeyPair(Uint8List? seed) async {
@@ -60,13 +98,18 @@ class Libp2pNode {
   /// Start the libp2p host with DHT support.
   ///
   /// [listenAddrs] are multiaddrs to listen on, e.g. `/ip4/0.0.0.0/tcp/0`.
-  /// Pass an empty list for client-only mode (no listening).
+  /// Pass an empty list for no TCP listener (circuit inbound still works when
+  /// [enableRelay] is true — dart_libp2p listens on `/p2p-circuit`).
   /// [bootstrapAddrs] are DHT bootstrap peer multiaddrs to connect to.
   /// These peers are also used as circuit relay hops when dialing through
   /// `/p2p-circuit/` addresses.
+  ///
+  /// [enableRelay] must be true for dart_libp2p `CircuitV2Client` (home circuit
+  /// dials + phone mesh reservation). Default true.
   Future<void> start({
     List<String> listenAddrs = const [],
     List<String> bootstrapAddrs = const [],
+    bool enableRelay = true,
   }) async {
     if (_started) return;
 
@@ -102,13 +145,17 @@ class Libp2pNode {
     final resourceManager = ResourceManagerImpl(limiter: FixedLimiter());
     final config = Config()
       ..peerKey = keyPair
-      ..transports.add(TCPTransport(resourceManager: resourceManager));
+      ..transports.add(TCPTransport(resourceManager: resourceManager))
+      ..enableRelay = enableRelay;
 
     if (listenAddrs.isNotEmpty) {
       config.listenAddrs = listenAddrs.map((a) => MultiAddr(a)).toList();
     }
 
     await applyDefaults(config);
+    // applyDefaults may reset flags — re-assert relay after defaults.
+    config.enableRelay = enableRelay;
+    _enableRelay = enableRelay;
 
     _host = await config.newNode() as p2p_host.BasicHost;
     await _host!.start();
@@ -254,8 +301,86 @@ class Libp2pNode {
     return multiaddr.substring(lastP2p + 5);
   }
 
+  /// Register an inbound handler for [protocolId] (e.g. chat / message).
+  ///
+  /// Replaces any previous handler for the same protocol on this host.
+  @override
+  void registerStreamHandler(String protocolId, Libp2pStreamHandler handler) {
+    if (_host == null) throw StateError('Libp2pNode not started');
+    _host!.setStreamHandler(protocolId, (stream, remotePeer) async {
+      await handler(stream, remotePeer);
+    });
+    _registeredProtocols.add(protocolId);
+    debugPrint('[Libp2pNode] registered handler: $protocolId');
+  }
+
+  /// Remove a previously registered protocol handler.
+  @override
+  void removeStreamHandler(String protocolId) {
+    if (_host == null) return;
+    _host!.removeStreamHandler(protocolId);
+    _registeredProtocols.remove(protocolId);
+    debugPrint('[Libp2pNode] removed handler: $protocolId');
+  }
+
+  /// Remove all handlers registered via [registerStreamHandler].
+  void removeAllStreamHandlers() {
+    for (final protocolId in List<String>.from(_registeredProtocols)) {
+      removeStreamHandler(protocolId);
+    }
+  }
+
+  /// Reserve a circuit-relay v2 slot on [relayMultiaddr] (community relay).
+  ///
+  /// Requires [enableRelay] true at [start]. Connects to the relay first if needed.
+  @override
+  Future<void> reserveRelay(String relayMultiaddr) async {
+    if (_host == null) throw StateError('Libp2pNode not started');
+    final client = _host!.circuitV2Client;
+    if (client == null) {
+      throw StateError(
+        'CircuitV2Client unavailable — start Libp2pNode with enableRelay: true',
+      );
+    }
+    final relayPeerIdStr = peerIdFromBootstrapMultiaddr(relayMultiaddr);
+    if (relayPeerIdStr == null) {
+      throw ArgumentError('Invalid relay multiaddr (no /p2p/): $relayMultiaddr');
+    }
+    final relayPeerId = PeerId.fromString(relayPeerIdStr);
+    final addr = MultiAddr(relayMultiaddr);
+    try {
+      await _host!.connect(
+        AddrInfo(relayPeerId, [addr]),
+        context: Context(),
+      );
+    } catch (e) {
+      debugPrint('[Libp2pNode] relay connect before reserve: $e');
+      // continue — reserve may still work if already connected
+    }
+    await client.reserve(relayPeerId);
+    _reservedRelayPeerId = relayPeerIdStr;
+    debugPrint('[Libp2pNode] reserved relay: $relayPeerIdStr');
+  }
+
+  /// Clear local reservation tracking.
+  ///
+  /// dart_libp2p does not expose an explicit unreserve API; dropping the
+  /// tracked id means we will re-reserve on next [reserveRelay]. Relay slots
+  /// expire server-side on TTL.
+  @override
+  Future<void> releaseRelayReservation() async {
+    if (_reservedRelayPeerId != null) {
+      debugPrint(
+        '[Libp2pNode] releasing relay reservation tracking: $_reservedRelayPeerId',
+      );
+    }
+    _reservedRelayPeerId = null;
+  }
+
   /// Stop the host and release all resources.
   Future<void> stop() async {
+    removeAllStreamHandlers();
+    await releaseRelayReservation();
     if (_dht != null) {
       await _dht!.close();
       _dht = null;
@@ -265,6 +390,7 @@ class Libp2pNode {
       _host = null;
     }
     _started = false;
+    _enableRelay = false;
   }
 }
 
@@ -309,6 +435,9 @@ class Libp2pStreamTransport implements WebSocketLike {
   void Function()? onError;
 
   Libp2pStreamTransport(this._stream);
+
+  /// Underlying libp2p stream (one-shot mesh envelope I/O without WS mode).
+  P2PStream get rawStream => _stream;
 
   /// Perform the client-proxy handshake over this stream.
   ///
