@@ -52,17 +52,17 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get socialPhoneMeshForegroundHint =>
-      'Mesh is on while EnvoyGo is open. Keep the app in the foreground to send and receive.';
+      'Phone mesh is on while EnvoyGo is open — used for On this phone chats and unpaired Discover.';
 
   @override
   String get socialPhoneMeshStarting => 'Starting phone mesh…';
 
   @override
-  String get crossPersonaSuggestionsTitle => 'From your other identity';
+  String get crossPersonaSuggestionsTitle => 'Also know them on this phone?';
 
   @override
   String get crossPersonaSuggestionsSubtitle =>
-      'People you already bonded on the other Social identity. Saying Hello here does not merge chats — it starts a new bond on this identity.';
+      'People you already bonded on Home. Saying Hello starts a separate bond on this phone — chats stay separate.';
 
   @override
   String get crossPersonaFromHome => 'Bonded on Home';
@@ -1257,6 +1257,12 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get chatsSectionContacts => '連絡先';
+
+  @override
+  String get chatsSectionHomeContacts => 'Home contacts';
+
+  @override
+  String get chatsSectionPhoneContacts => 'On this phone';
 
   @override
   String get chatsSectionGroups => 'グループ';

@@ -1,5 +1,7 @@
+import 'package:envoy_mesh/envoy_mesh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
@@ -7,7 +9,7 @@ import '../../widgets/contact_tile.dart';
 import '../chat/chat_detail_screen.dart';
 import '../profile/profile_screen.dart';
 
-/// Bonded contacts list.
+/// Bonded contacts — Home section (when paired) + On this phone section.
 class ContactsScreen extends ConsumerWidget {
   const ContactsScreen({super.key});
 
@@ -15,9 +17,12 @@ class ContactsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final contactState = ref.watch(contactProvider);
-    final bonds = contactState.bonds;
+    final homeId = ref.watch(nodeProvider).activeNode?.id;
+    final homeBonds = contactState.homeBonds;
+    final phoneBonds = contactState.phoneBonds;
+    final empty = homeBonds.isEmpty && phoneBonds.isEmpty;
 
-    if (bonds.isEmpty) {
+    if (empty) {
       return ListView(
         children: [
           Padding(
@@ -33,13 +38,11 @@ class ContactsScreen extends ConsumerWidget {
             child: Center(
               child: Column(
                 children: [
-                  const Icon(Icons.people_outline, size: 64,
-                      color: Colors.grey),
+                  const Icon(Icons.people_outline, size: 64, color: Colors.grey),
                   const SizedBox(height: 16),
                   Text(
                     l10n.contactsEmpty,
-                    style:
-                        const TextStyle(fontSize: 18, color: Colors.grey),
+                    style: const TextStyle(fontSize: 18, color: Colors.grey),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -65,36 +68,77 @@ class ContactsScreen extends ConsumerWidget {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            itemCount: bonds.length,
-            itemBuilder: (context, index) {
-              final contact = bonds[index];
-              return ContactTile(
-                contact: contact,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ProfileScreen(ownerId: contact.ownerId),
-                    ),
-                  );
-                },
-                onChat: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ChatDetailScreen(
-                        threadId: '${ref.read(nodeProvider).activeNode?.id}:${contact.ownerId}',
-                        displayName:
-                            contact.displayName ?? contact.ownerId,
-                        contactOwnerId: contact.ownerId,
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
+          child: ListView(
+            children: [
+              if (homeId != null && homeBonds.isNotEmpty) ...[
+                _SectionHeader(l10n.chatsSectionHomeContacts),
+                ...homeBonds.map(
+                  (c) => ContactTile(
+                    contact: c,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ProfileScreen(ownerId: c.ownerId),
+                        ),
+                      );
+                    },
+                    onChat: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ChatDetailScreen(
+                            threadId: '$homeId:${c.ownerId}',
+                            displayName: c.displayName ?? c.ownerId,
+                            contactOwnerId: c.ownerId,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+              if (phoneBonds.isNotEmpty) ...[
+                _SectionHeader(l10n.chatsSectionPhoneContacts),
+                ...phoneBonds.map(
+                  (c) => ContactTile(
+                    contact: c,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ProfileScreen(ownerId: c.ownerId),
+                        ),
+                      );
+                    },
+                    onChat: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ChatDetailScreen(
+                            threadId: phoneDmThreadId(c.ownerId),
+                            displayName: c.displayName ?? c.ownerId,
+                            contactOwnerId: c.ownerId,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.title);
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Text(title, style: Theme.of(context).textTheme.titleSmall),
     );
   }
 }

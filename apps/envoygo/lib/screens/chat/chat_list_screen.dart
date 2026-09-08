@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:envoy_mesh/envoy_mesh.dart' show phoneLocalContextId;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
@@ -133,9 +134,16 @@ class ChatListScreen extends ConsumerWidget {
         )
         .toList();
     // Mesh contacts / mesh groups / terminals are owner-only (Phase 51E).
-    final contacts = isOwner
+    final phoneId = phoneLocalContextId;
+    final homeId = ref.watch(nodeProvider).activeNode?.id;
+    final allDirect = isOwner
         ? threads.where((t) => t.type == ChatThreadType.direct).toList()
         : <ChatThread>[];
+    final phoneContacts =
+        allDirect.where((t) => t.nodeId == phoneId).toList();
+    final homeContacts = allDirect
+        .where((t) => homeId != null && t.nodeId == homeId)
+        .toList();
     final groups = isOwner
         ? threads.where((t) => t.type == ChatThreadType.group).toList()
         : <ChatThread>[];
@@ -158,8 +166,13 @@ class ChatListScreen extends ConsumerWidget {
     if (family.isNotEmpty) {
       sections.add(_ThreadSection(l10n.chatsSectionFamily, family));
     }
-    if (contacts.isNotEmpty) {
-      sections.add(_ThreadSection(l10n.chatsSectionContacts, contacts));
+    if (homeContacts.isNotEmpty) {
+      sections.add(_ThreadSection(l10n.chatsSectionHomeContacts, homeContacts));
+    }
+    if (phoneContacts.isNotEmpty) {
+      sections.add(
+        _ThreadSection(l10n.chatsSectionPhoneContacts, phoneContacts),
+      );
     }
     if (groups.isNotEmpty) {
       sections.add(_ThreadSection(l10n.chatsSectionGroups, groups));

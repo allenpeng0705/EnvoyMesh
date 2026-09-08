@@ -6,34 +6,35 @@ import '../storage/local_database.dart';
 import 'node_provider.dart';
 import 'social_context_provider.dart';
 
-/// State for the contacts subsystem.
+/// State for the contacts subsystem (Home + phone sections).
 class ContactState {
-  final List<Contact> bonds;
+  final List<Contact> homeBonds;
+  final List<Contact> phoneBonds;
   final bool isLoading;
 
   const ContactState({
-    this.bonds = const [],
+    this.homeBonds = const [],
+    this.phoneBonds = const [],
     this.isLoading = false,
   });
 
-  ContactState copyWith({List<Contact>? bonds, bool? isLoading}) {
+  /// Combined list (Home first). Prefer [homeBonds] / [phoneBonds] for UI sections.
+  List<Contact> get bonds => [...homeBonds, ...phoneBonds];
+
+  ContactState copyWith({
+    List<Contact>? homeBonds,
+    List<Contact>? phoneBonds,
+    bool? isLoading,
+  }) {
     return ContactState(
-      bonds: bonds ?? this.bonds,
+      homeBonds: homeBonds ?? this.homeBonds,
+      phoneBonds: phoneBonds ?? this.phoneBonds,
       isLoading: isLoading ?? this.isLoading,
     );
   }
 }
 
 /// Filter out self-identity bonds from a list returned by the home.
-///
-/// The home node returns a self-bond for the multi-device shared
-/// identity, in two shapes:
-///   - `envoy:owner:<sha256(ownerPub)>` (the owner's own ID)
-///   - `envoy_device_<...>` (a device key tied to the same owner)
-///
-/// The mobile contacts list must never include the user themselves,
-/// so drop both. Pure function, exported so `NodeNotifier._syncBondsDirect`
-/// can share the exact same rule.
 List<Contact> filterSelfBonds(List<Contact> bonds, String? selfOwnerId) {
   return bonds.where((c) {
     if (selfOwnerId != null && c.ownerId == selfOwnerId) return false;
@@ -54,97 +55,97 @@ class ContactNotifier extends StateNotifier<ContactState> {
 
   ContactNotifier(this._ref) : super(const ContactState());
 
-  /// Sync bonded contacts from the active SocialBackend (Home RPC or phone mesh).
+  /// Sync Home and/or phone bonds (both when paired).
+  /// When a backend is unreachable, keep the last known list (and fall back
+  /// to SQLite for Home) instead of wiping the section blank.
+  /// Phone and Home updates are applied independently so a home failure
+  /// cannot discard a successful phone fetch (and vice versa).
   Future<void> syncBonds() async {
     final nodeProviderNotifier = _ref.read(nodeProvider.notifier);
     final nodeState = _ref.read(nodeProvider);
-    final ctx = _ref.read(socialContextProvider);
-    final backend = _ref.read(socialBackendProvider);
 
+    state = state.copyWith(isLoading: true);
+
+    List<Contact>? phoneBonds;
     try {
-      state = state.copyWith(isLoading: true);
-
-      // Phone context must never fall back to Home bonds (isolation).
-      if (ctx.isPhone) {
-        if (backend == null) {
-          state = state.copyWith(bonds: const [], isLoading: false);
-          return;
-        }
-        final bonds =
-            (await backend.getBonds()).map(contactFromBond).toList();
-        state = state.copyWith(bonds: bonds, isLoading: false);
-        return;
+      final phoneBackend = _ref.read(phoneSocialBackendProvider);
+      if (phoneBackend != null) {
+        phoneBonds =
+            (await phoneBackend.getBonds()).map(contactFromBond).toList();
       }
-
-      List<Contact> bonds;
-      if (backend != null) {
-        bonds = (await backend.getBonds()).map(contactFromBond).toList();
-      } else {
-        final client = nodeProviderNotifier.client;
-        if (client == null || nodeState.activeNode == null) {
-          state = state.copyWith(isLoading: false);
-          return;
-        }
-        bonds = await _ref.read(nodeServiceProvider)!.getBonds();
-      }
-
-      if (nodeState.activeNode != null) {
-        await _localDb.upsertContacts(
-          nodeState.activeNode!.id,
-          bonds.map((c) => c.toJson()).toList(),
-        );
-      }
-
-      final filtered = filterSelfBonds(bonds, nodeState.ownerId);
-      state = state.copyWith(bonds: filtered, isLoading: false);
-    } catch (e) {
-      state = state.copyWith(isLoading: false);
+    } catch (_) {
+      // Keep prior phoneBonds.
     }
+
+    List<Contact>? homeBonds;
+    try {
+      if (nodeState.activeNode != null) {
+        final homeId = nodeState.activeNode!.id;
+        final homeBackend = _ref.read(homeSocialBackendProvider);
+        if (homeBackend != null) {
+          homeBonds =
+              (await homeBackend.getBonds()).map(contactFromBond).toList();
+        } else {
+          final client = nodeProviderNotifier.client;
+          if (client != null) {
+            homeBonds = await _ref.read(nodeServiceProvider)!.getBonds();
+          }
+        }
+        if (homeBonds != null) {
+          homeBonds = filterSelfBonds(homeBonds, nodeState.ownerId);
+          await _localDb.upsertContacts(
+            homeId,
+            homeBonds.map((c) => c.toJson()).toList(),
+          );
+        } else if (state.homeBonds.isEmpty) {
+          final rows = await _localDb.getContacts(homeId);
+          homeBonds = filterSelfBonds(
+            rows.map(Contact.fromJson).toList(),
+            nodeState.ownerId,
+          );
+        }
+      }
+    } catch (_) {
+      // Keep prior homeBonds.
+    }
+
+    state = state.copyWith(
+      homeBonds: homeBonds ?? state.homeBonds,
+      phoneBonds: phoneBonds ?? state.phoneBonds,
+      isLoading: false,
+    );
   }
 
-  /// Handle a bond:established push event.
   void onBondEstablished() {
     syncBonds();
   }
 
-  /// Handle a bond:revoked push event.
+  /// Home-node revoke only — phone mesh bonds are independent.
   void onBondRevoked(String ownerId) {
     final activeNode = _ref.read(nodeProvider).activeNode;
     if (activeNode != null) {
       _localDb.deleteContact(activeNode.id, ownerId);
     }
     state = state.copyWith(
-      bonds: state.bonds.where((c) => c.ownerId != ownerId).toList(),
+      homeBonds: state.homeBonds.where((c) => c.ownerId != ownerId).toList(),
     );
   }
 
-  /// Update bonds directly (used by NodeProvider after fetching Home bonds).
-  /// No-op while Social context is phone — Home reconnect must not clobber
-  /// the phone-persona contact list.
+  /// Home reconnect updates Home section only (never clobbers phone bonds).
   void setBonds(List<Contact> bonds) {
-    if (_ref.read(socialContextProvider).isPhone) return;
-    state = state.copyWith(bonds: bonds, isLoading: false);
+    state = state.copyWith(homeBonds: bonds, isLoading: false);
   }
 
-  /// Clear all contacts (used on unpair).
+  /// Clear Home bonds on unpair — phone mesh contacts stay.
   void clear() {
-    state = const ContactState();
+    state = state.copyWith(homeBonds: const [], isLoading: false);
   }
 
-  /// Get a contact by owner ID.
   Contact? getContact(String ownerId) {
-    return state.bonds
-        .where((c) => c.ownerId == ownerId)
-        .firstOrNull;
+    return state.bonds.where((c) => c.ownerId == ownerId).firstOrNull;
   }
 }
 
-/// Typed access to NodeServiceClient via the connected HomeRemoteClient.
-///
-/// Returns null if not connected. Always reads the live client from
-/// [NodeNotifier] on each invalidate — do not cache a null from a
-/// reconnect gap (callers that need extra safety can use
-/// `ref.read(nodeProvider.notifier).client` directly).
 final nodeServiceProvider = Provider<NodeServiceClient?>((ref) {
   ref.watch(nodeProvider);
   final client = ref.read(nodeProvider.notifier).client;
@@ -152,9 +153,19 @@ final nodeServiceProvider = Provider<NodeServiceClient?>((ref) {
   return NodeServiceClient(client);
 });
 
-/// Rebuild contact list when Social context switches Home ↔ phone.
+/// Sync contacts when pairing / phone backend changes (not a mode switcher).
 final socialContextContactSyncProvider = Provider<void>((ref) {
   ref.listen(socialContextProvider, (prev, next) {
+    if (prev != next) {
+      ref.read(contactProvider.notifier).syncBonds();
+    }
+  });
+  ref.listen(phoneSocialBackendProvider, (prev, next) {
+    if (prev != next) {
+      ref.read(contactProvider.notifier).syncBonds();
+    }
+  });
+  ref.listen(homeSocialBackendProvider, (prev, next) {
     if (prev != next) {
       ref.read(contactProvider.notifier).syncBonds();
     }

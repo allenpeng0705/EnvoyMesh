@@ -38,32 +38,38 @@ final socialContextProvider =
 class SocialContextNotifier extends StateNotifier<SocialContextState> {
   SocialContextNotifier(this._ref)
       : super(const SocialContextState(kind: SocialContextKind.phone)) {
-    _bootstrap();
+    _ref.listen(nodeProvider, (_, __) {
+      unawaited(_syncFromPairing());
+    });
+    unawaited(_syncFromPairing());
   }
 
   final Ref _ref;
   static const _prefsKey = 'social_context_kind';
 
-  Future<void> _bootstrap() async {
-    final storage = SecureStorage();
-    final saved = await storage.read(_prefsKey);
+  /// Pairing drives the Discover / Feed plane — no manual switcher.
+  /// Paired → Home search/content; unpaired → phone mesh.
+  Future<void> _syncFromPairing() async {
     final node = _ref.read(nodeProvider).activeNode;
-    if (saved == 'home' && node != null) {
+    if (node != null) {
+      if (state.kind == SocialContextKind.home && state.homeNodeId == node.id) {
+        return;
+      }
       state = SocialContextState(
         kind: SocialContextKind.home,
         homeNodeId: node.id,
       );
-    } else if (node != null && saved != 'phone') {
-      // Paired users default to Home until they explicitly choose phone.
-      state = SocialContextState(
-        kind: SocialContextKind.home,
-        homeNodeId: node.id,
-      );
+      await SecureStorage().write(_prefsKey, 'home');
     } else {
+      if (state.kind == SocialContextKind.phone && state.homeNodeId == null) {
+        return;
+      }
       state = const SocialContextState(kind: SocialContextKind.phone);
+      await SecureStorage().write(_prefsKey, 'phone');
     }
   }
 
+  /// Kept for tests / deep-links; preference is overwritten by pairing sync.
   Future<void> selectPhone() async {
     state = const SocialContextState(kind: SocialContextKind.phone);
     await SecureStorage().write(_prefsKey, 'phone');
@@ -144,6 +150,25 @@ final phoneSocialBackendProvider = Provider<PhoneSocialBackend?>((ref) {
   return ref.watch(_phoneBackendHolderProvider).backend;
 });
 
+/// Home Social backend when paired (always available alongside phone).
+final homeSocialBackendProvider = Provider<HomeSocialBackend?>((ref) {
+  return ref.watch(_homeBackendHolderProvider).backend;
+});
+
+/// Discover / default SocialBackend: Home when paired, phone when unpaired.
+final socialBackendProvider = Provider<SocialBackend?>((ref) {
+  final ctx = ref.watch(socialContextProvider);
+  if (ctx.isHome) {
+    return ref.watch(homeSocialBackendProvider);
+  }
+  return ref.watch(phoneSocialBackendProvider);
+});
+
+/// Keep phone mesh session ticking while Social UI is mounted.
+final phoneMeshKeepAliveProvider = Provider<PhoneMeshRuntimeState>((ref) {
+  return ref.watch(phoneMeshRuntimeProvider);
+});
+
 class _HomeBackendHolderState {
   const _HomeBackendHolderState({this.backend});
   final HomeSocialBackend? backend;
@@ -157,31 +182,24 @@ final _homeBackendHolderProvider =
 
 class _HomeBackendHolderNotifier extends StateNotifier<_HomeBackendHolderState> {
   _HomeBackendHolderNotifier(this._ref) : super(const _HomeBackendHolderState()) {
-    _ref.listen<SocialContextState>(socialContextProvider, (_, next) {
-      _sync(next);
-    });
     _ref.listen(nodeProvider, (_, __) {
-      _sync(_ref.read(socialContextProvider));
+      _sync();
     });
-    _sync(_ref.read(socialContextProvider));
+    _sync();
   }
 
   final Ref _ref;
   String? _wiredNodeId;
   HomeRemoteClientKey? _wiredClientKey;
 
-  void _sync(SocialContextState ctx) {
-    if (!ctx.isHome) {
-      _disposeCurrent();
-      return;
-    }
+  void _sync() {
     final nodeState = _ref.read(nodeProvider);
     final remote = _ref.read(nodeProvider.notifier).client;
     if (remote == null || nodeState.activeNode == null) {
       _disposeCurrent();
       return;
     }
-    final nodeId = ctx.homeNodeId ?? nodeState.activeNode!.id;
+    final nodeId = nodeState.activeNode!.id;
     final key = HomeRemoteClientKey(identityHashCode(remote), nodeId);
     if (state.backend != null &&
         _wiredNodeId == nodeId &&
@@ -246,7 +264,11 @@ class PhoneMeshRuntimeState {
   final String? lastError;
 }
 
-/// Enables/disables [PhoneMeshSession] + live dial when Social is phone.
+/// Enables phone mesh handlers (+ WAN/LAN discovery when unpaired or foreground).
+///
+/// Runs whenever the phone persona exists — not gated on a Social switcher.
+/// Discovery advertise stays on while the app is foregrounded so phone DMs
+/// remain reachable; Discover *search* still uses Home when paired.
 final phoneMeshRuntimeProvider =
     StateNotifierProvider<PhoneMeshRuntimeNotifier, PhoneMeshRuntimeState>(
         (ref) {
@@ -255,10 +277,10 @@ final phoneMeshRuntimeProvider =
 
 class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
   PhoneMeshRuntimeNotifier(this._ref) : super(const PhoneMeshRuntimeState()) {
-    _ref.listen<SocialContextState>(socialContextProvider, (_, __) {
+    _ref.listen(_phoneBackendHolderProvider, (_, __) {
       unawaited(_apply());
     });
-    _ref.listen(phoneSocialBackendProvider, (_, __) {
+    _ref.listen(nodeProvider, (_, __) {
       unawaited(_apply());
     });
     unawaited(_apply());
@@ -287,13 +309,11 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
     try {
       do {
         _pending = false;
-        final ctx = _ref.read(socialContextProvider);
-        if (!ctx.isPhone) {
+        final backend = _ref.read(phoneSocialBackendProvider);
+        if (backend == null) {
           await _teardown();
           continue;
         }
-        final backend = _ref.read(phoneSocialBackendProvider);
-        if (backend == null) continue;
 
         final node = await _ref.read(nodeProvider.notifier).ensureLibp2pStarted();
         if (node == null) {
@@ -337,9 +357,8 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
         state = PhoneMeshRuntimeState(
           sessionActive: _session!.isActive,
           discoveryActive: _discovery?.isActive ?? false,
-          lastError: _session!.reservedRelayPeerId == null
-              ? 'Mesh online (relay reserve pending)'
-              : null,
+          // Relay reserve pending is normal — don't surface as a status error.
+          lastError: null,
         );
       } while (_pending);
     } catch (e) {
@@ -398,14 +417,3 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
     super.dispose();
   }
 }
-
-/// Active [SocialBackend] for the Social tab (Home RPC or phone mesh).
-final socialBackendProvider = Provider<SocialBackend?>((ref) {
-  final ctx = ref.watch(socialContextProvider);
-  if (ctx.isHome) {
-    return ref.watch(_homeBackendHolderProvider).backend;
-  }
-  // Keep mesh runtime synced while phone backend is observed.
-  ref.watch(phoneMeshRuntimeProvider);
-  return ref.watch(phoneSocialBackendProvider);
-});

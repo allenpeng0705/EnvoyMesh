@@ -51,9 +51,7 @@ class CrossPersonaSuggestionsSection extends ConsumerWidget {
               final name = (s.displayName != null && s.displayName!.trim().isNotEmpty)
                   ? s.displayName!
                   : s.ownerId;
-              final from = s.source == CrossPersonaSource.home
-                  ? l10n.crossPersonaFromHome
-                  : l10n.crossPersonaFromPhone;
+              final from = l10n.crossPersonaFromHome;
               return Card(
                 margin: const EdgeInsets.only(top: 8),
                 child: ListTile(

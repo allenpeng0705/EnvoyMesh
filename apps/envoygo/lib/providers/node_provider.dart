@@ -1143,7 +1143,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
         filtered.map((c) => c.toJson()).toList(),
       );
       // Update contact state directly (avoid nodeServiceProvider null cache).
-      // setBonds no-ops while Social context is phone (isolation).
+      // Home reconnect updates Home bonds only (phone section stays intact).
       contactNotifier.setBonds(filtered);
     } catch (e) {
       _log('_syncBondsDirect failed: $e');
@@ -1509,6 +1509,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
       intentForRestore,
     );
     state = state.copyWith(
+      activeNode: node,
+      ownerId: node.ownerId.isNotEmpty ? node.ownerId : state.ownerId,
       connectionState: NodeConnectionState.connecting,
       reconnectAttempt: 0,
       lastConnectAttemptAt: DateTime.now(),

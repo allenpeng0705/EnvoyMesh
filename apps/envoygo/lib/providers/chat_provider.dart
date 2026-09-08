@@ -8,6 +8,7 @@ import '../mesh/social_model_adapters.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/chat_thread.dart';
+import '../models/contact.dart';
 import '../services/node_service_client.dart';
 import '../storage/local_database.dart';
 import '../utils/group_delivery.dart';
@@ -260,12 +261,24 @@ String? threadPeerSuffix(String threadId, String? nodeId) {
   return threadId.substring(i + 1);
 }
 
-/// SQLite / in-memory namespace for the active Social persona.
-String? chatContextNodeId(Ref ref) {
+/// SQLite / in-memory namespace for a chat thread's persona.
+/// Prefer the thread's own [ChatThread.nodeId] when known.
+String? chatContextNodeId(Ref ref, {String? threadId}) {
+  if (threadId != null && threadId.startsWith('$phoneLocalContextId:')) {
+    return phoneLocalContextId;
+  }
+  if (threadId != null) {
+    final existing = ref.read(chatProvider).threads.where((t) => t.id == threadId).firstOrNull;
+    if (existing != null) return existing.nodeId;
+  }
+  // Default Discover/Home plane when paired; phone when unpaired.
   final ctx = ref.read(socialContextProvider);
   if (ctx.isPhone) return phoneLocalContextId;
   return ref.read(nodeProvider).activeNode?.id;
 }
+
+bool isPhoneThreadId(String threadId) =>
+    threadId.startsWith('$phoneLocalContextId:');
 
 class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
@@ -342,36 +355,29 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// persisted in a previous session before the filter existed.
   /// The DB row is left in place for now (cheap to leave); the
   /// in-memory state is what the UI renders.
-  Future<void> loadThreads(String nodeId) async {
+  /// Load threads for one namespace (does not replace other namespaces).
+  Future<List<ChatThread>> _readThreads(String nodeId) async {
     final rows = await _localDb.getThreads(nodeId);
     final isPhoneNs = nodeId == phoneLocalContextId;
     final selfOwnerId = isPhoneNs
-        ? _ref.read(socialBackendProvider)?.ownerId
+        ? _ref.read(phoneSocialBackendProvider)?.ownerId
         : _ref.read(nodeProvider).ownerId;
     final isOwner = isPhoneNs || _ref.read(nodeProvider).isOwnerProfile;
     final threads = <ChatThread>[];
     for (final row in rows) {
       var t = _stripLegacyAgentStatusSuffix(ChatThread.fromJson(row));
       if (isSelfThreadPeer(t.contactOwnerId, selfOwnerId)) continue;
-      // Phone persona is social-lite: direct DMs only.
       if (isPhoneNs && t.type != ChatThreadType.direct) continue;
-      // Pi is a terminal session now — drop legacy AI-section Pi chat rows.
-      // Also drop synthetic "envoy:pi" Contacts leaks from old Ext Agent pushes.
       if (t.type == ChatThreadType.pi ||
           t.contactOwnerId == 'envoy:pi' ||
           t.id.endsWith(':envoy:pi')) {
         await _localDb.deleteThread(t.id);
         continue;
       }
-      // Repair stale EnvoyAI titles that inherited Ext Agent names (e.g. "Pi")
-      // from bridge:status before agentType/agentName were separated.
       if (t.type == ChatThreadType.envoyai && t.displayName != 'EnvoyAI') {
         t = t.copyWith(displayName: 'EnvoyAI');
         unawaited(_localDb.upsertThread(t.toJson()));
       }
-      // Phase 51E — non-owners only restore AI + family threads from cache.
-      // Ext Agent is opt-in per profile: never restore from cache when denied
-      // (App Review family QR must not see a stale Ext Agent row).
       if (!isOwner && t.type == ChatThreadType.externalAgent) {
         if (_isDeniedExtAgentFamily(_ref.read(nodeProvider))) {
           continue;
@@ -393,7 +399,44 @@ class ChatNotifier extends StateNotifier<ChatState> {
       }
       threads.add(t);
     }
-    state = state.copyWith(threads: threads);
+    return threads;
+  }
+
+  /// Load chat threads for [nodeId], replacing only that namespace in memory.
+  Future<void> loadThreads(String nodeId) async {
+    final loaded = await _readThreads(nodeId);
+    final others =
+        state.threads.where((t) => t.nodeId != nodeId).toList(growable: false);
+    state = state.copyWith(threads: [...others, ...loaded]);
+  }
+
+  /// Sync Home (if paired) + phone-local threads together.
+  Future<void> syncThreads() async {
+    state = state.copyWith(isLoading: true, syncError: null);
+    try {
+      await loadThreads(phoneLocalContextId);
+
+      final nodeState = _ref.read(nodeProvider);
+      if (nodeState.activeNode != null) {
+        await loadThreads(nodeState.activeNode!.id);
+        if (nodeState.isOwnerProfile) {
+          await _ref.read(contactProvider.notifier).syncBonds();
+          await syncRooms();
+        } else {
+          await _ref.read(contactProvider.notifier).syncBonds();
+        }
+        syncFamilyContacts(nodeState.familyProfiles, nodeState.activeNode!.id);
+        await syncFamilyRooms();
+        await syncEhChats();
+      } else {
+        await _ref.read(contactProvider.notifier).syncBonds();
+      }
+
+      createContactThreads();
+      refreshThreadDisplayNames();
+    } finally {
+      state = state.copyWith(isLoading: false);
+    }
   }
 
   /// Clear legacy " (Bridge Offline)" suffixes from Ext Agent display names.
@@ -418,39 +461,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
       }
     }
     return t;
-  }
-
-  /// Sync threads for the active Social context (Home RPC or phone-local).
-  Future<void> syncThreads() async {
-    final ctx = _ref.read(socialContextProvider);
-    if (ctx.isPhone) {
-      state = state.copyWith(isLoading: true, syncError: null);
-      await loadThreads(phoneLocalContextId);
-      await _ref.read(contactProvider.notifier).syncBonds();
-      createContactThreads();
-      refreshThreadDisplayNames();
-      state = state.copyWith(isLoading: false);
-      return;
-    }
-
-    final nodeState = _ref.read(nodeProvider);
-    if (nodeState.activeNode == null) return;
-
-    // Build threads from contacts.
-    final contactNotifier = _ref.read(contactProvider.notifier);
-    // Sync contacts first, then build threads.
-    state = state.copyWith(isLoading: true);
-    // Always restore cached threads (filtered for non-owners inside loadThreads).
-    await loadThreads(nodeState.activeNode!.id);
-    // Mesh bonds are owner-only — family members skip.
-    if (nodeState.isOwnerProfile) {
-      await contactNotifier.syncBonds();
-      await syncRooms();
-    }
-    syncFamilyContacts(nodeState.familyProfiles, nodeState.activeNode!.id);
-    await syncFamilyRooms();
-    await syncEhChats();
-    state = state.copyWith(isLoading: false);
   }
 
   /// Phase 51C — ensure a chat-list row for every other family profile.
@@ -673,10 +683,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   /// Send a direct message. Optional [attachments] for audio/files (Phase 37).
+  /// Pass [activeThreadId] so Home vs phone persona is taken from the open thread.
   Future<void> sendMessage(String targetOwnerId, String text,
-      {List<Map<String, dynamic>>? attachments}) async {
-    final ctx = _ref.read(socialContextProvider);
-    if (ctx.isPhone) {
+      {List<Map<String, dynamic>>? attachments, String? activeThreadId}) async {
+    final usePhone = activeThreadId != null
+        ? isPhoneThreadId(activeThreadId)
+        : (_ref.read(socialContextProvider).isPhone &&
+            _ref.read(nodeProvider).activeNode == null);
+    if (usePhone) {
       await _sendPhoneMessage(targetOwnerId, text, attachments: attachments);
       return;
     }
@@ -761,7 +775,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String text, {
     List<Map<String, dynamic>>? attachments,
   }) async {
-    final backend = _ref.read(socialBackendProvider);
+    final backend = _ref.read(phoneSocialBackendProvider);
     if (backend == null) {
       throw StateError('Phone social is not ready yet');
     }
@@ -1024,8 +1038,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
     if (peerKey == null || peerKey.isEmpty) return;
 
-    final ctx = _ref.read(socialContextProvider);
-    final isPhoneDirect = ctx.isPhone &&
+    final isPhoneDirect = isPhoneThreadId(threadId) &&
         !peerKey.startsWith('room:') &&
         !peerKey.startsWith('family:');
     if (isPhoneDirect) {
@@ -1055,7 +1068,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   Future<void> _loadPhoneHistory(String threadId, String peerOwnerId) async {
-    final backend = _ref.read(socialBackendProvider);
+    final backend = _ref.read(phoneSocialBackendProvider);
     if (backend == null) return;
     final rows = await backend.listChatHistory(peerOwnerId, limit: 50);
     if (rows.isEmpty) return;
@@ -1296,7 +1309,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
 
     if (contactOwnerId == null || contactOwnerId.isEmpty) return;
-    if (_ref.read(socialContextProvider).isPhone) return;
+    if (isPhoneThreadId(threadId)) return;
     final nodeService = _liveNodeService();
     if (nodeService == null) return;
     await nodeService.markRead(contactOwnerId);
@@ -1304,7 +1317,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   /// Phone-persona direct DM inbound (from SocialBackend.events).
   void _onPhoneChatMessage(Map<String, dynamic> data) {
-    final backend = _ref.read(socialBackendProvider);
+    final backend = _ref.read(phoneSocialBackendProvider);
     final selfOwnerId = backend?.ownerId;
     final senderOwnerId = (data['senderOwnerId'] as String?)?.trim();
     final text = data['text'] as String? ?? '';
@@ -1385,8 +1398,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// (sender.ownerId, content.text, metadata.timestamp) and the
   /// flat serialized format (senderOwnerId, text, createdAt).
   void onChatMessage(Map<String, dynamic> data) {
-    final ctx = _ref.read(socialContextProvider);
-    if (ctx.isPhone) {
+    // Flat phone-backend events (threadId phone-local:…) or explicit phone flag.
+    final tid = data['threadId'] as String?;
+    if (tid != null && isPhoneThreadId(tid)) {
+      _onPhoneChatMessage(data);
+      return;
+    }
+    // Nested home ChatMessage shape always goes to Home path when paired.
+    if (data['sender'] is Map || data['content'] is Map) {
+      // fall through to home handler
+    } else if (_ref.read(nodeProvider).activeNode == null) {
       _onPhoneChatMessage(data);
       return;
     }
@@ -1415,12 +1436,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final hasAnyAttachment = attachmentsRaw != null && attachmentsRaw.isNotEmpty;
     if ((text == null || text.isEmpty) && !hasAnyAttachment) return;
 
-    // Skip intro messages for contacts that are already bonded — they
-    // have no pending intro request so showing "Wants to connect" is wrong.
+    // Skip intro messages for contacts that are already bonded on Home —
+    // phone-only bonds must not suppress Home "Wants to connect" threads.
     if (messageId != null && messageId!.startsWith('intro_')) {
-      final bonds = _ref.read(contactProvider).bonds;
-      if (bonds.any((c) => c.ownerId == senderOwnerId)) {
-        return; // Already bonded — skip intro message.
+      final homeBonds = _ref.read(contactProvider).homeBonds;
+      if (homeBonds.any((c) => c.ownerId == senderOwnerId)) {
+        return; // Already bonded on Home — skip intro message.
       }
     }
 
@@ -3224,31 +3245,44 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// Self-bonds (the user's own ownerId, or any envoy_device_ key)
   /// are skipped — see [isSelfThreadPeer].
   void createContactThreads() {
-    final nodeId = chatContextNodeId(_ref);
-    if (nodeId == null) return;
-    final selfOwnerId = nodeId == phoneLocalContextId
-        ? _ref.read(socialBackendProvider)?.ownerId
-        : _ref.read(nodeProvider).ownerId;
-    final contacts = _ref.read(contactProvider).bonds;
-    final existingThreadIds = state.threads
-        .where((t) => t.type == ChatThreadType.direct)
-        .map((t) => t.contactOwnerId)
-        .toSet();
+    final contacts = _ref.read(contactProvider);
+    final homeId = _ref.read(nodeProvider).activeNode?.id;
+    final homeOwnerId = _ref.read(nodeProvider).ownerId;
+    final phoneOwnerId = _ref.read(phoneSocialBackendProvider)?.ownerId;
 
-    for (final contact in contacts) {
-      // Defensive: the contact_provider bond filter already
-      // excludes self, but if a stale contact list arrives
-      // (e.g. from the local DB before the bond filter was
-      // applied) this keeps the chat list clean.
-      if (isSelfThreadPeer(contact.ownerId, selfOwnerId)) continue;
-      if (existingThreadIds.contains(contact.ownerId)) continue;
-      final threadId = '$nodeId:${contact.ownerId}';
-      _upsertThread(
-        threadId: threadId,
-        nodeId: nodeId,
-        type: ChatThreadType.direct,
-        displayName: contact.displayName ?? contact.ownerId,
-        contactOwnerId: contact.ownerId,
+    void ensureFor({
+      required String nodeId,
+      required List<Contact> bonds,
+      required String? selfOwnerId,
+    }) {
+      final existingThreadIds = state.threads
+          .where((t) => t.type == ChatThreadType.direct && t.nodeId == nodeId)
+          .map((t) => t.contactOwnerId)
+          .toSet();
+      for (final contact in bonds) {
+        if (isSelfThreadPeer(contact.ownerId, selfOwnerId)) continue;
+        if (existingThreadIds.contains(contact.ownerId)) continue;
+        final threadId = '$nodeId:${contact.ownerId}';
+        _upsertThread(
+          threadId: threadId,
+          nodeId: nodeId,
+          type: ChatThreadType.direct,
+          displayName: contact.displayName ?? contact.ownerId,
+          contactOwnerId: contact.ownerId,
+        );
+      }
+    }
+
+    ensureFor(
+      nodeId: phoneLocalContextId,
+      bonds: contacts.phoneBonds,
+      selfOwnerId: phoneOwnerId,
+    );
+    if (homeId != null) {
+      ensureFor(
+        nodeId: homeId,
+        bonds: contacts.homeBonds,
+        selfOwnerId: homeOwnerId,
       );
     }
   }
@@ -3344,7 +3378,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // entry point funnels through, so the chat list can never
     // re-acquire a self-thread from any future code path.
     final selfOwnerId = nodeId == phoneLocalContextId
-        ? _ref.read(socialBackendProvider)?.ownerId
+        ? _ref.read(phoneSocialBackendProvider)?.ownerId
         : _ref.read(nodeProvider).ownerId;
     if (isSelfThreadPeer(contactOwnerId, selfOwnerId)) return;
     final existing = state.threads
@@ -3401,21 +3435,26 @@ final socialContextChatSyncProvider = Provider<void>((ref) {
 
 /// Forward SocialBackend push events into chat/contact notifiers.
 final socialBackendEventsProvider = Provider<void>((ref) {
-  StreamSubscription<SocialPushEvent>? sub;
-  ref.listen<SocialBackend?>(socialBackendProvider, (prev, next) {
-    sub?.cancel();
-    sub = null;
-    if (next == null) return;
-    sub = next.events.listen((event) {
+  final subs = <StreamSubscription<SocialPushEvent>>[];
+
+  void bind(SocialBackend? backend, {required bool phone}) {
+    if (backend == null) return;
+    subs.add(backend.events.listen((event) {
       switch (event.type) {
         case 'chat:message':
-          ref.read(chatProvider.notifier).onChatMessage(event.data);
+          final data = Map<String, dynamic>.from(event.data);
+          if (phone && data['threadId'] == null) {
+            final peer = data['senderOwnerId'] as String?;
+            if (peer != null) data['threadId'] = phoneDmThreadId(peer);
+          }
+          ref.read(chatProvider.notifier).onChatMessage(data);
         case 'bond:established':
           unawaited(ref.read(contactProvider.notifier).syncBonds().then((_) {
             ref.read(chatProvider.notifier).createContactThreads();
             ref.read(chatProvider.notifier).refreshThreadDisplayNames();
           }));
         case 'bond:request':
+          if (!phone) break;
           final peer = event.data['peerOwnerId'] as String?;
           if (peer != null && peer.isNotEmpty) {
             ref.read(chatProvider.notifier).onChatMessage({
@@ -3430,9 +3469,28 @@ final socialBackendEventsProvider = Provider<void>((ref) {
         default:
           break;
       }
-    });
+    }));
+  }
+
+  ref.listen(homeSocialBackendProvider, (_, next) {
+    for (final s in subs) {
+      s.cancel();
+    }
+    subs.clear();
+    bind(ref.read(homeSocialBackendProvider), phone: false);
+    bind(ref.read(phoneSocialBackendProvider), phone: true);
   }, fireImmediately: true);
+  ref.listen(phoneSocialBackendProvider, (_, __) {
+    for (final s in subs) {
+      s.cancel();
+    }
+    subs.clear();
+    bind(ref.read(homeSocialBackendProvider), phone: false);
+    bind(ref.read(phoneSocialBackendProvider), phone: true);
+  });
   ref.onDispose(() {
-    sub?.cancel();
+    for (final s in subs) {
+      s.cancel();
+    }
   });
 });

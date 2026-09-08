@@ -189,7 +189,7 @@ abstract class AppLocalizations {
   /// No description provided for @socialPhoneMeshForegroundHint.
   ///
   /// In en, this message translates to:
-  /// **'Mesh is on while EnvoyGo is open. Keep the app in the foreground to send and receive.'**
+  /// **'Phone mesh is on while EnvoyGo is open — used for On this phone chats and unpaired Discover.'**
   String get socialPhoneMeshForegroundHint;
 
   /// No description provided for @socialPhoneMeshStarting.
@@ -201,13 +201,13 @@ abstract class AppLocalizations {
   /// No description provided for @crossPersonaSuggestionsTitle.
   ///
   /// In en, this message translates to:
-  /// **'From your other identity'**
+  /// **'Also know them on this phone?'**
   String get crossPersonaSuggestionsTitle;
 
   /// No description provided for @crossPersonaSuggestionsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'People you already bonded on the other Social identity. Saying Hello here does not merge chats — it starts a new bond on this identity.'**
+  /// **'People you already bonded on Home. Saying Hello starts a separate bond on this phone — chats stay separate.'**
   String get crossPersonaSuggestionsSubtitle;
 
   /// No description provided for @crossPersonaFromHome.
@@ -2471,6 +2471,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Contacts'**
   String get chatsSectionContacts;
+
+  /// No description provided for @chatsSectionHomeContacts.
+  ///
+  /// In en, this message translates to:
+  /// **'Home contacts'**
+  String get chatsSectionHomeContacts;
+
+  /// No description provided for @chatsSectionPhoneContacts.
+  ///
+  /// In en, this message translates to:
+  /// **'On this phone'**
+  String get chatsSectionPhoneContacts;
 
   /// No description provided for @chatsSectionGroups.
   ///

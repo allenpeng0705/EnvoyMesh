@@ -83,8 +83,8 @@ class CrossPersonaSuggestionsNotifier
   }
 
   Future<void> dismiss(String ownerId) async {
-    final ctx = _ref.read(socialContextProvider);
-    final kind = ctx.isPhone ? 'phone' : 'home';
+    // Suggestions are always Home→phone Hello; refresh() loads the 'phone' key.
+    const kind = 'phone';
     final dismissed = await _loadDismissed(kind);
     dismissed.add(ownerId);
     await _saveDismissed(kind, dismissed);
@@ -94,12 +94,11 @@ class CrossPersonaSuggestionsNotifier
   Future<void> refresh() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final ctx = _ref.read(socialContextProvider);
       final nodeState = _ref.read(nodeProvider);
       final phoneBackend = _ref.read(phoneSocialBackendProvider);
 
-      // Need a paired home to suggest across personas.
-      if (nodeState.activeNode == null && nodeState.pairedNodes.isEmpty) {
+      // Suggestions live on Discover while paired: Home bonds → Hello on phone.
+      if (nodeState.activeNode == null) {
         state = const CrossPersonaSuggestionsState();
         return;
       }
@@ -114,108 +113,85 @@ class CrossPersonaSuggestionsNotifier
         }
       }
 
-      List<BondContact> homeBonds = const [];
-      if (ctx.isPhone) {
-        // Active phone: pull Home bonds via RPC if connected.
+      List<BondContact> homeBonds =
+          _ref.read(contactProvider).homeBonds.map(bondFromContact).toList();
+      if (homeBonds.isEmpty) {
         final client = _ref.read(nodeServiceProvider);
         if (client != null) {
           try {
-            homeBonds = (await client.getBonds())
-                .map(bondFromContact)
-                .toList();
+            homeBonds =
+                (await client.getBonds()).map(bondFromContact).toList();
           } catch (_) {
             homeBonds = const [];
           }
         }
-      } else {
-        // Active Home: use current contact list (already Home bonds).
-        homeBonds =
-            _ref.read(contactProvider).bonds.map(bondFromContact).toList();
       }
 
-      final dismissed =
-          await _loadDismissed(ctx.isPhone ? 'phone' : 'home');
-
-      if (ctx.isPhone) {
-        final targetIds = phoneBonds.map((b) => b.ownerId).toSet();
-        final suggestions = buildCrossPersonaSuggestions(
-          sourceBonds: homeBonds,
-          source: CrossPersonaSource.home,
-          targetBondedOwnerIds: targetIds,
-          dismissedOwnerIds: dismissed,
-          selfOwnerIdOnTarget: phoneBackend?.ownerId,
-        );
-        state = CrossPersonaSuggestionsState(suggestions: suggestions);
-      } else {
-        final targetIds = homeBonds.map((b) => b.ownerId).toSet();
-        final suggestions = buildCrossPersonaSuggestions(
-          sourceBonds: phoneBonds,
-          source: CrossPersonaSource.phone,
-          targetBondedOwnerIds: targetIds,
-          dismissedOwnerIds: dismissed,
-          selfOwnerIdOnTarget: nodeState.ownerId,
-          libp2pPeerIdByOwner: phonePeerIds,
-        );
-        state = CrossPersonaSuggestionsState(suggestions: suggestions);
-      }
+      final dismissed = await _loadDismissed('phone');
+      final targetIds = phoneBonds.map((b) => b.ownerId).toSet();
+      final suggestions = buildCrossPersonaSuggestions(
+        sourceBonds: homeBonds,
+        source: CrossPersonaSource.home,
+        targetBondedOwnerIds: targetIds,
+        dismissedOwnerIds: dismissed,
+        selfOwnerIdOnTarget: phoneBackend?.ownerId,
+        libp2pPeerIdByOwner: phonePeerIds,
+      );
+      state = CrossPersonaSuggestionsState(suggestions: suggestions);
     } catch (e) {
       state = CrossPersonaSuggestionsState(error: e.toString());
     }
   }
 
-  /// Say Hello on the *active* persona for [suggestion] (no auto-bond).
+  /// Say Hello on the **phone** persona (Discover is Home when paired).
   Future<Map<String, dynamic>> sayHello(CrossPersonaSuggestion suggestion) async {
-    final backend = _ref.read(socialBackendProvider);
+    final backend = _ref.read(phoneSocialBackendProvider);
     if (backend == null) {
-      return {'ok': false, 'error': 'Social backend not ready'};
+      return {'ok': false, 'error': 'Phone social is not ready yet'};
     }
     final profile = await backend.getHumanProfile() ??
         {'displayName': 'EnvoyGo', 'ownerId': backend.ownerId};
     final message =
-        'Hello from ${suggestion.source == CrossPersonaSource.home ? 'my phone' : 'my home'} — we already know each other on the other identity.';
+        'Hello from my phone — we already know each other on Home.';
 
-    if (_ref.read(socialContextProvider).isPhone &&
-        backend is PhoneSocialBackend) {
-      // Ensure dial map has an entry before sendHello.
-      final peer = backend.store.peerFor(suggestion.ownerId);
-      if (peer == null) {
-        // Try local discover by name / owner id.
-        final hits = await backend.searchPeers(
-          topic: suggestion.displayName ?? suggestion.ownerId,
-          maxResults: 10,
-        );
-        final hit = hits.where((h) => h.ownerId == suggestion.ownerId).firstOrNull;
-        if (hit != null) {
-          await backend.rememberPeer(PhonePeerRecord(
-            ownerId: hit.ownerId,
-            libp2pPeerId: hit.nodeId,
-            displayName: hit.displayName ?? suggestion.displayName,
-          ));
-        } else if (suggestion.libp2pPeerId != null &&
-            suggestion.libp2pPeerId!.isNotEmpty) {
-          await backend.rememberPeer(PhonePeerRecord(
-            ownerId: suggestion.ownerId,
-            libp2pPeerId: suggestion.libp2pPeerId!,
-            displayName: suggestion.displayName,
-          ));
-        } else {
-          return {
-            'ok': false,
-            'error':
-                'Find this person on Discover first so this phone can reach them on the mesh.',
-          };
-        }
+    final peer = backend.store.peerFor(suggestion.ownerId);
+    if (peer == null) {
+      final hits = await backend.searchPeers(
+        topic: suggestion.displayName ?? suggestion.ownerId,
+        maxResults: 10,
+      );
+      final hit = hits.where((h) => h.ownerId == suggestion.ownerId).firstOrNull;
+      if (hit != null) {
+        await backend.rememberPeer(PhonePeerRecord(
+          ownerId: hit.ownerId,
+          libp2pPeerId: hit.nodeId,
+          displayName: hit.displayName ?? suggestion.displayName,
+        ));
+      } else if (suggestion.libp2pPeerId != null &&
+          suggestion.libp2pPeerId!.isNotEmpty) {
+        await backend.rememberPeer(PhonePeerRecord(
+          ownerId: suggestion.ownerId,
+          libp2pPeerId: suggestion.libp2pPeerId!,
+          displayName: suggestion.displayName,
+        ));
+      } else {
+        return {
+          'ok': false,
+          'error':
+              'Find this person on Discover first so this phone can reach them on the mesh.',
+        };
       }
     }
 
-    final result = await backend.sendHello(
+    return backend.sendHello(
       targetOwnerId: suggestion.ownerId,
-      profile: profile,
       message: message,
-    );
-    if (result['ok'] == true) {
-      await refresh();
-    }
-    return result;
+      profile: profile,
+    ).then((result) async {
+      if (result['ok'] == true) {
+        await refresh();
+      }
+      return result;
+    });
   }
 }

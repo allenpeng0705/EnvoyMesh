@@ -19,7 +19,6 @@ import '../../models/web_content.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
-import '../../providers/social_context_provider.dart';
 import '../../services/chat_voice_note.dart';
 import '../../services/family_content_fetch.dart';
 import '../../services/vault_content_fetch.dart';
@@ -130,7 +129,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   /// Vault share only for bonded mesh DMs on Home (matches Social ContactChatPanel).
   bool get _supportsVaultShare {
-    if (ref.watch(socialContextProvider).isPhone) return false;
+    if (_isPhoneSocial) return false;
     return !_isAgent && !_isRoom && !_isFamily && _resolvedContactOwnerId != null;
   }
 
@@ -146,13 +145,14 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         .where((t) => t.id == widget.threadId)
         .firstOrNull;
     final nodeId = thread?.nodeId ??
-        (ref.read(socialContextProvider).isPhone
+        (_isPhoneSocial
             ? phoneLocalContextId
             : ref.read(nodeProvider).activeNode?.id);
     return threadPeerSuffix(widget.threadId, nodeId);
   }
 
-  bool get _isPhoneSocial => ref.watch(socialContextProvider).isPhone;
+  /// Phone vs Home is per-thread (paired Social context is always Home).
+  bool get _isPhoneSocial => isPhoneThreadId(widget.threadId);
 
   bool _modelDisabled = false;
 
@@ -2528,7 +2528,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       } else if (_resolvedContactOwnerId != null) {
         await ref
             .read(chatProvider.notifier)
-            .sendMessage(_resolvedContactOwnerId!, text);
+            .sendMessage(_resolvedContactOwnerId!, text, activeThreadId: widget.threadId);
       } else {
         if (restoreComposerOnFailure && mounted) {
           _textController.text = displayText ?? text;

@@ -252,7 +252,8 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
       if (backend == null) {
         setState(() {
           _loading = false;
-          _error = AppLocalizations.of(context).socialPhoneMeshStarting;
+          _error = null;
+          if (!keepExisting) _results = const [];
         });
         return;
       }

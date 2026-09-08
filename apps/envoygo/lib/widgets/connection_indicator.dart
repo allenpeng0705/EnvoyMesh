@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/node_provider.dart';
-import '../providers/social_context_provider.dart';
 
 /// Returns true if the transport avoids a relay server.
 /// - "lan" / "public": WebSocket directly to home (no relay)
@@ -53,53 +52,25 @@ String transportTypeLabel(String? transport, AppLocalizations l10n) {
   return (l10n.connRelay, Colors.orange);
 }
 
-/// Connection status indicator in the app bar.
-/// Shows connection type badge (Direct/Relay/P2P) when connected.
+/// App-bar connection badge for the paired **home** node only.
+///
+/// Phone mesh runs quietly in the background for On this phone chats /
+/// unpaired Discover — it is not shown as a second status mode here.
 class ConnectionIndicator extends ConsumerWidget {
   const ConnectionIndicator({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final socialCtx = ref.watch(socialContextProvider);
-    if (socialCtx.isPhone) {
-      final mesh = ref.watch(phoneMeshRuntimeProvider);
-      final color = mesh.sessionActive ? Colors.green : Colors.orange;
-      final tooltip = mesh.sessionActive
-          ? l10n.socialPhoneMeshForegroundHint
-          : (mesh.lastError ?? l10n.socialPhoneMeshStarting);
+    final nodeState = ref.watch(nodeProvider);
+
+    // Unpaired: quiet offline affordance (no "Starting phone mesh" chrome).
+    if (nodeState.activeNode == null) {
       return Tooltip(
-        message: tooltip,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              mesh.sessionActive ? Icons.cell_tower : Icons.hourglass_top,
-              color: color,
-              size: 20,
-            ),
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                l10n.socialContextPhone,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
+        message: l10n.connTooltipOffline,
+        child: Icon(Icons.cloud_outlined, color: Colors.grey, size: 20),
       );
     }
-
-    final nodeState = ref.watch(nodeProvider);
 
     IconData icon;
     Color color;
