@@ -24,64 +24,66 @@ class AppLocalizationsFr extends AppLocalizations {
   String get navSocial => 'Social';
 
   @override
-  String get socialContextPhone => 'On this phone';
+  String get socialContextPhone => 'Sur ce téléphone';
 
   @override
-  String get socialContextHome => 'Home';
+  String get socialContextHome => 'Domicile';
 
   @override
-  String get socialContextSheetTitle => 'Social identity';
+  String get socialContextSheetTitle => 'Identité sociale';
 
   @override
   String get socialContextPhoneSubtitle =>
-      'Independent mesh persona on this device';
+      'Persona mesh indépendante sur cet appareil';
 
   @override
-  String get socialContextHomeSubtitle => 'Use your home node (thin client)';
+  String get socialContextHomeSubtitle =>
+      'Utiliser votre nœud domicile (client léger)';
 
   @override
   String get socialContextNoHome =>
-      'No home paired yet — pair a computer to use Home Social.';
+      'Aucun domicile appairé — appairez un ordinateur pour le Social domicile.';
 
   @override
-  String get socialHomeOnlyTitle => 'Available on Home';
+  String get socialHomeOnlyTitle => 'Disponible au domicile';
 
   @override
   String get socialHomeOnlyBody =>
-      'Switch Social identity to a paired home computer for this feature. On this phone supports chats, contacts, and discover.';
+      'Passez l’identité sociale à un ordinateur domicile appairé. Sur ce téléphone : discussions, contacts et découverte.';
 
   @override
   String get socialPhoneMeshForegroundHint =>
-      'Phone mesh is on while EnvoyGo is open — used for On this phone chats and unpaired Discover.';
+      'Le mesh du téléphone est actif tant qu’EnvoyGo est ouvert — pour les discussions sur ce téléphone et la découverte sans appairage.';
 
   @override
-  String get socialPhoneMeshStarting => 'Starting phone mesh…';
+  String get socialPhoneMeshStarting => 'Démarrage du mesh téléphone…';
 
   @override
-  String get crossPersonaSuggestionsTitle => 'Also know them on this phone?';
+  String get crossPersonaSuggestionsTitle =>
+      'Les connaître aussi sur ce téléphone ?';
 
   @override
   String get crossPersonaSuggestionsSubtitle =>
-      'People you already bonded on Home. Saying Hello starts a separate bond on this phone — chats stay separate.';
+      'Personnes déjà liées au domicile. Dire Bonjour crée un lien séparé sur ce téléphone — les discussions restent séparées.';
 
   @override
-  String get crossPersonaFromHome => 'Bonded on Home';
+  String get crossPersonaFromHome => 'Lié au domicile';
 
   @override
-  String get crossPersonaFromPhone => 'Bonded on this phone';
+  String get crossPersonaFromPhone => 'Lié sur ce téléphone';
 
   @override
-  String get crossPersonaSayHello => 'Say Hello';
+  String get crossPersonaSayHello => 'Dire bonjour';
 
   @override
-  String get crossPersonaDismiss => 'Dismiss';
+  String get crossPersonaDismiss => 'Ignorer';
 
   @override
   String get crossPersonaHelloSent =>
-      'Hello sent. They still need to accept on this identity.';
+      'Bonjour envoyé. Ils doivent encore accepter sur cette identité.';
 
   @override
-  String get crossPersonaHelloFailed => 'Could not send Hello.';
+  String get crossPersonaHelloFailed => 'Impossible d’envoyer le bonjour.';
 
   @override
   String get navTerminal => 'Terminal';
@@ -1309,10 +1311,10 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chatsSectionContacts => 'Contacts';
 
   @override
-  String get chatsSectionHomeContacts => 'Home contacts';
+  String get chatsSectionHomeContacts => 'Contacts domicile';
 
   @override
-  String get chatsSectionPhoneContacts => 'On this phone';
+  String get chatsSectionPhoneContacts => 'Sur ce téléphone';
 
   @override
   String get chatsSectionGroups => 'Groupes';
@@ -4108,4 +4110,103 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get settingsUseForCodingChatHint =>
       'Obsolète — le chat de code utilise toujours Envoy Harness.';
+
+  @override
+  String get welcomeSkip => 'Passer';
+
+  @override
+  String get welcomeNext => 'Suivant';
+
+  @override
+  String get welcomeContinue => 'Continuer';
+
+  @override
+  String get welcomeSlide1Title => 'Bienvenue sur EnvoyGo';
+
+  @override
+  String get welcomeSlide1Body =>
+      'EnvoyGo est le compagnon téléphone d’EnvoyMesh — discussion, contenu et accès distant, tandis que votre domicile reste sur l’ordinateur.';
+
+  @override
+  String get welcomeSlide2Title => 'EnvoyMesh est votre domicile';
+
+  @override
+  String get welcomeSlide2Body =>
+      'Installez EnvoyMesh sur un Mac ou un PC Windows. Cet ordinateur est votre nœud domicile privé — identité, liens et IA restent chez vous.';
+
+  @override
+  String get welcomeSlide3Title => 'Appairer avec un QR';
+
+  @override
+  String get welcomeSlide3Body =>
+      'Sur l’ordinateur, ouvrez EnvoyMesh et affichez le QR d’appairage. Dans EnvoyGo : Moi → Appairer, puis scannez. Les invitations famille fonctionnent de la même façon.';
+
+  @override
+  String get welcomeSlide4Title =>
+      'Prêt sur le téléphone, alimenté par le domicile';
+
+  @override
+  String get welcomeSlide4Body =>
+      'Après l’appairage : discussions domicile, Fil, Blog et Marché. Sans appairage, vous pouvez toujours Découvrir et discuter sur le mesh de ce téléphone.';
+
+  @override
+  String get setupGuideTitle => 'Comment EnvoyGo fonctionne';
+
+  @override
+  String get setupGuideIntro =>
+      'EnvoyGo parle à EnvoyMesh sur votre ordinateur. Appairez une fois, puis utilisez Social, Terminal et Connaissances depuis le téléphone.';
+
+  @override
+  String get setupGuideStep1Title => 'Préparer un ordinateur';
+
+  @override
+  String get setupGuideStep1Body =>
+      'Il vous faut un Mac ou un PC Windows sur le même réseau (ou joignable via un relais). Ce sera votre nœud domicile EnvoyMesh.';
+
+  @override
+  String get setupGuideStep2Title => 'Télécharger et installer EnvoyMesh';
+
+  @override
+  String get setupGuideStep2Body =>
+      'Récupérez l’installateur bureau sur GitHub Releases. Installez et ouvrez EnvoyMesh sur cet ordinateur.';
+
+  @override
+  String get setupGuideDownloadCta => 'Ouvrir les téléchargements EnvoyMesh';
+
+  @override
+  String get setupGuideStep3Title => 'Afficher le QR d’appairage';
+
+  @override
+  String get setupGuideStep3Body =>
+      'Dans EnvoyMesh bureau, ouvrez l’appairage (ou invitez un membre de la famille). Gardez le QR à l’écran.';
+
+  @override
+  String get setupGuideStep4Title => 'Scanner avec EnvoyGo';
+
+  @override
+  String get setupGuideStep4Body =>
+      'Dans cette appli : Moi → Appairer (ou Appairer ci-dessous). Autorisez la caméra, puis scannez le QR. Vous pouvez aussi coller un lien envoy://.';
+
+  @override
+  String get setupGuideStep5Title => 'Vous êtes connecté';
+
+  @override
+  String get setupGuideStep5Body =>
+      'Après l’appairage, Social affiche les discussions et contenus du domicile. L’icône nuage passe à connecté quand le nœud est en ligne.';
+
+  @override
+  String get setupGuidePhoneOnlyTitle => 'Utiliser EnvoyGo sans domicile';
+
+  @override
+  String get setupGuidePhoneOnlyBody =>
+      'Vous pouvez ouvrir Social pour les discussions téléphone et Découvrir. Appairez plus tard depuis Moi quand EnvoyMesh est installé.';
+
+  @override
+  String get setupGuidePairCta => 'Appairer maintenant';
+
+  @override
+  String get setupGuideSkipCta => 'Explorer d’abord';
+
+  @override
+  String get setupGuideDoneCta => 'Compris';
 }

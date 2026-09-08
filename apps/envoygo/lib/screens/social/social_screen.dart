@@ -11,6 +11,7 @@ import '../../providers/feed_notify_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../providers/social_context_provider.dart';
 import '../../widgets/connection_indicator.dart';
+import '../../widgets/setup_guide_button.dart';
 import '../browser/browser_screen.dart';
 import '../chat/chat_list_screen.dart';
 import '../content/content_blog_tab.dart';
@@ -245,6 +246,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
               child: const Icon(Icons.inbox_outlined),
             ),
           ),
+          const SetupGuideButton(),
           const ConnectionIndicator(),
           const SizedBox(width: 8),
         ],

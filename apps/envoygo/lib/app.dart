@@ -3,7 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'l10n/app_localizations.dart';
 import 'providers/locale_provider.dart';
-import 'screens/home_screen.dart';
+import 'screens/onboarding/app_entry.dart';
 import 'theme/app_theme.dart';
 
 /// EnvoyGo — Flutter thin client for EnvoyMesh remote access.
@@ -48,7 +48,7 @@ class EnvoyGoApp extends ConsumerWidget {
         return const Locale('en');
       },
       onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
-      home: const HomeScreen(),
+      home: const AppEntry(),
     );
   }
 }

@@ -16,6 +16,7 @@ import '../../utils/localized_labels.dart';
 import '../../widgets/ai_engine_section.dart';
 import '../../widgets/connection_indicator.dart';
 import '../../widgets/profile_avatar.dart';
+import '../../widgets/setup_guide_button.dart';
 import '../chains/active_chains_screen.dart';
 import '../chains/recent_chains_screen.dart';
 import '../chains/start_chain_screen.dart';
@@ -261,6 +262,7 @@ class _MeScreenState extends ConsumerState<MeScreen> {
       appBar: AppBar(
         title: Text(l10n.navMe),
         actions: const [
+          SetupGuideButton(),
           ConnectionIndicator(),
           SizedBox(width: 12),
         ],

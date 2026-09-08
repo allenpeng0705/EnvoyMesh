@@ -2,14 +2,10 @@ import 'package:envoy_thin_client/models/stored_node.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../l10n/app_localizations.dart';
+import '../../constants/envoy_links.dart';
 import '../../services/pairing_service.dart';
 import '../../utils/open_external_url.dart';
 import 'pairing_confirm_screen.dart';
-
-/// Desktop EnvoyMesh release page (Mac/Windows installers). Open in browser
-/// so the user can download on a computer — not an in-app mobile install.
-const kEnvoyMeshDesktopReleasesUrl =
-    'https://github.com/allenpeng0705/EnvoyMesh/releases';
 
 /// QR code scanner screen for pairing with a home node.
 ///

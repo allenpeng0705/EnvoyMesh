@@ -7343,6 +7343,180 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Deprecated — coding chat always uses Envoy Harness.'**
   String get settingsUseForCodingChatHint;
+
+  /// No description provided for @welcomeSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get welcomeSkip;
+
+  /// No description provided for @welcomeNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get welcomeNext;
+
+  /// No description provided for @welcomeContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get welcomeContinue;
+
+  /// No description provided for @welcomeSlide1Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome to EnvoyGo'**
+  String get welcomeSlide1Title;
+
+  /// No description provided for @welcomeSlide1Body.
+  ///
+  /// In en, this message translates to:
+  /// **'EnvoyGo is the phone companion for EnvoyMesh — chat, content, and remote access while your home stays on your computer.'**
+  String get welcomeSlide1Body;
+
+  /// No description provided for @welcomeSlide2Title.
+  ///
+  /// In en, this message translates to:
+  /// **'EnvoyMesh is your home'**
+  String get welcomeSlide2Title;
+
+  /// No description provided for @welcomeSlide2Body.
+  ///
+  /// In en, this message translates to:
+  /// **'Install EnvoyMesh on a Mac or Windows PC. That computer is your private home node — identity, bonds, and AI stay with you.'**
+  String get welcomeSlide2Body;
+
+  /// No description provided for @welcomeSlide3Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair with a QR code'**
+  String get welcomeSlide3Title;
+
+  /// No description provided for @welcomeSlide3Body.
+  ///
+  /// In en, this message translates to:
+  /// **'On the computer, open EnvoyMesh and show the pairing QR. In EnvoyGo, open Me → Pair and scan it. Family invites work the same way.'**
+  String get welcomeSlide3Body;
+
+  /// No description provided for @welcomeSlide4Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone-ready, home-powered'**
+  String get welcomeSlide4Title;
+
+  /// No description provided for @welcomeSlide4Body.
+  ///
+  /// In en, this message translates to:
+  /// **'After pairing you get Home chats, Feed, Blog, and Market. Without pairing you can still Discover and chat on this phone’s mesh.'**
+  String get welcomeSlide4Body;
+
+  /// No description provided for @setupGuideTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'How EnvoyGo works'**
+  String get setupGuideTitle;
+
+  /// No description provided for @setupGuideIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'EnvoyGo talks to EnvoyMesh on your computer. Pair once, then use Social, Terminal, and Knowledge from your phone.'**
+  String get setupGuideIntro;
+
+  /// No description provided for @setupGuideStep1Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Get a computer ready'**
+  String get setupGuideStep1Title;
+
+  /// No description provided for @setupGuideStep1Body.
+  ///
+  /// In en, this message translates to:
+  /// **'You need a Mac or Windows PC on the same network (or reachable via relay). This becomes your EnvoyMesh home node.'**
+  String get setupGuideStep1Body;
+
+  /// No description provided for @setupGuideStep2Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Download and install EnvoyMesh'**
+  String get setupGuideStep2Title;
+
+  /// No description provided for @setupGuideStep2Body.
+  ///
+  /// In en, this message translates to:
+  /// **'Get the desktop installer from GitHub Releases. Install and open EnvoyMesh on that computer.'**
+  String get setupGuideStep2Body;
+
+  /// No description provided for @setupGuideDownloadCta.
+  ///
+  /// In en, this message translates to:
+  /// **'Open EnvoyMesh downloads'**
+  String get setupGuideDownloadCta;
+
+  /// No description provided for @setupGuideStep3Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the pairing QR'**
+  String get setupGuideStep3Title;
+
+  /// No description provided for @setupGuideStep3Body.
+  ///
+  /// In en, this message translates to:
+  /// **'In desktop EnvoyMesh, open pairing (or invite a family member). Keep the QR on screen.'**
+  String get setupGuideStep3Body;
+
+  /// No description provided for @setupGuideStep4Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with EnvoyGo'**
+  String get setupGuideStep4Title;
+
+  /// No description provided for @setupGuideStep4Body.
+  ///
+  /// In en, this message translates to:
+  /// **'In this app, go to Me → Pair (or tap Pair below). Allow camera access, then scan the QR. You can also paste an envoy:// pair link.'**
+  String get setupGuideStep4Body;
+
+  /// No description provided for @setupGuideStep5Title.
+  ///
+  /// In en, this message translates to:
+  /// **'You’re connected'**
+  String get setupGuideStep5Title;
+
+  /// No description provided for @setupGuideStep5Body.
+  ///
+  /// In en, this message translates to:
+  /// **'When pairing finishes, Social shows Home chats and content. The cloud icon turns connected when the home node is online.'**
+  String get setupGuideStep5Body;
+
+  /// No description provided for @setupGuidePhoneOnlyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Using EnvoyGo without a home'**
+  String get setupGuidePhoneOnlyTitle;
+
+  /// No description provided for @setupGuidePhoneOnlyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'You can still open Social for phone chats and Discover. Pair later anytime from Me when you have EnvoyMesh installed.'**
+  String get setupGuidePhoneOnlyBody;
+
+  /// No description provided for @setupGuidePairCta.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair now'**
+  String get setupGuidePairCta;
+
+  /// No description provided for @setupGuideSkipCta.
+  ///
+  /// In en, this message translates to:
+  /// **'Explore first'**
+  String get setupGuideSkipCta;
+
+  /// No description provided for @setupGuideDoneCta.
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get setupGuideDoneCta;
 }
 
 class _AppLocalizationsDelegate

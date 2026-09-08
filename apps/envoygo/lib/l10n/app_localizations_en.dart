@@ -4057,4 +4057,102 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get settingsUseForCodingChatHint =>
       'Deprecated — coding chat always uses Envoy Harness.';
+
+  @override
+  String get welcomeSkip => 'Skip';
+
+  @override
+  String get welcomeNext => 'Next';
+
+  @override
+  String get welcomeContinue => 'Continue';
+
+  @override
+  String get welcomeSlide1Title => 'Welcome to EnvoyGo';
+
+  @override
+  String get welcomeSlide1Body =>
+      'EnvoyGo is the phone companion for EnvoyMesh — chat, content, and remote access while your home stays on your computer.';
+
+  @override
+  String get welcomeSlide2Title => 'EnvoyMesh is your home';
+
+  @override
+  String get welcomeSlide2Body =>
+      'Install EnvoyMesh on a Mac or Windows PC. That computer is your private home node — identity, bonds, and AI stay with you.';
+
+  @override
+  String get welcomeSlide3Title => 'Pair with a QR code';
+
+  @override
+  String get welcomeSlide3Body =>
+      'On the computer, open EnvoyMesh and show the pairing QR. In EnvoyGo, open Me → Pair and scan it. Family invites work the same way.';
+
+  @override
+  String get welcomeSlide4Title => 'Phone-ready, home-powered';
+
+  @override
+  String get welcomeSlide4Body =>
+      'After pairing you get Home chats, Feed, Blog, and Market. Without pairing you can still Discover and chat on this phone’s mesh.';
+
+  @override
+  String get setupGuideTitle => 'How EnvoyGo works';
+
+  @override
+  String get setupGuideIntro =>
+      'EnvoyGo talks to EnvoyMesh on your computer. Pair once, then use Social, Terminal, and Knowledge from your phone.';
+
+  @override
+  String get setupGuideStep1Title => 'Get a computer ready';
+
+  @override
+  String get setupGuideStep1Body =>
+      'You need a Mac or Windows PC on the same network (or reachable via relay). This becomes your EnvoyMesh home node.';
+
+  @override
+  String get setupGuideStep2Title => 'Download and install EnvoyMesh';
+
+  @override
+  String get setupGuideStep2Body =>
+      'Get the desktop installer from GitHub Releases. Install and open EnvoyMesh on that computer.';
+
+  @override
+  String get setupGuideDownloadCta => 'Open EnvoyMesh downloads';
+
+  @override
+  String get setupGuideStep3Title => 'Show the pairing QR';
+
+  @override
+  String get setupGuideStep3Body =>
+      'In desktop EnvoyMesh, open pairing (or invite a family member). Keep the QR on screen.';
+
+  @override
+  String get setupGuideStep4Title => 'Scan with EnvoyGo';
+
+  @override
+  String get setupGuideStep4Body =>
+      'In this app, go to Me → Pair (or tap Pair below). Allow camera access, then scan the QR. You can also paste an envoy:// pair link.';
+
+  @override
+  String get setupGuideStep5Title => 'You’re connected';
+
+  @override
+  String get setupGuideStep5Body =>
+      'When pairing finishes, Social shows Home chats and content. The cloud icon turns connected when the home node is online.';
+
+  @override
+  String get setupGuidePhoneOnlyTitle => 'Using EnvoyGo without a home';
+
+  @override
+  String get setupGuidePhoneOnlyBody =>
+      'You can still open Social for phone chats and Discover. Pair later anytime from Me when you have EnvoyMesh installed.';
+
+  @override
+  String get setupGuidePairCta => 'Pair now';
+
+  @override
+  String get setupGuideSkipCta => 'Explore first';
+
+  @override
+  String get setupGuideDoneCta => 'Got it';
 }

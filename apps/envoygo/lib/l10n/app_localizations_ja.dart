@@ -24,64 +24,62 @@ class AppLocalizationsJa extends AppLocalizations {
   String get navSocial => 'ソーシャル';
 
   @override
-  String get socialContextPhone => 'On this phone';
+  String get socialContextPhone => 'この端末';
 
   @override
-  String get socialContextHome => 'Home';
+  String get socialContextHome => 'ホーム';
 
   @override
-  String get socialContextSheetTitle => 'Social identity';
+  String get socialContextSheetTitle => 'ソーシャルの身分';
 
   @override
-  String get socialContextPhoneSubtitle =>
-      'Independent mesh persona on this device';
+  String get socialContextPhoneSubtitle => 'この端末上の独立したメッシュ人格';
 
   @override
-  String get socialContextHomeSubtitle => 'Use your home node (thin client)';
+  String get socialContextHomeSubtitle => 'ペアリング済みホームノードを使う（シンクライアント）';
 
   @override
   String get socialContextNoHome =>
-      'No home paired yet — pair a computer to use Home Social.';
+      'ホームがまだペアリングされていません — パソコンをペアリングしてホームソーシャルを使ってください。';
 
   @override
-  String get socialHomeOnlyTitle => 'Available on Home';
+  String get socialHomeOnlyTitle => 'ホームでのみ利用可';
 
   @override
   String get socialHomeOnlyBody =>
-      'Switch Social identity to a paired home computer for this feature. On this phone supports chats, contacts, and discover.';
+      'この機能にはペアリング済みのホームパソコンへ切り替えてください。この端末ではチャット・連絡先・発見が使えます。';
 
   @override
   String get socialPhoneMeshForegroundHint =>
-      'Phone mesh is on while EnvoyGo is open — used for On this phone chats and unpaired Discover.';
+      'EnvoyGo を開いている間、端末メッシュが動作します — この端末のチャットと未ペア時の発見に使います。';
 
   @override
-  String get socialPhoneMeshStarting => 'Starting phone mesh…';
+  String get socialPhoneMeshStarting => '端末メッシュを起動中…';
 
   @override
-  String get crossPersonaSuggestionsTitle => 'Also know them on this phone?';
+  String get crossPersonaSuggestionsTitle => 'この端末でも知り合いですか？';
 
   @override
   String get crossPersonaSuggestionsSubtitle =>
-      'People you already bonded on Home. Saying Hello starts a separate bond on this phone — chats stay separate.';
+      'ホームですでに絆がある人です。「こんにちは」はこの端末で別の絆を始めます — チャットは分かれます。';
 
   @override
-  String get crossPersonaFromHome => 'Bonded on Home';
+  String get crossPersonaFromHome => 'ホームで絆済み';
 
   @override
-  String get crossPersonaFromPhone => 'Bonded on this phone';
+  String get crossPersonaFromPhone => 'この端末で絆済み';
 
   @override
-  String get crossPersonaSayHello => 'Say Hello';
+  String get crossPersonaSayHello => 'こんにちは';
 
   @override
-  String get crossPersonaDismiss => 'Dismiss';
+  String get crossPersonaDismiss => '閉じる';
 
   @override
-  String get crossPersonaHelloSent =>
-      'Hello sent. They still need to accept on this identity.';
+  String get crossPersonaHelloSent => 'こんにちはを送りました。この身分での承認がまだ必要です。';
 
   @override
-  String get crossPersonaHelloFailed => 'Could not send Hello.';
+  String get crossPersonaHelloFailed => 'こんにちはを送れませんでした。';
 
   @override
   String get navTerminal => 'ターミナル';
@@ -1259,10 +1257,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chatsSectionContacts => '連絡先';
 
   @override
-  String get chatsSectionHomeContacts => 'Home contacts';
+  String get chatsSectionHomeContacts => 'ホームの連絡先';
 
   @override
-  String get chatsSectionPhoneContacts => 'On this phone';
+  String get chatsSectionPhoneContacts => 'この端末';
 
   @override
   String get chatsSectionGroups => 'グループ';
@@ -3955,4 +3953,102 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get settingsUseForCodingChatHint =>
       '非推奨 — コーディングチャットは常に Envoy Harness を使用します。';
+
+  @override
+  String get welcomeSkip => 'スキップ';
+
+  @override
+  String get welcomeNext => '次へ';
+
+  @override
+  String get welcomeContinue => '続ける';
+
+  @override
+  String get welcomeSlide1Title => 'EnvoyGo へようこそ';
+
+  @override
+  String get welcomeSlide1Body =>
+      'EnvoyGo は EnvoyMesh のスマホ向けコンパニオンです。ホームはパソコンに置きつつ、チャット・コンテンツ・遠隔アクセスを使えます。';
+
+  @override
+  String get welcomeSlide2Title => 'EnvoyMesh があなたのホーム';
+
+  @override
+  String get welcomeSlide2Body =>
+      'Mac または Windows PC に EnvoyMesh をインストールします。そのパソコンが私有ホームノード — 身分・絆・AI はあなたのもとにとどまります。';
+
+  @override
+  String get welcomeSlide3Title => 'QR でペアリング';
+
+  @override
+  String get welcomeSlide3Body =>
+      'パソコンで EnvoyMesh を開き、ペアリング QR を表示します。EnvoyGo では「自分」→「ペアリング」でスキャン。家族招待も同じ流れです。';
+
+  @override
+  String get welcomeSlide4Title => 'スマホで使え、ホームが支える';
+
+  @override
+  String get welcomeSlide4Body =>
+      'ペアリング後はホームのチャット、フィード、ブログ、マーケットが使えます。未ペアでもこの端末のメッシュで発見とチャットができます。';
+
+  @override
+  String get setupGuideTitle => 'EnvoyGo の使い方';
+
+  @override
+  String get setupGuideIntro =>
+      'EnvoyGo はパソコン上の EnvoyMesh と話します。一度ペアリングすれば、スマホからソーシャル・ターミナル・知識を使えます。';
+
+  @override
+  String get setupGuideStep1Title => 'パソコンを用意する';
+
+  @override
+  String get setupGuideStep1Body =>
+      '同じネットワーク（またはリレー経由）の Mac / Windows PC が必要です。それが EnvoyMesh ホームノードになります。';
+
+  @override
+  String get setupGuideStep2Title => 'EnvoyMesh をダウンロードしてインストール';
+
+  @override
+  String get setupGuideStep2Body =>
+      'GitHub Releases からデスクトップ用インストーラーを入手し、そのパソコンにインストールして開きます。';
+
+  @override
+  String get setupGuideDownloadCta => 'EnvoyMesh のダウンロードを開く';
+
+  @override
+  String get setupGuideStep3Title => 'ペアリング QR を表示';
+
+  @override
+  String get setupGuideStep3Body =>
+      'デスクトップ版 EnvoyMesh でペアリング（または家族招待）を開き、QR を画面に表示したままにします。';
+
+  @override
+  String get setupGuideStep4Title => 'EnvoyGo でスキャン';
+
+  @override
+  String get setupGuideStep4Body =>
+      'このアプリで「自分」→「ペアリング」（または下のペアリング）。カメラを許可して QR をスキャン。envoy:// リンクの貼り付けもできます。';
+
+  @override
+  String get setupGuideStep5Title => '接続できました';
+
+  @override
+  String get setupGuideStep5Body =>
+      'ペアリングが終わると、ソーシャルにホームのチャットとコンテンツが表示されます。ホームがオンラインだと雲アイコンが接続済みになります。';
+
+  @override
+  String get setupGuidePhoneOnlyTitle => 'ホームなしで EnvoyGo を使う';
+
+  @override
+  String get setupGuidePhoneOnlyBody =>
+      '端末のチャットと発見にはソーシャルを開けます。EnvoyMesh を入れたら「自分」からいつでもペアリングできます。';
+
+  @override
+  String get setupGuidePairCta => '今すぐペアリング';
+
+  @override
+  String get setupGuideSkipCta => 'まずは見る';
+
+  @override
+  String get setupGuideDoneCta => '了解';
 }

@@ -24,64 +24,62 @@ class AppLocalizationsKo extends AppLocalizations {
   String get navSocial => '소셜';
 
   @override
-  String get socialContextPhone => 'On this phone';
+  String get socialContextPhone => '이 휴대폰';
 
   @override
-  String get socialContextHome => 'Home';
+  String get socialContextHome => '홈';
 
   @override
-  String get socialContextSheetTitle => 'Social identity';
+  String get socialContextSheetTitle => '소셜 신원';
 
   @override
-  String get socialContextPhoneSubtitle =>
-      'Independent mesh persona on this device';
+  String get socialContextPhoneSubtitle => '이 기기의 독립 메시 페르소나';
 
   @override
-  String get socialContextHomeSubtitle => 'Use your home node (thin client)';
+  String get socialContextHomeSubtitle => '페어링된 홈 노드 사용(씬 클라이언트)';
 
   @override
   String get socialContextNoHome =>
-      'No home paired yet — pair a computer to use Home Social.';
+      '아직 홈이 페어링되지 않았습니다 — 홈 소셜을 쓰려면 컴퓨터를 페어링하세요.';
 
   @override
-  String get socialHomeOnlyTitle => 'Available on Home';
+  String get socialHomeOnlyTitle => '홈에서만 사용 가능';
 
   @override
   String get socialHomeOnlyBody =>
-      'Switch Social identity to a paired home computer for this feature. On this phone supports chats, contacts, and discover.';
+      '이 기능을 쓰려면 페어링된 홈 컴퓨터로 전환하세요. 이 휴대폰에서는 채팅, 연락처, 탐색을 사용할 수 있습니다.';
 
   @override
   String get socialPhoneMeshForegroundHint =>
-      'Phone mesh is on while EnvoyGo is open — used for On this phone chats and unpaired Discover.';
+      'EnvoyGo가 열려 있는 동안 휴대폰 메시가 동작합니다 — 이 휴대폰 채팅과 미페어링 탐색에 사용됩니다.';
 
   @override
-  String get socialPhoneMeshStarting => 'Starting phone mesh…';
+  String get socialPhoneMeshStarting => '휴대폰 메시 시작 중…';
 
   @override
-  String get crossPersonaSuggestionsTitle => 'Also know them on this phone?';
+  String get crossPersonaSuggestionsTitle => '이 휴대폰에서도 알까요?';
 
   @override
   String get crossPersonaSuggestionsSubtitle =>
-      'People you already bonded on Home. Saying Hello starts a separate bond on this phone — chats stay separate.';
+      '이미 홈에서 유대를 맺은 사람들입니다. 안녕하세요는 이 휴대폰에서 별도 유대를 시작합니다 — 채팅은 분리됩니다.';
 
   @override
-  String get crossPersonaFromHome => 'Bonded on Home';
+  String get crossPersonaFromHome => '홈에서 유대됨';
 
   @override
-  String get crossPersonaFromPhone => 'Bonded on this phone';
+  String get crossPersonaFromPhone => '이 휴대폰에서 유대됨';
 
   @override
-  String get crossPersonaSayHello => 'Say Hello';
+  String get crossPersonaSayHello => '안녕하세요';
 
   @override
-  String get crossPersonaDismiss => 'Dismiss';
+  String get crossPersonaDismiss => '닫기';
 
   @override
-  String get crossPersonaHelloSent =>
-      'Hello sent. They still need to accept on this identity.';
+  String get crossPersonaHelloSent => '안녕하세요를 보냈습니다. 이 신원에서 아직 수락이 필요합니다.';
 
   @override
-  String get crossPersonaHelloFailed => 'Could not send Hello.';
+  String get crossPersonaHelloFailed => '안녕하세요를 보내지 못했습니다.';
 
   @override
   String get navTerminal => '터미널';
@@ -1259,10 +1257,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chatsSectionContacts => '연락처';
 
   @override
-  String get chatsSectionHomeContacts => 'Home contacts';
+  String get chatsSectionHomeContacts => '홈 연락처';
 
   @override
-  String get chatsSectionPhoneContacts => 'On this phone';
+  String get chatsSectionPhoneContacts => '이 휴대폰';
 
   @override
   String get chatsSectionGroups => '그룹';
@@ -3951,4 +3949,102 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get settingsUseForCodingChatHint =>
       '사용 중단 — 코딩 채팅은 항상 Envoy Harness를 사용합니다.';
+
+  @override
+  String get welcomeSkip => '건너뛰기';
+
+  @override
+  String get welcomeNext => '다음';
+
+  @override
+  String get welcomeContinue => '계속';
+
+  @override
+  String get welcomeSlide1Title => 'EnvoyGo에 오신 것을 환영합니다';
+
+  @override
+  String get welcomeSlide1Body =>
+      'EnvoyGo는 EnvoyMesh의 휴대폰 동반 앱입니다. 홈은 컴퓨터에 두고 채팅, 콘텐츠, 원격 접근을 사용하세요.';
+
+  @override
+  String get welcomeSlide2Title => 'EnvoyMesh가 당신의 홈입니다';
+
+  @override
+  String get welcomeSlide2Body =>
+      'Mac 또는 Windows PC에 EnvoyMesh를 설치하세요. 그 컴퓨터가 개인 홈 노드입니다 — 신원, 유대, AI는 당신 곁에 남습니다.';
+
+  @override
+  String get welcomeSlide3Title => 'QR로 페어링';
+
+  @override
+  String get welcomeSlide3Body =>
+      '컴퓨터에서 EnvoyMesh를 열고 페어링 QR을 표시하세요. EnvoyGo에서는 나 → 페어링으로 스캔합니다. 가족 초대도 같습니다.';
+
+  @override
+  String get welcomeSlide4Title => '휴대폰 준비, 홈이 뒷받침';
+
+  @override
+  String get welcomeSlide4Body =>
+      '페어링 후 홈 채팅, 피드, 블로그, 마켓을 씁니다. 페어링 없이도 이 휴대폰 메시에서 탐색과 채팅이 가능합니다.';
+
+  @override
+  String get setupGuideTitle => 'EnvoyGo 사용 방법';
+
+  @override
+  String get setupGuideIntro =>
+      'EnvoyGo는 컴퓨터의 EnvoyMesh와 통신합니다. 한 번 페어링하면 휴대폰에서 소셜, 터미널, 지식을 사용할 수 있습니다.';
+
+  @override
+  String get setupGuideStep1Title => '컴퓨터 준비하기';
+
+  @override
+  String get setupGuideStep1Body =>
+      '같은 네트워크(또는 릴레이로 도달 가능)의 Mac 또는 Windows PC가 필요합니다. 그것이 EnvoyMesh 홈 노드가 됩니다.';
+
+  @override
+  String get setupGuideStep2Title => 'EnvoyMesh 다운로드 및 설치';
+
+  @override
+  String get setupGuideStep2Body =>
+      'GitHub Releases에서 데스크톱 설치 파일을 받아 그 컴퓨터에 설치하고 여세요.';
+
+  @override
+  String get setupGuideDownloadCta => 'EnvoyMesh 다운로드 열기';
+
+  @override
+  String get setupGuideStep3Title => '페어링 QR 표시';
+
+  @override
+  String get setupGuideStep3Body =>
+      '데스크톱 EnvoyMesh에서 페어링(또는 가족 초대)을 열고 QR을 화면에 유지하세요.';
+
+  @override
+  String get setupGuideStep4Title => 'EnvoyGo로 스캔';
+
+  @override
+  String get setupGuideStep4Body =>
+      '이 앱에서 나 → 페어링(또는 아래 페어링). 카메라를 허용한 뒤 QR을 스캔하세요. envoy:// 링크를 붙여넣을 수도 있습니다.';
+
+  @override
+  String get setupGuideStep5Title => '연결되었습니다';
+
+  @override
+  String get setupGuideStep5Body =>
+      '페어링이 끝나면 소셜에 홈 채팅과 콘텐츠가 표시됩니다. 홈 노드가 온라인이면 구름 아이콘이 연결됨으로 바뀝니다.';
+
+  @override
+  String get setupGuidePhoneOnlyTitle => '홈 없이 EnvoyGo 사용';
+
+  @override
+  String get setupGuidePhoneOnlyBody =>
+      '휴대폰 채팅과 탐색을 위해 소셜을 열 수 있습니다. EnvoyMesh를 설치한 뒤 나에서 언제든 페어링하세요.';
+
+  @override
+  String get setupGuidePairCta => '지금 페어링';
+
+  @override
+  String get setupGuideSkipCta => '먼저 둘러보기';
+
+  @override
+  String get setupGuideDoneCta => '알겠습니다';
 }

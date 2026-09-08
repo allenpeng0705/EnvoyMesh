@@ -24,64 +24,60 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navSocial => '社交';
 
   @override
-  String get socialContextPhone => 'On this phone';
+  String get socialContextPhone => '本机';
 
   @override
-  String get socialContextHome => 'Home';
+  String get socialContextHome => '家庭';
 
   @override
-  String get socialContextSheetTitle => 'Social identity';
+  String get socialContextSheetTitle => '社交身份';
 
   @override
-  String get socialContextPhoneSubtitle =>
-      'Independent mesh persona on this device';
+  String get socialContextPhoneSubtitle => '此设备上的独立 mesh 身份';
 
   @override
-  String get socialContextHomeSubtitle => 'Use your home node (thin client)';
+  String get socialContextHomeSubtitle => '使用已配对的家庭节点（瘦客户端）';
 
   @override
-  String get socialContextNoHome =>
-      'No home paired yet — pair a computer to use Home Social.';
+  String get socialContextNoHome => '尚未配对家庭节点 — 请先配对电脑以使用家庭社交。';
 
   @override
-  String get socialHomeOnlyTitle => 'Available on Home';
+  String get socialHomeOnlyTitle => '仅家庭可用';
 
   @override
-  String get socialHomeOnlyBody =>
-      'Switch Social identity to a paired home computer for this feature. On this phone supports chats, contacts, and discover.';
+  String get socialHomeOnlyBody => '请切换到已配对的家庭电脑以使用此功能。本机支持聊天、联系人与探索。';
 
   @override
   String get socialPhoneMeshForegroundHint =>
-      'Phone mesh is on while EnvoyGo is open — used for On this phone chats and unpaired Discover.';
+      'EnvoyGo 打开时本机 mesh 保持运行 — 用于本机聊天与未配对时的探索。';
 
   @override
-  String get socialPhoneMeshStarting => 'Starting phone mesh…';
+  String get socialPhoneMeshStarting => '正在启动本机 mesh…';
 
   @override
-  String get crossPersonaSuggestionsTitle => 'Also know them on this phone?';
+  String get crossPersonaSuggestionsTitle => '也在本机认识他们？';
 
   @override
   String get crossPersonaSuggestionsSubtitle =>
-      'People you already bonded on Home. Saying Hello starts a separate bond on this phone — chats stay separate.';
+      '你已在家庭侧建立关系的人。说「你好」会在本机开始另一段关系 — 聊天保持分开。';
 
   @override
-  String get crossPersonaFromHome => 'Bonded on Home';
+  String get crossPersonaFromHome => '已在家庭建立关系';
 
   @override
-  String get crossPersonaFromPhone => 'Bonded on this phone';
+  String get crossPersonaFromPhone => '已在本机建立关系';
 
   @override
-  String get crossPersonaSayHello => 'Say Hello';
+  String get crossPersonaSayHello => '说你好';
 
   @override
-  String get crossPersonaDismiss => 'Dismiss';
+  String get crossPersonaDismiss => '忽略';
 
   @override
-  String get crossPersonaHelloSent =>
-      'Hello sent. They still need to accept on this identity.';
+  String get crossPersonaHelloSent => '已发送你好。对方仍需在此身份上接受。';
 
   @override
-  String get crossPersonaHelloFailed => 'Could not send Hello.';
+  String get crossPersonaHelloFailed => '无法发送你好。';
 
   @override
   String get navTerminal => '终端';
@@ -1248,10 +1244,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatsSectionContacts => '联系人';
 
   @override
-  String get chatsSectionHomeContacts => 'Home contacts';
+  String get chatsSectionHomeContacts => '家庭联系人';
 
   @override
-  String get chatsSectionPhoneContacts => 'On this phone';
+  String get chatsSectionPhoneContacts => '本机';
 
   @override
   String get chatsSectionGroups => '群组';
@@ -3915,4 +3911,99 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsUseForCodingChatHint => '已弃用 — 编码聊天始终使用 Envoy Harness。';
+
+  @override
+  String get welcomeSkip => '跳过';
+
+  @override
+  String get welcomeNext => '下一步';
+
+  @override
+  String get welcomeContinue => '继续';
+
+  @override
+  String get welcomeSlide1Title => '欢迎使用 EnvoyGo';
+
+  @override
+  String get welcomeSlide1Body =>
+      'EnvoyGo 是 EnvoyMesh 的手机伴侣 — 在家中电脑上保留身份与数据的同时，用手机聊天、浏览内容并远程访问。';
+
+  @override
+  String get welcomeSlide2Title => 'EnvoyMesh 是你的家';
+
+  @override
+  String get welcomeSlide2Body =>
+      '在 Mac 或 Windows 电脑上安装 EnvoyMesh。那台电脑就是你的私有家庭节点 — 身份、关系与 AI 都留在你这边。';
+
+  @override
+  String get welcomeSlide3Title => '用二维码配对';
+
+  @override
+  String get welcomeSlide3Body =>
+      '在电脑上打开 EnvoyMesh 并显示配对二维码。在 EnvoyGo 中打开「我」→「配对」并扫描。家庭邀请的方式相同。';
+
+  @override
+  String get welcomeSlide4Title => '手机随时可用，家庭节点驱动';
+
+  @override
+  String get welcomeSlide4Body => '配对后可使用家庭聊天、动态、博客与市集。未配对时仍可在本机 mesh 上探索与聊天。';
+
+  @override
+  String get setupGuideTitle => 'EnvoyGo 使用说明';
+
+  @override
+  String get setupGuideIntro =>
+      'EnvoyGo 连接电脑上的 EnvoyMesh。配对一次后，即可在手机上使用社交、终端与知识库。';
+
+  @override
+  String get setupGuideStep1Title => '准备一台电脑';
+
+  @override
+  String get setupGuideStep1Body =>
+      '需要一台在同一网络（或可通过中继访问）的 Mac 或 Windows 电脑，作为 EnvoyMesh 家庭节点。';
+
+  @override
+  String get setupGuideStep2Title => '下载并安装 EnvoyMesh';
+
+  @override
+  String get setupGuideStep2Body =>
+      '从 GitHub Releases 获取桌面安装包，在那台电脑上安装并打开 EnvoyMesh。';
+
+  @override
+  String get setupGuideDownloadCta => '打开 EnvoyMesh 下载页';
+
+  @override
+  String get setupGuideStep3Title => '显示配对二维码';
+
+  @override
+  String get setupGuideStep3Body => '在桌面版 EnvoyMesh 中打开配对（或邀请家人），保持二维码显示在屏幕上。';
+
+  @override
+  String get setupGuideStep4Title => '用 EnvoyGo 扫描';
+
+  @override
+  String get setupGuideStep4Body =>
+      '在本应用中进入「我」→「配对」（或点下方「立即配对」）。允许相机权限后扫描二维码，也可粘贴 envoy:// 配对链接。';
+
+  @override
+  String get setupGuideStep5Title => '连接完成';
+
+  @override
+  String get setupGuideStep5Body => '配对成功后，社交页会显示家庭聊天与内容。家庭节点在线时，云图标会变为已连接。';
+
+  @override
+  String get setupGuidePhoneOnlyTitle => '不配对也能用';
+
+  @override
+  String get setupGuidePhoneOnlyBody =>
+      '仍可打开社交进行本机聊天与探索。安装 EnvoyMesh 后，随时可在「我」中配对。';
+
+  @override
+  String get setupGuidePairCta => '立即配对';
+
+  @override
+  String get setupGuideSkipCta => '先看看';
+
+  @override
+  String get setupGuideDoneCta => '知道了';
 }
