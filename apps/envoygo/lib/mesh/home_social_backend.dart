@@ -90,11 +90,13 @@ class HomeSocialBackend implements SocialBackend {
   Future<List<MeshPeerHit>> searchPeers({
     String? topic,
     List<String>? interests,
+    String? peerId,
     int maxResults = 20,
   }) async {
     final hits = await _client.searchPeers(
       topic: topic,
       interests: interests,
+      peerId: peerId,
       maxResults: maxResults,
     );
     return hits

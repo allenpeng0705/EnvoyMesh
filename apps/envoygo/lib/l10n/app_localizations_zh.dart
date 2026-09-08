@@ -1811,7 +1811,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peopleConnectHint => '连接到家庭节点以发现用户。';
 
   @override
-  String get peopleHint => '寻找尚未绑定的人 — 打开其公开资料或博客，然后打个招呼。';
+  String get peopleHint => '可按兴趣、话题、peer ID 搜索，或粘贴 envoy://contact 链接后打招呼。';
 
   @override
   String get peopleTryTopic => '试试话题';
@@ -1823,10 +1823,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peopleInterest => '兴趣';
 
   @override
-  String get peopleTopicHint => '音乐、编程、旅行…';
+  String get peopleTopicHint => '话题、peer ID 或 envoy://contact…';
 
   @override
-  String get peopleInterestHint => '摄影、烹饪、旅行…';
+  String get peopleInterestHint => '美食、旅行、peer ID 或联系链接…';
 
   @override
   String get peopleOnMesh => '网络上的人';
@@ -1850,7 +1850,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peopleHelloSent => '已发送打招呼';
 
   @override
-  String get peopleEnterSearch => '输入话题或兴趣进行搜索。';
+  String get peopleEnterSearch => '输入兴趣、话题、peer ID 或联系链接。';
 
   @override
   String get peopleNoMatches => '没有匹配的搜索结果。';

@@ -292,6 +292,7 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
   bool _busy = false;
   bool _pending = false;
   bool _foreground = true;
+  bool _disposed = false;
 
   /// Pause WAN advertise/lookup when the app backgrounds (S6).
   void setForeground(bool foreground) {
@@ -341,8 +342,7 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
           );
         }
 
-        // Publish session status before discovery — DHT/checkin must not
-        // keep the tower icon stuck on "Connecting".
+        // Publish Connected as soon as handlers are up — discovery/WAN is async.
         state = PhoneMeshRuntimeState(
           sessionActive: _session!.isActive,
           discoveryActive: _discovery?.isActive ?? false,
@@ -352,22 +352,29 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
         if (_foreground) {
           _discovery ??= PhoneDiscoverySession(node: node, backend: backend);
           if (!_discovery!.isActive) {
-            try {
-              await _discovery!.start();
-            } catch (e) {
-              debugPrint('[PhoneMeshRuntime] discovery start: $e');
-            }
+            final discovery = _discovery!;
+            unawaited(() async {
+              try {
+                await discovery.start();
+              } catch (e) {
+                debugPrint('[PhoneMeshRuntime] discovery start: $e');
+              }
+              if (_disposed || _discovery != discovery) return;
+              state = PhoneMeshRuntimeState(
+                sessionActive: _session?.isActive ?? false,
+                discoveryActive: discovery.isActive,
+                lastError: null,
+              );
+            }());
           }
         } else {
           await _stopDiscovery();
+          state = PhoneMeshRuntimeState(
+            sessionActive: _session!.isActive,
+            discoveryActive: false,
+            lastError: null,
+          );
         }
-
-        state = PhoneMeshRuntimeState(
-          sessionActive: _session!.isActive,
-          discoveryActive: _discovery?.isActive ?? false,
-          // Relay reserve pending is normal — don't surface as a status error.
-          lastError: null,
-        );
       } while (_pending);
     } catch (e) {
       debugPrint('[PhoneMeshRuntime] $e');
@@ -416,6 +423,7 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
 
   @override
   void dispose() {
+    _disposed = true;
     final discovery = _discovery;
     _discovery = null;
     unawaited(discovery?.stop() ?? Future.value());

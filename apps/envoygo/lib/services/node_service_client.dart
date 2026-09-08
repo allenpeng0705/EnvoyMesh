@@ -1786,6 +1786,7 @@ class NodeServiceClient {
     String? topic,
     List<String>? topics,
     List<String>? interests,
+    String? peerId,
     int maxResults = 20,
   }) async {
     final params = <String, dynamic>{
@@ -1793,6 +1794,7 @@ class NodeServiceClient {
       if (topic != null) 'topic': topic,
       if (topics != null) 'topics': topics,
       if (interests != null) 'interests': interests,
+      if (peerId != null && peerId.trim().isNotEmpty) 'peerId': peerId.trim(),
     };
     final result = await _client.call('searchPeers', params);
     final list = (result as List<dynamic>?) ?? const [];

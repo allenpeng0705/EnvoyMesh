@@ -3555,7 +3555,7 @@ abstract class AppLocalizations {
   /// No description provided for @peopleHint.
   ///
   /// In en, this message translates to:
-  /// **'Find people you haven\'t bonded with — open their public profile or blog, then say hello.'**
+  /// **'Search by interest, topic, peer ID, or paste an envoy://contact link — then say hello.'**
   String get peopleHint;
 
   /// No description provided for @peopleTryTopic.
@@ -3579,13 +3579,13 @@ abstract class AppLocalizations {
   /// No description provided for @peopleTopicHint.
   ///
   /// In en, this message translates to:
-  /// **'music, coding, travel…'**
+  /// **'topic, peer ID, or envoy://contact…'**
   String get peopleTopicHint;
 
   /// No description provided for @peopleInterestHint.
   ///
   /// In en, this message translates to:
-  /// **'photography, cooking, travel…'**
+  /// **'food, travel, peer ID, or contact link…'**
   String get peopleInterestHint;
 
   /// No description provided for @peopleOnMesh.
@@ -3633,7 +3633,7 @@ abstract class AppLocalizations {
   /// No description provided for @peopleEnterSearch.
   ///
   /// In en, this message translates to:
-  /// **'Enter a topic or interest to search.'**
+  /// **'Enter an interest, topic, peer ID, or contact link.'**
   String get peopleEnterSearch;
 
   /// No description provided for @peopleNoMatches.

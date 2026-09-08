@@ -15,6 +15,36 @@ const List<String> defaultEnvoyCommunityRelayBootstrapAddrs = [
   defaultEnvoyUsRelayBootstrapAddr,
 ];
 
+/// True for dialable libp2p TCP multiaddrs (`/ip4|ip6/.../tcp/.../p2p/...`).
+///
+/// Pairing often mixes WebSocket relay URLs into `bootstrapPeers` — those
+/// must not be fed to [Libp2pNode.start] or cold start stalls on bad dials.
+bool isLibp2pTcpBootstrapMultiaddr(String addr) {
+  final a = addr.trim();
+  if (a.isEmpty || !a.startsWith('/')) return false;
+  if (a.startsWith('ws:') ||
+      a.startsWith('wss:') ||
+      a.startsWith('http:') ||
+      a.startsWith('https:')) {
+    return false;
+  }
+  if (!a.contains('/tcp/') || !a.contains('/p2p/')) return false;
+  return peerIdFromBootstrapMultiaddr(a) != null;
+}
+
+/// Keep only TCP `/p2p/` multiaddrs; drop WS/HTTP relay URLs.
+List<String> filterLibp2pTcpBootstrapAddrs(Iterable<String> addrs) {
+  final out = <String>[];
+  final seen = <String>{};
+  for (final raw in addrs) {
+    final a = raw.trim();
+    if (!isLibp2pTcpBootstrapMultiaddr(a)) continue;
+    if (!seen.add(a)) continue;
+    out.add(a);
+  }
+  return out;
+}
+
 /// Extract `/p2p/<peerId>` suffix from a multiaddr, or null.
 String? peerIdFromBootstrapMultiaddr(String addr) {
   final idx = addr.lastIndexOf('/p2p/');

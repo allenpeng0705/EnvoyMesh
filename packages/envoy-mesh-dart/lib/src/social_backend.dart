@@ -36,6 +36,7 @@ abstract class SocialBackend {
   Future<List<MeshPeerHit>> searchPeers({
     String? topic,
     List<String>? interests,
+    String? peerId,
     int maxResults = 20,
   });
 

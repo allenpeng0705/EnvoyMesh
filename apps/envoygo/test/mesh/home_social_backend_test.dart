@@ -27,6 +27,7 @@ class _StubClient extends NodeServiceClient {
     String? topic,
     List<String>? topics,
     List<String>? interests,
+    String? peerId,
     int maxResults = 20,
   }) async =>
       const [];

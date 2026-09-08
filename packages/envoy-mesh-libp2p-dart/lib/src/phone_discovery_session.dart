@@ -78,12 +78,14 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
     _backend.replaceWanSearch(_wanSearch);
 
     if (_enableMdns) {
-      try {
-        await _node.enableMdns();
-      } catch (e) {
-        // WAN discover still works without LAN multicast.
-        _log('[PhoneDiscoverySession] mDNS start failed: $e');
-      }
+      // mDNS can be slow / flaky on cellular — do not block discovery "active".
+      unawaited(() async {
+        try {
+          await _node.enableMdns();
+        } catch (e) {
+          _log('[PhoneDiscoverySession] mDNS start failed: $e');
+        }
+      }());
     }
 
     // First DHT/checkin can hang on WAN — keep discovery "active" and retry
@@ -199,10 +201,29 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
   Future<List<MeshPeerHit>> _wanSearch({
     String? topic,
     List<String>? interests,
+    String? peerId,
     int maxResults = 20,
   }) async {
     final selfPeer = _node.peerId?.toString() ?? '';
     final selfOwner = _backend.ownerId;
+    final needle = (peerId ?? '').trim();
+    if (needle.isNotEmpty) {
+      // Direct peer lookup: local LAN first, then DHT findPeer if available.
+      final lan = _lanHits(selfPeer: selfPeer, maxResults: maxResults)
+          .where((h) => h.nodeId == needle || h.ownerId == needle)
+          .toList();
+      if (lan.isNotEmpty) return lan;
+      return [
+        MeshPeerHit(
+          nodeId: needle,
+          ownerId: provisionalLanOwnerId(needle),
+          displayName: 'Peer (${shortLanPeerLabel(needle)})',
+          multiaddrs: ['/p2p/$needle'],
+          profileVisibility: 'public',
+        ),
+      ];
+    }
+
     final queries = _runtime.queryTopics(topic: topic, interests: interests);
 
     // LAN is instant. DHT + relay can stall — bound each leg so Discover UI
@@ -216,7 +237,7 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
           maxResults: maxResults,
         )
         .timeout(
-          const Duration(seconds: 15),
+          const Duration(seconds: 8),
           onTimeout: () {
             _log('[PhoneDiscoverySession] DHT search timed out');
             return const <MeshPeerHit>[];
@@ -229,7 +250,7 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
       selfOwner: selfOwner,
       maxResults: maxResults,
     ).timeout(
-      const Duration(seconds: 20),
+      const Duration(seconds: 12),
       onTimeout: () {
         _log('[PhoneDiscoverySession] relay lookup timed out');
         return const <MeshPeerHit>[];
@@ -240,8 +261,29 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
     final dhtHits = parts[0];
     final relayHits = parts[1];
 
+    final merged = PhoneDiscoveryRuntime.mergeHits(
+      [...lanHits, ...dhtHits, ...relayHits],
+      selfLibp2pPeerId: selfPeer,
+      selfOwnerId: selfOwner,
+      maxResults: maxResults,
+    ).map((hit) {
+      // DHT-only providers have no owner DID — invent a provisional one so
+      // Discover UI can show the hit (empty ownerId is otherwise filtered).
+      if (hit.ownerId.isNotEmpty || hit.nodeId.isEmpty) return hit;
+      return MeshPeerHit(
+        nodeId: hit.nodeId,
+        ownerId: provisionalLanOwnerId(hit.nodeId),
+        displayName: hit.displayName ??
+            'Nearby (${shortLanPeerLabel(hit.nodeId)})',
+        interests: hit.interests,
+        profileVisibility: hit.profileVisibility,
+        trustLevel: hit.trustLevel,
+        multiaddrs: hit.multiaddrs,
+      );
+    }).toList();
+
     // Persist dial hints for hello (WAN + provisional LAN owners).
-    for (final hit in [...relayHits, ...dhtHits, ...lanHits]) {
+    for (final hit in merged) {
       if (hit.ownerId.isEmpty) continue;
       if (hit.multiaddrs.isEmpty && !isProvisionalLanOwnerId(hit.ownerId)) {
         continue;
@@ -256,12 +298,7 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
       } catch (_) {}
     }
 
-    return PhoneDiscoveryRuntime.mergeHits(
-      [...lanHits, ...dhtHits, ...relayHits],
-      selfLibp2pPeerId: selfPeer,
-      selfOwnerId: selfOwner,
-      maxResults: maxResults,
-    );
+    return merged;
   }
 
   Future<List<MeshPeerHit>> _relayLookupHits({
@@ -273,6 +310,18 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
     final relayHits = <MeshPeerHit>[];
     final transport = _transport;
     if (transport == null) return relayHits;
+
+    // Prefer the primary community relay for search latency; skip extras
+    // unless the primary fails every query.
+    final primary = _relayBootstrapAddrs.contains(
+          defaultEnvoyCommunityRelayBootstrapAddr,
+        )
+        ? defaultEnvoyCommunityRelayBootstrapAddr
+        : _relayBootstrapAddrs.first;
+    final fallback = [
+      for (final a in _relayBootstrapAddrs)
+        if (a != primary) a,
+    ];
 
     for (final q in queries) {
       final payload =
@@ -286,7 +335,8 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
         unsigned,
         _backend.persona.device.privateKeyPem,
       );
-      for (final relayAddr in _relayBootstrapAddrs) {
+      var gotHits = false;
+      for (final relayAddr in [primary, ...fallback]) {
         try {
           final result = await transport.sendEnvelope(
             dialTarget: relayAddr,
@@ -309,18 +359,24 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
           final candidates = [
             for (final p in peers) RelayLookupCandidate.fromJson(p),
           ];
-          relayHits.addAll(
-            _runtime.hitsFromRelayCandidates(
-              candidates,
-              selfLibp2pPeerId: selfPeer,
-              selfOwnerId: selfOwner,
-            ),
+          final batch = _runtime.hitsFromRelayCandidates(
+            candidates,
+            selfLibp2pPeerId: selfPeer,
+            selfOwnerId: selfOwner,
           );
+          if (batch.isNotEmpty) {
+            relayHits.addAll(batch);
+            gotHits = true;
+            break; // primary (or first success) is enough for this query
+          }
         } catch (e) {
           _log(
             '[PhoneDiscoverySession] lookup error $relayAddr: $e',
           );
         }
+      }
+      if (!gotHits) {
+        _log('[PhoneDiscoverySession] no relay hits for query=$q');
       }
     }
     return relayHits;

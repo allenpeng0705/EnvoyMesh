@@ -10,6 +10,7 @@ import '../../models/peer_search_result.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../providers/social_context_provider.dart';
+import '../../services/discover_contact_code.dart';
 import '../../services/envoy_url.dart';
 import '../../services/node_service_client.dart';
 import '../../services/parse_public_blog_index.dart';
@@ -350,11 +351,24 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
       setState(() => _error = l10n.peopleEnterSearch);
       return;
     }
+    if (_searching) return;
+
+    // Peer ID / envoy://contact paste — same box as topic/interest.
+    if (looksLikeDiscoverIdOrLink(q)) {
+      await _runIdOrLinkSearch(q);
+      return;
+    }
 
     final socialCtx = ref.read(socialContextProvider);
     if (socialCtx.isPhone) {
       final backend = ref.read(socialBackendProvider);
-      if (backend == null) return;
+      if (backend == null) {
+        setState(() {
+          _searching = false;
+          _error = l10n.peopleConnectHint;
+        });
+        return;
+      }
       setState(() {
         _searching = true;
         _error = null;
@@ -363,19 +377,24 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
         await _refreshExclude();
         final List<MeshPeerHit> hits;
         if (_mode == _PeopleSearchMode.topic) {
-          final topic = _publishSearchTopic(q);
-          if (topic.isEmpty) {
-            setState(() {
-              _searching = false;
-              _error = l10n.peopleEnterSearch;
-            });
-            return;
-          }
-          hits = await backend.searchPeers(topic: topic, maxResults: 20);
+          hits = await _searchTopicBothPlanes(
+            phone: (topic, interests) => backend
+                .searchPeers(topic: topic, interests: interests, maxResults: 20)
+                .timeout(
+                  const Duration(seconds: 15),
+                  onTimeout: () => const <MeshPeerHit>[],
+                ),
+            q: q,
+          );
         } else {
-          hits = await backend.searchPeers(interests: [q], maxResults: 20);
+          hits = await backend
+              .searchPeers(interests: [q], maxResults: 20)
+              .timeout(
+                const Duration(seconds: 15),
+                onTimeout: () => const <MeshPeerHit>[],
+              );
         }
-        var filtered = _filterNonBonded(
+        final filtered = _filterNonBonded(
           hits
               .map((h) => PeerSearchResult(
                     nodeId: h.nodeId,
@@ -388,21 +407,12 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                   ))
               .toList(),
         );
-        var fromSample = false;
-        String? status;
-        if (filtered.isEmpty) {
-          filtered = await _samplePhoneMesh(backend);
-          fromSample = true;
-          status = filtered.isNotEmpty
-              ? l10n.peopleNoMatches
-              : l10n.peopleNoneFound;
-        }
         if (!mounted) return;
         setState(() {
           _results = filtered;
-          _fromSample = fromSample;
+          _fromSample = false;
           _searching = false;
-          _error = status;
+          _error = filtered.isEmpty ? l10n.peopleNoneFound : null;
         });
         _persistSession();
       } catch (e) {
@@ -417,7 +427,13 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     }
 
     final client = ref.read(nodeServiceProvider);
-    if (client == null) return;
+    if (client == null) {
+      setState(() {
+        _searching = false;
+        _error = l10n.peopleConnectHint;
+      });
+      return;
+    }
     setState(() {
       _searching = true;
       _error = null;
@@ -430,38 +446,244 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
 
       List<PeerSearchResult> rows;
       if (_mode == _PeopleSearchMode.topic) {
-        final topic = _publishSearchTopic(q);
-        if (topic.isEmpty) {
-          setState(() {
-            _searching = false;
-            _error = l10n.peopleEnterSearch;
-          });
-          return;
-        }
-        rows = await client.searchPeers(topic: topic, maxResults: 20);
+        final interestHits = await client.searchPeers(topic: q, maxResults: 20);
+        final publishTopic = _publishSearchTopic(q);
+        final publishHits = publishTopic.isEmpty
+            ? const <PeerSearchResult>[]
+            : await client.searchPeers(topic: publishTopic, maxResults: 20);
+        rows = _mergePeerResults(interestHits, publishHits);
       } else {
         rows = await client.searchPeers(interests: [q], maxResults: 20);
       }
 
-      var filtered = _filterNonBonded(rows);
-      var fromSample = false;
-      String? status;
-      if (filtered.isEmpty) {
-        filtered = await _sampleMesh(client);
-        fromSample = true;
-        status = filtered.isNotEmpty
-            ? l10n.peopleNoMatches
-            : l10n.peopleNoneFound;
-      }
+      final filtered = _filterNonBonded(rows);
       if (!mounted) return;
       setState(() {
         _results = filtered;
-        _fromSample = fromSample;
+        _fromSample = false;
         _searching = false;
-        _error = status;
+        _error = filtered.isEmpty ? l10n.peopleNoneFound : null;
       });
       _persistSession();
-      await _loadBlogPreviews(client, filtered);
+      if (filtered.isNotEmpty) {
+        await _loadBlogPreviews(client, filtered);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _searching = false;
+        _results = const [];
+        _error = e.toString();
+      });
+    }
+  }
+
+  /// Topic mode (Social parity): bare text → interest + `publish:<slug>`.
+  Future<List<MeshPeerHit>> _searchTopicBothPlanes({
+    required Future<List<MeshPeerHit>> Function(
+      String? topic,
+      List<String>? interests,
+    ) phone,
+    required String q,
+  }) async {
+    final publishTopic = _publishSearchTopic(q);
+    final interestFuture = phone(q, null);
+    final publishFuture = publishTopic.isEmpty
+        ? Future.value(const <MeshPeerHit>[])
+        : phone(publishTopic, null);
+    final parts = await Future.wait([interestFuture, publishFuture]);
+    return PhoneDiscoveryRuntime.mergeHits(
+      [...parts[0], ...parts[1]],
+      selfLibp2pPeerId: '',
+      selfOwnerId: '',
+      maxResults: 20,
+    );
+  }
+
+  List<PeerSearchResult> _mergePeerResults(
+    List<PeerSearchResult> a,
+    List<PeerSearchResult> b,
+  ) {
+    final out = <PeerSearchResult>[];
+    void addAll(List<PeerSearchResult> rows) {
+      for (final r in rows) {
+        if (out.any((e) =>
+            (e.ownerId.isNotEmpty && e.ownerId == r.ownerId) ||
+            (e.nodeId.isNotEmpty && e.nodeId == r.nodeId))) {
+          continue;
+        }
+        out.add(r);
+      }
+    }
+
+    addAll(a);
+    addAll(b);
+    return out;
+  }
+
+  Future<void> _runIdOrLinkSearch(String q) async {
+    final l10n = AppLocalizations.of(context);
+    final parsed = parseDiscoverContactCode(q);
+    if (parsed is DiscoverInvalidCode) {
+      setState(() {
+        _searching = false;
+        _results = const [];
+        _error = parsed.message;
+      });
+      return;
+    }
+
+    setState(() {
+      _searching = true;
+      _error = null;
+    });
+
+    try {
+      await _refreshExclude();
+      String? peerId;
+      String? ownerId;
+      String? displayName;
+      if (parsed is DiscoverPeerIdCode) {
+        peerId = parsed.peerId;
+      } else if (parsed is DiscoverContactCode) {
+        peerId = parsed.peerId;
+        ownerId = parsed.ownerId;
+        displayName = parsed.displayName;
+      }
+
+      List<PeerSearchResult> rows = const [];
+      final socialCtx = ref.read(socialContextProvider);
+      if (socialCtx.isPhone) {
+        final backend = ref.read(socialBackendProvider);
+        if (backend == null) {
+          setState(() {
+            _searching = false;
+            _error = l10n.peopleConnectHint;
+          });
+          return;
+        }
+        if (peerId != null && peerId.isNotEmpty) {
+          final hits = await backend
+              .searchPeers(peerId: peerId, maxResults: 5)
+              .timeout(
+                const Duration(seconds: 15),
+                onTimeout: () => const <MeshPeerHit>[],
+              );
+          rows = hits
+              .map((h) => PeerSearchResult(
+                    nodeId: h.nodeId,
+                    ownerId: h.ownerId,
+                    displayName: h.displayName,
+                    interests: h.interests,
+                    profileVisibility: h.profileVisibility,
+                    trustLevel: h.trustLevel,
+                    multiaddrs: h.multiaddrs,
+                  ))
+              .toList();
+        }
+        if (rows.isEmpty &&
+            ownerId != null &&
+            ownerId.isNotEmpty &&
+            !_excludeIds.contains(ownerId)) {
+          rows = [
+            PeerSearchResult(
+              nodeId: peerId ?? '',
+              ownerId: ownerId,
+              displayName: displayName,
+              multiaddrs: peerId != null && peerId.isNotEmpty
+                  ? ['/p2p/$peerId']
+                  : const [],
+              profileVisibility: 'public',
+            ),
+          ];
+        }
+        // Prefer contact-card ownerId/displayName when present.
+        if (ownerId != null &&
+            ownerId.isNotEmpty &&
+            rows.isNotEmpty &&
+            (rows.first.ownerId.isEmpty ||
+                rows.first.ownerId.startsWith('lan:'))) {
+          final first = rows.first;
+          rows = [
+            PeerSearchResult(
+              nodeId: first.nodeId.isNotEmpty ? first.nodeId : (peerId ?? ''),
+              ownerId: ownerId,
+              displayName: displayName ?? first.displayName,
+              interests: first.interests,
+              profileVisibility: first.profileVisibility,
+              trustLevel: first.trustLevel,
+              multiaddrs: first.multiaddrs.isNotEmpty
+                  ? first.multiaddrs
+                  : (peerId != null && peerId.isNotEmpty
+                      ? ['/p2p/$peerId']
+                      : const []),
+            ),
+            ...rows.skip(1),
+          ];
+        }
+      } else {
+        final client = ref.read(nodeServiceProvider);
+        if (client == null) {
+          setState(() {
+            _searching = false;
+            _error = l10n.peopleConnectHint;
+          });
+          return;
+        }
+        try {
+          await client.runCapabilityDiscovery(find: true);
+        } catch (_) {}
+        if (peerId != null && peerId.isNotEmpty) {
+          rows = await client.searchPeers(peerId: peerId, maxResults: 5);
+        }
+        if (rows.isEmpty &&
+            ownerId != null &&
+            ownerId.isNotEmpty &&
+            !_excludeIds.contains(ownerId)) {
+          rows = [
+            PeerSearchResult(
+              nodeId: peerId ?? '',
+              ownerId: ownerId,
+              displayName: displayName,
+              multiaddrs: peerId != null && peerId.isNotEmpty
+                  ? ['/p2p/$peerId']
+                  : const [],
+              profileVisibility: 'public',
+            ),
+          ];
+        } else if (ownerId != null &&
+            ownerId.isNotEmpty &&
+            rows.isNotEmpty &&
+            rows.first.ownerId != ownerId) {
+          final first = rows.first;
+          rows = [
+            PeerSearchResult(
+              nodeId: first.nodeId.isNotEmpty ? first.nodeId : (peerId ?? ''),
+              ownerId: ownerId,
+              displayName: displayName ?? first.displayName,
+              interests: first.interests,
+              profileVisibility: first.profileVisibility,
+              trustLevel: first.trustLevel,
+              multiaddrs: first.multiaddrs,
+            ),
+            ...rows.skip(1),
+          ];
+        }
+      }
+
+      final filtered = _filterNonBonded(rows);
+      if (!mounted) return;
+      setState(() {
+        _results = filtered;
+        _fromSample = false;
+        _searching = false;
+        _error = filtered.isEmpty ? l10n.peopleNoneFound : null;
+      });
+      _persistSession();
+      final client = ref.read(nodeServiceProvider);
+      if (client != null && filtered.isNotEmpty && !socialCtx.isPhone) {
+        await _loadBlogPreviews(client, filtered);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -693,15 +915,24 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: busy ? null : _runSearch,
+                // Keep label visible while searching (disabled FilledButton
+                // fades text; spinner alone looked blank).
+                onPressed: busy ? () {} : _runSearch,
                 child: busy
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Theme.of(context).colorScheme.onPrimary,
-                        ),
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Theme.of(context).colorScheme.onPrimary,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(l10n.commonSearch),
+                        ],
                       )
                     : Text(l10n.commonSearch),
               ),

@@ -9,6 +9,7 @@ import 'dart:async';
 
 import 'envelope_factory.dart';
 import 'envoy_envelope.dart';
+import 'lan_owner_id.dart';
 import 'mesh_envelope_transport.dart';
 import 'mesh_protocols.dart';
 import 'models.dart';
@@ -23,6 +24,7 @@ typedef PhonePersistHook = Future<void> Function(PhoneSocialStore store);
 typedef PhoneWanSearch = Future<List<MeshPeerHit>> Function({
   String? topic,
   List<String>? interests,
+  String? peerId,
   int maxResults,
 });
 
@@ -127,8 +129,78 @@ class PhoneSocialBackend implements SocialBackend {
   Future<List<MeshPeerHit>> searchPeers({
     String? topic,
     List<String>? interests,
+    String? peerId,
     int maxResults = 20,
   }) async {
+    final needle = (peerId ?? '').trim();
+    if (needle.isNotEmpty) {
+      final local = <MeshPeerHit>[];
+      for (final peer in _store.peersByOwner.values) {
+        if (peer.ownerId == ownerId) continue;
+        final match = peer.libp2pPeerId == needle ||
+            peer.ownerId == needle ||
+            peer.multiaddrs.any((a) => a.contains('/p2p/$needle'));
+        if (!match) continue;
+        final bond = _store.bondFor(peer.ownerId);
+        final peerInterests = (peer.profile['interests'] is List)
+            ? (peer.profile['interests'] as List)
+                .map((e) => e.toString())
+                .toList()
+            : const <String>[];
+        local.add(MeshPeerHit(
+          nodeId: peer.libp2pPeerId,
+          ownerId: peer.ownerId,
+          displayName: peer.displayName,
+          interests: peerInterests,
+          profileVisibility: 'public',
+          trustLevel: bond?.bondLevel,
+          multiaddrs: peer.multiaddrs,
+        ));
+        if (local.length >= maxResults) break;
+      }
+
+      final wan = _wanSearch;
+      if (wan == null) {
+        if (local.isNotEmpty) return local;
+        // Synthetic hit so the user can still Say Hello after rememberPeer.
+        return [
+          MeshPeerHit(
+            nodeId: needle,
+            ownerId: provisionalLanOwnerId(needle),
+            displayName: 'Peer (${shortLanPeerLabel(needle)})',
+            multiaddrs: ['/p2p/$needle'],
+            profileVisibility: 'public',
+          ),
+        ];
+      }
+
+      List<MeshPeerHit> remote = const [];
+      try {
+        remote = await wan(
+          peerId: needle,
+          maxResults: maxResults,
+        );
+      } catch (_) {
+        remote = const [];
+      }
+      final merged = PhoneDiscoveryRuntime.mergeHits(
+        [...local, ...remote],
+        selfLibp2pPeerId: '',
+        selfOwnerId: ownerId,
+        maxResults: maxResults,
+      );
+      if (merged.isNotEmpty) return merged;
+      return [
+        MeshPeerHit(
+          nodeId: needle,
+          ownerId: provisionalLanOwnerId(needle),
+          displayName: 'Peer (${shortLanPeerLabel(needle)})',
+          multiaddrs: ['/p2p/$needle'],
+          profileVisibility: 'public',
+        ),
+      ];
+    }
+
     final q = (topic ?? '').trim().toLowerCase();
     final interestSet =
         interests?.map((e) => e.toLowerCase()).toSet() ?? <String>{};

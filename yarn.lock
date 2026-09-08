@@ -423,6 +423,7 @@
     "@envoymesh/envoy-harness-peer" "file:../envoy-harness-peer"
     "@envoymesh/identity" "file:../../../EnvoyMesh/packages/identity"
     "@envoymesh/protocol" "file:../../../EnvoyMesh/packages/protocol"
+    zod "^3.23.8"
 
 "@envoymesh/envoy-harness-client@file:../../../envoy-harness/packages/envoy-harness-client":
   version "0.0.0"
@@ -450,6 +451,7 @@
   version "0.0.0"
   resolved "file:../envoy-harness/packages/envoy-harness"
   dependencies:
+    "@envoymesh/envoy-process" "file:../envoy-process"
     smol-toml "^1.8.0"
     yaml "^2.6.0"
     zod "^3.23.8"

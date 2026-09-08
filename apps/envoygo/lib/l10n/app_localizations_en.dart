@@ -1887,7 +1887,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peopleHint =>
-      'Find people you haven\'t bonded with — open their public profile or blog, then say hello.';
+      'Search by interest, topic, peer ID, or paste an envoy://contact link — then say hello.';
 
   @override
   String get peopleTryTopic => 'Try a topic';
@@ -1899,10 +1899,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peopleInterest => 'Interest';
 
   @override
-  String get peopleTopicHint => 'music, coding, travel…';
+  String get peopleTopicHint => 'topic, peer ID, or envoy://contact…';
 
   @override
-  String get peopleInterestHint => 'photography, cooking, travel…';
+  String get peopleInterestHint => 'food, travel, peer ID, or contact link…';
 
   @override
   String get peopleOnMesh => 'People on the mesh';
@@ -1926,7 +1926,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peopleHelloSent => 'Hello sent';
 
   @override
-  String get peopleEnterSearch => 'Enter a topic or interest to search.';
+  String get peopleEnterSearch =>
+      'Enter an interest, topic, peer ID, or contact link.';
 
   @override
   String get peopleNoMatches => 'No matches for that search.';

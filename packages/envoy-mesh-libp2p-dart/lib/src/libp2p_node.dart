@@ -191,59 +191,104 @@ class Libp2pNode implements Libp2pMeshHost {
     }
 
     await applyDefaults(config);
-    // applyDefaults may reset flags — re-assert relay after defaults.
+    // applyDefaults() forces enableAutoNAT=true. Ambient AutoNAT then probes
+    // public bootstraps (e.g. am6.bootstrap.libp2p.io) during host.start() and
+    // can stall cold start for tens of seconds even when cn-relay RTT is ~10ms.
+    // Phone mesh only needs TCP + circuit relay to our community relays.
     config.enableRelay = enableRelay;
+    config.enableAutoNAT = false;
+    config.enableHolePunching = false;
     _enableRelay = enableRelay;
 
+    final sw = Stopwatch()..start();
     _host = await config.newNode() as p2p_host.BasicHost;
+    _log('[Libp2pNode] newNode ${sw.elapsedMilliseconds}ms');
     await _host!.start();
+    _log('[Libp2pNode] host.start ${sw.elapsedMilliseconds}ms');
     _peerId = _host!.id;
     _started = true;
     _hostEpoch++;
 
-    // Initialize DHT client for peer discovery.
-    // DHTMode.client means we query the DHT but don't respond to other peers' queries.
-    _dht = IpfsDHT(
-      host: _host!,
-      providerStore: MemoryProviderStore(),
-      options: DHTOptions(mode: DHTMode.client),
+    // DHT join is useful for Discover but must not block "Connected".
+    unawaited(_startDhtAndBootstrap(bootstrapAddrs, sw));
+    _log(
+      '[Libp2pNode] Host ready in ${sw.elapsedMilliseconds}ms '
+      '(peerId=$_peerId, bootstrap deferred)',
     );
-    await _dht!.start();
+  }
 
-    // Connect to DHT bootstrap peers to join the DHT network.
-    int connectedCount = 0;
-    for (final addrStr in bootstrapAddrs) {
-      try {
-        final addr = MultiAddr(addrStr);
-        final relayPeerIdStr = addr.valueForProtocol('p2p');
-        if (relayPeerIdStr != null) {
-          final peerId = PeerId.fromString(relayPeerIdStr);
-          _log('[Libp2pNode] Connecting to bootstrap peer: $addrStr');
-          await _host!
-              .connect(
-                AddrInfo(peerId, [addr]),
-                context: Context(),
-              )
-              .timeout(const Duration(seconds: 8));
-          await _dht!.routingTable.tryAddPeer(peerId, queryPeer: true);
-          connectedCount++;
-          _log('[Libp2pNode] Bootstrap peer connected: $addrStr');
-        }
-      } catch (e) {
-        _log('[Libp2pNode] Bootstrap peer FAILED: $addrStr — $e');
-        // Ignore individual bootstrap peer failures.
-      }
+  Future<void> _startDhtAndBootstrap(
+    List<String> bootstrapAddrs,
+    Stopwatch sw,
+  ) async {
+    try {
+      _dht = IpfsDHT(
+        host: _host!,
+        providerStore: MemoryProviderStore(),
+        options: DHTOptions(mode: DHTMode.client),
+      );
+      await _dht!.start();
+      _log('[Libp2pNode] DHT start ${sw.elapsedMilliseconds}ms');
+    } catch (e) {
+      _log('[Libp2pNode] DHT start failed: $e');
+      return;
     }
-    _log('[Libp2pNode] Bootstrap: $connectedCount/${bootstrapAddrs.length} peers connected');
 
-    // Brief settle so early DHT/reserve calls see the routing table. Keep
-    // short — phone mesh UI waits on start before showing Connected.
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    // ignore: dart SDK print — debug only
+    final boot = filterLibp2pTcpBootstrapAddrs(bootstrapAddrs);
+    if (boot.isNotEmpty) {
+      unawaited(_connectBootstrapPeersInBackground(boot));
+    }
     try {
       final rtSize = await _dht!.routingTable.size();
-      _log('[Libp2pNode] DHT started, routing table size: $rtSize');
+      _log('[Libp2pNode] DHT routing table size: $rtSize');
     } catch (_) {}
+  }
+
+  /// Prefer the Asia community relay when present; otherwise the first addr.
+  String? _pickPrimaryBootstrap(List<String> addrs) {
+    if (addrs.isEmpty) return null;
+    if (addrs.contains(defaultEnvoyCommunityRelayBootstrapAddr)) {
+      return defaultEnvoyCommunityRelayBootstrapAddr;
+    }
+    return addrs.first;
+  }
+
+  Future<bool> _connectBootstrapPeer(
+    String addrStr, {
+    Duration timeout = const Duration(seconds: 4),
+  }) async {
+    try {
+      final addr = MultiAddr(addrStr);
+      final relayPeerIdStr = addr.valueForProtocol('p2p');
+      if (relayPeerIdStr == null) return false;
+      final peerId = PeerId.fromString(relayPeerIdStr);
+      _log('[Libp2pNode] Connecting to bootstrap peer: $addrStr');
+      await _host!
+          .connect(
+            AddrInfo(peerId, [addr]),
+            context: Context(),
+          )
+          .timeout(timeout);
+      await _dht!.routingTable.tryAddPeer(peerId, queryPeer: true);
+      _log('[Libp2pNode] Bootstrap peer connected: $addrStr');
+      return true;
+    } catch (e) {
+      _log('[Libp2pNode] Bootstrap peer FAILED: $addrStr — $e');
+      return false;
+    }
+  }
+
+  Future<void> _connectBootstrapPeersInBackground(List<String> addrs) async {
+    final primary = _pickPrimaryBootstrap(addrs);
+    final ordered = <String>[
+      if (primary != null) primary,
+      for (final a in addrs)
+        if (a != primary) a,
+    ];
+    for (final addrStr in ordered) {
+      if (!_started) return;
+      await _connectBootstrapPeer(addrStr);
+    }
   }
 
   /// Find a peer by their PeerId via DHT query.

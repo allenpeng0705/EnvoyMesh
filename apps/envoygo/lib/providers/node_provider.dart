@@ -202,6 +202,13 @@ class NodeNotifier extends StateNotifier<NodeState> {
   NodeServiceClient? _nodeService;
   PairingService? _pairingService;
 
+  /// Route that was working when the app entered the background.
+  ///
+  /// Resume tries this route first once, avoiding slow LAN/P2P timeouts before
+  /// returning to a known-good relay. Later reconnects use the normal resolver
+  /// order so direct-route upgrades still work.
+  String? _resumeTransportName;
+
   /// Libp2p node for direct P2P connectivity when relay is unavailable.
   Libp2pNode? _libp2pNode;
 
@@ -279,21 +286,28 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
   /// Start the shared libp2p host if needed (phone mesh or home circuit dial).
   ///
-  /// Uses the active node's bootstrap peers when paired; otherwise the
-  /// community relay defaults so unpaired phone mesh can still reserve.
+  /// Always seeds the community TCP relays. Pairing `bootstrapPeers` often
+  /// include WebSocket URLs — those are filtered out so cold start does not
+  /// stall dialing non-libp2p addresses. Remaining peers connect in background.
   Future<Libp2pNode?> ensureLibp2pStarted() async {
     try {
       _libp2pNode ??= Libp2pNode(
         seedStore: SecureStorageLibp2pSeedStore(_secureStorage),
       );
       final fromNode = state.activeNode?.bootstrapPeers ?? const <String>[];
-      final bootstrap = fromNode.isNotEmpty
-          ? fromNode
-          : defaultEnvoyCommunityRelayBootstrapAddrs;
-      // Start (or restart without TCP listen) so mDNS can advertise.
+      final bootstrap = <String>[
+        ...defaultEnvoyCommunityRelayBootstrapAddrs,
+        ...filterLibp2pTcpBootstrapAddrs(fromNode),
+      ];
+      // Dedupe while preserving community-relay-first order.
+      final seen = <String>{};
+      final unique = <String>[
+        for (final a in bootstrap)
+          if (seen.add(a)) a,
+      ];
       await _libp2pNode!.ensureTcpListen(
         listenAddrs: const ['/ip4/0.0.0.0/tcp/0'],
-        bootstrapAddrs: bootstrap,
+        bootstrapAddrs: unique,
         enableRelay: true,
       );
       return _libp2pNode;
@@ -336,7 +350,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     try {
       await _ensureConnectivityObserver();
     } catch (e) {
-      _log('[loadPairedNodes] _ensureConnectivityObserver failed (non-fatal): $e');
+      _log(
+        '[loadPairedNodes] _ensureConnectivityObserver failed (non-fatal): $e',
+      );
     }
 
     // Auto-connect to last-used node.
@@ -438,9 +454,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
       if (peerId != null) {
         await _nodeService!.updateMyListenAddrs(
           peerId,
-          [upnpAddr],
-          ownerId: state.ownerId,
-        );
+            [
+              upnpAddr,
+            ],
+          ownerId: state.ownerId);
         _log('[NodeNotifier] shared UPnP address $upnpAddr with home node');
       }
     } catch (e) {
@@ -459,7 +476,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
       kickReconnect();
     });
     _networkTypeSub = observer.onNetworkTypeChanged.listen((_) {
-      _log('[connectivity] Wi‑Fi↔cellular — force reconnect with fresh candidates');
+      _log(
+        '[connectivity] Wi‑Fi↔cellular — force reconnect with fresh candidates',
+      );
       unawaited(_reconnectForNetworkTypeChange());
     });
   }
@@ -477,7 +496,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// [_connectingFuture] so a supervisor kick does not race the
   /// initial connect.
   void _startSupervisorFor(String nodeId) {
-    _log('[_startSupervisorFor] nodeId=$nodeId, current supervisorTargetNodeId=$_supervisorTargetNodeId');
+    _log(
+      '[_startSupervisorFor] nodeId=$nodeId, current supervisorTargetNodeId=$_supervisorTargetNodeId',
+    );
     _supervisor?.stop();
     _supervisorTargetNodeId = nodeId;
     _supervisor = ReconnectSupervisor(
@@ -485,9 +506,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       getTargetNode: () {
         final id = _supervisorTargetNodeId;
         if (id == null) return null;
-        return state.pairedNodes
-            .where((n) => n.id == id)
-            .firstOrNull;
+        return state.pairedNodes.where((n) => n.id == id).firstOrNull;
       },
       attemptConnect: (node) => connectToNode(node),
       onAttemptStarted: () {
@@ -507,10 +526,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
       },
       onAttemptFailed: (code, message) {
         if (_disposed) return;
-        state = state.copyWith(
-          homeNodeErrorCode: code,
-          errorMessage: message,
-        );
+        state = state.copyWith(homeNodeErrorCode: code,
+          errorMessage: message);
       },
     );
     _supervisor!.start();
@@ -528,7 +545,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// No-op when already connected — use [forceReconnect] to re-dial
   /// (e.g. switch Relay → LAN after joining home Wi‑Fi).
   void kickReconnect() {
-    _log('[kickReconnect] called, connectionState=${state.connectionState}, supervisor=$_supervisor, supervisor.isStopped=${_supervisor?.isStopped}, supervisorTargetNodeId=$_supervisorTargetNodeId');
+    _log(
+      '[kickReconnect] called, connectionState=${state.connectionState}, supervisor=$_supervisor, supervisor.isStopped=${_supervisor?.isStopped}, supervisorTargetNodeId=$_supervisorTargetNodeId',
+    );
     if (state.connectionState == NodeConnectionState.connected) return;
     final supervisor = _supervisor;
     if (supervisor == null || supervisor.isStopped) {
@@ -556,7 +575,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
       kickReconnect();
       return;
     }
-    _log('[forceReconnect] re-dialing ${node.id} (was ${state.activeTransport})');
+    _log(
+      '[forceReconnect] re-dialing ${node.id} (was ${state.activeTransport})',
+    );
     await disconnect();
     _supervisor?.stop();
     _supervisor = null;
@@ -631,8 +652,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     String? profileId,
     void Function(HomeRemoteCandidate candidate)? onConnectingCandidate,
   }) async {
-    state = state.copyWith(
-        connectionState: NodeConnectionState.connecting);
+    state = state.copyWith(connectionState: NodeConnectionState.connecting);
 
     // Ensure the local database is initialized before we write to it.
     // On a fresh install, loadPairedNodes may not have completed yet.
@@ -649,7 +669,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     try {
       await _client!.ensureConnected();
       _nodeService = NodeServiceClient(_client!);
-      _pairingService = PairingService(_nodeService!, secureStorage: _secureStorage);
+      _pairingService = PairingService(
+        _nodeService!, secureStorage: _secureStorage,
+      );
 
       result = await _pairingService!.pair(
         data,
@@ -727,7 +749,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (data.bootstrapPresetNames != null &&
         data.bootstrapPresetNames!.isNotEmpty) {
       for (final p in CandidateResolver.resolveBootstrapPresets(
-          data.bootstrapPresetNames!)) {
+        data.bootstrapPresetNames!,
+      )) {
         if (!bootstrapPeers.contains(p)) bootstrapPeers.add(p);
       }
     }
@@ -756,10 +779,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
             .map((n) => n.homePeerId == data.homeNodePeerId ? node : n)
             .toList()
         : [...state.pairedNodes, node];
-    state = state.copyWith(
-      pairedNodes: updatedNodes,
-      ownerId: result.ownerId,
-    );
+    state = state.copyWith(pairedNodes: updatedNodes,
+      ownerId: result.ownerId);
 
     // Dispose the pairing connection (used QR pairing token, not session token).
     _client?.dispose();
@@ -775,14 +796,15 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // This is the last step of pairing so the StoredNode is complete.
     try {
       final payload = await _nodeService!.getPairingPayload();
-      final bootstrapList = (payload['bootstrapPeers'] as List<dynamic>?)
-          ?.cast<String>();
+      final bootstrapList = (payload['bootstrapPeers'] as List<dynamic>?)?.cast<String>();
       if (bootstrapList != null && bootstrapList.isNotEmpty) {
         final nodeWithBootstrap = node.copyWith(bootstrapPeers: bootstrapList);
         await _localDb.upsertNode(nodeWithBootstrap.toJson());
         final updatedNodes = state.pairedNodes
-            .map((n) =>
-                n.homePeerId == data.homeNodePeerId ? nodeWithBootstrap : n)
+            .map(
+              (n) =>
+                n.homePeerId == data.homeNodePeerId ? nodeWithBootstrap : n,
+            )
             .toList();
         state = state.copyWith(pairedNodes: updatedNodes);
       }
@@ -829,9 +851,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // pairWithNode's catch handler runs; it tries `_client?.dispose()`
     // which is now a no-op on the local null.
     client?.dispose();
-    state = state.copyWith(
-      connectionState: NodeConnectionState.disconnected,
-    );
+    state = state.copyWith(connectionState: NodeConnectionState.disconnected);
   }
 
   /// Sync all data from the home node after a successful connection.
@@ -844,8 +864,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (client == null || nodeService == null) return;
 
     // Subscribe to push events from the home node.
-    _subscribeToPushEvents(client, chatNotifier, contactNotifier,
-        terminalNotifier);
+    _subscribeToPushEvents(
+      client, chatNotifier, contactNotifier,
+      terminalNotifier,
+    );
 
     // Sync contacts / mesh rooms / terminals — owner only (Phase 51E).
     // Skip when Social context is phone — phone persona uses SocialBackend.
@@ -1000,11 +1022,13 @@ class NodeNotifier extends StateNotifier<NodeState> {
     );
     final node = state.activeNode;
     if (node != null) {
-      unawaited(_persistFamilySessionFlags(
+      unawaited(
+        _persistFamilySessionFlags(
         node.id,
         profileId: nextProfileId,
         isOwner: nextIsOwner,
-      ));
+        ),
+      );
       if (pairedChanged &&
           nextPairedId != null &&
           nextPairedId.isNotEmpty) {
@@ -1128,7 +1152,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
   }
 
   Future<void> _syncBondsDirect(
-      NodeServiceClient nodeService, ContactNotifier contactNotifier) async {
+      NodeServiceClient nodeService, ContactNotifier contactNotifier,
+  ) async {
     final nodeState = state;
     if (nodeState.activeNode == null) return;
     try {
@@ -1151,7 +1176,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
   }
 
   void _syncRoomsDirect(
-      NodeServiceClient nodeService, ChatNotifier chatNotifier) {
+      NodeServiceClient nodeService, ChatNotifier chatNotifier,
+  ) {
     // Use ChatNotifier.syncRooms() — creates group threads for every room
     // (including quiet ones). Do NOT funnel through onRoomMessage (that
     // path drops empty text and was hiding rooms after listChatRooms).
@@ -1161,7 +1187,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
   }
 
   void _syncInboxDirect(
-      NodeServiceClient nodeService, ChatNotifier chatNotifier) {
+      NodeServiceClient nodeService, ChatNotifier chatNotifier,
+  ) {
     nodeService.listPendingSocialIntroProposals().then((result) {
       for (final item in result) {
         final from = item['fromOwnerId'] as String?;
@@ -1213,13 +1240,16 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// proxy handshake through the relay WebSocket. All other candidates
   /// use a plain WebSocket.
   Future<WebSocketLike> _createTransportForCandidate(
-      HomeRemoteCandidate candidate) async {
+      HomeRemoteCandidate candidate,
+  ) async {
     // Relay proxy transport: URLs containing ?target=<homePeerId> use the
     // ClientProxyTransport which handles the proxy handshake protocol.
     if (candidate.homePeerId != null &&
         candidate.homePeerId!.isNotEmpty &&
         candidate.url.contains('?target=')) {
-      _log('[_createTransportForCandidate] relay (client-proxy): ${candidate.name} — ${candidate.url}');
+      _log(
+        '[_createTransportForCandidate] relay (client-proxy): ${candidate.name} — ${candidate.url}',
+      );
       // candidate.url is already the full WebSocket URL with ?target= and ?token=.
       // Extract the base relay URL by taking everything before '?target='.
       final targetIdx = candidate.url.indexOf('?target=');
@@ -1234,7 +1264,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // the community relay's circuit relay v2.
     if (candidate.libp2pRelayAddr != null &&
         candidate.libp2pRelayAddr!.isNotEmpty) {
-      _log('[_createTransportForCandidate] libp2p-circuit-relay: ${candidate.name} — ${candidate.url}');
+      _log(
+        '[_createTransportForCandidate] libp2p-circuit-relay: ${candidate.name} — ${candidate.url}',
+      );
       try {
         // Bound libp2p setup — DHT start alone waits 10s; without a cap,
         // each p2p candidate can hang far longer than perCandidateTimeoutMs.
@@ -1251,20 +1283,27 @@ class NodeNotifier extends StateNotifier<NodeState> {
       }
     }
     // Standard WebSocket.
-    _log('[_createTransportForCandidate] websocket: ${candidate.name} — ${candidate.url}');
+    _log(
+      '[_createTransportForCandidate] websocket: ${candidate.name} — ${candidate.url}',
+    );
     return PlatformWebSocket.connect(candidate.url);
   }
 
   /// Create a libp2p transport for circuit relay dialing.
   Future<WebSocketLike> _createLibp2pTransport(
-      HomeRemoteCandidate candidate) async {
-    _log('[_createLibp2pTransport] ENTERING — candidate: ${candidate.name}, url: ${candidate.url}');
+      HomeRemoteCandidate candidate,
+  ) async {
+    _log(
+      '[_createLibp2pTransport] ENTERING — candidate: ${candidate.name}, url: ${candidate.url}',
+    );
 
     // Get DHT bootstrap peers from the stored node (synced from home node via QR code).
     // Use these instead of hardcoded peers so mobile uses the same DHT network as home node.
     final nodeState = state;
     final bootstrapPeers = nodeState.activeNode?.bootstrapPeers ?? <String>[];
-    _log('[_createLibp2pTransport] DHT bootstrap peers from stored node: $bootstrapPeers');
+    _log(
+      '[_createLibp2pTransport] DHT bootstrap peers from stored node: $bootstrapPeers',
+    );
 
     // Start libp2p node if not already started (or restart for TCP listen).
     _libp2pNode ??= Libp2pNode(
@@ -1285,15 +1324,21 @@ class NodeNotifier extends StateNotifier<NodeState> {
     AddrInfo? addrInfo;
     try {
       final homePeerId = PeerId.fromString(candidate.homePeerId!);
-      _log('[_createLibp2pTransport] DHT findPeer looking up homePeerId: ${homePeerId.toString()}');
+      _log(
+        '[_createLibp2pTransport] DHT findPeer looking up homePeerId: ${homePeerId.toString()}',
+      );
       addrInfo = await _libp2pNode!.findPeer(homePeerId);
     } catch (e) {
       _log('[_createLibp2pTransport] findPeer threw: $e');
       addrInfo = null;
     }
-    _log('[_createLibp2pTransport] DHT findPeer => ${addrInfo?.addrs.length ?? 0} addrs');
+    _log(
+      '[_createLibp2pTransport] DHT findPeer => ${addrInfo?.addrs.length ?? 0} addrs',
+    );
     if (addrInfo != null && addrInfo.addrs.isNotEmpty) {
-      _log('[_createLibp2pTransport] DHT addresses discovered: ${addrInfo.addrs.map((a) => a.toString()).join(', ')}');
+      _log(
+        '[_createLibp2pTransport] DHT addresses discovered: ${addrInfo.addrs.map((a) => a.toString()).join(', ')}',
+      );
       // Replace the ephemeral port from relay-observed addr with the conventional
       // libp2p port (4001). The relay reports the ephemeral source port of the TCP
       // connection (e.g. 28746), not the actual listen port. For direct libp2p
@@ -1311,9 +1356,13 @@ class NodeNotifier extends StateNotifier<NodeState> {
             RegExp(r'/tcp/\d+'),
             (m) => '/tcp/$libp2pPort',
           );
-          _log('[_createLibp2pTransport] DHT direct addr (port replaced to $libp2pPort): $dialAddr');
+          _log(
+            '[_createLibp2pTransport] DHT direct addr (port replaced to $libp2pPort): $dialAddr',
+          );
         } else {
-          _log('[_createLibp2pTransport] DHT circuit-relay addr (skipping): $dialAddr');
+          _log(
+            '[_createLibp2pTransport] DHT circuit-relay addr (skipping): $dialAddr',
+          );
           continue;
         }
         try {
@@ -1345,7 +1394,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
 
     // All paths exhausted.
-    throw Exception('homeRemote.connectFailed (DHT: ${addrInfo?.addrs.length ?? 0} addrs)');
+    throw Exception(
+      'homeRemote.connectFailed (DHT: ${addrInfo?.addrs.length ?? 0} addrs)',
+    );
   }
 
   /// Subscribe to server push events via WebSocket (fallback) and
@@ -1415,8 +1466,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       if (_ref.read(socialContextProvider).isPhone) return;
       if (!state.isOwnerProfile) return;
       if (data is Map<String, dynamic>) {
-        contactNotifier
-            .onBondRevoked(data['peerOwnerId'] as String? ?? '');
+        contactNotifier.onBondRevoked(data['peerOwnerId'] as String? ?? '');
       }
     });
     client.on('bridge:status', (data) {
@@ -1485,11 +1535,17 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // tab gating / mesh sync / push prefs don't briefly treat a family
     // member as the owner before getNodeConfig returns.
     final storedProfileId =
-        await _secureStorage.read('node.${node.id}.familyProfileId');
+        await _secureStorage.read(
+      'node.${node.id}.familyProfileId',
+    );
     final storedOwnerFlag =
-        await _secureStorage.read('node.${node.id}.isOwnerProfile');
+        await _secureStorage.read(
+      'node.${node.id}.isOwnerProfile',
+    );
     var storedPairedId =
-        await _secureStorage.read('node.${node.id}.pairedFamilyProfileId');
+        await _secureStorage.read(
+      'node.${node.id}.pairedFamilyProfileId',
+    );
     // Migrate older installs: if we still have a non-owner session id and
     // never wrote pairing intent, treat that as the immutable intent.
     if ((storedPairedId == null || storedPairedId.isEmpty) &&
@@ -1529,7 +1585,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     final sessionToken =
         await _secureStorage.getSessionToken(node.id);
-    _log('[_connectToNodeImpl] nodeId=${node.id}, sessionToken=${sessionToken != null ? "present (${sessionToken.length} chars)" : "NULL"}');
+    _log(
+      '[_connectToNodeImpl] nodeId=${node.id}, sessionToken=${sessionToken != null ? "present (${sessionToken.length} chars)" : "NULL"}',
+    );
     if (sessionToken == null || sessionToken.isEmpty) {
       // No session token in secure storage. The pairing record is
       // still there (the device is still "paired" in the user's
@@ -1566,7 +1624,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
 
     final candidates = resolveNow();
-    _log('[_connectToNodeImpl] candidates: ${candidates.map((c) => "${c.name}(${c.url})").toList()}');
+    _log(
+      '[_connectToNodeImpl] candidates: ${candidates.map((c) => "${c.name}(${c.url})").toList()}',
+    );
     if (candidates.isEmpty) {
       // No transport candidates (LAN, public, libp2p, relay). The
       // stored node has no way to reach the home. Do NOT throw
@@ -1578,20 +1638,38 @@ class NodeNotifier extends StateNotifier<NodeState> {
         errorMessage: 'No transport candidates available.',
         homeNodeErrorCode: 'no_candidates',
       );
-      throw Exception(
-        'No transport candidates available.',
-      );
+      throw Exception('No transport candidates available.');
     }
+
+    var preferResumeTransport = _resumeTransportName != null;
+    final resumeTransportName = _resumeTransportName;
+    _resumeTransportName = null;
 
     final opts = HomeRemoteClientOptions(
       // Re-resolve on each reconnect (LAN/P2P first, then relay).
-      resolveCandidates: () async => resolveNow(),
+      resolveCandidates: () async {
+        final resolved = resolveNow();
+        if (!preferResumeTransport || resumeTransportName == null) {
+          return resolved;
+        }
+        preferResumeTransport = false;
+        final preferredIndex = resolved.indexWhere(
+          (c) => c.name == resumeTransportName,
+        );
+        if (preferredIndex <= 0) return resolved;
+        return [
+          resolved[preferredIndex],
+          ...resolved.take(preferredIndex),
+          ...resolved.skip(preferredIndex + 1),
+        ];
+      },
       createTransport: (c) => _createTransportForCandidate(c),
       onHomeOnlineChange: (online) {
         state = state.copyWith(
             connectionState: online
                 ? NodeConnectionState.connected
-                : NodeConnectionState.disconnected);
+                : NodeConnectionState.disconnected,
+        );
       },
       onActiveTransportChange: (candidate) {
         state = state.copyWith(activeTransport: candidate?.name);
@@ -1626,8 +1704,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       // is currently connected to.
       try {
         final status = await _nodeService!.getConnectionStatus();
-        final peers = (status['bootstrapPeers'] as List<dynamic>?)
-            ?.cast<String>();
+        final peers = (status['bootstrapPeers'] as List<dynamic>?)?.cast<String>();
         if (peers != null && peers.isNotEmpty) {
           final nodeWithBootstrap = node.copyWith(bootstrapPeers: peers);
           await _localDb.upsertNode(nodeWithBootstrap.toJson());
@@ -1708,6 +1785,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (nodeId != null) {
       _supervisorTargetNodeId = nodeId;
     }
+    if (state.connectionState == NodeConnectionState.connected &&
+        state.activeTransport != null) {
+      _resumeTransportName = state.activeTransport;
+    }
     _log('[pauseForBackground] dropping thin-client WS for push delivery');
     _supervisor?.stop();
     await disconnect();
@@ -1760,12 +1841,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
   }
 
   /// Update the public IP/domain for a paired node.
-  Future<void> updatePublicAccess(
-      String nodeId, String host, int port) async {
+  Future<void> updatePublicAccess(String nodeId, String host, int port) async {
     final rows = await _localDb.listNodes();
-    final node = rows
-        .where((r) => r['id'] == nodeId)
-        .firstOrNull;
+    final node = rows.where((r) => r['id'] == nodeId).firstOrNull;
     if (node == null) return;
 
     final updated = {...node, 'public_host': host, 'public_port': port};
@@ -1920,15 +1998,13 @@ final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
     applyIncoming(pendingIncoming);
   }
   final incomingSub = push.onIncomingCall.listen(applyIncoming);
-  ref.listen(
-    nodeProvider.select((s) => s.connectionState),
+  ref.listen(nodeProvider.select((s) => s.connectionState),
     (_, next) {
       if (next == NodeConnectionState.connected) {
         tryBind();
       }
       // On disconnect: keep this CallProvider (and any active transport).
-    },
-  );
+  });
 
   ref.onDispose(() {
     incomingSub.cancel();

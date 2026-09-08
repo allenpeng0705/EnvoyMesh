@@ -167,7 +167,7 @@ void main() {
       final backend = PhoneSocialBackend(
         persona: persona,
         transport: transport,
-        wanSearch: ({topic, interests, maxResults = 20}) async {
+        wanSearch: ({topic, interests, peerId, maxResults = 20}) async {
           return [
             MeshPeerHit(
               nodeId: '12D3KooWan',
@@ -196,7 +196,7 @@ void main() {
       final backend = PhoneSocialBackend(
         persona: persona,
         transport: FakeMeshEnvelopeTransport(),
-        wanSearch: ({topic, interests, maxResults = 20}) async => [
+        wanSearch: ({topic, interests, peerId, maxResults = 20}) async => [
           const MeshPeerHit(
             nodeId: '12D3KooWan',
             ownerId: 'envoy:owner:wan',
@@ -216,7 +216,7 @@ void main() {
       final backend = PhoneSocialBackend(
         persona: persona,
         transport: FakeMeshEnvelopeTransport(),
-        wanSearch: ({topic, interests, maxResults = 20}) async => [
+        wanSearch: ({topic, interests, peerId, maxResults = 20}) async => [
           const MeshPeerHit(
             nodeId: '12D3KooLocal',
             ownerId: 'envoy:owner:local',
