@@ -10,11 +10,12 @@ _PhoneMeshUiStatus _resolveStatus({
   required bool hasBackend,
   required PhoneMeshRuntimeState mesh,
 }) {
-  if (!hasBackend) return _PhoneMeshUiStatus.connecting;
   if (mesh.lastError != null && mesh.lastError!.isNotEmpty) {
     return _PhoneMeshUiStatus.error;
   }
   if (mesh.sessionActive) return _PhoneMeshUiStatus.connected;
+  // Backend still loading persona / store — not mid-connect yet.
+  if (!hasBackend) return _PhoneMeshUiStatus.offline;
   return _PhoneMeshUiStatus.connecting;
 }
 

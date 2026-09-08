@@ -86,7 +86,9 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
       }
     }
 
-    await _advertiseAndCheckin();
+    // First DHT/checkin can hang on WAN — keep discovery "active" and retry
+    // on the timer without blocking the phone-mesh status UI.
+    unawaited(_advertiseAndCheckin());
     _checkinTimer?.cancel();
     _checkinTimer = Timer.periodic(_checkinInterval, (_) {
       unawaited(_advertiseAndCheckin());

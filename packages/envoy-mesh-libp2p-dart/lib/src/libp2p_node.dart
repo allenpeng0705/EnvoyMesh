@@ -219,10 +219,12 @@ class Libp2pNode implements Libp2pMeshHost {
         if (relayPeerIdStr != null) {
           final peerId = PeerId.fromString(relayPeerIdStr);
           _log('[Libp2pNode] Connecting to bootstrap peer: $addrStr');
-          await _host!.connect(
-            AddrInfo(peerId, [addr]),
-            context: Context(),
-          );
+          await _host!
+              .connect(
+                AddrInfo(peerId, [addr]),
+                context: Context(),
+              )
+              .timeout(const Duration(seconds: 8));
           await _dht!.routingTable.tryAddPeer(peerId, queryPeer: true);
           connectedCount++;
           _log('[Libp2pNode] Bootstrap peer connected: $addrStr');
@@ -234,9 +236,9 @@ class Libp2pNode implements Libp2pMeshHost {
     }
     _log('[Libp2pNode] Bootstrap: $connectedCount/${bootstrapAddrs.length} peers connected');
 
-    // Short settle — full 10s made every libp2p candidate painfully slow on
-    // cellular reconnect. Callers wrap create in a 12s timeout.
-    await Future<void>.delayed(const Duration(milliseconds: 2500));
+    // Brief settle so early DHT/reserve calls see the routing table. Keep
+    // short — phone mesh UI waits on start before showing Connected.
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     // ignore: dart SDK print — debug only
     try {
       final rtSize = await _dht!.routingTable.size();

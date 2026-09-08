@@ -69,6 +69,8 @@ void main() {
         host.registeredProtocols,
         containsAll([envoyMessageProtocol, envoyChatProtocol]),
       );
+      // Relay reserve runs in the background so enable can return quickly.
+      await Future<void>.delayed(Duration.zero);
       expect(host.reserveCalls, [defaultEnvoyCommunityRelayBootstrapAddr]);
       expect(
         session.reservedRelayPeerId,
@@ -115,6 +117,7 @@ void main() {
       final session = PhoneMeshSession(host);
       await session.enable(onStream: (_, __, ___) async {});
       expect(session.isActive, isTrue);
+      await Future<void>.delayed(Duration.zero);
       expect(host.registeredProtocols, hasLength(2));
       expect(session.reservedRelayPeerId, isNull);
     });
@@ -123,6 +126,7 @@ void main() {
       final host = FakeLibp2pMeshHost();
       final session = PhoneMeshSession(host);
       await session.enable(onStream: (_, __, ___) async {});
+      await Future<void>.delayed(Duration.zero);
       await session.disable();
 
       expect(session.isActive, isFalse);

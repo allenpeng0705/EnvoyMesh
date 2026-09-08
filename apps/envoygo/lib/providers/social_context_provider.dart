@@ -341,6 +341,14 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
           );
         }
 
+        // Publish session status before discovery — DHT/checkin must not
+        // keep the tower icon stuck on "Connecting".
+        state = PhoneMeshRuntimeState(
+          sessionActive: _session!.isActive,
+          discoveryActive: _discovery?.isActive ?? false,
+          lastError: null,
+        );
+
         if (_foreground) {
           _discovery ??= PhoneDiscoverySession(node: node, backend: backend);
           if (!_discovery!.isActive) {
