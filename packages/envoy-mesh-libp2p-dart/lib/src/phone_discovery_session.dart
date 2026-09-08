@@ -205,67 +205,40 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
     final selfOwner = _backend.ownerId;
     final queries = _runtime.queryTopics(topic: topic, interests: interests);
 
-    final dhtHits = await _runtime.searchDht(
-      selfLibp2pPeerId: selfPeer,
-      queryTopics: queries,
-      maxResults: maxResults,
-    );
-
+    // LAN is instant. DHT + relay can stall — bound each leg so Discover UI
+    // never waits forever when the tower already shows Connected.
     final lanHits = _lanHits(selfPeer: selfPeer, maxResults: maxResults);
 
-    final relayHits = <MeshPeerHit>[];
-    final transport = _transport;
-    if (transport != null) {
-      for (final q in queries) {
-        final payload =
-            _runtime.buildLookupPayload(queryTopic: q, maxResults: maxResults);
-        final unsigned = buildUnsignedSystemEnvelope(
-          device: _backend.persona.device,
-          intent: 'relay.lookup',
-          payload: payload,
+    final dhtFuture = _runtime
+        .searchDht(
+          selfLibp2pPeerId: selfPeer,
+          queryTopics: queries,
+          maxResults: maxResults,
+        )
+        .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            _log('[PhoneDiscoverySession] DHT search timed out');
+            return const <MeshPeerHit>[];
+          },
         );
-        final signed = signEnvoyEnvelope(
-          unsigned,
-          _backend.persona.device.privateKeyPem,
-        );
-        for (final relayAddr in _relayBootstrapAddrs) {
-          try {
-            final result = await transport.sendEnvelope(
-              dialTarget: relayAddr,
-              protocolId: envoyMessageProtocol,
-              envelope: signed,
-              expectReply: true,
-            );
-            if (!result.ok || result.replyEnvelope == null) continue;
-            final reply = Map<String, Object?>.from(result.replyEnvelope!);
-            if (!isAcceptableRelayLookupResponse(
-              reply,
-              dialedTrustedRelay: true,
-            )) {
-              _log(
-                '[PhoneDiscoverySession] lookup rejected (untrusted reply) $relayAddr',
-              );
-              continue;
-            }
-            final peers = parseRelayLookupPeers(reply['payload']);
-            final candidates = [
-              for (final p in peers) RelayLookupCandidate.fromJson(p),
-            ];
-            relayHits.addAll(
-              _runtime.hitsFromRelayCandidates(
-                candidates,
-                selfLibp2pPeerId: selfPeer,
-                selfOwnerId: selfOwner,
-              ),
-            );
-          } catch (e) {
-            _log(
-              '[PhoneDiscoverySession] lookup error $relayAddr: $e',
-            );
-          }
-        }
-      }
-    }
+
+    final relayFuture = _relayLookupHits(
+      queries: queries,
+      selfPeer: selfPeer,
+      selfOwner: selfOwner,
+      maxResults: maxResults,
+    ).timeout(
+      const Duration(seconds: 20),
+      onTimeout: () {
+        _log('[PhoneDiscoverySession] relay lookup timed out');
+        return const <MeshPeerHit>[];
+      },
+    );
+
+    final parts = await Future.wait([dhtFuture, relayFuture]);
+    final dhtHits = parts[0];
+    final relayHits = parts[1];
 
     // Persist dial hints for hello (WAN + provisional LAN owners).
     for (final hit in [...relayHits, ...dhtHits, ...lanHits]) {
@@ -289,5 +262,67 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
       selfOwnerId: selfOwner,
       maxResults: maxResults,
     );
+  }
+
+  Future<List<MeshPeerHit>> _relayLookupHits({
+    required List<String> queries,
+    required String selfPeer,
+    required String selfOwner,
+    required int maxResults,
+  }) async {
+    final relayHits = <MeshPeerHit>[];
+    final transport = _transport;
+    if (transport == null) return relayHits;
+
+    for (final q in queries) {
+      final payload =
+          _runtime.buildLookupPayload(queryTopic: q, maxResults: maxResults);
+      final unsigned = buildUnsignedSystemEnvelope(
+        device: _backend.persona.device,
+        intent: 'relay.lookup',
+        payload: payload,
+      );
+      final signed = signEnvoyEnvelope(
+        unsigned,
+        _backend.persona.device.privateKeyPem,
+      );
+      for (final relayAddr in _relayBootstrapAddrs) {
+        try {
+          final result = await transport.sendEnvelope(
+            dialTarget: relayAddr,
+            protocolId: envoyMessageProtocol,
+            envelope: signed,
+            expectReply: true,
+          );
+          if (!result.ok || result.replyEnvelope == null) continue;
+          final reply = Map<String, Object?>.from(result.replyEnvelope!);
+          if (!isAcceptableRelayLookupResponse(
+            reply,
+            dialedTrustedRelay: true,
+          )) {
+            _log(
+              '[PhoneDiscoverySession] lookup rejected (untrusted reply) $relayAddr',
+            );
+            continue;
+          }
+          final peers = parseRelayLookupPeers(reply['payload']);
+          final candidates = [
+            for (final p in peers) RelayLookupCandidate.fromJson(p),
+          ];
+          relayHits.addAll(
+            _runtime.hitsFromRelayCandidates(
+              candidates,
+              selfLibp2pPeerId: selfPeer,
+              selfOwnerId: selfOwner,
+            ),
+          );
+        } catch (e) {
+          _log(
+            '[PhoneDiscoverySession] lookup error $relayAddr: $e',
+          );
+        }
+      }
+    }
+    return relayHits;
   }
 }

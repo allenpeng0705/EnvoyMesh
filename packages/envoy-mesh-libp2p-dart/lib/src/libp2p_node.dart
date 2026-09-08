@@ -440,16 +440,22 @@ class Libp2pNode implements Libp2pMeshHost {
   }
 
   /// DHT findProviders for a capability topic.
+  ///
+  /// Bounded like desktop `queryTimeoutMs` — dart_libp2p streams can hang
+  /// forever when the routing table is empty or the WAN is flaky.
   Future<List<PhoneDiscoveryProvider>> findCapabilityTopicProviders(
     String topic, {
     int maxResults = 20,
+    Duration timeout = const Duration(seconds: 12),
   }) async {
     if (_dht == null || !_started) return const [];
     final cid = CID.fromString(cidStringForCapabilityTopic(topic));
     final out = <PhoneDiscoveryProvider>[];
     final seen = <String>{};
     try {
-      await for (final info in _dht!.findProvidersAsync(cid, maxResults)) {
+      await for (final info in _dht!
+          .findProvidersAsync(cid, maxResults)
+          .timeout(timeout)) {
         final id = info.id.toString();
         if (!seen.add(id)) continue;
         out.add(PhoneDiscoveryProvider(
@@ -458,6 +464,11 @@ class Libp2pNode implements Libp2pMeshHost {
         ));
         if (out.length >= maxResults) break;
       }
+    } on TimeoutException {
+      _log(
+        '[Libp2pNode] findProviders($topic) timed out after ${timeout.inSeconds}s '
+        '(${out.length} providers)',
+      );
     } catch (e) {
       _log('[Libp2pNode] findProviders($topic) failed: $e');
     }

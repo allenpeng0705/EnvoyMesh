@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:envoy_mesh/envoy_mesh.dart';
@@ -17,6 +18,7 @@ import '../../widgets/cross_persona_suggestions_section.dart';
 import '../browser/browser_screen.dart';
 
 const _sampleCap = 20;
+const _phoneSampleTimeout = Duration(seconds: 25);
 const _webContentCapabilityTopic = 'capability:envoymesh.web-content';
 const _suggestedTopics = [
   'music',
@@ -198,8 +200,10 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
 
   Future<List<PeerSearchResult>> _samplePhoneMesh(SocialBackend backend) async {
     final out = <PeerSearchResult>[];
+    // Few topics — each expands to multiple DHT/relay queries. More made
+    // Discover feel hung when WAN was slow even with per-call timeouts.
     final topics = List<String>.from(_suggestedTopics)..shuffle(Random());
-    for (final slug in topics.take(6)) {
+    for (final slug in topics.take(2)) {
       if (out.length >= _sampleCap) break;
       try {
         final hits = await backend.searchPeers(topic: slug, maxResults: 8);
@@ -267,7 +271,10 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
       });
       try {
         await _refreshExclude();
-        final rows = await _samplePhoneMesh(backend);
+        final rows = await _samplePhoneMesh(backend).timeout(
+          _phoneSampleTimeout,
+          onTimeout: () => const <PeerSearchResult>[],
+        );
         if (!mounted) return;
         setState(() {
           _results = rows;
@@ -594,6 +601,17 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    ref.listen<PhoneMeshRuntimeState>(phoneMeshRuntimeProvider, (prev, next) {
+      if (!mounted) return;
+      if (!ref.read(socialContextProvider).isPhone) return;
+      // First sample often runs before wanSearch is attached — refresh once
+      // discovery becomes active and we still have nothing useful.
+      final becameActive =
+          (prev == null || !prev.discoveryActive) && next.discoveryActive;
+      if (!becameActive) return;
+      if (_results.isNotEmpty || _loading || _searching) return;
+      unawaited(_refreshSample(keepExisting: true));
+    });
     final l10n = AppLocalizations.of(context);
     final socialCtx = ref.watch(socialContextProvider);
     final nodeState = ref.watch(nodeProvider);

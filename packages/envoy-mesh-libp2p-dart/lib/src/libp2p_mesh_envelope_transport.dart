@@ -1,12 +1,13 @@
 /// Live [MeshEnvelopeTransport] over shared [Libp2pNode] streams.
 library;
 
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dart_libp2p/dart_libp2p.dart';
 import 'package:envoy_mesh/envoy_mesh.dart';
 import 'dart:developer' as developer;
-import 'dart:typed_data';
 
 import 'libp2p_node.dart';
 
@@ -17,6 +18,9 @@ class Libp2pMeshEnvelopeTransport implements MeshEnvelopeTransport {
   Libp2pMeshEnvelopeTransport(this._node);
 
   final Libp2pNode _node;
+
+  static const _dialTimeout = Duration(seconds: 12);
+  static const _replyTimeout = Duration(seconds: 12);
 
   @override
   Future<MeshSendResult> sendEnvelope({
@@ -30,16 +34,19 @@ class Libp2pMeshEnvelopeTransport implements MeshEnvelopeTransport {
     }
     Libp2pStreamTransport? transport;
     try {
-      transport = await _node.dial(
-        peerMultiaddr: dialTarget,
-        protocolId: protocolId,
-      );
+      transport = await _node
+          .dial(
+            peerMultiaddr: dialTarget,
+            protocolId: protocolId,
+          )
+          .timeout(_dialTimeout);
       final bytes = Uint8List.fromList(utf8.encode(jsonEncode(envelope)));
-      await transport.rawStream.write(bytes);
+      await transport.rawStream.write(bytes).timeout(_replyTimeout);
       if (!expectReply) {
         return const MeshSendResult(ok: true);
       }
-      final replyBytes = await transport.rawStream.read();
+      final replyBytes =
+          await transport.rawStream.read().timeout(_replyTimeout);
       if (replyBytes.isEmpty) {
         return const MeshSendResult(ok: false, error: 'empty reply');
       }
