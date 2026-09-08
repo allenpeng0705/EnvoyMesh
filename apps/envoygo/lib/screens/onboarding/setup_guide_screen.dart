@@ -107,7 +107,7 @@ class _SetupGuideScreenState extends State<SetupGuideScreen> {
                     icon: Icons.download_outlined,
                     action: FilledButton.tonalIcon(
                       onPressed: () =>
-                          openExternalUrl(kEnvoyMeshDesktopReleasesUrl),
+                          openExternalUrl(kEnvoyMeshDownloadUrl),
                       icon: const Icon(Icons.open_in_new, size: AppTheme.iconSm),
                       label: Text(l10n.setupGuideDownloadCta),
                     ),

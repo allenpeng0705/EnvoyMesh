@@ -1420,7 +1420,7 @@
   "setupGuideStep1Title": "컴퓨터 준비하기",
   "setupGuideStep1Body": "같은 네트워크(또는 릴레이로 도달 가능)의 Mac 또는 Windows PC가 필요합니다. 그것이 EnvoyMesh 홈 노드가 됩니다.",
   "setupGuideStep2Title": "EnvoyMesh 다운로드 및 설치",
-  "setupGuideStep2Body": "GitHub Releases에서 데스크톱 설치 파일을 받아 그 컴퓨터에 설치하고 여세요.",
+  "setupGuideStep2Body": "EnvoyMesh 다운로드 페이지(GitHub 및 중국 미러)를 연 뒤, 그 컴퓨터에 설치하고 여세요.",
   "setupGuideDownloadCta": "EnvoyMesh 다운로드 열기",
   "setupGuideStep3Title": "페어링 QR 표시",
   "setupGuideStep3Body": "데스크톱 EnvoyMesh에서 페어링(또는 가족 초대)을 열고 QR을 화면에 유지하세요.",
@@ -1432,5 +1432,18 @@
   "setupGuidePhoneOnlyBody": "휴대폰 채팅과 탐색을 위해 소셜을 열 수 있습니다. EnvoyMesh를 설치한 뒤 나에서 언제든 페어링하세요.",
   "setupGuidePairCta": "지금 페어링",
   "setupGuideSkipCta": "먼저 둘러보기",
-  "setupGuideDoneCta": "알겠습니다"
+  "setupGuideDoneCta": "알겠습니다",
+  "homeConnectionSheetTitle": "홈 연결",
+  "homeConnectionStatusConnected": "{name}에 연결됨 · {status}",
+  "phoneMeshSheetTitle": "이 휴대폰",
+  "phoneMeshStatusConnected": "연결됨",
+  "phoneMeshStatusConnecting": "연결 중…",
+  "phoneMeshStatusError": "오류",
+  "phoneMeshStatusOffline": "준비 안 됨",
+  "phoneMeshDescConnected": "휴대폰 메시가 실행 중입니다. 홈 없이도 이 휴대폰에서 채팅하고 탐색할 수 있습니다.",
+  "phoneMeshDescConnectedDiscovering": "휴대폰 메시가 실행 중이며 광고 중이라 다른 사람이 이 휴대폰의 당신을 찾을 수 있습니다.",
+  "phoneMeshDescConnecting": "휴대폰 메시를 시작하는 중… 잠시만 기다려 주세요.",
+  "phoneMeshDescOffline": "휴대폰 메시가 아직 준비되지 않았습니다.",
+  "phoneMeshDescErrorGeneric": "휴대폰 메시에 문제가 있습니다. 소셜을 나갔다가 다시 들어오거나 앱을 다시 시작하세요.",
+  "phoneMeshDescError": "휴대폰 메시 오류: {error}"
 }

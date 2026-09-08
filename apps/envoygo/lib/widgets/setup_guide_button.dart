@@ -12,7 +12,10 @@ class SetupGuideButton extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     return IconButton(
       tooltip: l10n.setupGuideTitle,
-      icon: const Icon(Icons.info_outline),
+      visualDensity: VisualDensity.standard,
+      padding: const EdgeInsets.all(8),
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      icon: const Icon(Icons.info_outline, size: 22),
       onPressed: () => showSetupGuide(context),
     );
   }

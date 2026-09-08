@@ -1420,7 +1420,7 @@
   "setupGuideStep1Title": "Computer bereithalten",
   "setupGuideStep1Body": "Sie brauchen einen Mac oder Windows-PC im gleichen Netzwerk (oder per Relay erreichbar). Das wird Ihr EnvoyMesh-Heimknoten.",
   "setupGuideStep2Title": "EnvoyMesh herunterladen und installieren",
-  "setupGuideStep2Body": "Holen Sie den Desktop-Installer von GitHub Releases. Installieren und öffnen Sie EnvoyMesh auf diesem Computer.",
+  "setupGuideStep2Body": "Öffnen Sie die EnvoyMesh-Downloadseite (GitHub und China-Spiegel). Installieren und öffnen Sie EnvoyMesh auf diesem Computer.",
   "setupGuideDownloadCta": "EnvoyMesh-Downloads öffnen",
   "setupGuideStep3Title": "Kopplungs-QR anzeigen",
   "setupGuideStep3Body": "Öffnen Sie in der Desktop-EnvoyMesh die Kopplung (oder laden Sie ein Familienmitglied ein). Lassen Sie den QR sichtbar.",
@@ -1432,5 +1432,18 @@
   "setupGuidePhoneOnlyBody": "Sie können Social für Telefon-Chats und Entdecken nutzen. Koppeln Sie später jederzeit unter Ich, sobald EnvoyMesh installiert ist.",
   "setupGuidePairCta": "Jetzt koppeln",
   "setupGuideSkipCta": "Erst entdecken",
-  "setupGuideDoneCta": "Verstanden"
+  "setupGuideDoneCta": "Verstanden",
+  "homeConnectionSheetTitle": "Heimverbindung",
+  "homeConnectionStatusConnected": "Verbunden mit {name} · {status}",
+  "phoneMeshSheetTitle": "Auf diesem Telefon",
+  "phoneMeshStatusConnected": "Verbunden",
+  "phoneMeshStatusConnecting": "Verbinden…",
+  "phoneMeshStatusError": "Fehler",
+  "phoneMeshStatusOffline": "Nicht bereit",
+  "phoneMeshDescConnected": "Telefon-Mesh läuft. Sie können auf diesem Telefon chatten und entdecken — ohne Heimknoten.",
+  "phoneMeshDescConnectedDiscovering": "Telefon-Mesh läuft und wirbt, damit andere Sie auf diesem Telefon finden können.",
+  "phoneMeshDescConnecting": "Telefon-Mesh wird gestartet… Das kann einen Moment dauern.",
+  "phoneMeshDescOffline": "Telefon-Mesh ist noch nicht bereit.",
+  "phoneMeshDescErrorGeneric": "Telefon-Mesh hat ein Problem. Verlassen Sie Social und kehren Sie zurück, oder starten Sie die App neu.",
+  "phoneMeshDescError": "Telefon-Mesh-Fehler: {error}"
 }

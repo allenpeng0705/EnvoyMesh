@@ -3967,7 +3967,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get setupGuideStep2Body =>
-      '从 GitHub Releases 获取桌面安装包，在那台电脑上安装并打开 EnvoyMesh。';
+      '打开 EnvoyMesh 下载页（含 GitHub 与国内镜像），在那台电脑上安装并打开 EnvoyMesh。';
 
   @override
   String get setupGuideDownloadCta => '打开 EnvoyMesh 下载页';
@@ -4006,4 +4006,47 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get setupGuideDoneCta => '知道了';
+
+  @override
+  String get homeConnectionSheetTitle => '家庭连接';
+
+  @override
+  String homeConnectionStatusConnected(String name, String status) {
+    return '已连接到 $name · $status';
+  }
+
+  @override
+  String get phoneMeshSheetTitle => '本机';
+
+  @override
+  String get phoneMeshStatusConnected => '已连接';
+
+  @override
+  String get phoneMeshStatusConnecting => '连接中…';
+
+  @override
+  String get phoneMeshStatusError => '错误';
+
+  @override
+  String get phoneMeshStatusOffline => '未就绪';
+
+  @override
+  String get phoneMeshDescConnected => '本机 mesh 正在运行。无需家庭节点也可在本机聊天与探索。';
+
+  @override
+  String get phoneMeshDescConnectedDiscovering => '本机 mesh 正在运行并广播，他人可发现本机上的你。';
+
+  @override
+  String get phoneMeshDescConnecting => '正在启动本机 mesh… 请稍候。';
+
+  @override
+  String get phoneMeshDescOffline => '本机 mesh 尚未就绪。';
+
+  @override
+  String get phoneMeshDescErrorGeneric => '本机 mesh 出现问题。可先离开社交再返回，或重启应用。';
+
+  @override
+  String phoneMeshDescError(String error) {
+    return '本机 mesh 错误：$error';
+  }
 }

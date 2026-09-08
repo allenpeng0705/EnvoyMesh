@@ -1520,7 +1520,7 @@
   "setupGuideStep1Title": "准备一台电脑",
   "setupGuideStep1Body": "需要一台在同一网络（或可通过中继访问）的 Mac 或 Windows 电脑，作为 EnvoyMesh 家庭节点。",
   "setupGuideStep2Title": "下载并安装 EnvoyMesh",
-  "setupGuideStep2Body": "从 GitHub Releases 获取桌面安装包，在那台电脑上安装并打开 EnvoyMesh。",
+  "setupGuideStep2Body": "打开 EnvoyMesh 下载页（含 GitHub 与国内镜像），在那台电脑上安装并打开 EnvoyMesh。",
   "setupGuideDownloadCta": "打开 EnvoyMesh 下载页",
   "setupGuideStep3Title": "显示配对二维码",
   "setupGuideStep3Body": "在桌面版 EnvoyMesh 中打开配对（或邀请家人），保持二维码显示在屏幕上。",
@@ -1532,5 +1532,18 @@
   "setupGuidePhoneOnlyBody": "仍可打开社交进行本机聊天与探索。安装 EnvoyMesh 后，随时可在「我」中配对。",
   "setupGuidePairCta": "立即配对",
   "setupGuideSkipCta": "先看看",
-  "setupGuideDoneCta": "知道了"
+  "setupGuideDoneCta": "知道了",
+  "homeConnectionSheetTitle": "家庭连接",
+  "homeConnectionStatusConnected": "已连接到 {name} · {status}",
+  "phoneMeshSheetTitle": "本机",
+  "phoneMeshStatusConnected": "已连接",
+  "phoneMeshStatusConnecting": "连接中…",
+  "phoneMeshStatusError": "错误",
+  "phoneMeshStatusOffline": "未就绪",
+  "phoneMeshDescConnected": "本机 mesh 正在运行。无需家庭节点也可在本机聊天与探索。",
+  "phoneMeshDescConnectedDiscovering": "本机 mesh 正在运行并广播，他人可发现本机上的你。",
+  "phoneMeshDescConnecting": "正在启动本机 mesh… 请稍候。",
+  "phoneMeshDescOffline": "本机 mesh 尚未就绪。",
+  "phoneMeshDescErrorGeneric": "本机 mesh 出现问题。可先离开社交再返回，或重启应用。",
+  "phoneMeshDescError": "本机 mesh 错误：{error}"
 }

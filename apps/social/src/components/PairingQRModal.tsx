@@ -5,6 +5,13 @@ import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
 import { ModalPortal } from "./ModalPortal.js";
 import { FamilyInviteQRModal } from "./FamilyInviteQRModal.js";
+import appStoreQrUrl from "../assets/app-store-qr.png";
+import googlePlayQrUrl from "../assets/google-play-qr.png";
+
+/** Store listing URLs (same as sites/index.html download section). */
+const ENVOYGO_APP_STORE_URL = "https://apps.apple.com/app/id6795717774";
+const ENVOYGO_GOOGLE_PLAY_URL =
+  "https://play.google.com/store/apps/details?id=com.envoymesh.envoygo";
 
 interface PairingQRModalProps {
   onClose: () => void;
@@ -35,6 +42,7 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showFamilyInvite, setShowFamilyInvite] = useState(false);
+  const [showDownload, setShowDownload] = useState(false);
   /**
    * Family-only review home (Apple review build): every QR the home shows is a
    * family-member invite — the owner pairing QR is never generated or offered.
@@ -119,6 +127,100 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
     );
   }
 
+  if (showDownload) {
+    return (
+      <ModalPortal>
+        <div className="modal-overlay" role="presentation" onClick={onClose}>
+          <div
+            className="pairing-modal pairing-modal--download"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("pairing.downloadTitle")}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="pairing-modal__header">
+              <div>
+                <h2 className="pairing-modal__title">
+                  {t("pairing.downloadTitle")}
+                </h2>
+                <p className="pairing-modal__subtitle">
+                  {t("pairing.downloadSubtitle")}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="pairing-modal__close"
+                onClick={onClose}
+                aria-label={t("pairing.closeAria")}
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div className="pairing-modal__body">
+              <div className="pairing-modal__store-grid">
+                <a
+                  className="pairing-modal__store-card"
+                  href={ENVOYGO_APP_STORE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    src={appStoreQrUrl}
+                    alt={t("pairing.downloadAppStoreQrAlt")}
+                    className="pairing-modal__store-qr"
+                    width={140}
+                    height={140}
+                  />
+                  <span className="pairing-modal__store-label">
+                    {t("pairing.downloadAppStore")}
+                  </span>
+                </a>
+                <a
+                  className="pairing-modal__store-card"
+                  href={ENVOYGO_GOOGLE_PLAY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    src={googlePlayQrUrl}
+                    alt={t("pairing.downloadGooglePlayQrAlt")}
+                    className="pairing-modal__store-qr"
+                    width={140}
+                    height={140}
+                  />
+                  <span className="pairing-modal__store-label">
+                    {t("pairing.downloadGooglePlay")}
+                  </span>
+                </a>
+              </div>
+              <div className="pairing-modal__actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowDownload(false)}
+                  aria-label={t("pairing.downloadBackAria")}
+                >
+                  {t("common.back")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ModalPortal>
+    );
+  }
+
   const familyInviteSection = (
     <div className="pairing-modal__family">
       <p className="pairing-modal__family-hint">
@@ -147,13 +249,7 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
           aria-label={t("pairing.modalAria")}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="pairing-modal__header">
-            <div>
-              <h2 className="pairing-modal__title">{t("pairing.title")}</h2>
-              {qrDataUrl && !loading && !error && (
-                <p className="pairing-modal__subtitle">{t("pairing.subtitle")}</p>
-              )}
-            </div>
+          <div className="pairing-modal__header pairing-modal__header--centered">
             <button
               type="button"
               className="pairing-modal__close"
@@ -173,9 +269,24 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
+            <h2 className="pairing-modal__title">{t("pairing.title")}</h2>
+            {!loading ? (
+              <button
+                type="button"
+                className="pairing-modal__download-link"
+                onClick={() => setShowDownload(true)}
+              >
+                {t("pairing.downloadEnvoyGo")}
+              </button>
+            ) : null}
+            {qrDataUrl && !loading && !error && (
+              <p className="pairing-modal__subtitle">{t("pairing.subtitle")}</p>
+            )}
           </div>
 
           <div className="pairing-modal__body">
+            {/* Family invite above owner QR — keep reachable on error too. */}
+            {!loading ? familyInviteSection : null}
             {loading && (
               <div className="pairing-modal__loading">
                 <svg className="pairing-modal__spinner" viewBox="0 0 24 24" fill="none">
@@ -204,8 +315,6 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
                 </div>
               </>
             )}
-            {/* Family invite is independent of owner QR generation — keep reachable on error. */}
-            {!loading ? familyInviteSection : null}
           </div>
         </div>
       </div>

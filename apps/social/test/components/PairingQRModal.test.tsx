@@ -31,6 +31,13 @@ vi.mock("@envoymesh/api", async () => {
   };
 });
 
+vi.mock("../../src/assets/app-store-qr.png", () => ({
+  default: "app-store-qr.png",
+}));
+vi.mock("../../src/assets/google-play-qr.png", () => ({
+  default: "google-play-qr.png",
+}));
+
 describe("PairingQRModal family invite button", () => {
   beforeEach(() => {
     getPairingPayload.mockResolvedValue({
@@ -47,6 +54,35 @@ describe("PairingQRModal family invite button", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+  });
+
+  it("opens EnvoyGo store QR codes from the download link", async () => {
+    renderWithI18n(<PairingQRModal onClose={() => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Download EnvoyGo/i })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Download EnvoyGo/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: /Download EnvoyGo/i })).toBeTruthy();
+      expect(screen.getByAltText(/App Store/i)).toBeTruthy();
+      expect(screen.getByAltText(/Google Play/i)).toBeTruthy();
+      expect(
+        screen.getByRole("link", { name: /App Store/i }).getAttribute("href"),
+      ).toContain("apps.apple.com");
+      expect(
+        screen.getByRole("link", { name: /Google Play/i }).getAttribute("href"),
+      ).toContain("play.google.com");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Back to pairing QR/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Download EnvoyGo/i })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /Show family invite QR/i })).toBeTruthy();
+    });
   });
 
   it("shows a family invite button that opens the family QR modal", async () => {

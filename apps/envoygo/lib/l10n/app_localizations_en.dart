@@ -4114,7 +4114,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupGuideStep2Body =>
-      'Get the desktop installer from GitHub Releases. Install and open EnvoyMesh on that computer.';
+      'Open the EnvoyMesh download page (GitHub and a China mirror). Install and open EnvoyMesh on that computer.';
 
   @override
   String get setupGuideDownloadCta => 'Open EnvoyMesh downloads';
@@ -4155,4 +4155,51 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupGuideDoneCta => 'Got it';
+
+  @override
+  String get homeConnectionSheetTitle => 'Home connection';
+
+  @override
+  String homeConnectionStatusConnected(String name, String status) {
+    return 'Connected to $name · $status';
+  }
+
+  @override
+  String get phoneMeshSheetTitle => 'On this phone';
+
+  @override
+  String get phoneMeshStatusConnected => 'Connected';
+
+  @override
+  String get phoneMeshStatusConnecting => 'Connecting…';
+
+  @override
+  String get phoneMeshStatusError => 'Error';
+
+  @override
+  String get phoneMeshStatusOffline => 'Not ready';
+
+  @override
+  String get phoneMeshDescConnected =>
+      'Phone mesh is running. You can chat and Discover on this phone without using the home node.';
+
+  @override
+  String get phoneMeshDescConnectedDiscovering =>
+      'Phone mesh is running and advertising so others can find you on this phone.';
+
+  @override
+  String get phoneMeshDescConnecting =>
+      'Starting phone mesh… This may take a moment.';
+
+  @override
+  String get phoneMeshDescOffline => 'Phone mesh is not ready yet.';
+
+  @override
+  String get phoneMeshDescErrorGeneric =>
+      'Phone mesh hit a problem. Try leaving Social and coming back, or restart the app.';
+
+  @override
+  String phoneMeshDescError(String error) {
+    return 'Phone mesh error: $error';
+  }
 }

@@ -1420,7 +1420,7 @@
   "setupGuideStep1Title": "Prepara un computer",
   "setupGuideStep1Body": "Serve un Mac o PC Windows sulla stessa rete (o raggiungibile via relay). Diventa il tuo nodo home EnvoyMesh.",
   "setupGuideStep2Title": "Scarica e installa EnvoyMesh",
-  "setupGuideStep2Body": "Prendi l’installer desktop da GitHub Releases. Installa e apri EnvoyMesh su quel computer.",
+  "setupGuideStep2Body": "Apri la pagina download di EnvoyMesh (GitHub e mirror Cina). Installa e apri EnvoyMesh su quel computer.",
   "setupGuideDownloadCta": "Apri download EnvoyMesh",
   "setupGuideStep3Title": "Mostra il QR di associazione",
   "setupGuideStep3Body": "In EnvoyMesh desktop apri l’associazione (o invita un familiare). Tieni il QR a schermo.",
@@ -1432,5 +1432,18 @@
   "setupGuidePhoneOnlyBody": "Puoi aprire Social per chat telefono e Scopri. Associa più tardi da Io quando EnvoyMesh è installato.",
   "setupGuidePairCta": "Associa ora",
   "setupGuideSkipCta": "Esplora prima",
-  "setupGuideDoneCta": "Ho capito"
+  "setupGuideDoneCta": "Ho capito",
+  "homeConnectionSheetTitle": "Connessione home",
+  "homeConnectionStatusConnected": "Connesso a {name} · {status}",
+  "phoneMeshSheetTitle": "Su questo telefono",
+  "phoneMeshStatusConnected": "Connesso",
+  "phoneMeshStatusConnecting": "Connessione…",
+  "phoneMeshStatusError": "Errore",
+  "phoneMeshStatusOffline": "Non pronto",
+  "phoneMeshDescConnected": "Il mesh del telefono è attivo. Puoi chattare e scoprire su questo telefono senza il nodo home.",
+  "phoneMeshDescConnectedDiscovering": "Il mesh del telefono è attivo e in annuncio, così altri possono trovarti su questo telefono.",
+  "phoneMeshDescConnecting": "Avvio del mesh telefono… Potrebbe richiedere un momento.",
+  "phoneMeshDescOffline": "Il mesh del telefono non è ancora pronto.",
+  "phoneMeshDescErrorGeneric": "Il mesh del telefono ha un problema. Esci da Social e rientra, oppure riavvia l’app.",
+  "phoneMeshDescError": "Errore mesh telefono: {error}"
 }

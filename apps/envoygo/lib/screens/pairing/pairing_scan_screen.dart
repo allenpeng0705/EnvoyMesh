@@ -103,7 +103,7 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
                     textAlign: TextAlign.center,
                   ),
                   TextButton(
-                    onPressed: () => openExternalUrl(kEnvoyMeshDesktopReleasesUrl),
+                    onPressed: () => openExternalUrl(kEnvoyMeshDownloadUrl),
                     child: Text(l10n.pairingDownloadEnvoyMesh),
                   ),
                   const SizedBox(height: 4),

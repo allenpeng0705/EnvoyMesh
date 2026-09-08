@@ -4158,7 +4158,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get setupGuideStep2Body =>
-      'Prendi l’installer desktop da GitHub Releases. Installa e apri EnvoyMesh su quel computer.';
+      'Apri la pagina download di EnvoyMesh (GitHub e mirror Cina). Installa e apri EnvoyMesh su quel computer.';
 
   @override
   String get setupGuideDownloadCta => 'Apri download EnvoyMesh';
@@ -4199,4 +4199,52 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get setupGuideDoneCta => 'Ho capito';
+
+  @override
+  String get homeConnectionSheetTitle => 'Connessione home';
+
+  @override
+  String homeConnectionStatusConnected(String name, String status) {
+    return 'Connesso a $name · $status';
+  }
+
+  @override
+  String get phoneMeshSheetTitle => 'Su questo telefono';
+
+  @override
+  String get phoneMeshStatusConnected => 'Connesso';
+
+  @override
+  String get phoneMeshStatusConnecting => 'Connessione…';
+
+  @override
+  String get phoneMeshStatusError => 'Errore';
+
+  @override
+  String get phoneMeshStatusOffline => 'Non pronto';
+
+  @override
+  String get phoneMeshDescConnected =>
+      'Il mesh del telefono è attivo. Puoi chattare e scoprire su questo telefono senza il nodo home.';
+
+  @override
+  String get phoneMeshDescConnectedDiscovering =>
+      'Il mesh del telefono è attivo e in annuncio, così altri possono trovarti su questo telefono.';
+
+  @override
+  String get phoneMeshDescConnecting =>
+      'Avvio del mesh telefono… Potrebbe richiedere un momento.';
+
+  @override
+  String get phoneMeshDescOffline =>
+      'Il mesh del telefono non è ancora pronto.';
+
+  @override
+  String get phoneMeshDescErrorGeneric =>
+      'Il mesh del telefono ha un problema. Esci da Social e rientra, oppure riavvia l’app.';
+
+  @override
+  String phoneMeshDescError(String error) {
+    return 'Errore mesh telefono: $error';
+  }
 }

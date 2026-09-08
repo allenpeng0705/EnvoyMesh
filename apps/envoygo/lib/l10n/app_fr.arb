@@ -1420,7 +1420,7 @@
   "setupGuideStep1Title": "Préparer un ordinateur",
   "setupGuideStep1Body": "Il vous faut un Mac ou un PC Windows sur le même réseau (ou joignable via un relais). Ce sera votre nœud domicile EnvoyMesh.",
   "setupGuideStep2Title": "Télécharger et installer EnvoyMesh",
-  "setupGuideStep2Body": "Récupérez l’installateur bureau sur GitHub Releases. Installez et ouvrez EnvoyMesh sur cet ordinateur.",
+  "setupGuideStep2Body": "Ouvrez la page de téléchargement EnvoyMesh (GitHub et miroir Chine). Installez et ouvrez EnvoyMesh sur cet ordinateur.",
   "setupGuideDownloadCta": "Ouvrir les téléchargements EnvoyMesh",
   "setupGuideStep3Title": "Afficher le QR d’appairage",
   "setupGuideStep3Body": "Dans EnvoyMesh bureau, ouvrez l’appairage (ou invitez un membre de la famille). Gardez le QR à l’écran.",
@@ -1432,5 +1432,18 @@
   "setupGuidePhoneOnlyBody": "Vous pouvez ouvrir Social pour les discussions téléphone et Découvrir. Appairez plus tard depuis Moi quand EnvoyMesh est installé.",
   "setupGuidePairCta": "Appairer maintenant",
   "setupGuideSkipCta": "Explorer d’abord",
-  "setupGuideDoneCta": "Compris"
+  "setupGuideDoneCta": "Compris",
+  "homeConnectionSheetTitle": "Connexion domicile",
+  "homeConnectionStatusConnected": "Connecté à {name} · {status}",
+  "phoneMeshSheetTitle": "Sur ce téléphone",
+  "phoneMeshStatusConnected": "Connecté",
+  "phoneMeshStatusConnecting": "Connexion…",
+  "phoneMeshStatusError": "Erreur",
+  "phoneMeshStatusOffline": "Pas prêt",
+  "phoneMeshDescConnected": "Le mesh téléphone tourne. Vous pouvez discuter et Découvrir sur ce téléphone sans le nœud domicile.",
+  "phoneMeshDescConnectedDiscovering": "Le mesh téléphone tourne et s’annonce pour que d’autres vous trouvent sur ce téléphone.",
+  "phoneMeshDescConnecting": "Démarrage du mesh téléphone… Cela peut prendre un moment.",
+  "phoneMeshDescOffline": "Le mesh téléphone n’est pas encore prêt.",
+  "phoneMeshDescErrorGeneric": "Le mesh téléphone a un problème. Quittez Social puis revenez, ou redémarrez l’app.",
+  "phoneMeshDescError": "Erreur mesh téléphone : {error}"
 }

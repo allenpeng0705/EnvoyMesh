@@ -1420,7 +1420,7 @@
   "setupGuideStep1Title": "パソコンを用意する",
   "setupGuideStep1Body": "同じネットワーク（またはリレー経由）の Mac / Windows PC が必要です。それが EnvoyMesh ホームノードになります。",
   "setupGuideStep2Title": "EnvoyMesh をダウンロードしてインストール",
-  "setupGuideStep2Body": "GitHub Releases からデスクトップ用インストーラーを入手し、そのパソコンにインストールして開きます。",
+  "setupGuideStep2Body": "EnvoyMesh のダウンロードページ（GitHub と中国向けミラー）を開き、そのパソコンにインストールして起動します。",
   "setupGuideDownloadCta": "EnvoyMesh のダウンロードを開く",
   "setupGuideStep3Title": "ペアリング QR を表示",
   "setupGuideStep3Body": "デスクトップ版 EnvoyMesh でペアリング（または家族招待）を開き、QR を画面に表示したままにします。",
@@ -1432,5 +1432,18 @@
   "setupGuidePhoneOnlyBody": "端末のチャットと発見にはソーシャルを開けます。EnvoyMesh を入れたら「自分」からいつでもペアリングできます。",
   "setupGuidePairCta": "今すぐペアリング",
   "setupGuideSkipCta": "まずは見る",
-  "setupGuideDoneCta": "了解"
+  "setupGuideDoneCta": "了解",
+  "homeConnectionSheetTitle": "ホーム接続",
+  "homeConnectionStatusConnected": "{name} に接続中 · {status}",
+  "phoneMeshSheetTitle": "この端末",
+  "phoneMeshStatusConnected": "接続済み",
+  "phoneMeshStatusConnecting": "接続中…",
+  "phoneMeshStatusError": "エラー",
+  "phoneMeshStatusOffline": "未準備",
+  "phoneMeshDescConnected": "端末メッシュが動作中です。ホームなしでもこの端末でチャットや発見ができます。",
+  "phoneMeshDescConnectedDiscovering": "端末メッシュが動作し広告中です。他の人がこの端末上のあなたを見つけられます。",
+  "phoneMeshDescConnecting": "端末メッシュを起動中… 少々お待ちください。",
+  "phoneMeshDescOffline": "端末メッシュはまだ準備できていません。",
+  "phoneMeshDescErrorGeneric": "端末メッシュで問題が発生しました。ソーシャルをいったん離れて戻るか、アプリを再起動してください。",
+  "phoneMeshDescError": "端末メッシュエラー: {error}"
 }

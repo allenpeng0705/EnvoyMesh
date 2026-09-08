@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/node_provider.dart';
+import 'home_connection_sheet.dart';
 
 /// Returns true if the transport avoids a relay server.
 /// - "lan" / "public": WebSocket directly to home (no relay)
@@ -52,10 +53,9 @@ String transportTypeLabel(String? transport, AppLocalizations l10n) {
   return (l10n.connRelay, Colors.orange);
 }
 
-/// App-bar connection badge for the paired **home** node only.
+/// App-bar home-connection button (icon only). Tap opens pair / unpair sheet.
 ///
-/// Phone mesh runs quietly in the background for On this phone chats /
-/// unpaired Discover — it is not shown as a second status mode here.
+/// Phone mesh runs quietly in the background — not shown as a second status.
 class ConnectionIndicator extends ConsumerWidget {
   const ConnectionIndicator({super.key});
 
@@ -64,81 +64,53 @@ class ConnectionIndicator extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final nodeState = ref.watch(nodeProvider);
 
-    // Unpaired: quiet offline affordance (no "Starting phone mesh" chrome).
-    if (nodeState.activeNode == null) {
-      return Tooltip(
-        message: l10n.connTooltipOffline,
-        child: Icon(Icons.cloud_outlined, color: Colors.grey, size: 20),
-      );
-    }
-
     IconData icon;
     Color color;
     String tooltip;
-    String badgeLabel = '';
-    Color badgeColor = Colors.grey;
 
-    switch (nodeState.connectionState) {
-      case NodeConnectionState.connected:
-        icon = Icons.cloud_done;
-        final hasUpnp = nodeState.upnpAdvertisedAddr != null;
-        (badgeLabel, badgeColor) = connectionBadge(
-          nodeState.activeTransport,
-          hasUpnp,
-          l10n,
-        );
-        color = Colors.green;
-        if (isDirectTransport(nodeState.activeTransport)) {
-          tooltip = l10n.connTooltipDirect;
-        } else if (nodeState.activeTransport?.startsWith('p2p-') ?? false) {
-          tooltip = l10n.connTooltipP2p;
-        } else if (hasUpnp) {
-          tooltip = l10n.connTooltipRelay;
-        } else {
-          tooltip = l10n.connTooltipConnectedVia(
-            transportTypeLabel(nodeState.activeTransport, l10n),
-          );
-        }
-      case NodeConnectionState.connecting:
-        icon = Icons.cloud_sync;
-        color = Colors.orange;
-        tooltip = l10n.connTooltipConnecting;
-      case NodeConnectionState.error:
-        icon = Icons.cloud_off;
-        color = Colors.red;
-        tooltip = nodeState.errorMessage ?? l10n.connTooltipError;
-      case NodeConnectionState.disconnected:
-        icon = Icons.cloud_outlined;
-        color = Colors.grey;
-        tooltip = l10n.connTooltipOffline;
+    if (nodeState.activeNode == null) {
+      icon = Icons.cloud_outlined;
+      color = Colors.grey;
+      tooltip = l10n.connTooltipOffline;
+    } else {
+      switch (nodeState.connectionState) {
+        case NodeConnectionState.connected:
+          icon = Icons.cloud_done_outlined;
+          color = Colors.green;
+          final hasUpnp = nodeState.upnpAdvertisedAddr != null;
+          if (isDirectTransport(nodeState.activeTransport)) {
+            tooltip = l10n.connTooltipDirect;
+          } else if (nodeState.activeTransport?.startsWith('p2p-') ?? false) {
+            tooltip = l10n.connTooltipP2p;
+          } else if (hasUpnp) {
+            tooltip = l10n.connTooltipRelay;
+          } else {
+            tooltip = l10n.connTooltipConnectedVia(
+              transportTypeLabel(nodeState.activeTransport, l10n),
+            );
+          }
+        case NodeConnectionState.connecting:
+          icon = Icons.cloud_sync_outlined;
+          color = Colors.orange;
+          tooltip = l10n.connTooltipConnecting;
+        case NodeConnectionState.error:
+          icon = Icons.cloud_off_outlined;
+          color = Colors.red;
+          tooltip = nodeState.errorMessage ?? l10n.connTooltipError;
+        case NodeConnectionState.disconnected:
+          icon = Icons.cloud_outlined;
+          color = Colors.grey;
+          tooltip = l10n.connTooltipOffline;
+      }
     }
 
-    return Tooltip(
-      message: tooltip,
-      child: nodeState.connectionState == NodeConnectionState.connected
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: color, size: 20),
-                const SizedBox(width: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: badgeColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    badgeLabel,
-                    style: TextStyle(
-                      color: badgeColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            )
-          : Icon(icon, color: color, size: 20),
+    return IconButton(
+      tooltip: tooltip,
+      visualDensity: VisualDensity.standard,
+      padding: const EdgeInsets.all(8),
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      onPressed: () => showHomeConnectionSheet(context),
+      icon: Icon(icon, color: color, size: 22),
     );
   }
 }

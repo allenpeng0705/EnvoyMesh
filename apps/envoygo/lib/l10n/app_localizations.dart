@@ -7443,7 +7443,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupGuideStep2Body.
   ///
   /// In en, this message translates to:
-  /// **'Get the desktop installer from GitHub Releases. Install and open EnvoyMesh on that computer.'**
+  /// **'Open the EnvoyMesh download page (GitHub and a China mirror). Install and open EnvoyMesh on that computer.'**
   String get setupGuideStep2Body;
 
   /// No description provided for @setupGuideDownloadCta.
@@ -7517,6 +7517,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Got it'**
   String get setupGuideDoneCta;
+
+  /// No description provided for @homeConnectionSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Home connection'**
+  String get homeConnectionSheetTitle;
+
+  /// No description provided for @homeConnectionStatusConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected to {name} · {status}'**
+  String homeConnectionStatusConnected(String name, String status);
+
+  /// No description provided for @phoneMeshSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On this phone'**
+  String get phoneMeshSheetTitle;
+
+  /// No description provided for @phoneMeshStatusConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get phoneMeshStatusConnected;
+
+  /// No description provided for @phoneMeshStatusConnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting…'**
+  String get phoneMeshStatusConnecting;
+
+  /// No description provided for @phoneMeshStatusError.
+  ///
+  /// In en, this message translates to:
+  /// **'Error'**
+  String get phoneMeshStatusError;
+
+  /// No description provided for @phoneMeshStatusOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Not ready'**
+  String get phoneMeshStatusOffline;
+
+  /// No description provided for @phoneMeshDescConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone mesh is running. You can chat and Discover on this phone without using the home node.'**
+  String get phoneMeshDescConnected;
+
+  /// No description provided for @phoneMeshDescConnectedDiscovering.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone mesh is running and advertising so others can find you on this phone.'**
+  String get phoneMeshDescConnectedDiscovering;
+
+  /// No description provided for @phoneMeshDescConnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting phone mesh… This may take a moment.'**
+  String get phoneMeshDescConnecting;
+
+  /// No description provided for @phoneMeshDescOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone mesh is not ready yet.'**
+  String get phoneMeshDescOffline;
+
+  /// No description provided for @phoneMeshDescErrorGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone mesh hit a problem. Try leaving Social and coming back, or restart the app.'**
+  String get phoneMeshDescErrorGeneric;
+
+  /// No description provided for @phoneMeshDescError.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone mesh error: {error}'**
+  String phoneMeshDescError(String error);
 }
 
 class _AppLocalizationsDelegate

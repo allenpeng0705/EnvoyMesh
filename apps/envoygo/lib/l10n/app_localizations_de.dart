@@ -4162,7 +4162,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get setupGuideStep2Body =>
-      'Holen Sie den Desktop-Installer von GitHub Releases. Installieren und öffnen Sie EnvoyMesh auf diesem Computer.';
+      'Öffnen Sie die EnvoyMesh-Downloadseite (GitHub und China-Spiegel). Installieren und öffnen Sie EnvoyMesh auf diesem Computer.';
 
   @override
   String get setupGuideDownloadCta => 'EnvoyMesh-Downloads öffnen';
@@ -4203,4 +4203,51 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get setupGuideDoneCta => 'Verstanden';
+
+  @override
+  String get homeConnectionSheetTitle => 'Heimverbindung';
+
+  @override
+  String homeConnectionStatusConnected(String name, String status) {
+    return 'Verbunden mit $name · $status';
+  }
+
+  @override
+  String get phoneMeshSheetTitle => 'Auf diesem Telefon';
+
+  @override
+  String get phoneMeshStatusConnected => 'Verbunden';
+
+  @override
+  String get phoneMeshStatusConnecting => 'Verbinden…';
+
+  @override
+  String get phoneMeshStatusError => 'Fehler';
+
+  @override
+  String get phoneMeshStatusOffline => 'Nicht bereit';
+
+  @override
+  String get phoneMeshDescConnected =>
+      'Telefon-Mesh läuft. Sie können auf diesem Telefon chatten und entdecken — ohne Heimknoten.';
+
+  @override
+  String get phoneMeshDescConnectedDiscovering =>
+      'Telefon-Mesh läuft und wirbt, damit andere Sie auf diesem Telefon finden können.';
+
+  @override
+  String get phoneMeshDescConnecting =>
+      'Telefon-Mesh wird gestartet… Das kann einen Moment dauern.';
+
+  @override
+  String get phoneMeshDescOffline => 'Telefon-Mesh ist noch nicht bereit.';
+
+  @override
+  String get phoneMeshDescErrorGeneric =>
+      'Telefon-Mesh hat ein Problem. Verlassen Sie Social und kehren Sie zurück, oder starten Sie die App neu.';
+
+  @override
+  String phoneMeshDescError(String error) {
+    return 'Telefon-Mesh-Fehler: $error';
+  }
 }

@@ -15,6 +15,7 @@ import '../../services/push_preferences.dart';
 import '../../utils/localized_labels.dart';
 import '../../widgets/ai_engine_section.dart';
 import '../../widgets/connection_indicator.dart';
+import '../../widgets/phone_mesh_indicator.dart';
 import '../../widgets/profile_avatar.dart';
 import '../../widgets/setup_guide_button.dart';
 import '../chains/active_chains_screen.dart';
@@ -262,9 +263,10 @@ class _MeScreenState extends ConsumerState<MeScreen> {
       appBar: AppBar(
         title: Text(l10n.navMe),
         actions: const [
-          SetupGuideButton(),
           ConnectionIndicator(),
-          SizedBox(width: 12),
+          SetupGuideButton(),
+          PhoneMeshIndicator(),
+          SizedBox(width: 4),
         ],
       ),
       body: ListView(
@@ -396,7 +398,7 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                             vertical: 1,
                           ),
                           decoration: BoxDecoration(
-                            color: color.withOpacity(0.15),
+                            color: color.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(

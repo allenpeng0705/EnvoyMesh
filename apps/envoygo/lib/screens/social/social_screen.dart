@@ -11,6 +11,7 @@ import '../../providers/feed_notify_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../providers/social_context_provider.dart';
 import '../../widgets/connection_indicator.dart';
+import '../../widgets/phone_mesh_indicator.dart';
 import '../../widgets/setup_guide_button.dart';
 import '../browser/browser_screen.dart';
 import '../chat/chat_list_screen.dart';
@@ -229,6 +230,9 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
         actions: [
           IconButton(
             tooltip: l10n.navInbox,
+            visualDensity: VisualDensity.standard,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
             onPressed: () {
               final l10n = AppLocalizations.of(context);
               Navigator.of(context).push(
@@ -243,12 +247,18 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
             icon: Badge(
               isLabelVisible: inboxBadge > 0,
               label: Text(inboxBadge > 99 ? '99+' : '$inboxBadge'),
-              child: const Icon(Icons.inbox_outlined),
+              child: Icon(
+                inboxBadge > 0
+                    ? Icons.mark_email_unread_outlined
+                    : Icons.mail_outline,
+                size: 22,
+              ),
             ),
           ),
-          const SetupGuideButton(),
           const ConnectionIndicator(),
-          const SizedBox(width: 8),
+          const SetupGuideButton(),
+          const PhoneMeshIndicator(),
+          const SizedBox(width: 4),
         ],
         bottom: TabBar(
           controller: controller,

@@ -2051,7 +2051,7 @@
   "setupGuideStep1Title": "Get a computer ready",
   "setupGuideStep1Body": "You need a Mac or Windows PC on the same network (or reachable via relay). This becomes your EnvoyMesh home node.",
   "setupGuideStep2Title": "Download and install EnvoyMesh",
-  "setupGuideStep2Body": "Get the desktop installer from GitHub Releases. Install and open EnvoyMesh on that computer.",
+  "setupGuideStep2Body": "Open the EnvoyMesh download page (GitHub and a China mirror). Install and open EnvoyMesh on that computer.",
   "setupGuideDownloadCta": "Open EnvoyMesh downloads",
   "setupGuideStep3Title": "Show the pairing QR",
   "setupGuideStep3Body": "In desktop EnvoyMesh, open pairing (or invite a family member). Keep the QR on screen.",
@@ -2063,5 +2063,29 @@
   "setupGuidePhoneOnlyBody": "You can still open Social for phone chats and Discover. Pair later anytime from Me when you have EnvoyMesh installed.",
   "setupGuidePairCta": "Pair now",
   "setupGuideSkipCta": "Explore first",
-  "setupGuideDoneCta": "Got it"
+  "setupGuideDoneCta": "Got it",
+  "homeConnectionSheetTitle": "Home connection",
+  "homeConnectionStatusConnected": "Connected to {name} · {status}",
+  "@homeConnectionStatusConnected": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "status": { "type": "String" }
+    }
+  },
+  "phoneMeshSheetTitle": "On this phone",
+  "phoneMeshStatusConnected": "Connected",
+  "phoneMeshStatusConnecting": "Connecting…",
+  "phoneMeshStatusError": "Error",
+  "phoneMeshStatusOffline": "Not ready",
+  "phoneMeshDescConnected": "Phone mesh is running. You can chat and Discover on this phone without using the home node.",
+  "phoneMeshDescConnectedDiscovering": "Phone mesh is running and advertising so others can find you on this phone.",
+  "phoneMeshDescConnecting": "Starting phone mesh… This may take a moment.",
+  "phoneMeshDescOffline": "Phone mesh is not ready yet.",
+  "phoneMeshDescErrorGeneric": "Phone mesh hit a problem. Try leaving Social and coming back, or restart the app.",
+  "phoneMeshDescError": "Phone mesh error: {error}",
+  "@phoneMeshDescError": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  }
 }

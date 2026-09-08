@@ -4010,7 +4010,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get setupGuideStep2Body =>
-      'GitHub Releases からデスクトップ用インストーラーを入手し、そのパソコンにインストールして開きます。';
+      'EnvoyMesh のダウンロードページ（GitHub と中国向けミラー）を開き、そのパソコンにインストールして起動します。';
 
   @override
   String get setupGuideDownloadCta => 'EnvoyMesh のダウンロードを開く';
@@ -4051,4 +4051,49 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get setupGuideDoneCta => '了解';
+
+  @override
+  String get homeConnectionSheetTitle => 'ホーム接続';
+
+  @override
+  String homeConnectionStatusConnected(String name, String status) {
+    return '$name に接続中 · $status';
+  }
+
+  @override
+  String get phoneMeshSheetTitle => 'この端末';
+
+  @override
+  String get phoneMeshStatusConnected => '接続済み';
+
+  @override
+  String get phoneMeshStatusConnecting => '接続中…';
+
+  @override
+  String get phoneMeshStatusError => 'エラー';
+
+  @override
+  String get phoneMeshStatusOffline => '未準備';
+
+  @override
+  String get phoneMeshDescConnected => '端末メッシュが動作中です。ホームなしでもこの端末でチャットや発見ができます。';
+
+  @override
+  String get phoneMeshDescConnectedDiscovering =>
+      '端末メッシュが動作し広告中です。他の人がこの端末上のあなたを見つけられます。';
+
+  @override
+  String get phoneMeshDescConnecting => '端末メッシュを起動中… 少々お待ちください。';
+
+  @override
+  String get phoneMeshDescOffline => '端末メッシュはまだ準備できていません。';
+
+  @override
+  String get phoneMeshDescErrorGeneric =>
+      '端末メッシュで問題が発生しました。ソーシャルをいったん離れて戻るか、アプリを再起動してください。';
+
+  @override
+  String phoneMeshDescError(String error) {
+    return '端末メッシュエラー: $error';
+  }
 }

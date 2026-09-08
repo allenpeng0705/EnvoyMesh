@@ -4006,7 +4006,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get setupGuideStep2Body =>
-      'GitHub Releases에서 데스크톱 설치 파일을 받아 그 컴퓨터에 설치하고 여세요.';
+      'EnvoyMesh 다운로드 페이지(GitHub 및 중국 미러)를 연 뒤, 그 컴퓨터에 설치하고 여세요.';
 
   @override
   String get setupGuideDownloadCta => 'EnvoyMesh 다운로드 열기';
@@ -4047,4 +4047,50 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get setupGuideDoneCta => '알겠습니다';
+
+  @override
+  String get homeConnectionSheetTitle => '홈 연결';
+
+  @override
+  String homeConnectionStatusConnected(String name, String status) {
+    return '$name에 연결됨 · $status';
+  }
+
+  @override
+  String get phoneMeshSheetTitle => '이 휴대폰';
+
+  @override
+  String get phoneMeshStatusConnected => '연결됨';
+
+  @override
+  String get phoneMeshStatusConnecting => '연결 중…';
+
+  @override
+  String get phoneMeshStatusError => '오류';
+
+  @override
+  String get phoneMeshStatusOffline => '준비 안 됨';
+
+  @override
+  String get phoneMeshDescConnected =>
+      '휴대폰 메시가 실행 중입니다. 홈 없이도 이 휴대폰에서 채팅하고 탐색할 수 있습니다.';
+
+  @override
+  String get phoneMeshDescConnectedDiscovering =>
+      '휴대폰 메시가 실행 중이며 광고 중이라 다른 사람이 이 휴대폰의 당신을 찾을 수 있습니다.';
+
+  @override
+  String get phoneMeshDescConnecting => '휴대폰 메시를 시작하는 중… 잠시만 기다려 주세요.';
+
+  @override
+  String get phoneMeshDescOffline => '휴대폰 메시가 아직 준비되지 않았습니다.';
+
+  @override
+  String get phoneMeshDescErrorGeneric =>
+      '휴대폰 메시에 문제가 있습니다. 소셜을 나갔다가 다시 들어오거나 앱을 다시 시작하세요.';
+
+  @override
+  String phoneMeshDescError(String error) {
+    return '휴대폰 메시 오류: $error';
+  }
 }
