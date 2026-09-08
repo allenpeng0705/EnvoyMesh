@@ -588,6 +588,13 @@ class AppLocalizationsKo extends AppLocalizations {
       '볼트 지식 베이스 — notes/의 노트가 EnvoyAI를 구동합니다. 문서는 원본 그대로 유지됩니다.';
 
   @override
+  String get knowledgePairTitle => '페어링 후 지식 사용';
+
+  @override
+  String get knowledgePairHint =>
+      '노트와 Ask는 홈 노드에서 실행됩니다. 먼저 EnvoyMesh와 페어링한 뒤 여기로 돌아오세요.';
+
+  @override
   String get knowledgePanelBrowse => '탐색';
 
   @override

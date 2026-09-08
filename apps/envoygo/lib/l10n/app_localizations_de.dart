@@ -613,6 +613,13 @@ class AppLocalizationsDe extends AppLocalizations {
       'Ihre Vault-Wissensdatenbank — Notizen unter notes/ versorgen EnvoyAI. Dokumente bleiben als Originale erhalten.';
 
   @override
+  String get knowledgePairTitle => 'Koppeln, um Wissen zu nutzen';
+
+  @override
+  String get knowledgePairHint =>
+      'Ihre Notizen und Ask laufen auf dem Heimknoten. Koppeln Sie zuerst EnvoyMesh, dann kehren Sie hierher zurück.';
+
+  @override
   String get knowledgePanelBrowse => 'Durchsuchen';
 
   @override

@@ -238,6 +238,8 @@
   "contentKnowledge": "Knowledge",
   "knowledgeTitle": "Knowledge",
   "knowledgeLede": "Your vault knowledge base — notes under notes/ power EnvoyAI. Documents stay as originals.",
+  "knowledgePairTitle": "Pair to use Knowledge",
+  "knowledgePairHint": "Your vault notes and Ask run on the home node. Pair with EnvoyMesh first, then come back here.",
   "knowledgePanelBrowse": "Browse",
   "knowledgePanelAsk": "Ask",
   "knowledgePanelPlugins": "Plugins",

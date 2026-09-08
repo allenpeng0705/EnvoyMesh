@@ -1218,6 +1218,18 @@ abstract class AppLocalizations {
   /// **'Your vault knowledge base — notes under notes/ power EnvoyAI. Documents stay as originals.'**
   String get knowledgeLede;
 
+  /// No description provided for @knowledgePairTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair to use Knowledge'**
+  String get knowledgePairTitle;
+
+  /// No description provided for @knowledgePairHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vault notes and Ask run on the home node. Pair with EnvoyMesh first, then come back here.'**
+  String get knowledgePairHint;
+
   /// No description provided for @knowledgePanelBrowse.
   ///
   /// In en, this message translates to:

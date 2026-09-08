@@ -582,6 +582,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get knowledgeLede => '本地知识库 — notes/ 下的笔记供 EnvoyAI 使用。文档原件保留。';
 
   @override
+  String get knowledgePairTitle => '配对后使用知识库';
+
+  @override
+  String get knowledgePairHint => '笔记库和提问在家庭节点上运行。请先与 EnvoyMesh 配对，然后再回到这里。';
+
+  @override
   String get knowledgePanelBrowse => '浏览';
 
   @override

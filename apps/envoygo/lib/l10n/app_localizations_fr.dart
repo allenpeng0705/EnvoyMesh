@@ -616,6 +616,13 @@ class AppLocalizationsFr extends AppLocalizations {
       'Votre base de connaissances du coffre — les notes sous notes/ alimentent EnvoyAI. Les documents restent à l\'original.';
 
   @override
+  String get knowledgePairTitle => 'Associez pour utiliser Connaissances';
+
+  @override
+  String get knowledgePairHint =>
+      'Vos notes et Ask tournent sur le nœud domicile. Associez d’abord EnvoyMesh, puis revenez ici.';
+
+  @override
   String get knowledgePanelBrowse => 'Parcourir';
 
   @override

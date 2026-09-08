@@ -828,6 +828,8 @@
   "contentKnowledge": "Conoscenza",
   "knowledgeTitle": "Conoscenza",
   "knowledgeLede": "La tua base di conoscenza del vault — le note in notes/ alimentano EnvoyAI. I documenti restano in originale.",
+  "knowledgePairTitle": "Associa per usare Knowledge",
+  "knowledgePairHint": "Note e Ask girano sul nodo home. Associa prima EnvoyMesh, poi torna qui.",
   "knowledgePanelBrowse": "Esplora",
   "knowledgePanelAsk": "Chiedi",
   "knowledgePanelPlugins": "Plugin",

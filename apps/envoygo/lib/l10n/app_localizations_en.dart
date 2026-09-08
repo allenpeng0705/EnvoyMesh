@@ -606,6 +606,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your vault knowledge base — notes under notes/ power EnvoyAI. Documents stay as originals.';
 
   @override
+  String get knowledgePairTitle => 'Pair to use Knowledge';
+
+  @override
+  String get knowledgePairHint =>
+      'Your vault notes and Ask run on the home node. Pair with EnvoyMesh first, then come back here.';
+
+  @override
   String get knowledgePanelBrowse => 'Browse';
 
   @override

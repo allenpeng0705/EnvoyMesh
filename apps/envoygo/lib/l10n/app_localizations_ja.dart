@@ -589,6 +589,13 @@ class AppLocalizationsJa extends AppLocalizations {
       'ボールト ナレッジ ベース — notes/ のノートが EnvoyAI を動かします。ドキュメントは原本のまま残ります。';
 
   @override
+  String get knowledgePairTitle => 'ペアリングしてナレッジを使う';
+
+  @override
+  String get knowledgePairHint =>
+      'ノートと Ask はホームノード上で動きます。先に EnvoyMesh とペアリングしてから戻ってください。';
+
+  @override
   String get knowledgePanelBrowse => '参照';
 
   @override

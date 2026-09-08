@@ -828,6 +828,8 @@
   "contentKnowledge": "Wissen",
   "knowledgeTitle": "Wissen",
   "knowledgeLede": "Ihre Vault-Wissensdatenbank — Notizen unter notes/ versorgen EnvoyAI. Dokumente bleiben als Originale erhalten.",
+  "knowledgePairTitle": "Koppeln, um Wissen zu nutzen",
+  "knowledgePairHint": "Ihre Notizen und Ask laufen auf dem Heimknoten. Koppeln Sie zuerst EnvoyMesh, dann kehren Sie hierher zurück.",
   "knowledgePanelBrowse": "Durchsuchen",
   "knowledgePanelAsk": "Fragen",
   "knowledgePanelPlugins": "Plugins",

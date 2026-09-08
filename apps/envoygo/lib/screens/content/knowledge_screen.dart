@@ -288,21 +288,38 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
       if (next == null || !mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) => _consumePanelRequest());
     });
+    ref.listen<String?>(
+      nodeProvider.select((s) => s.activeNode?.id),
+      (prev, next) {
+        if (next == null || next == prev || !mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _refreshEmbedReadiness();
+        });
+      },
+    );
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final hasHome = ref.watch(nodeProvider).activeNode != null;
+    final appBar = AppBar(
+      title: Text(l10n.navKnowledge),
+      actions: const [
+        ConnectionIndicator(),
+        SizedBox(width: 12),
+      ],
+    );
+    if (!hasHome) {
+      return Scaffold(
+        appBar: appBar,
+        body: const _KnowledgeNeedsHome(),
+      );
+    }
     final stripText = switch (_embedKind) {
       _EmbedGateKind.downloading => _embedPhaseLabel(l10n, _embedStatus),
       _EmbedGateKind.error => l10n.knowledgeEmbedGateStripError,
       _ => l10n.knowledgeEmbedGateStripNeeded,
     };
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.navKnowledge),
-        actions: const [
-          ConnectionIndicator(),
-          SizedBox(width: 12),
-        ],
-      ),
+      appBar: appBar,
       body: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -372,6 +389,44 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
           ),
         ),
       ],
+      ),
+    );
+  }
+}
+
+/// Unpaired empty state — same pattern as Terminals ([_EmptyTerminals]).
+class _KnowledgeNeedsHome extends StatelessWidget {
+  const _KnowledgeNeedsHome();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.menu_book_outlined, size: 64, color: scheme.outline),
+            const SizedBox(height: 16),
+            Text(
+              l10n.knowledgePairTitle,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.knowledgePairHint,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

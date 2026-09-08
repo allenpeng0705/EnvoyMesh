@@ -828,6 +828,8 @@
   "contentKnowledge": "ナレッジ",
   "knowledgeTitle": "ナレッジ",
   "knowledgeLede": "ボールト ナレッジ ベース — notes/ のノートが EnvoyAI を動かします。ドキュメントは原本のまま残ります。",
+  "knowledgePairTitle": "ペアリングしてナレッジを使う",
+  "knowledgePairHint": "ノートと Ask はホームノード上で動きます。先に EnvoyMesh とペアリングしてから戻ってください。",
   "knowledgePanelBrowse": "参照",
   "knowledgePanelAsk": "質問",
   "knowledgePanelPlugins": "プラグイン",

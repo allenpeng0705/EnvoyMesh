@@ -828,6 +828,8 @@
   "contentKnowledge": "Connaissances",
   "knowledgeTitle": "Connaissances",
   "knowledgeLede": "Votre base de connaissances du coffre — les notes sous notes/ alimentent EnvoyAI. Les documents restent à l'original.",
+  "knowledgePairTitle": "Associez pour utiliser Connaissances",
+  "knowledgePairHint": "Vos notes et Ask tournent sur le nœud domicile. Associez d’abord EnvoyMesh, puis revenez ici.",
   "knowledgePanelBrowse": "Parcourir",
   "knowledgePanelAsk": "Demander",
   "knowledgePanelPlugins": "Plugins",

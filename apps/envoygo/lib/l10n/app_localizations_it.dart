@@ -611,6 +611,13 @@ class AppLocalizationsIt extends AppLocalizations {
       'La tua base di conoscenza del vault — le note in notes/ alimentano EnvoyAI. I documenti restano in originale.';
 
   @override
+  String get knowledgePairTitle => 'Associa per usare Knowledge';
+
+  @override
+  String get knowledgePairHint =>
+      'Note e Ask girano sul nodo home. Associa prima EnvoyMesh, poi torna qui.';
+
+  @override
   String get knowledgePanelBrowse => 'Esplora';
 
   @override
