@@ -3558,6 +3558,12 @@ abstract class AppLocalizations {
   /// **'Find people you haven\'t bonded with — open their public profile or blog, then say hello.'**
   String get peopleHint;
 
+  /// No description provided for @peopleTryTopic.
+  ///
+  /// In en, this message translates to:
+  /// **'Try a topic'**
+  String get peopleTryTopic;
+
   /// No description provided for @peopleTopic.
   ///
   /// In en, this message translates to:

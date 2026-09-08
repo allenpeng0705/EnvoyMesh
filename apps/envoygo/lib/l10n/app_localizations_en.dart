@@ -1890,6 +1890,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Find people you haven\'t bonded with — open their public profile or blog, then say hello.';
 
   @override
+  String get peopleTryTopic => 'Try a topic';
+
+  @override
   String get peopleTopic => 'Topic';
 
   @override

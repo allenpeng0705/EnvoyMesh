@@ -1466,60 +1466,66 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               ),
             ),
           Expanded(
-            child: messages.isEmpty
-                ? Center(
-                    child: Text(
-                      l10n.chatNoMessages,
-                      style: const TextStyle(color: Colors.grey),
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+              child: messages.isEmpty
+                  ? Center(
+                      child: Text(
+                        l10n.chatNoMessages,
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    )
+                  : ListView.builder(
+                      reverse: true,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.all(12),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final msg = messages[index];
+                        return GestureDetector(
+                          onLongPress: () {
+                            showDialog(
+                              context: context,
+                              builder: (ctx) {
+                                final dialogL10n = AppLocalizations.of(ctx);
+                                return AlertDialog(
+                                  title: Text(dialogL10n.chatDeleteMessageTitle),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(),
+                                      child: Text(dialogL10n.commonCancel),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () {
+                                        _deleteMessage(msg);
+                                        Navigator.of(ctx).pop();
+                                      },
+                                      child: Text(dialogL10n.commonDelete),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                          child: ChatBubble(
+                            key: ValueKey(msg.id),
+                            message: msg,
+                            isOutbound: msg.isOutbound,
+                            onLoadAudio: _loadAudioForAttachment,
+                            // Family DM / room bubbles load inline previews and
+                            // audio from the home family-media area by id; mesh
+                            // and agent threads keep vault-path behavior (null).
+                            onLoadFamilyAttachment:
+                                (_isFamily || _isFamilyRoom)
+                                ? _loadFamilyAttachment
+                                : null,
+                          ),
+                        );
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = messages[index];
-                      return GestureDetector(
-                        onLongPress: () {
-                          showDialog(
-                            context: context,
-                            builder: (ctx) {
-                              final dialogL10n = AppLocalizations.of(ctx);
-                              return AlertDialog(
-                                title: Text(dialogL10n.chatDeleteMessageTitle),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.of(ctx).pop(),
-                                    child: Text(dialogL10n.commonCancel),
-                                  ),
-                                  FilledButton(
-                                    onPressed: () {
-                                      _deleteMessage(msg);
-                                      Navigator.of(ctx).pop();
-                                    },
-                                    child: Text(dialogL10n.commonDelete),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-                        },
-                        child: ChatBubble(
-                          key: ValueKey(msg.id),
-                          message: msg,
-                          isOutbound: msg.isOutbound,
-                          onLoadAudio: _loadAudioForAttachment,
-                          // Family DM / room bubbles load inline previews and
-                          // audio from the home family-media area by id; mesh
-                          // and agent threads keep vault-path behavior (null).
-                          onLoadFamilyAttachment:
-                              (_isFamily || _isFamilyRoom)
-                              ? _loadFamilyAttachment
-                              : null,
-                        ),
-                      );
-                    },
-                  ),
+            ),
           ),
           SafeArea(
             child: Padding(
@@ -1893,6 +1899,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   }
 
   void _sendMessage() {
+    FocusManager.instance.primaryFocus?.unfocus();
     final text = _textController.text.trim();
     if ((text.isEmpty && _agentAttachments.isEmpty) ||
         _mmxBusy ||

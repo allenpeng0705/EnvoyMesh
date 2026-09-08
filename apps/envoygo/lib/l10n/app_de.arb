@@ -312,6 +312,7 @@
   "peoplePairHint": "Koppeln Sie einen Heimknoten, um Personen im Mesh zu finden.",
   "peopleConnectHint": "Verbinden Sie sich mit einem Heimknoten, um Personen zu finden.",
   "peopleHint": "Finden Sie Personen ohne Bond — öffnen Sie deren öffentliches Profil oder Blog und sagen Sie Hallo.",
+  "peopleTryTopic": "Ein Thema versuchen",
   "peopleTopic": "Thema",
   "peopleInterest": "Interesse",
   "peopleTopicHint": "Musik, Coding, Reisen…",

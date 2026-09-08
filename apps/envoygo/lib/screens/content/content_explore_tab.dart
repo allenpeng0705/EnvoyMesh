@@ -20,23 +20,6 @@ import '../browser/browser_screen.dart';
 const _sampleCap = 20;
 const _phoneSampleTimeout = Duration(seconds: 25);
 const _webContentCapabilityTopic = 'capability:envoymesh.web-content';
-const _suggestedTopics = [
-  'music',
-  'tech',
-  'art',
-  'science',
-  'gaming',
-  'movies',
-  'books',
-  'travel',
-  'food',
-  'fitness',
-  'news',
-  'sports',
-  'fashion',
-  'photography',
-  'coding',
-];
 
 /// Content → Discover: find non-bonded peers (topic / interest),
 /// or sample the mesh for public profiles & blogs. Say Hello to bond.
@@ -185,7 +168,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
         .where((h) => h.isNotEmpty)
         .take(3)
         .toList();
-    final topics = List<String>.from(_suggestedTopics)..shuffle(Random());
+    final topics = List<String>.from(suggestedDiscoveryTopics)..shuffle(Random());
     for (final slug in [...hints, ...topics.take(4)]) {
       if (out.length >= _sampleCap) break;
       try {
@@ -202,7 +185,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     final out = <PeerSearchResult>[];
     // Few topics — each expands to multiple DHT/relay queries. More made
     // Discover feel hung when WAN was slow even with per-call timeouts.
-    final topics = List<String>.from(_suggestedTopics)..shuffle(Random());
+    final topics = List<String>.from(suggestedDiscoveryTopics)..shuffle(Random());
     for (final slug in topics.take(2)) {
       if (out.length >= _sampleCap) break;
       try {
@@ -360,6 +343,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   }
 
   Future<void> _runSearch() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     final l10n = AppLocalizations.of(context);
     final q = _queryCtrl.text.trim();
     if (q.isEmpty) {
@@ -633,11 +617,15 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
 
     final busy = _searching;
 
-    return RefreshIndicator(
-      onRefresh: _refreshSample,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: RefreshIndicator(
+        onRefresh: _refreshSample,
+        child: ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.all(16),
+          children: [
           Row(
             children: [
               Expanded(
@@ -706,10 +694,49 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: busy ? null : _runSearch,
-                child: Text(busy ? l10n.commonEllipsis : l10n.commonSearch),
+                child: busy
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                      )
+                    : Text(l10n.commonSearch),
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.peopleTryTopic,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final topic in suggestedDiscoveryTopics)
+                ActionChip(
+                  label: Text(topic),
+                  onPressed: busy
+                      ? null
+                      : () {
+                          FocusManager.instance.primaryFocus?.unfocus();
+                          setState(() {
+                            _mode = _PeopleSearchMode.interest;
+                            _queryCtrl.text = topic;
+                          });
+                          unawaited(_runSearch());
+                        },
+                ),
+            ],
+          ),
+          if (busy) ...[
+            const SizedBox(height: 12),
+            const LinearProgressIndicator(minHeight: 2),
+          ],
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -816,6 +843,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
               );
             }),
         ],
+      ),
       ),
     );
   }

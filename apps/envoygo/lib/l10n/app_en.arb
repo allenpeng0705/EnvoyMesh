@@ -812,6 +812,7 @@
   "peoplePairHint": "Pair with a home node to discover people on the mesh.",
   "peopleConnectHint": "Connect to a home node to discover people.",
   "peopleHint": "Find people you haven't bonded with — open their public profile or blog, then say hello.",
+  "peopleTryTopic": "Try a topic",
   "peopleTopic": "Topic",
   "peopleInterest": "Interest",
   "peopleTopicHint": "music, coding, travel…",

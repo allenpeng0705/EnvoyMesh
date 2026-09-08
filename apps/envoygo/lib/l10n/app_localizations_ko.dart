@@ -1830,6 +1830,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get peopleHint => '아직 본드하지 않은 사람을 찾으세요 — 공개 프로필이나 블로그를 열고 인사하세요.';
 
   @override
+  String get peopleTryTopic => '주제 시도';
+
+  @override
   String get peopleTopic => '주제';
 
   @override

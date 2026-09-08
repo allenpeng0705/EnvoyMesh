@@ -1,6 +1,26 @@
 /// Discovery topic vocabulary — parity with `apps/node/src/capability-discovery.ts`.
 library;
 
+/// Preset interest/topic chips — keep in sync with Social `SUGGESTED_TOPICS`
+/// (`apps/social/src/lib/display.ts`).
+const List<String> suggestedDiscoveryTopics = [
+  'music',
+  'tech',
+  'art',
+  'science',
+  'gaming',
+  'movies',
+  'books',
+  'travel',
+  'food',
+  'fitness',
+  'news',
+  'sports',
+  'fashion',
+  'photography',
+  'coding',
+];
+
 /// Slugify free-text into a DHT-safe topic segment (Unicode letters/numbers).
 String slugifyTopic(String value) {
   final slug = value

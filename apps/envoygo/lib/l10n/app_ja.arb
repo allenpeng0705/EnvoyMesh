@@ -312,6 +312,7 @@
   "peoplePairHint": "ホームノードとペアリングしてメッシュ上の人を見つけます。",
   "peopleConnectHint": "ホームノードに接続して人を見つけます。",
   "peopleHint": "まだボンドしていない人を見つけましょう — 公開プロフィールやブログを開いて挨拶します。",
+  "peopleTryTopic": "トピックを試す",
   "peopleTopic": "トピック",
   "peopleInterest": "興味",
   "peopleTopicHint": "音楽、コーディング、旅行…",

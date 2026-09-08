@@ -1912,6 +1912,9 @@ class AppLocalizationsFr extends AppLocalizations {
       'Trouvez des personnes non liées — ouvrez leur profil ou blog public, puis dites bonjour.';
 
   @override
+  String get peopleTryTopic => 'Essayer un sujet';
+
+  @override
   String get peopleTopic => 'Sujet';
 
   @override

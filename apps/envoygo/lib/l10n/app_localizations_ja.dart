@@ -1831,6 +1831,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get peopleHint => 'まだボンドしていない人を見つけましょう — 公開プロフィールやブログを開いて挨拶します。';
 
   @override
+  String get peopleTryTopic => 'トピックを試す';
+
+  @override
   String get peopleTopic => 'トピック';
 
   @override

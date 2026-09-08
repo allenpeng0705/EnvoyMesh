@@ -1908,6 +1908,9 @@ class AppLocalizationsIt extends AppLocalizations {
       'Trova persone non collegate — apri il profilo o blog pubblico e saluta.';
 
   @override
+  String get peopleTryTopic => 'Prova un argomento';
+
+  @override
   String get peopleTopic => 'Argomento';
 
   @override

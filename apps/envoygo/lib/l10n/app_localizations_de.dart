@@ -1911,6 +1911,9 @@ class AppLocalizationsDe extends AppLocalizations {
       'Finden Sie Personen ohne Bond — öffnen Sie deren öffentliches Profil oder Blog und sagen Sie Hallo.';
 
   @override
+  String get peopleTryTopic => 'Ein Thema versuchen';
+
+  @override
   String get peopleTopic => 'Thema';
 
   @override

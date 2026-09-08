@@ -1814,6 +1814,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peopleHint => '寻找尚未绑定的人 — 打开其公开资料或博客，然后打个招呼。';
 
   @override
+  String get peopleTryTopic => '试试话题';
+
+  @override
   String get peopleTopic => '话题';
 
   @override

@@ -312,6 +312,7 @@
   "peoplePairHint": "Associez un nœud domicile pour découvrir des personnes sur le mesh.",
   "peopleConnectHint": "Connectez-vous à un nœud domicile pour découvrir des personnes.",
   "peopleHint": "Trouvez des personnes non liées — ouvrez leur profil ou blog public, puis dites bonjour.",
+  "peopleTryTopic": "Essayer un sujet",
   "peopleTopic": "Sujet",
   "peopleInterest": "Intérêt",
   "peopleTopicHint": "musique, code, voyage…",
