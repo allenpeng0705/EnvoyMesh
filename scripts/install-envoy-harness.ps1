@@ -143,10 +143,12 @@ try {
     $ErrorActionPreference = "SilentlyContinue"
     pnpm install 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Fail "pnpm install failed in envoy-harness" }
-    # Build process → harness → client first so client types resolve against a
-    # fresh harness dist (HostUserQuestion*). Then rebuild the full workspace.
+    # Seed order breaks the peer↔harness cycle for stale Windows dist:
+    # process → peer (discovery exports) → harness → client, then full workspace.
     pnpm --filter @envoymesh/envoy-process run build 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Fail "envoy-process build failed" }
+    pnpm --filter @envoymesh/envoy-harness-peer run build 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Fail "envoy-harness-peer build failed" }
     pnpm --filter @envoymesh/envoy-harness run build 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Fail "envoy-harness build failed" }
     pnpm --filter @envoymesh/envoy-harness-client run build 2>&1 | Out-Null

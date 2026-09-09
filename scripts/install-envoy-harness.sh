@@ -141,9 +141,10 @@ echo "  pnpm install + build in $HARNESS_DIR ..."
 (
   cd "$HARNESS_DIR"
   pnpm install
-  # Build process → harness → client first so client types resolve against a
-  # fresh harness dist (HostUserQuestion*). Then rebuild the full workspace.
+  # Seed order breaks the peer↔harness cycle for stale Windows dist:
+  # process → peer (discovery exports) → harness → client, then full workspace.
   pnpm --filter @envoymesh/envoy-process run build
+  pnpm --filter @envoymesh/envoy-harness-peer run build
   pnpm --filter @envoymesh/envoy-harness run build
   pnpm --filter @envoymesh/envoy-harness-client run build
   pnpm -r run build

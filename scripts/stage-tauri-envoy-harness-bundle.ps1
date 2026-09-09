@@ -123,10 +123,10 @@ function Build-Package([string]$PkgFilter, [string]$Label) {
 }
 
 Build-Package "@envoymesh/envoy-process"            "Package process (killProcessTree)"
+Build-Package "@envoymesh/envoy-harness-peer"      "Package peer (mesh submitter)"
 Build-Package "@envoymesh/envoy-harness"            "Package 1 (envoy-harness)"
 Build-Package "@envoymesh/envoy-harness-client"     "Package client (ACP client)"
 Build-Package "@envoymesh/envoy-harness-adapter"   "Package 3 (envoy-harness-adapter)"
-Build-Package "@envoymesh/envoy-harness-peer"      "Package peer (mesh submitter)"
 Build-Package "@envoymesh/envoy-harness-tui"       "Package TUI (terminal host)"
 
 # ---- Stage dist/ → resources/ -------------------------------------------
