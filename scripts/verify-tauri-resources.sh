@@ -162,6 +162,9 @@ fi
 # from the sibling resources/envoy-harness* trees. Without these, first launch
 # crashes with ERR_MODULE_NOT_FOUND for @envoymesh/envoy-harness-adapter.
 if [ "${STAGE_ENVOY_HARNESS:-}" != "0" ] || [ "${ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP:-}" != "1" ]; then
+  ENVOY_PROCESS_NODE_MOD="$RES/node/node_modules/@envoymesh/envoy-process"
+  require_file "$ENVOY_PROCESS_NODE_MOD/package.json" "envoy-process in node_modules (harness kill-tree dep)"
+  require_file "$ENVOY_PROCESS_NODE_MOD/dist/index.js" "envoy-process dist entry in node_modules"
   require_file "$ENVOY_HARNESS_NODE_MOD/package.json" "envoy-harness in node_modules (runtime resolve)"
   require_file "$ENVOY_HARNESS_NODE_MOD/dist/index.js" "envoy-harness dist entry in node_modules"
   require_file "$ENVOY_HARNESS_ADAPTER_NODE_MOD/package.json" "envoy-harness-adapter in node_modules"

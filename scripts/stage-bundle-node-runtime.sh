@@ -145,8 +145,8 @@ copy_envoy_harness_pkg() {
 }
 
 if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
-  echo "  Staging @envoymesh/envoy-harness (+ adapter/client/peer/tui) from sibling monorepo..."
-  for pkg in envoy-harness envoy-harness-adapter envoy-harness-client envoy-harness-peer envoy-harness-tui; do
+  echo "  Staging @envoymesh/envoy-harness (+ process/adapter/client/peer/tui) from sibling monorepo..."
+  for pkg in envoy-process envoy-harness envoy-harness-adapter envoy-harness-client envoy-harness-peer envoy-harness-tui; do
     if [ ! -d "$ENVOY_HARNESS_DIR/packages/$pkg" ]; then
       echo "error: ENVOY_HARNESS_DIR=$ENVOY_HARNESS_DIR is missing packages/$pkg." >&2
       echo "  Place the sibling monorepo at $ROOT/../envoy-harness, or set ENVOY_HARNESS_DIR." >&2
@@ -154,12 +154,13 @@ if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
       exit 1
     fi
   done
+  copy_envoy_harness_pkg "envoy-process"
   copy_envoy_harness_pkg "envoy-harness"
   copy_envoy_harness_pkg "envoy-harness-adapter"
   copy_envoy_harness_pkg "envoy-harness-client"
   copy_envoy_harness_pkg "envoy-harness-peer"
   copy_envoy_harness_pkg "envoy-harness-tui"
-  echo "  ✓ @envoymesh/envoy-harness{,-adapter,-client,-peer,-tui} in node_modules"
+  echo "  ✓ @envoymesh/envoy-{process,harness,harness-adapter,harness-client,harness-peer,harness-tui} in node_modules"
 
   # Explicitly stage smol-toml (unique harness dep). The safety-net below
   # also picks it up, but an early abort in the npm-ls loop used to leave
@@ -425,6 +426,7 @@ done
 # Phase 8 — when harness is wired in, its unique runtime dep must be present.
 if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
   for dep in \
+    "@envoymesh/envoy-process" \
     "@envoymesh/envoy-harness" \
     "@envoymesh/envoy-harness-adapter" \
     "@envoymesh/envoy-harness-client" \
@@ -477,9 +479,9 @@ HARNESS_PROBE_MODS=""
 if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
   HARNESS_PROBE_MODS='
   // Phase 8 — sibling monorepo packages (static imports in node-service-impl)
-  "@envoymesh/envoy-harness", "@envoymesh/envoy-harness-adapter",
-  "@envoymesh/envoy-harness-client", "@envoymesh/envoy-harness-peer",
-  "@envoymesh/agent-adapter", "smol-toml",'
+  "@envoymesh/envoy-process", "@envoymesh/envoy-harness",
+  "@envoymesh/envoy-harness-adapter", "@envoymesh/envoy-harness-client",
+  "@envoymesh/envoy-harness-peer", "@envoymesh/agent-adapter", "smol-toml",'
 fi
 cat > "$DEST/__import_probe.mjs" <<PROBE
 const mods = [

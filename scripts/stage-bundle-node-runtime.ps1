@@ -114,8 +114,9 @@ function Copy-EnvoyHarnessPkg([string]$Pkg) {
 }
 
 if ($stageEnvoyHarnessIntoNode) {
-    Write-Host "  Staging @envoymesh/envoy-harness (+ adapter/client/peer/tui) from sibling monorepo..."
+    Write-Host "  Staging @envoymesh/envoy-harness (+ process/adapter/client/peer/tui) from sibling monorepo..."
     foreach ($pkg in @(
+        "envoy-process",
         "envoy-harness",
         "envoy-harness-adapter",
         "envoy-harness-client",
@@ -127,12 +128,13 @@ if ($stageEnvoyHarnessIntoNode) {
             Write-Error "ENVOY_HARNESS_DIR=$envoyHarnessDir is missing packages/$pkg. Place the sibling monorepo at $envoyHarnessDir, or set ENVOY_HARNESS_DIR."
         }
     }
+    Copy-EnvoyHarnessPkg "envoy-process"
     Copy-EnvoyHarnessPkg "envoy-harness"
     Copy-EnvoyHarnessPkg "envoy-harness-adapter"
     Copy-EnvoyHarnessPkg "envoy-harness-client"
     Copy-EnvoyHarnessPkg "envoy-harness-peer"
     Copy-EnvoyHarnessPkg "envoy-harness-tui"
-    Write-Host "  OK @envoymesh/envoy-harness{,-adapter,-client,-peer,-tui} in node_modules"
+    Write-Host "  OK @envoymesh/envoy-{process,harness,harness-adapter,harness-client,harness-peer,harness-tui} in node_modules"
 
     # Explicitly stage smol-toml (unique harness dep).
     $smolDest = Join-Path $Dest "node_modules\smol-toml"
@@ -435,6 +437,7 @@ $criticalDeps = @(
 ) + @($sharpPlatformDeps)
 if ($stageEnvoyHarnessIntoNode) {
     $criticalDeps += @(
+        "@envoymesh/envoy-process",
         "@envoymesh/envoy-harness",
         "@envoymesh/envoy-harness-adapter",
         "@envoymesh/envoy-harness-client",
@@ -492,9 +495,9 @@ if ($stageEnvoyHarnessIntoNode) {
     $harnessProbeMods = @"
 
   // Phase 8 — sibling monorepo packages (static imports in node-service-impl)
-  "@envoymesh/envoy-harness", "@envoymesh/envoy-harness-adapter",
-  "@envoymesh/envoy-harness-client", "@envoymesh/envoy-harness-peer",
-  "@envoymesh/agent-adapter", "smol-toml",
+  "@envoymesh/envoy-process", "@envoymesh/envoy-harness",
+  "@envoymesh/envoy-harness-adapter", "@envoymesh/envoy-harness-client",
+  "@envoymesh/envoy-harness-peer", "@envoymesh/agent-adapter", "smol-toml",
 "@
 }
 $probeScript = @"

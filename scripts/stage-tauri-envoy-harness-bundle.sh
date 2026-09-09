@@ -107,9 +107,10 @@ build_pkg() {
   ) || die "$label build failed — see output above. Aborting."
 }
 
-# Build order: core → client/adapter → peer → tui.
+# Build order: process (harness dep) → core → client/adapter → peer → tui.
 # apps/node statically imports harness, adapter, client, and peer.
 # Terminal → Envoy needs the TUI bin in the packaged resources.
+build_pkg "@envoymesh/envoy-process" "Package process (killProcessTree)"
 build_pkg "@envoymesh/envoy-harness" "Package 1 (envoy-harness)"
 build_pkg "@envoymesh/envoy-harness-client" "Package client (ACP client)"
 build_pkg "@envoymesh/envoy-harness-adapter" "Package 3 (envoy-harness-adapter)"
