@@ -141,7 +141,10 @@ echo "  pnpm install + build in $HARNESS_DIR ..."
 (
   cd "$HARNESS_DIR"
   pnpm install
-  # Match EnvoyMesh package.json "build:envoy-harness" order (client first, then all).
+  # Build process → harness → client first so client types resolve against a
+  # fresh harness dist (HostUserQuestion*). Then rebuild the full workspace.
+  pnpm --filter @envoymesh/envoy-process run build
+  pnpm --filter @envoymesh/envoy-harness run build
   pnpm --filter @envoymesh/envoy-harness-client run build
   pnpm -r run build
 )
