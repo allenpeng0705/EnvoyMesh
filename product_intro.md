@@ -29,6 +29,7 @@ That is the real target of this system: not “another chat app with AI bolted o
 | **EnvoyGo** | Your pocket window back to the home Envoy — anywhere, no public IP |
 | **EnvoyAI** | The built-in envoy on your home node (OpenClaw-based) |
 | **Envoy Harness** | Coding / distributed harness so envoys can do real work under rules |
+| **Coding tab (planned)** | Dedicated workspace for repo coding — see [`product_coding_tab_design.md`](product_coding_tab_design.md) |
 
 ## Who this is for
 
