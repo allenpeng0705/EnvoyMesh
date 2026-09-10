@@ -279,6 +279,7 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
         profileVisibility: hit.profileVisibility,
         trustLevel: hit.trustLevel,
         multiaddrs: hit.multiaddrs,
+        hasHopSlot: hit.hasHopSlot,
       );
     }).toList();
 

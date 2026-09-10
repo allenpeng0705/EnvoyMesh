@@ -157,6 +157,7 @@ void main() {
             ownerId: '',
             displayName: 'Emily',
             multiaddrs: [],
+            hasHopSlot: false,
           ),
         ],
         selfLibp2pPeerId: '12D3KooSelf',
@@ -169,6 +170,52 @@ void main() {
       expect(isProvisionalLanOwnerId(hits.single.ownerId), isFalse);
       expect(isProvisionalOwnerId(hits.single.ownerId), isTrue);
       expect(hits.single.displayName, 'Emily');
+      expect(hits.single.hasHopSlot, isFalse);
+    });
+
+    test('hitsFromRelayCandidates preserves hasHopSlot from JSON', () {
+      final host = _FakeHost();
+      final runtime = PhoneDiscoveryRuntime(host: host);
+      final live = RelayLookupCandidate.fromJson({
+        'peerId': '12D3KooLive',
+        'multiaddrs': ['/p2p/12D3KooRelay/p2p-circuit/p2p/12D3KooLive'],
+        'hasHopSlot': true,
+      });
+      final pending = RelayLookupCandidate.fromJson({
+        'peerId': '12D3KooPending',
+        'multiaddrs': [],
+        'hasHopSlot': false,
+      });
+      final hits = runtime.hitsFromRelayCandidates(
+        [live, pending],
+        selfLibp2pPeerId: '12D3KooSelf',
+        selfOwnerId: 'envoy:owner:alice',
+      );
+      expect(hits.map((h) => h.hasHopSlot).toList(), [true, false]);
+    });
+
+    test('mergeHits keeps hasHopSlot false when unioning leftover addrs', () {
+      final merged = PhoneDiscoveryRuntime.mergeHits(
+        [
+          const MeshPeerHit(
+            nodeId: '12D3KooSame',
+            ownerId: 'relay:12D3KooSame',
+            multiaddrs: [],
+            hasHopSlot: false,
+          ),
+          const MeshPeerHit(
+            nodeId: '12D3KooSame',
+            ownerId: 'relay:12D3KooSame',
+            multiaddrs: ['/ip4/1.2.3.4/tcp/4001/p2p/12D3KooSame'],
+          ),
+        ],
+        selfLibp2pPeerId: '12D3KooSelf',
+        selfOwnerId: 'envoy:owner:alice',
+      );
+      expect(merged, hasLength(1));
+      expect(merged.single.multiaddrs, isNotEmpty);
+      // Explicit false must win so Say Hello stays gated.
+      expect(merged.single.hasHopSlot, isFalse);
     });
 
     test('hitsFromRelayCandidates labels a nameless relay hit', () {

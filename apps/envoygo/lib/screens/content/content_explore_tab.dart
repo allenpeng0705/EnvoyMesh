@@ -191,6 +191,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
         profileVisibility: h.profileVisibility,
         trustLevel: h.trustLevel,
         multiaddrs: h.multiaddrs,
+        hasHopSlot: h.hasHopSlot,
       );
 
   /// Wait until phone WAN discovery attaches (`wanSearch`), or [maxWait] elapses.

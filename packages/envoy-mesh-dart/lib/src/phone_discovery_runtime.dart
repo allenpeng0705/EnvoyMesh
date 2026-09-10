@@ -59,6 +59,7 @@ class RelayLookupCandidate {
     this.multiaddrs = const [],
     this.capabilities = const [],
     this.visibility = 'public',
+    this.hasHopSlot,
   });
 
   final String peerId;
@@ -68,7 +69,11 @@ class RelayLookupCandidate {
   final List<String> capabilities;
   final String visibility;
 
+  /// Live circuit hop on the answering relay, when reported.
+  final bool? hasHopSlot;
+
   factory RelayLookupCandidate.fromJson(Map<String, dynamic> peer) {
+    final rawHop = peer['hasHopSlot'];
     return RelayLookupCandidate(
       peerId: (peer['peerId'] as String?) ?? '',
       ownerId: (peer['ownerId'] as String?) ?? '',
@@ -80,6 +85,7 @@ class RelayLookupCandidate {
           ? (peer['capabilities'] as List).map((e) => e.toString()).toList()
           : const [],
       visibility: (peer['visibility'] as String?) ?? 'public',
+      hasHopSlot: rawHop is bool ? rawHop : null,
     );
   }
 }
@@ -268,6 +274,7 @@ class PhoneDiscoveryRuntime {
         multiaddrs: c.multiaddrs,
         interests: c.capabilities,
         profileVisibility: c.visibility,
+        hasHopSlot: c.hasHopSlot,
       ));
     }
     return hits;
@@ -332,7 +339,17 @@ class PhoneDiscoveryRuntime {
       profileVisibility: richer.profileVisibility ?? other.profileVisibility,
       trustLevel: richer.trustLevel ?? other.trustLevel,
       multiaddrs: addrs,
+      // Explicit false wins: a hop-less relay hit must not become dialable
+      // just because a DHT/LAN merge contributed leftover multiaddrs.
+      hasHopSlot: _mergeHasHopSlot(a.hasHopSlot, b.hasHopSlot),
     );
+  }
+
+  /// Prefer the more conservative hop report when merging sources.
+  static bool? _mergeHasHopSlot(bool? a, bool? b) {
+    if (a == false || b == false) return false;
+    if (a == true || b == true) return true;
+    return null;
   }
 }
 

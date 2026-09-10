@@ -80,6 +80,7 @@ class MeshPeerHit {
     this.profileVisibility,
     this.trustLevel,
     this.multiaddrs = const [],
+    this.hasHopSlot,
   });
 
   final String nodeId;
@@ -89,4 +90,10 @@ class MeshPeerHit {
   final String? profileVisibility;
   final String? trustLevel;
   final List<String> multiaddrs;
+
+  /// Live relay circuit hop, when the source reported it (relay roster).
+  ///
+  /// `false` = checked in but not dialable yet. `null` = source silent
+  /// (LAN / DHT / local) — callers treat address presence as dialability.
+  final bool? hasHopSlot;
 }
