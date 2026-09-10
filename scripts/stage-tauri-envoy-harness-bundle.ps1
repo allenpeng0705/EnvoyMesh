@@ -83,7 +83,8 @@ $requiredPkgs = @(
     "envoy-harness-adapter",
     "envoy-harness-client",
     "envoy-harness-peer",
-    "envoy-harness-tui"
+    "envoy-harness-tui",
+    "envoy-harness-ehui"
 )
 foreach ($pkg in $requiredPkgs) {
     $pkgPath = Join-Path $envHarnessDir "packages\$pkg"
@@ -128,6 +129,13 @@ Build-Package "@envoymesh/envoy-harness"            "Package 1 (envoy-harness)"
 Build-Package "@envoymesh/envoy-harness-client"     "Package client (ACP client)"
 Build-Package "@envoymesh/envoy-harness-adapter"   "Package 3 (envoy-harness-adapter)"
 Build-Package "@envoymesh/envoy-harness-tui"       "Package TUI (terminal host)"
+# ehui is NOT staged into resources\ (browser/React package, bundled into
+# the Social UI's static assets). It IS built here because apps\social
+# depends on it via a file: link whose package.json points at
+# ./dist/index.js — so `npm run social:build` resolves the SIBLING repo's
+# dist. Without this build a changed ehui is bundled stale (or the Social
+# build fails outright after a clean).
+Build-Package "@envoymesh/envoy-harness-ehui"      "Package EHUI (React panels, Social UI build-time dep)"
 
 # ---- Stage dist/ → resources/ -------------------------------------------
 function Stage-Dist([string]$SrcPkg, [string]$DestName) {

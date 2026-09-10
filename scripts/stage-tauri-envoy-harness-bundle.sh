@@ -69,8 +69,9 @@ if [ ! -d "$ENVOY_HARNESS_DIR/packages/envoy-harness" ] || \
    [ ! -d "$ENVOY_HARNESS_DIR/packages/envoy-harness-adapter" ] || \
    [ ! -d "$ENVOY_HARNESS_DIR/packages/envoy-harness-client" ] || \
    [ ! -d "$ENVOY_HARNESS_DIR/packages/envoy-harness-peer" ] || \
-   [ ! -d "$ENVOY_HARNESS_DIR/packages/envoy-harness-tui" ]; then
-  die "$ENVOY_HARNESS_DIR/packages/envoy-harness{,-adapter,-client,-peer,-tui} missing — wrong repo at ENVOY_HARNESS_DIR?"
+   [ ! -d "$ENVOY_HARNESS_DIR/packages/envoy-harness-tui" ] || \
+   [ ! -d "$ENVOY_HARNESS_DIR/packages/envoy-harness-ehui" ]; then
+  die "$ENVOY_HARNESS_DIR/packages/envoy-harness{,-adapter,-client,-peer,-tui,-ehui} missing — wrong repo at ENVOY_HARNESS_DIR?"
 fi
 
 echo "[stage-tauri-envoy-harness-bundle] Sibling monorepo: $ENVOY_HARNESS_DIR"
@@ -117,6 +118,14 @@ build_pkg "@envoymesh/envoy-harness" "Package 1 (envoy-harness)"
 build_pkg "@envoymesh/envoy-harness-client" "Package client (ACP client)"
 build_pkg "@envoymesh/envoy-harness-adapter" "Package 3 (envoy-harness-adapter)"
 build_pkg "@envoymesh/envoy-harness-tui" "Package TUI (terminal host)"
+# ehui is NOT staged into resources/ (it is a browser/React package, built
+# into the Social UI's static bundle). It IS built here because
+# `apps/social` depends on it via a `file:` link whose package.json points
+# at ./dist/index.js — so `npm run social:build` resolves the SIBLING
+# repo's dist, not this script's staged copy. Without this build a changed
+# ehui would be bundled stale (or the Social build would fail outright
+# after a `clean`).
+build_pkg "@envoymesh/envoy-harness-ehui" "Package EHUI (React panels, Social UI build-time dep)"
 
 # ---- Stage dist/ → resources/ -------------------------------------------
 # Idempotency: rm -rf before copy. Re-runs do not accumulate stale files.
