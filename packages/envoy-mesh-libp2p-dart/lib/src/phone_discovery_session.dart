@@ -323,61 +323,65 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
         if (a != primary) a,
     ];
 
-    for (final q in queries) {
-      final payload =
-          _runtime.buildLookupPayload(queryTopic: q, maxResults: maxResults);
-      final unsigned = buildUnsignedSystemEnvelope(
-        device: _backend.persona.device,
-        intent: 'relay.lookup',
-        payload: payload,
-      );
-      final signed = signEnvoyEnvelope(
-        unsigned,
-        _backend.persona.device.privateKeyPem,
-      );
-      var gotHits = false;
-      for (final relayAddr in [primary, ...fallback]) {
-        try {
-          final result = await transport.sendEnvelope(
-            dialTarget: relayAddr,
-            protocolId: envoyMessageProtocol,
-            envelope: signed,
-            expectReply: true,
+    // Run query topics in parallel — sequential lookups burned the Discover
+    // sample budget when a slug expands to 4+ topic keys.
+    final batches = await Future.wait([
+      for (final q in queries)
+        () async {
+          final payload = _runtime.buildLookupPayload(
+            queryTopic: q,
+            maxResults: maxResults,
           );
-          if (!result.ok || result.replyEnvelope == null) continue;
-          final reply = Map<String, Object?>.from(result.replyEnvelope!);
-          if (!isAcceptableRelayLookupResponse(
-            reply,
-            dialedTrustedRelay: true,
-          )) {
-            _log(
-              '[PhoneDiscoverySession] lookup rejected (untrusted reply) $relayAddr',
-            );
-            continue;
+          final unsigned = buildUnsignedSystemEnvelope(
+            device: _backend.persona.device,
+            intent: 'relay.lookup',
+            payload: payload,
+          );
+          final signed = signEnvoyEnvelope(
+            unsigned,
+            _backend.persona.device.privateKeyPem,
+          );
+          for (final relayAddr in [primary, ...fallback]) {
+            try {
+              final result = await transport.sendEnvelope(
+                dialTarget: relayAddr,
+                protocolId: envoyMessageProtocol,
+                envelope: signed,
+                expectReply: true,
+              );
+              if (!result.ok || result.replyEnvelope == null) continue;
+              final reply = Map<String, Object?>.from(result.replyEnvelope!);
+              if (!isAcceptableRelayLookupResponse(
+                reply,
+                dialedTrustedRelay: true,
+              )) {
+                _log(
+                  '[PhoneDiscoverySession] lookup rejected (untrusted reply) $relayAddr',
+                );
+                continue;
+              }
+              final peers = parseRelayLookupPeers(reply['payload']);
+              final candidates = [
+                for (final p in peers) RelayLookupCandidate.fromJson(p),
+              ];
+              final batch = _runtime.hitsFromRelayCandidates(
+                candidates,
+                selfLibp2pPeerId: selfPeer,
+                selfOwnerId: selfOwner,
+              );
+              if (batch.isNotEmpty) return batch;
+            } catch (e) {
+              _log(
+                '[PhoneDiscoverySession] lookup error $relayAddr: $e',
+              );
+            }
           }
-          final peers = parseRelayLookupPeers(reply['payload']);
-          final candidates = [
-            for (final p in peers) RelayLookupCandidate.fromJson(p),
-          ];
-          final batch = _runtime.hitsFromRelayCandidates(
-            candidates,
-            selfLibp2pPeerId: selfPeer,
-            selfOwnerId: selfOwner,
-          );
-          if (batch.isNotEmpty) {
-            relayHits.addAll(batch);
-            gotHits = true;
-            break; // primary (or first success) is enough for this query
-          }
-        } catch (e) {
-          _log(
-            '[PhoneDiscoverySession] lookup error $relayAddr: $e',
-          );
-        }
-      }
-      if (!gotHits) {
-        _log('[PhoneDiscoverySession] no relay hits for query=$q');
-      }
+          _log('[PhoneDiscoverySession] no relay hits for query=$q');
+          return const <MeshPeerHit>[];
+        }(),
+    ]);
+    for (final batch in batches) {
+      relayHits.addAll(batch);
     }
     return relayHits;
   }

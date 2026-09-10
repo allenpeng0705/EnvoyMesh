@@ -289,7 +289,14 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// Always seeds the community TCP relays. Pairing `bootstrapPeers` often
   /// include WebSocket URLs — those are filtered out so cold start does not
   /// stall dialing non-libp2p addresses. Remaining peers connect in background.
+  Future<Libp2pNode?>? _ensureLibp2pInFlight;
+
   Future<Libp2pNode?> ensureLibp2pStarted() async {
+    final inFlight = _ensureLibp2pInFlight;
+    if (inFlight != null) return inFlight;
+
+    final done = Completer<Libp2pNode?>();
+    _ensureLibp2pInFlight = done.future;
     try {
       _libp2pNode ??= Libp2pNode(
         seedStore: SecureStorageLibp2pSeedStore(_secureStorage),
@@ -310,10 +317,14 @@ class NodeNotifier extends StateNotifier<NodeState> {
         bootstrapAddrs: unique,
         enableRelay: true,
       );
+      done.complete(_libp2pNode);
       return _libp2pNode;
     } catch (e) {
       _log('ensureLibp2pStarted failed: $e');
+      done.complete(null);
       return null;
+    } finally {
+      _ensureLibp2pInFlight = null;
     }
   }
 

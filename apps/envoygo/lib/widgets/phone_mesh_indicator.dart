@@ -16,7 +16,9 @@ _PhoneMeshUiStatus _resolveStatus({
   if (mesh.sessionActive) return _PhoneMeshUiStatus.connected;
   // Backend still loading persona / store — not mid-connect yet.
   if (!hasBackend) return _PhoneMeshUiStatus.offline;
-  return _PhoneMeshUiStatus.connecting;
+  // Only show Connecting while cold-start is actually in flight.
+  if (mesh.starting) return _PhoneMeshUiStatus.connecting;
+  return _PhoneMeshUiStatus.offline;
 }
 
 /// Cell-tower phone-mesh status. Tap opens a short status sheet.

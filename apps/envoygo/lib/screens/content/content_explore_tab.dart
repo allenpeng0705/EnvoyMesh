@@ -19,7 +19,8 @@ import '../../widgets/cross_persona_suggestions_section.dart';
 import '../browser/browser_screen.dart';
 
 const _sampleCap = 20;
-const _phoneSampleTimeout = Duration(seconds: 25);
+const _phoneSampleTimeout = Duration(seconds: 30);
+const _phoneDiscoveryReadyWait = Duration(seconds: 8);
 const _webContentCapabilityTopic = 'capability:envoymesh.web-content';
 
 /// Content → Discover: find non-bonded peers (topic / interest),
@@ -182,53 +183,71 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     return out.take(_sampleCap).toList();
   }
 
+  PeerSearchResult _hitToPeerResult(MeshPeerHit h) => PeerSearchResult(
+        nodeId: h.nodeId,
+        ownerId: h.ownerId,
+        displayName: h.displayName,
+        interests: h.interests,
+        profileVisibility: h.profileVisibility,
+        trustLevel: h.trustLevel,
+        multiaddrs: h.multiaddrs,
+      );
+
+  /// Wait until phone WAN discovery attaches (`wanSearch`), or [maxWait] elapses.
+  ///
+  /// Discover samples often raced session start and got local-only empties
+  /// because `PhoneSocialBackend.searchPeers` returns store hits only while
+  /// `wanSearch` is null.
+  Future<void> _waitForPhoneDiscoveryReady({
+    Duration maxWait = _phoneDiscoveryReadyWait,
+  }) async {
+    final deadline = DateTime.now().add(maxWait);
+    while (DateTime.now().isBefore(deadline)) {
+      if (!mounted) return;
+      final rt = ref.read(phoneMeshRuntimeProvider);
+      if (rt.discoveryActive) return;
+      if (rt.lastError != null && rt.lastError!.isNotEmpty) return;
+      await Future.delayed(const Duration(milliseconds: 250));
+    }
+  }
+
   Future<List<PeerSearchResult>> _samplePhoneMesh(SocialBackend backend) async {
     final out = <PeerSearchResult>[];
-    // Few topics — each expands to multiple DHT/relay queries. More made
-    // Discover feel hung when WAN was slow even with per-call timeouts.
-    final topics = List<String>.from(suggestedDiscoveryTopics)..shuffle(Random());
-    for (final slug in topics.take(2)) {
-      if (out.length >= _sampleCap) break;
-      try {
-        final hits = await backend.searchPeers(topic: slug, maxResults: 8);
-        _merge(
-          out,
-          _filterNonBonded(
-            hits
-                .map((h) => PeerSearchResult(
-                      nodeId: h.nodeId,
-                      ownerId: h.ownerId,
-                      displayName: h.displayName,
-                      interests: h.interests,
-                      profileVisibility: h.profileVisibility,
-                      trustLevel: h.trustLevel,
-                      multiaddrs: h.multiaddrs,
-                    ))
-                .toList(),
-          ),
-        );
-      } catch (_) {}
-    }
-    // Also list remembered peers with empty topic.
+
+    // 1) Broad `mesh.discovery` / empty-topic first. Most phones only
+    // advertise that capability on the relay roster (default profile has no
+    // interest topics). Interest slug loops used to burn the sample budget
+    // and skip this query entirely.
     try {
-      final all = await backend.searchPeers(maxResults: _sampleCap);
-      _merge(
-        out,
-        _filterNonBonded(
-          all
-              .map((h) => PeerSearchResult(
-                    nodeId: h.nodeId,
-                    ownerId: h.ownerId,
-                    displayName: h.displayName,
-                    interests: h.interests,
-                    profileVisibility: h.profileVisibility,
-                    trustLevel: h.trustLevel,
-                    multiaddrs: h.multiaddrs,
-                  ))
-              .toList(),
-        ),
-      );
+      final all = await backend.searchPeers(maxResults: _sampleCap).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => const <MeshPeerHit>[],
+          );
+      _merge(out, _filterNonBonded(all.map(_hitToPeerResult).toList()));
     } catch (_) {}
+
+    if (out.length >= _sampleCap) {
+      out.shuffle(Random());
+      return out.take(_sampleCap).toList();
+    }
+
+    // 2) Optional interest probes in parallel with a short per-call timeout.
+    final topics = List<String>.from(suggestedDiscoveryTopics)..shuffle(Random());
+    final slugFutures = topics.take(2).map((slug) async {
+      try {
+        return await backend.searchPeers(topic: slug, maxResults: 8).timeout(
+              const Duration(seconds: 10),
+              onTimeout: () => const <MeshPeerHit>[],
+            );
+      } catch (_) {
+        return const <MeshPeerHit>[];
+      }
+    });
+    final parts = await Future.wait(slugFutures);
+    for (final hits in parts) {
+      _merge(out, _filterNonBonded(hits.map(_hitToPeerResult).toList()));
+    }
+
     out.shuffle(Random());
     return out.take(_sampleCap).toList();
   }
@@ -255,19 +274,27 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
       });
       try {
         await _refreshExclude();
+        await _waitForPhoneDiscoveryReady();
+        if (!mounted) return;
         final rows = await _samplePhoneMesh(backend).timeout(
           _phoneSampleTimeout,
           onTimeout: () => const <PeerSearchResult>[],
         );
         if (!mounted) return;
+        final discoveryReady =
+            ref.read(phoneMeshRuntimeProvider).discoveryActive;
         setState(() {
           _results = rows;
           _fromSample = true;
           _loading = false;
           _searching = false;
-          _error = rows.isEmpty
-              ? AppLocalizations.of(context).peopleNoneFound
-              : null;
+          if (rows.isNotEmpty) {
+            _error = null;
+          } else if (!discoveryReady) {
+            _error = AppLocalizations.of(context).phoneMeshDescOffline;
+          } else {
+            _error = AppLocalizations.of(context).peopleNoneFound;
+          }
         });
         _persistSession();
       } catch (e) {
@@ -375,6 +402,8 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
       });
       try {
         await _refreshExclude();
+        await _waitForPhoneDiscoveryReady();
+        if (!mounted) return;
         final List<MeshPeerHit> hits;
         if (_mode == _PeopleSearchMode.topic) {
           hits = await _searchTopicBothPlanes(
@@ -810,12 +839,27 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     ref.listen<PhoneMeshRuntimeState>(phoneMeshRuntimeProvider, (prev, next) {
       if (!mounted) return;
       if (!ref.read(socialContextProvider).isPhone) return;
-      // First sample often runs before wanSearch is attached — refresh once
-      // discovery becomes active and we still have nothing useful.
+      // First sample often runs before wanSearch is attached — refresh when
+      // discovery becomes active if we still have nothing useful (or the
+      // previous empty sample finished while discovery was still starting).
       final becameActive =
           (prev == null || !prev.discoveryActive) && next.discoveryActive;
       if (!becameActive) return;
-      if (_results.isNotEmpty || _loading || _searching) return;
+      if (_results.isNotEmpty) return;
+      if (_loading || _searching) {
+        // In-flight sample will pick up wanSearch for later legs; still
+        // schedule one follow-up after it settles so a local-only first
+        // leg does not leave Discover empty.
+        unawaited(() async {
+          while (mounted && (_loading || _searching)) {
+            await Future.delayed(const Duration(milliseconds: 200));
+          }
+          if (!mounted || _results.isNotEmpty) return;
+          if (!ref.read(socialContextProvider).isPhone) return;
+          await _refreshSample(keepExisting: true);
+        }());
+        return;
+      }
       unawaited(_refreshSample(keepExisting: true));
     });
     final l10n = AppLocalizations.of(context);

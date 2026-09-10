@@ -93,6 +93,11 @@ dev_dependencies:
   # For sqflite on web in tests
   sqflite_common_ffi: ^2.3.4
 
+# dart_libp2p pulls mdns_dart ^2.0.1 → 2.2.1, which fails on Dart 3.13+
+# (InternetAddress vs InterfaceAddress). 2.2.2 fixes that.
+dependency_overrides:
+  mdns_dart: 2.2.2
+
 # sqflite_common_ffi (dev) pulls package:sqlite3, whose default build hook
 # downloads prebuilt dylibs from GitHub. That often times out (esp. on
 # restricted networks) and blocks iOS simulator builds. Production EnvoyGo

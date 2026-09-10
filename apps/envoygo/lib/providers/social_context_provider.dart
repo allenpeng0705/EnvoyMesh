@@ -256,11 +256,14 @@ class PhoneMeshRuntimeState {
   const PhoneMeshRuntimeState({
     this.sessionActive = false,
     this.discoveryActive = false,
+    this.starting = false,
     this.lastError,
   });
 
   final bool sessionActive;
   final bool discoveryActive;
+  /// True while cold-start / ensureLibp2p is in flight (UI "Connecting…").
+  final bool starting;
   final String? lastError;
 }
 
@@ -280,7 +283,11 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
     _ref.listen(_phoneBackendHolderProvider, (_, __) {
       unawaited(_apply());
     });
-    _ref.listen(nodeProvider, (_, __) {
+    // Do not re-run on every home connection state change — that used to
+    // re-enter ensureTcpListen while addrs were still settling and restart
+    // the host (endless "Starting phone mesh…").
+    _ref.listen(nodeProvider, (prev, next) {
+      if (state.sessionActive && (_session?.isActive ?? false)) return;
       unawaited(_apply());
     });
     unawaited(_apply());
@@ -293,6 +300,9 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
   bool _pending = false;
   bool _foreground = true;
   bool _disposed = false;
+
+  static const _libp2pStartTimeout = Duration(seconds: 12);
+  bool _awaitingSlowStart = false;
 
   /// Pause WAN advertise/lookup when the app backgrounds (S6).
   void setForeground(bool foreground) {
@@ -316,10 +326,57 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
           continue;
         }
 
-        final node = await _ref.read(nodeProvider.notifier).ensureLibp2pStarted();
+        if (!(state.sessionActive && (_session?.isActive ?? false))) {
+          state = PhoneMeshRuntimeState(
+            sessionActive: false,
+            discoveryActive: _discovery?.isActive ?? false,
+            starting: true,
+            lastError: null,
+          );
+        }
+
+        final nodeNotifier = _ref.read(nodeProvider.notifier);
+        final startFuture = nodeNotifier.ensureLibp2pStarted();
+        Libp2pNode? node;
+        try {
+          node = await startFuture.timeout(_libp2pStartTimeout);
+        } on TimeoutException {
+          // Host may still be booting (warm start shares the same future).
+          // Prefer an already-ready node; otherwise wait for the slow start
+          // to finish and re-apply — without requiring app background/resume.
+          final maybe = nodeNotifier.libp2pNode;
+          if (maybe != null && maybe.isStarted) {
+            node = maybe;
+          } else {
+            debugPrint(
+              '[PhoneMeshRuntime] ensureLibp2pStarted timed out '
+              'after ${_libp2pStartTimeout.inSeconds}s — will retry when ready',
+            );
+            state = const PhoneMeshRuntimeState(
+              sessionActive: false,
+              starting: true,
+              lastError: null,
+            );
+            if (!_awaitingSlowStart) {
+              _awaitingSlowStart = true;
+              unawaited(startFuture.whenComplete(() {
+                _awaitingSlowStart = false;
+                if (_disposed) return;
+                if (state.sessionActive && (_session?.isActive ?? false)) {
+                  return;
+                }
+                unawaited(_apply());
+              }));
+            }
+            // Don't spin the do-while on the same hung start — follow-up
+            // above re-applies when the host finishes (or lifecycle does).
+            break;
+          }
+        }
         if (node == null) {
           state = const PhoneMeshRuntimeState(
             sessionActive: false,
+            starting: false,
             lastError: 'Could not start mesh host',
           );
           continue;
@@ -346,6 +403,7 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
         state = PhoneMeshRuntimeState(
           sessionActive: _session!.isActive,
           discoveryActive: _discovery?.isActive ?? false,
+          starting: false,
           lastError: null,
         );
 
@@ -363,6 +421,7 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
               state = PhoneMeshRuntimeState(
                 sessionActive: _session?.isActive ?? false,
                 discoveryActive: discovery.isActive,
+                starting: false,
                 lastError: null,
               );
             }());
@@ -372,6 +431,7 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
           state = PhoneMeshRuntimeState(
             sessionActive: _session!.isActive,
             discoveryActive: false,
+            starting: false,
             lastError: null,
           );
         }
@@ -380,6 +440,7 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
       debugPrint('[PhoneMeshRuntime] $e');
       state = PhoneMeshRuntimeState(
         sessionActive: false,
+        starting: false,
         lastError: e.toString(),
       );
     } finally {

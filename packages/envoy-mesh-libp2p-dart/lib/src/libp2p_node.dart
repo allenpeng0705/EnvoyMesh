@@ -80,6 +80,15 @@ class Libp2pNode implements Libp2pMeshHost {
   /// Last bootstrap list (used when restarting for TCP listen).
   List<String> _lastBootstrapAddrs = const [];
 
+  /// True when [start] was asked to open a TCP listen (addrs may lag briefly
+  /// after host.start — do not restart just because [hasTcpListenAddrs] is
+  /// still false).
+  bool _requestedTcpListen = false;
+
+  /// In-flight [start] so warm-start + phone-mesh share one host boot
+  /// (concurrent start() used to race with `_started` still false).
+  Future<void>? _startInFlight;
+
   Libp2pNode({required Libp2pSeedStore seedStore}) : _seedStore = seedStore;
 
   /// The local libp2p peer ID (once started).
@@ -148,8 +157,38 @@ class Libp2pNode implements Libp2pMeshHost {
     bool enableRelay = true,
   }) async {
     if (_started) return;
+    final inFlight = _startInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+
+    final done = Completer<void>();
+    _startInFlight = done.future;
+    try {
+      await _startUnlocked(
+        listenAddrs: listenAddrs,
+        bootstrapAddrs: bootstrapAddrs,
+        enableRelay: enableRelay,
+      );
+      done.complete();
+    } catch (e, st) {
+      done.completeError(e, st);
+      rethrow;
+    } finally {
+      _startInFlight = null;
+    }
+  }
+
+  Future<void> _startUnlocked({
+    required List<String> listenAddrs,
+    required List<String> bootstrapAddrs,
+    required bool enableRelay,
+  }) async {
+    if (_started) return;
 
     _lastBootstrapAddrs = List<String>.from(bootstrapAddrs);
+    _requestedTcpListen = listenAddrs.isNotEmpty;
 
     // Load persisted seed or generate a new one.
     // The seed is stored rather than the full keypair so it can be
@@ -568,8 +607,16 @@ class Libp2pNode implements Libp2pMeshHost {
     bool enableRelay = true,
   }) async {
     final boot = bootstrapAddrs ?? _lastBootstrapAddrs;
-    if (_started && hasTcpListenAddrs) return;
-    if (_started && !hasTcpListenAddrs) {
+    // Join an in-flight boot before deciding whether to restart.
+    final inFlight = _startInFlight;
+    if (inFlight != null) {
+      await inFlight;
+    }
+    // Already listening, or we already requested TCP listen and the host is
+    // up (addrs can take a moment to appear — restarting here caused endless
+    // "Starting phone mesh…" on EnvoyGo).
+    if (_started && (hasTcpListenAddrs || _requestedTcpListen)) return;
+    if (_started && !hasTcpListenAddrs && !_requestedTcpListen) {
       _log(
         '[Libp2pNode] restarting host with TCP listen for LAN mDNS',
       );
@@ -644,6 +691,7 @@ class Libp2pNode implements Libp2pMeshHost {
     }
     _started = false;
     _enableRelay = false;
+    _requestedTcpListen = false;
   }
 }
 

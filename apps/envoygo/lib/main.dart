@@ -71,6 +71,18 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
       } catch (e) {
         developer.log('[main] loadPairedNodes threw: $e', name: 'EnvoyGo');
       }
+      // Warm the shared libp2p host in the background so opening Social is
+      // not stuck on a cold "Starting phone mesh…" for tens of seconds.
+      unawaited(() async {
+        try {
+          await ref.read(nodeProvider.notifier).ensureLibp2pStarted();
+        } catch (e) {
+          developer.log('[main] ensureLibp2pStarted warm failed: $e',
+              name: 'EnvoyGo');
+        }
+      }());
+      // Kick phone mesh runtime (persona + handlers) without waiting on UI.
+      ref.read(phoneMeshRuntimeProvider);
       // Phase 50 — after nodes load, retry any buffered cold-start tap
       // that couldn't route because activeNode was null.
       if (_pendingColdStartTap != null) {
