@@ -278,4 +278,12 @@ describe("expandDiscoveryTopicQueries", () => {
     ]);
     expect(expandDiscoveryTopicQueries("market:shop")).toEqual(["market:shop"]);
   });
+
+  it("keeps mesh.discovery as the broad-roster sentinel (no interest expand)", async () => {
+    const { expandDiscoveryTopicQueries, normalizeDiscoveryTopicQuery } = await import(
+      "../src/capability-discovery.js"
+    );
+    expect(normalizeDiscoveryTopicQuery("mesh.discovery")).toBe("mesh.discovery");
+    expect(expandDiscoveryTopicQueries("mesh.discovery")).toEqual(["mesh.discovery"]);
+  });
 });

@@ -276,23 +276,27 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         if (!matchesLookup(entry, payload)) continue;
         const visibility = visibilityFor(entry, payload);
         if (!isVisible(visibility, payload.visibilityScope)) continue;
+        // Discover findability: return check-in peers even without a live hop.
+        // Prefer live-hop (dialable) via sort; check-in-only get empty multiaddrs.
         const liveHop =
           typeof hasLiveReservation === "function"
             ? hasLiveReservation(entry.peerId)
             : entry.reservationFreshUntil > current;
-        if (!liveHop) continue;
         candidates.push({
           peerId: entry.peerId,
           ownerId: visibility === "public" || visibility === "capability" ? undefined : entry.ownerId,
           displayName: entry.displayName,
-          multiaddrs: buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId),
+          multiaddrs: liveHop
+            ? buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId)
+            : [],
           viaRelayId: relayPeerId,
           capabilities: entry.capabilities,
           visibility,
           expiresAt: new Date(entry.expiresAt).toISOString(),
-          hasHopSlot: true,
+          hasHopSlot: liveHop,
         });
       }
+      candidates.sort((a, b) => Number(b.hasHopSlot) - Number(a.hasHopSlot));
       const capped = candidates.slice(0, payload.maxResults);
       return {
         queryId: payload.queryId,

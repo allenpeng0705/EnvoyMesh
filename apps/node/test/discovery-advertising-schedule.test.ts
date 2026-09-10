@@ -62,6 +62,11 @@ function createMockMesh(provideImpl: (topic: string) => Promise<unknown>) {
       "12D3KooWRoutesTablePeerA",
       "12D3KooWRoutesTablePeerB",
     ]),
+    getConnectionStats: vi.fn().mockReturnValue({
+      dialQueueLength: 0,
+      totalConnections: 2,
+      totalPeerIds: 2,
+    }),
     // provideCapabilityTopic now returns { cid, signedRecord?, timedOut }
     // so callers can distinguish a landed put from a stalled one. Wrap
     // the inner impl so test fixtures don't need to repeat the boilerplate.
@@ -520,6 +525,51 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       await advertisePromise;
 
       expect(mesh.provideCapabilityTopic).toHaveBeenCalled();
+    });
+
+    it("skips DHT provides when dial queue is congested but peers are connected", async () => {
+      const mesh = createMockMesh(async () => ({ cid: {} as never }));
+      (mesh.getConnectedPeerIds as ReturnType<typeof vi.fn>).mockReturnValue([
+        "12D3KooWCommunityRelay",
+        "12D3KooWPeerB",
+      ]);
+      (mesh.getConnectionStats as ReturnType<typeof vi.fn>).mockReturnValue({
+        dialQueueLength: 51, // > DHT_PROVIDE_DIAL_QUEUE_DEFER_THRESHOLD (50)
+        totalConnections: 2,
+        totalPeerIds: 2,
+      });
+
+      const nodeService = new NodeServiceImpl(
+        mesh as any,
+        createMockTrustStore(),
+        createMockPeerDirectoryStore(),
+        createMockHumanProfileStore(),
+        "/tmp/test",
+      );
+      setConfigStore(nodeService, createNullConfigStore());
+      setExternalMesh(nodeService, mesh);
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const advertisePromise = _advertisePublicDiscoveryTopics(
+        (nodeService as any)._identityContext(),
+        {
+          interests: ["music", "tech"],
+          username: "alice",
+          displayName: "",
+          locationTopics: [],
+        },
+      );
+      await flushAsync();
+      await advertisePromise;
+
+      expect(mesh.provideCapabilityTopic).not.toHaveBeenCalled();
+      const congested = warnSpy.mock.calls.some((args) => {
+        const msg = args[0];
+        return typeof msg === "string" && msg.includes("congested");
+      });
+      expect(congested).toBe(true);
+      warnSpy.mockRestore();
     });
   });
 });

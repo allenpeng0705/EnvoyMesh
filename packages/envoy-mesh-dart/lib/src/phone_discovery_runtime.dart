@@ -3,6 +3,7 @@ library;
 
 import 'capability_topic_cid.dart';
 import 'discovery_topics.dart';
+import 'lan_owner_id.dart';
 import 'models.dart';
 import 'relay_envelope_factory.dart';
 
@@ -253,9 +254,14 @@ class PhoneDiscoveryRuntime {
     for (final c in candidates) {
       if (c.peerId.isEmpty || c.peerId == selfLibp2pPeerId) continue;
       if (c.ownerId.isNotEmpty && c.ownerId == selfOwnerId) continue;
+      // Public relay responses strip ownerId — invent provisional so Discover
+      // UI filters (empty ownerId) do not drop the hit.
+      final owner = c.ownerId.isNotEmpty
+          ? c.ownerId
+          : provisionalLanOwnerId(c.peerId);
       hits.add(MeshPeerHit(
         nodeId: c.peerId,
-        ownerId: c.ownerId,
+        ownerId: owner,
         displayName: c.displayName,
         multiaddrs: c.multiaddrs,
         interests: c.capabilities,

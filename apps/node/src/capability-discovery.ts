@@ -161,6 +161,8 @@ export function normalizeDiscoveryTopicQuery(raw: string): string {
   const t = raw.trim();
   if (!t) return "";
   const lower = t.toLowerCase();
+  // Broad Discover roster sentinel — capability relay.lookup, not interest:…
+  if (lower === "mesh.discovery") return "mesh.discovery";
   if (lower.startsWith("interest:")) {
     return interestTopicFor(t) || t.toLowerCase();
   }
@@ -191,10 +193,11 @@ export function normalizeDiscoveryTopicQuery(raw: string): string {
  * / `coding-help` are reachable from the same UI search box.
  */
 export function expandDiscoveryTopicQueries(raw: string): string[] {
+  const t = raw.trim();
+  if (t.toLowerCase() === "mesh.discovery") return ["mesh.discovery"];
   const primary = normalizeDiscoveryTopicQuery(raw);
   if (!primary) return [];
   const out: string[] = [primary];
-  const t = raw.trim();
   const lower = t.toLowerCase();
   const hasKnownPrefix =
     lower.startsWith("interest:") ||

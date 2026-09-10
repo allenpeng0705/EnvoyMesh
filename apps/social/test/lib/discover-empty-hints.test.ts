@@ -72,4 +72,18 @@ describe("discover-empty-hints", () => {
       ),
     ).toMatch(/contacts-only/i);
   });
+
+  it("wider hints when relay not ready", () => {
+    expect(
+      widerEmptyHint(
+        {
+          ...base,
+          path: "wider",
+          widerMode: "topic",
+          relayNotReady: true,
+        },
+        (key, fallback) => (typeof fallback === "string" ? fallback : translate(en, key)),
+      ),
+    ).toMatch(/mesh relay/i);
+  });
 });

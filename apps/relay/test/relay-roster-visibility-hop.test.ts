@@ -88,7 +88,7 @@ describe("relay roster — reservation hop slot (P1/P3)", () => {
     expect(entry.reservationFreshUntil).toBe(reservationExpireAtMs);
   });
 
-  it("returns only live-hop peers and omits checkin-only (undialable) peers", () => {
+  it("includes checkin-only peers but ranks live-hop first", () => {
     const now = Date.parse("2026-07-20T10:00:00.000Z");
     const roster = createRelayRoster({ now: () => now, rosterTtlMs: 35 * 60_000 });
     for (const peerId of ["peer-stale", "peer-live"]) {
@@ -119,12 +119,14 @@ describe("relay roster — reservation hop slot (P1/P3)", () => {
       },
     });
 
-    expect(result.peers.map((p) => p.peerId)).toEqual(["peer-live"]);
+    expect(result.peers.map((p) => p.peerId)).toEqual(["peer-live", "peer-stale"]);
     expect(result.peers[0]?.hasHopSlot).toBe(true);
     expect(result.peers[0]?.multiaddrs.length).toBeGreaterThan(0);
+    expect(result.peers[1]?.hasHopSlot).toBe(false);
+    expect(result.peers[1]?.multiaddrs).toEqual([]);
   });
 
-  it("omits peers after reservationFreshUntil lapses even if checkin is still fresh", () => {
+  it("returns checkin peers after reservationFreshUntil lapses (hasHopSlot false)", () => {
     let now = Date.parse("2026-07-20T10:00:00.000Z");
     const roster = createRelayRoster({ now: () => now, rosterTtlMs: 35 * 60_000 });
     roster.checkin(
@@ -155,6 +157,46 @@ describe("relay roster — reservation hop slot (P1/P3)", () => {
         expiresAt: "2026-07-20T10:25:00.000Z",
       },
     });
-    expect(result.peers).toHaveLength(0);
+    expect(result.peers).toHaveLength(1);
+    expect(result.peers[0]?.peerId).toBe("peer-a");
+    expect(result.peers[0]?.hasHopSlot).toBe(false);
+    expect(result.peers[0]?.multiaddrs).toEqual([]);
+  });
+
+  it("topicHash lookup includes checkin-only peers with empty multiaddrs", () => {
+    const now = Date.parse("2026-07-20T10:00:00.000Z");
+    const roster = createRelayRoster({ now: () => now, rosterTtlMs: 35 * 60_000 });
+    const topicHash = "bafkreiaddp4djc6xvvfnmjaw7zeogkl2loi2q6cmve3aceo2374tcjxiwm";
+    roster.checkin({
+      peerId: "peer-food",
+      displayName: "Emily",
+      relayReachableAddrs: [],
+      capabilities: ["mesh.discovery"],
+      advertisements: [{ topicHash, visibility: "public" }],
+      relayHints: [],
+      expiresAt: "2026-07-20T10:25:00.000Z",
+    });
+
+    const result = roster.lookup({
+      requesterPeerId: "seeker",
+      relayPeerId: "12D3KooWFakeRelay",
+      relayMultiaddrs: [RELAY],
+      hasLiveReservation: () => false,
+      payload: {
+        queryId: "food",
+        topicHash,
+        maxResults: 10,
+        maxHops: 0,
+        maxFanout: 2,
+        visibilityScope: "public",
+        expiresAt: "2026-07-20T10:25:00.000Z",
+      },
+    });
+
+    expect(result.peers).toHaveLength(1);
+    expect(result.peers[0]?.peerId).toBe("peer-food");
+    expect(result.peers[0]?.displayName).toBe("Emily");
+    expect(result.peers[0]?.hasHopSlot).toBe(false);
+    expect(result.peers[0]?.multiaddrs).toEqual([]);
   });
 });

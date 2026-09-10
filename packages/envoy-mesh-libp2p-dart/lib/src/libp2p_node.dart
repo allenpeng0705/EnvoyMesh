@@ -66,8 +66,12 @@ class Libp2pNode implements Libp2pMeshHost {
   /// Protocols currently registered via [registerStreamHandler].
   final Set<String> _registeredProtocols = {};
 
-  /// PeerId string of the relay we last successfully reserved, if any.
-  String? _reservedRelayPeerId;
+  /// PeerId strings of relays we successfully reserved (cn + us, etc.).
+  final Set<String> _reservedRelayPeerIds = {};
+
+  /// Most recently reserved relay PeerId (back-compat for single-relay callers).
+  String? get _reservedRelayPeerId =>
+      _reservedRelayPeerIds.isEmpty ? null : _reservedRelayPeerIds.last;
 
   /// Foreground LAN mDNS (S7) — only while phone discovery is active.
   MdnsDiscovery? _mdns;
@@ -483,34 +487,36 @@ class Libp2pNode implements Libp2pMeshHost {
       // continue — reserve may still work if already connected
     }
     await client.reserve(relayPeerId);
-    _reservedRelayPeerId = relayPeerIdStr;
-    _log('[Libp2pNode] reserved relay: $relayPeerIdStr');
+    _reservedRelayPeerIds.add(relayPeerIdStr);
+    _log('[Libp2pNode] reserved relay: $relayPeerIdStr (tracked=${_reservedRelayPeerIds.length})');
   }
 
   /// Clear local reservation tracking.
   ///
   /// dart_libp2p does not expose an explicit unreserve API; dropping the
-  /// tracked id means we will re-reserve on next [reserveRelay]. Relay slots
+  /// tracked ids means we will re-reserve on next [reserveRelay]. Relay slots
   /// expire server-side on TTL.
   @override
   Future<void> releaseRelayReservation() async {
-    if (_reservedRelayPeerId != null) {
+    if (_reservedRelayPeerIds.isNotEmpty) {
       _log(
-        '[Libp2pNode] releasing relay reservation tracking: $_reservedRelayPeerId',
+        '[Libp2pNode] releasing relay reservation tracking: $_reservedRelayPeerIds',
       );
     }
-    _reservedRelayPeerId = null;
+    _reservedRelayPeerIds.clear();
   }
 
   /// Circuit multiaddrs safe to publish in `relay.checkin`.
   ///
-  /// Format: `/p2p/<relayPeerId>/p2p-circuit/p2p/<localPeerId>` when a
-  /// reservation is tracked; otherwise empty (checkin still carries topics).
+  /// One `/p2p/<relay>/p2p-circuit/p2p/<local>` per successful reservation
+  /// (cn + us). Empty when nothing is tracked (checkin still carries topics).
   List<String> relayAdvertisedMultiaddrs() {
     final local = _peerId?.toString();
-    final relay = _reservedRelayPeerId;
-    if (local == null || relay == null) return const [];
-    return ['/p2p/$relay/p2p-circuit/p2p/$local'];
+    if (local == null || _reservedRelayPeerIds.isEmpty) return const [];
+    return [
+      for (final relay in _reservedRelayPeerIds)
+        '/p2p/$relay/p2p-circuit/p2p/$local',
+    ];
   }
 
   /// DHT provide for an Envoy capability topic (CID parity with desktop).

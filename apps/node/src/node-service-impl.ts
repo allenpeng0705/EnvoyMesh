@@ -9950,7 +9950,8 @@ class NodeServiceImpl implements NodeService {
    */
   private async _queryRelayLookupByTopic(params: {
     topic: string;
-    topicHash: string;
+    topicHash?: string;
+    capability?: string;
     maxResults: number;
   }): Promise<PeerSearchResult[]> {
     const deps = this._relayClientCycleDeps;
@@ -9968,10 +9969,18 @@ class NodeServiceImpl implements NodeService {
       console.warn(`[searchPeers] _queryRelayLookupByTopic: no relay control targets (bootstrapPeers=${deps.bootstrapPeers.length})`);
       return [];
     }
+    if (!params.topicHash && !params.capability) {
+      console.warn(`[searchPeers] _queryRelayLookupByTopic: need topicHash or capability`);
+      return [];
+    }
     try {
-      console.log(`[searchPeers] _queryRelayLookupByTopic: querying ${targets.length} relay(s) for topicHash=${params.topicHash.slice(0, 20)}…`);
+      const label = params.capability
+        ? `capability=${params.capability}`
+        : `topicHash=${params.topicHash!.slice(0, 20)}…`;
+      console.log(`[searchPeers] _queryRelayLookupByTopic: querying ${targets.length} relay(s) for ${label}`);
       const responses = await queryRelayLookupWithDeps(deps, targets, {
-        topicHash: params.topicHash,
+        ...(params.topicHash ? { topicHash: params.topicHash } : {}),
+        ...(params.capability ? { capability: params.capability } : {}),
         maxResults: params.maxResults,
         visibilityScope: "public",
       });
@@ -10075,8 +10084,9 @@ class NodeServiceImpl implements NodeService {
     for (const response of responses) {
       for (const candidate of response.peers) {
         if (opts.peerIdFilter && candidate.peerId !== opts.peerIdFilter) continue;
-        // Skip undialable roster hits (legacy/partial responses).
-        if (candidate.hasHopSlot === false) continue;
+        // Include check-in-only peers (hasHopSlot=false) so Discover can list
+        // them; hello/dial may still need a hop later. Prefer dialable via sort
+        // on the relay; here we just must not drop findability.
         if (seen.has(candidate.peerId)) continue;
         seen.add(candidate.peerId);
         const trust = trustByPeerId.get(candidate.peerId);

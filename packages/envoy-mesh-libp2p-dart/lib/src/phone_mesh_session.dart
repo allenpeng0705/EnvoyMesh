@@ -26,14 +26,20 @@ class PhoneMeshSession {
 
   bool _active = false;
   int? _boundEpoch;
-  String? _reservedRelayPeerId;
+  final Set<String> _reservedRelayPeerIds = {};
   PhoneMeshStreamHandler? _handler;
 
   /// True when enabled and still bound to the current host epoch.
   bool get isActive =>
       _active && _boundEpoch != null && _boundEpoch == _node.hostEpoch;
 
-  String? get reservedRelayPeerId => _reservedRelayPeerId;
+  /// Most recently reserved relay (back-compat); prefer [reservedRelayPeerIds].
+  String? get reservedRelayPeerId =>
+      _reservedRelayPeerIds.isEmpty ? null : _reservedRelayPeerIds.last;
+
+  /// All relays successfully reserved during this session (cn + us, …).
+  Set<String> get reservedRelayPeerIds =>
+      Set.unmodifiable(_reservedRelayPeerIds);
 
   static const List<String> socialProtocols = [
     envoyMessageProtocol,
@@ -42,7 +48,8 @@ class PhoneMeshSession {
 
   Future<void> enable({
     required PhoneMeshStreamHandler onStream,
-    String relayMultiaddr = defaultEnvoyCommunityRelayBootstrapAddr,
+    /// Community relays to reserve (cn + us by default; more later).
+    List<String> relayMultiaddrs = defaultEnvoyCommunityRelayBootstrapAddrs,
     bool reserveRelay = true,
   }) async {
     if (!_node.isStarted) {
@@ -64,7 +71,12 @@ class PhoneMeshSession {
     _active = true;
 
     if (reserveRelay) {
-      unawaited(_reserveRelayInBackground(relayMultiaddr));
+      final addrs = relayMultiaddrs.isNotEmpty
+          ? relayMultiaddrs
+          : defaultEnvoyCommunityRelayBootstrapAddrs;
+      for (final addr in addrs) {
+        unawaited(_reserveRelayInBackground(addr));
+      }
     }
   }
 
@@ -74,7 +86,8 @@ class PhoneMeshSession {
           .reserveRelay(relayMultiaddr)
           .timeout(const Duration(seconds: 20));
       if (!_active) return;
-      _reservedRelayPeerId = peerIdFromBootstrapMultiaddr(relayMultiaddr);
+      final id = peerIdFromBootstrapMultiaddr(relayMultiaddr);
+      if (id != null) _reservedRelayPeerIds.add(id);
     } catch (e) {
       _log('[PhoneMeshSession] relay reserve failed: $e');
     }
@@ -90,7 +103,7 @@ class PhoneMeshSession {
     } catch (e) {
       _log('[PhoneMeshSession] release reservation failed: $e');
     }
-    _reservedRelayPeerId = null;
+    _reservedRelayPeerIds.clear();
     _boundEpoch = null;
     _active = false;
   }

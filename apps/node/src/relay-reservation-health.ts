@@ -107,6 +107,14 @@ function isPrivateLanRelayControlAddr(addr: string): boolean {
   return /\/ip4\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|169\.254\.)/.test(addr);
 }
 
+/** Short label for logs: last `/p2p/<id>` segment (or truncated addr). */
+function shortRelayLabel(addr: string): string {
+  const id = addr.match(/\/p2p\/([^/]+)$/)?.[1];
+  if (id && id.length > 12) return id.slice(0, 12) + "…";
+  if (id) return id;
+  return addr.length > 40 ? addr.slice(0, 40) + "…" : addr;
+}
+
 /** @deprecated Prefer collectRelayControlTargets — alias for reserve warmup. */
 export function collectKnownRelayAddrs(config: RelayReservationWarmupConfig): string[] {
   return collectRelayControlTargets(config);
@@ -209,10 +217,14 @@ export async function warmAndWatchRelayReservations(
   if (waitForLiveMs > 0) {
     live = await waitForUsableRelayReservation(mesh, { timeoutMs: waitForLiveMs });
     if (live) {
-      console.log("[p2p] relay reservation live — safe to advertise /p2p-circuit/ in checkin");
+      console.log(
+        `[p2p] relay reservation live — Discover hop ready ` +
+          `(reserved=${reserved}/${addrs.length} targets=[${addrs.map(shortRelayLabel).join(", ")}])`,
+      );
     } else {
       console.warn(
-        "[p2p] relay reservation not live yet after warmup — checkin may omit circuit addrs until health loop recovers",
+        "[p2p] relay reservation not live yet after warmup — checkin may omit circuit addrs until health loop recovers " +
+          `(targets=[${addrs.map(shortRelayLabel).join(", ")}])`,
       );
     }
   } else if (typeof mesh.hasLiveRelayReservation === "function") {

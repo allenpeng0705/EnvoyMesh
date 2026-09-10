@@ -84,6 +84,28 @@ void main() {
       );
     });
 
+    test('buildCheckinPayload publishes circuit addrs for all reserved relays', () {
+      final host = _FakeHost()
+        ..reachable = [
+          '/p2p/12D3KooCnRelay/p2p-circuit/p2p/12D3KooSelf',
+          '/p2p/12D3KooUsRelay/p2p-circuit/p2p/12D3KooSelf',
+        ];
+      final runtime = PhoneDiscoveryRuntime(host: host);
+      final payload = runtime.buildCheckinPayload(
+        ad: const PhoneDiscoveryAdvertisement(
+          ownerId: 'envoy:owner:alice',
+          libp2pPeerId: '12D3KooSelf',
+        ),
+      );
+      expect(
+        payload['relayReachableAddrs'],
+        [
+          '/p2p/12D3KooCnRelay/p2p-circuit/p2p/12D3KooSelf',
+          '/p2p/12D3KooUsRelay/p2p-circuit/p2p/12D3KooSelf',
+        ],
+      );
+    });
+
     test('searchDht + mergeHits prefers owner-bearing relay hits', () async {
       final host = _FakeHost()
         ..providersByTopic['interest:music'] = const [
@@ -123,6 +145,26 @@ void main() {
       expect(merged.single.ownerId, 'envoy:owner:bob');
       expect(merged.single.displayName, 'Bob');
       expect(merged.single.multiaddrs, isNotEmpty);
+    });
+
+    test('hitsFromRelayCandidates invents provisional owner when relay strips it', () {
+      final host = _FakeHost();
+      final runtime = PhoneDiscoveryRuntime(host: host);
+      final hits = runtime.hitsFromRelayCandidates(
+        const [
+          RelayLookupCandidate(
+            peerId: '12D3KooPublic',
+            ownerId: '',
+            displayName: 'Emily',
+            multiaddrs: [],
+          ),
+        ],
+        selfLibp2pPeerId: '12D3KooSelf',
+        selfOwnerId: 'envoy:owner:alice',
+      );
+      expect(hits, hasLength(1));
+      expect(hits.single.ownerId, provisionalLanOwnerId('12D3KooPublic'));
+      expect(hits.single.displayName, 'Emily');
     });
   });
 

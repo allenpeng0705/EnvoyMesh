@@ -3,7 +3,7 @@
  * or sample the mesh for public profiles & blogs. Say Hello to bond.
  * Bonded Moments stay on Content → Feed — not duplicated here.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HelloProfile, PeerSearchResult } from "@envoymesh/api";
 import { locationSearchTopics } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
@@ -27,6 +27,8 @@ import {
   savePeopleSessionCache,
   type PeopleSearchMode,
 } from "../../lib/people-session-cache.js";
+import { waitForDiscoverReady } from "../../lib/discover-readiness.js";
+import { useCircuitReservationStatus } from "../../hooks/useCircuitReservationStatus.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 
 export { publishSearchTopic } from "../../lib/publish-topic.js";
@@ -113,41 +115,61 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
     [excludeIds],
   );
 
-  const { searchPeers, runCapabilityDiscovery, libraryRead } = nodeService;
+  const { searchPeers, runCapabilityDiscovery, libraryRead, getCircuitReservationStatus } =
+    nodeService;
+  const { ready: circuitReady } = useCircuitReservationStatus({ enabled: true, pollMs: 4000 });
+  /** True when last empty sample finished before hop was ready — retry once on ready. */
+  const pendingSampleRetryOnReadyRef = useRef(false);
 
-  const sampleMesh = useCallback(async (): Promise<PeerSearchResult[]> => {
+  const sampleMesh = useCallback(async (): Promise<{ rows: PeerSearchResult[]; ready: boolean }> => {
     const out: PeerSearchResult[] = [];
+    const { ready } = await waitForDiscoverReady({ getCircuitReservationStatus });
     await runCapabilityDiscovery?.({ find: true }).catch(() => undefined);
 
+    // 1) Broad relay roster first (mesh.discovery) — EnvoyGo phone parity.
     try {
-      const web = await searchPeers({
-        topic: WEB_CONTENT_CAPABILITY_TOPIC,
+      const broad = await searchPeers({
+        topic: "mesh.discovery",
         maxResults: SAMPLE_CAP,
       });
-      mergePeers(out, filterNonBonded(web), excludeIds);
+      mergePeers(out, filterNonBonded(broad), excludeIds);
     } catch {
       /* best-effort */
     }
 
-    const topics = shuffleInPlace([...SUGGESTED_TOPICS]).slice(0, 4);
+    if (out.length < SAMPLE_CAP) {
+      try {
+        const web = await searchPeers({
+          topic: WEB_CONTENT_CAPABILITY_TOPIC,
+          maxResults: SAMPLE_CAP,
+        });
+        mergePeers(out, filterNonBonded(web), excludeIds);
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    // 2) Interest probes in parallel (was sequential — burned WAN budget).
+    const topics = shuffleInPlace([...SUGGESTED_TOPICS]).slice(0, 2);
     const profileHints = [
       ...(humanProfile?.hobbies ?? []),
       ...(humanProfile?.knowledge ?? []),
     ]
       .map((h) => h.trim().toLowerCase())
       .filter(Boolean)
-      .slice(0, 3);
-    for (const slug of [...profileHints, ...topics]) {
-      if (out.length >= SAMPLE_CAP) break;
-      try {
-        const hits = await searchPeers({
-          interests: [slug],
-          maxResults: 8,
-        });
-        mergePeers(out, filterNonBonded(hits), excludeIds);
-      } catch {
-        /* continue */
-      }
+      .slice(0, 2);
+    const slugs = [...new Set([...profileHints, ...topics])].slice(0, 3);
+    const interestBatches = await Promise.all(
+      slugs.map(async (slug) => {
+        try {
+          return await searchPeers({ interests: [slug], maxResults: 8 });
+        } catch {
+          return [] as PeerSearchResult[];
+        }
+      }),
+    );
+    for (const hits of interestBatches) {
+      mergePeers(out, filterNonBonded(hits), excludeIds);
     }
 
     const loc = humanProfile?.discoveryLocation;
@@ -168,10 +190,11 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
     }
 
     mergePeers(out, filterNonBonded(discoveredPeers ?? []), excludeIds);
-    return shuffleInPlace(out).slice(0, SAMPLE_CAP);
+    return { rows: shuffleInPlace(out).slice(0, SAMPLE_CAP), ready };
   }, [
     searchPeers,
     runCapabilityDiscovery,
+    getCircuitReservationStatus,
     filterNonBonded,
     excludeIds,
     humanProfile?.hobbies,
@@ -186,21 +209,29 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
     setBusy(true);
     if (!keepExisting) setError(null);
     try {
-      const rows = await sampleMesh();
+      const { rows, ready } = await sampleMesh();
       setResults(rows);
       setResultSource("sample");
+      // Only retry on later circuit-ready if this sample was empty while hop wasn't ready.
+      pendingSampleRetryOnReadyRef.current = rows.length === 0 && !ready;
       if (rows.length === 0) {
         setError(
-          t(
-            "browser.bazaar.sampleEmpty",
-            "No public people found on the mesh yet. Try a topic search, or check back when more nodes are online.",
-          ),
+          ready
+            ? t(
+                "browser.bazaar.sampleEmpty",
+                "No public people found on the mesh yet. Try a topic search, or check back when more nodes are online.",
+              )
+            : t(
+                "browser.bazaar.relayNotReady",
+                "Still connecting to the mesh relay. Pull to refresh in a few seconds.",
+              ),
         );
       } else if (keepExisting) {
         setError(null);
       }
     } catch (err) {
       console.error("[BrowserPeople] sample failed:", err);
+      pendingSampleRetryOnReadyRef.current = true;
       if (!keepExisting) {
         setResults([]);
         setError(
@@ -213,6 +244,17 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
       setBusy(false);
     }
   }, [sampleMesh, t]);
+
+  // One auto-retry when circuit hop becomes ready after an empty pre-ready sample.
+  useEffect(() => {
+    if (!circuitReady) return;
+    if (!pendingSampleRetryOnReadyRef.current) return;
+    if (results.length > 0 || busy) return;
+    pendingSampleRetryOnReadyRef.current = false;
+    void refreshSample({ keepExisting: true });
+    // Only when circuit flips ready — not on every results change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [circuitReady]);
 
   // Persist session so Open ↔ People / leaving Content does not wipe results.
   useEffect(() => {
@@ -288,7 +330,7 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
       const filtered = filterNonBonded(rows);
       if (filtered.length === 0) {
         // Fallback: random-ish mesh sample
-        const sample = await sampleMesh();
+        const { rows: sample } = await sampleMesh();
         setResults(sample);
         setResultSource("sample");
         setError(

@@ -462,6 +462,59 @@ describe("NodeDiscoveryRuntime — relay-roster topic search fallback", () => {
     },
     15_000,
   );
+
+  it("mesh.discovery sentinel uses capability relay lookup and skips DHT", async () => {
+    const mesh = makeMeshStub({
+      providers: [
+        {
+          peerId: "12D3KooWShouldNotAppear",
+          multiaddrs: ["/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWShouldNotAppear"],
+        },
+      ],
+    });
+    const fallback = vi.fn(async (params: { capability?: string; topic?: string }) => {
+      expect(params.capability).toBe("mesh.discovery");
+      expect(params.topic).toBe("mesh.discovery");
+      return [
+        {
+          nodeId: "12D3KooWRelayRosterPeer",
+          ownerId: "envoy:owner:roster",
+          displayName: "Roster Peer",
+          interests: ["mesh.discovery"],
+          profileVisibility: "public" as const,
+          discoverySource: "relay-roster-topic" as const,
+          hasHopSlot: false,
+        },
+      ];
+    });
+
+    const runtime = new NodeDiscoveryRuntime({
+      getProfile: () => undefined,
+      requireProfile: () => {
+        throw new Error("not used");
+      },
+      getMesh: () => mesh as never,
+      requireMesh: () => mesh as never,
+      getReachableMesh: () => mesh as never,
+      trustStore: makeTrustStore([]) as never,
+      peerDirectoryStore: makePeerDirectoryStore([]) as never,
+      configStore: makeConfigStore() as never,
+      getApprovalQueue: () => null,
+      resolvePeerTransportForOwner: async () => {
+        throw new Error("not used");
+      },
+      dialHintsForChat: async () => [],
+      emitMultiHopUpdate: () => {},
+      queryRelayLookupByTopic: fallback,
+    });
+
+    const results = await runtime.searchPeers({ topic: "mesh.discovery", maxResults: 10 });
+    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(mesh.findCapabilityTopicProviders).not.toHaveBeenCalled();
+    expect(results).toHaveLength(1);
+    expect(results[0]?.nodeId).toBe("12D3KooWRelayRosterPeer");
+    expect(results[0]?.hasHopSlot).toBe(false);
+  });
 });
 
 describe("mergeDhtAndRelayTopicResults / withTimeoutFallback", () => {

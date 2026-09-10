@@ -404,6 +404,15 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
         await _refreshExclude();
         await _waitForPhoneDiscoveryReady();
         if (!mounted) return;
+        final discoveryReady =
+            ref.read(phoneMeshRuntimeProvider).discoveryActive;
+        if (!discoveryReady) {
+          setState(() {
+            _searching = false;
+            _error = l10n.phoneMeshDescOffline;
+          });
+          return;
+        }
         final List<MeshPeerHit> hits;
         if (_mode == _PeopleSearchMode.topic) {
           hits = await _searchTopicBothPlanes(
@@ -839,15 +848,14 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     ref.listen<PhoneMeshRuntimeState>(phoneMeshRuntimeProvider, (prev, next) {
       if (!mounted) return;
       if (!ref.read(socialContextProvider).isPhone) return;
-      // First sample often runs before wanSearch is attached — refresh when
-      // discovery becomes active if we still have nothing useful (or the
-      // previous empty sample finished while discovery was still starting).
+      // First sample/search often runs before wanSearch is attached — refresh
+      // when discovery becomes active if we still have nothing useful.
       final becameActive =
           (prev == null || !prev.discoveryActive) && next.discoveryActive;
       if (!becameActive) return;
       if (_results.isNotEmpty) return;
       if (_loading || _searching) {
-        // In-flight sample will pick up wanSearch for later legs; still
+        // In-flight work will pick up wanSearch for later legs; still
         // schedule one follow-up after it settles so a local-only first
         // leg does not leave Discover empty.
         unawaited(() async {
@@ -856,11 +864,21 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
           }
           if (!mounted || _results.isNotEmpty) return;
           if (!ref.read(socialContextProvider).isPhone) return;
-          await _refreshSample(keepExisting: true);
+          final q = _queryCtrl.text.trim();
+          if (q.isNotEmpty && !_fromSample) {
+            await _runSearch();
+          } else {
+            await _refreshSample(keepExisting: true);
+          }
         }());
         return;
       }
-      unawaited(_refreshSample(keepExisting: true));
+      final q = _queryCtrl.text.trim();
+      if (q.isNotEmpty && !_fromSample) {
+        unawaited(_runSearch());
+      } else {
+        unawaited(_refreshSample(keepExisting: true));
+      }
     });
     final l10n = AppLocalizations.of(context);
     final socialCtx = ref.watch(socialContextProvider);

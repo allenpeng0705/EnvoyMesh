@@ -8,7 +8,7 @@ class FakeLibp2pMeshHost implements Libp2pMeshHost {
   int epoch;
   final Set<String> _protocols = {};
   final Map<String, Libp2pStreamHandler> handlers = {};
-  String? _reserved;
+  final Set<String> _reservedIds = {};
   final List<String> reserveCalls = [];
   int releaseCount = 0;
   Object? reserveError;
@@ -23,7 +23,8 @@ class FakeLibp2pMeshHost implements Libp2pMeshHost {
   Set<String> get registeredProtocols => Set.unmodifiable(_protocols);
 
   @override
-  String? get reservedRelayPeerId => _reserved;
+  String? get reservedRelayPeerId =>
+      _reservedIds.isEmpty ? null : _reservedIds.last;
 
   @override
   void registerStreamHandler(String protocolId, Libp2pStreamHandler handler) {
@@ -41,13 +42,14 @@ class FakeLibp2pMeshHost implements Libp2pMeshHost {
   Future<void> reserveRelay(String relayMultiaddr) async {
     reserveCalls.add(relayMultiaddr);
     if (reserveError != null) throw reserveError!;
-    _reserved = peerIdFromBootstrapMultiaddr(relayMultiaddr);
+    final id = peerIdFromBootstrapMultiaddr(relayMultiaddr);
+    if (id != null) _reservedIds.add(id);
   }
 
   @override
   Future<void> releaseRelayReservation() async {
     releaseCount++;
-    _reserved = null;
+    _reservedIds.clear();
   }
 }
 
@@ -70,11 +72,22 @@ void main() {
         containsAll([envoyMessageProtocol, envoyChatProtocol]),
       );
       // Relay reserve runs in the background so enable can return quickly.
+      // Reserves all shipped community relays (cn + us; list grows later).
       await Future<void>.delayed(Duration.zero);
-      expect(host.reserveCalls, [defaultEnvoyCommunityRelayBootstrapAddr]);
+      expect(
+        host.reserveCalls,
+        defaultEnvoyCommunityRelayBootstrapAddrs,
+      );
+      expect(
+        session.reservedRelayPeerIds,
+        {
+          peerIdFromBootstrapMultiaddr(defaultEnvoyCommunityRelayBootstrapAddr),
+          peerIdFromBootstrapMultiaddr(defaultEnvoyUsRelayBootstrapAddr),
+        },
+      );
       expect(
         session.reservedRelayPeerId,
-        '12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo',
+        peerIdFromBootstrapMultiaddr(defaultEnvoyUsRelayBootstrapAddr),
       );
       expect(calls, 0);
     });

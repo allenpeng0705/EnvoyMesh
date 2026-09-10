@@ -399,33 +399,24 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
           );
         }
 
-        // Publish Connected as soon as handlers are up — discovery/WAN is async.
-        state = PhoneMeshRuntimeState(
-          sessionActive: _session!.isActive,
-          discoveryActive: _discovery?.isActive ?? false,
-          starting: false,
-          lastError: null,
-        );
-
+        // Handlers first, then await discovery start so wanSearch is attached
+        // before we clear `starting` — avoids Discover racing a Connected UI.
         if (_foreground) {
           _discovery ??= PhoneDiscoverySession(node: node, backend: backend);
           if (!_discovery!.isActive) {
-            final discovery = _discovery!;
-            unawaited(() async {
-              try {
-                await discovery.start();
-              } catch (e) {
-                debugPrint('[PhoneMeshRuntime] discovery start: $e');
-              }
-              if (_disposed || _discovery != discovery) return;
-              state = PhoneMeshRuntimeState(
-                sessionActive: _session?.isActive ?? false,
-                discoveryActive: discovery.isActive,
-                starting: false,
-                lastError: null,
-              );
-            }());
+            try {
+              await _discovery!.start();
+            } catch (e) {
+              debugPrint('[PhoneMeshRuntime] discovery start: $e');
+            }
           }
+          if (_disposed) return;
+          state = PhoneMeshRuntimeState(
+            sessionActive: _session!.isActive,
+            discoveryActive: _discovery?.isActive ?? false,
+            starting: false,
+            lastError: null,
+          );
         } else {
           await _stopDiscovery();
           state = PhoneMeshRuntimeState(

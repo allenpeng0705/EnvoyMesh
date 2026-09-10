@@ -159,7 +159,9 @@ export interface NodeDiscoveryRuntimeDeps {
    */
   queryRelayLookupByTopic?(params: {
     topic: string;
-    topicHash: string;
+    topicHash?: string;
+    /** When set (e.g. mesh.discovery), lookup by capability instead of topicHash. */
+    capability?: string;
     maxResults: number;
   }): Promise<PeerSearchResult[]>;
   /**
@@ -244,9 +246,12 @@ export class NodeDiscoveryRuntime {
           .flatMap((t) => expandDiscoveryTopicQueries(t)),
       ].filter(Boolean);
       if (topicQueries.length > 0) {
+        const uniqueTopics = [...new Set(topicQueries)];
+        const topicBatches = await Promise.all(
+          uniqueTopics.map((topic) => this.searchByTopic(topic, maxResults)),
+        );
         const results: PeerSearchResult[] = [];
-        for (const topic of [...new Set(topicQueries)]) {
-          const topicResults = await this.searchByTopic(topic, maxResults);
+        for (const topicResults of topicBatches) {
           for (const r of topicResults) {
             if (!results.some((existing) => existing.nodeId === r.nodeId)) {
               results.push(r);
@@ -335,10 +340,17 @@ export class NodeDiscoveryRuntime {
       // "Machine Learning" advertises `interest:machine-learning` but this
       // search would look up "machine learning" and miss it.
       if (canSearchTopics && query.interests && query.interests.length > 0) {
-        for (const interest of query.interests) {
-          const topic = interestTopicFor(interest);
-          if (!topic) continue;
-          const topicResults = await this.searchByTopic(topic, maxResults);
+        const interestTopics = [
+          ...new Set(
+            query.interests
+              .map((interest) => interestTopicFor(interest))
+              .filter((topic): topic is string => Boolean(topic)),
+          ),
+        ];
+        const interestBatches = await Promise.all(
+          interestTopics.map((topic) => this.searchByTopic(topic, maxResults)),
+        );
+        for (const topicResults of interestBatches) {
           for (const r of topicResults) {
             if (!results.some((existing) => existing.nodeId === r.nodeId)) {
               results.push(r);
@@ -578,6 +590,27 @@ export class NodeDiscoveryRuntime {
       }
 
       console.log(`[searchPeers] Searching DHT for topic: "${topic}" (limit: ${maxResults})`);
+      // Broad roster sample: peers advertise `capability: mesh.discovery` on
+      // relay.checkin (not a topicHash). Skip DHT for this sentinel.
+      if (topic === "mesh.discovery" && this.deps.queryRelayLookupByTopic) {
+        try {
+          return await withTimeoutFallback(
+            this.deps.queryRelayLookupByTopic({
+              topic,
+              capability: "mesh.discovery",
+              maxResults,
+            }),
+            RELAY_TOPIC_UNION_EMPTY_DHT_MS,
+            [],
+          );
+        } catch (err) {
+          console.log(
+            `[searchPeers] mesh.discovery relay lookup failed:`,
+            err instanceof Error ? err.message : err,
+          );
+          return [];
+        }
+      }
       let providers: Awaited<ReturnType<EnvoyMesh["findCapabilityTopicProviders"]>> = [];
       try {
         providers = await mesh.findCapabilityTopicProviders(topic, {

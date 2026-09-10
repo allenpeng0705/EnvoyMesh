@@ -311,17 +311,11 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
     final transport = _transport;
     if (transport == null) return relayHits;
 
-    // Prefer the primary community relay for search latency; skip extras
-    // unless the primary fails every query.
-    final primary = _relayBootstrapAddrs.contains(
-          defaultEnvoyCommunityRelayBootstrapAddr,
-        )
-        ? defaultEnvoyCommunityRelayBootstrapAddr
-        : _relayBootstrapAddrs.first;
-    final fallback = [
-      for (final a in _relayBootstrapAddrs)
-        if (a != primary) a,
-    ];
+    // Query every configured community relay in parallel (cn + us + future).
+    // Preferring a single region missed peers that only checkin'd on the other.
+    final relays = _relayBootstrapAddrs.isNotEmpty
+        ? _relayBootstrapAddrs
+        : defaultEnvoyCommunityRelayBootstrapAddrs;
 
     // Run query topics in parallel — sequential lookups burned the Discover
     // sample budget when a slug expands to 4+ topic keys.
@@ -341,43 +335,55 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
             unsigned,
             _backend.persona.device.privateKeyPem,
           );
-          for (final relayAddr in [primary, ...fallback]) {
-            try {
-              final result = await transport.sendEnvelope(
-                dialTarget: relayAddr,
-                protocolId: envoyMessageProtocol,
-                envelope: signed,
-                expectReply: true,
-              );
-              if (!result.ok || result.replyEnvelope == null) continue;
-              final reply = Map<String, Object?>.from(result.replyEnvelope!);
-              if (!isAcceptableRelayLookupResponse(
-                reply,
-                dialedTrustedRelay: true,
-              )) {
-                _log(
-                  '[PhoneDiscoverySession] lookup rejected (untrusted reply) $relayAddr',
-                );
-                continue;
-              }
-              final peers = parseRelayLookupPeers(reply['payload']);
-              final candidates = [
-                for (final p in peers) RelayLookupCandidate.fromJson(p),
-              ];
-              final batch = _runtime.hitsFromRelayCandidates(
-                candidates,
-                selfLibp2pPeerId: selfPeer,
-                selfOwnerId: selfOwner,
-              );
-              if (batch.isNotEmpty) return batch;
-            } catch (e) {
-              _log(
-                '[PhoneDiscoverySession] lookup error $relayAddr: $e',
-              );
-            }
+          final perRelay = await Future.wait([
+            for (final relayAddr in relays)
+              () async {
+                try {
+                  final result = await transport.sendEnvelope(
+                    dialTarget: relayAddr,
+                    protocolId: envoyMessageProtocol,
+                    envelope: signed,
+                    expectReply: true,
+                  );
+                  if (!result.ok || result.replyEnvelope == null) {
+                    return const <MeshPeerHit>[];
+                  }
+                  final reply =
+                      Map<String, Object?>.from(result.replyEnvelope!);
+                  if (!isAcceptableRelayLookupResponse(
+                    reply,
+                    dialedTrustedRelay: true,
+                  )) {
+                    _log(
+                      '[PhoneDiscoverySession] lookup rejected (untrusted reply) $relayAddr',
+                    );
+                    return const <MeshPeerHit>[];
+                  }
+                  final peers = parseRelayLookupPeers(reply['payload']);
+                  final candidates = [
+                    for (final p in peers) RelayLookupCandidate.fromJson(p),
+                  ];
+                  return _runtime.hitsFromRelayCandidates(
+                    candidates,
+                    selfLibp2pPeerId: selfPeer,
+                    selfOwnerId: selfOwner,
+                  );
+                } catch (e) {
+                  _log(
+                    '[PhoneDiscoverySession] lookup error $relayAddr: $e',
+                  );
+                  return const <MeshPeerHit>[];
+                }
+              }(),
+          ]);
+          final merged = <MeshPeerHit>[];
+          for (final batch in perRelay) {
+            merged.addAll(batch);
           }
-          _log('[PhoneDiscoverySession] no relay hits for query=$q');
-          return const <MeshPeerHit>[];
+          if (merged.isEmpty) {
+            _log('[PhoneDiscoverySession] no relay hits for query=$q');
+          }
+          return merged;
         }(),
     ]);
     for (final batch in batches) {

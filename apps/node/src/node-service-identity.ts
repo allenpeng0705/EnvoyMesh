@@ -1260,19 +1260,25 @@ export async function _advertisePublicDiscoveryTopics(
   // through). This matches the user's 2026-07-10 symptom:
   // `[node-stats] totalPeers=1 relayRoster=1` produced 16 per-topic
   // timeouts every retry cycle against the community relay.
-  // Threshold: skip DHT provide only when *zero* peers are connected.
-  // Previously required 2+ (assuming 1 = community relay alone and DHT
-  // was useless). On a home Mac behind NAT with only the cloud relay
-  // connected, that skipped *all* provides forever — and topics never
-  // landed even for relay-roster fallback timing. With ≥1 peer we still
-  // attempt provide (may time out); relay-roster notify runs regardless.
+  // Threshold: skip DHT provide when *zero* peers are connected, OR when the
+  // dial queue is congested (provide thrash starves circuit reservation).
+  // Relay-roster notify runs regardless — Discover phone lookup uses checkin
+  // topicHashes even when DHT puts are deferred.
   const connectedPeers = ctx.requireMesh().getConnectedPeerIds();
-  const skipPublishThisCycle = connectedPeers.length < 1;
+  const dialBudget = assessDialBudget(
+    ctx.requireMesh().getConnectionStats?.()?.dialQueueLength ?? 0,
+  );
+  const skipPublishThisCycle =
+    connectedPeers.length < 1 || dialBudget.deferBackgroundWork;
   if (skipPublishThisCycle) {
+    const reason =
+      connectedPeers.length < 1
+        ? "no peers connected"
+        : `dialQueue=${dialBudget.dialQueueLength} congested`;
     console.warn(
-      `[node-service] Discovery advertise cycle: no peers connected. ` +
-      `Skipping ${allTopics.length} DHT topic publishes this cycle. ` +
-      `Relay-roster advertisements are still updated so relay.lookup can work once a relay is dialable.`,
+      `[node-service] Discovery advertise cycle: ${reason}. ` +
+        `Skipping ${allTopics.length} DHT topic publishes this cycle. ` +
+        `Relay-roster advertisements are still updated so relay.lookup can work.`,
     );
   }
 
@@ -1296,7 +1302,7 @@ export async function _advertisePublicDiscoveryTopics(
     }
   }
   if (!skipPublishThisCycle && timedOutCount > 0) {
-    const dq = ctx.requireMesh().getConnectionStats().dialQueueLength;
+    const dq = ctx.requireMesh().getConnectionStats?.()?.dialQueueLength;
     const budget = assessDialBudget(dq);
     const dqHint = budget.deferBackgroundWork
       ? ` dialQueue=${budget.dialQueueLength} (congested — provides deferred)`
@@ -1310,50 +1316,12 @@ export async function _advertisePublicDiscoveryTopics(
 
   ctx.emit("discovery:advertising-complete", { topics: advertisedTopics, success: allSuccess });
 
-  // Adaptive periodic re-advertisement.
-  //
-  // Previous behaviour: `setInterval(retry, 5 * 60_000)` with a SEQUENTIAL
-  // `for` loop. With 8 topics × 30s timeout each, one full retry took up to
-  // 4 minutes; combined with the 5-minute interval, an effective ~9-minute
-  // gap between attempts when every topic was failing. Once the DHT
-  // eventually came up, it took another full cycle before it was visible.
-  //
-  // New behaviour:
-  // 1. Run all topics in parallel — total retry time = max(per-topic timeout)
-  //    instead of sum(per-topic timeouts). With the bumped 60s timeout,
-  //    one retry cycle is now bounded to ~60s.
-  // 2. Self-rescheduling `setTimeout` (not `setInterval`) so we can pick
-  //    the next interval based on the result of THIS attempt:
-  //    - any topic failed → DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS (60s)
-  //    - all topics succeeded → DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS (5 min)
-  // 3. `inFlight` guard prevents overlapping cycles when a slow retry collides
-  //    with the next scheduled tick. setInterval had no such guard and could
-  //    fire the callback again while the previous one was still running.
-  //
-  // The timer handle is stored under the same `getAdvertiseInterestsTimer`
-  // slot so existing stopNode / profile-change cleanup paths still work.
-  // Adaptive periodic re-advertisement with exponential backoff on
-  // consecutive failure cycles.
-  //
-  // Previous behaviour: 60s if any topic failed, 5 min if all succeeded —
-  // binary, no growth. On a loaded community DHT this hammers the network
-  // with 11+ parallel provides every minute indefinitely, never slowing.
-  // (Symptoms: `[p2p] provideCapabilityTopic: provide timeout for <topic>`
-  // repeats dominate the log.)
-  //
-  // New behaviour: each retry cycle that fails (any topic) doubles the
-  // next-cycle delay, capped at the healthy interval (5 min). A single
-  // all-success cycle resets the counter. So:
-  //   cycle N: failure → next = 60s
-  //   cycle N+1: failure → next = 120s
-  //   cycle N+2: failure → next = 240s
-  //   ...
-  //   cycle N+k: failure → next = min(60s * 2^k, 5min)
-  //   any cycle where all topics succeed → counter resets, next = 5 min.
-  //
-  // A recovered DHT is still picked up within one 5-min ceiling window; an
-  // unavailable DHT no longer floods the network or pins the timeout timer.
-  let consecutiveFailureCycles = allSuccess ? 0 : 1;
+  // Congestion skip is not a DHT failure — relay roster still has topics.
+  // Don't enter aggressive provide backoff (that would fight reservation recovery).
+  const skippedForCongestion =
+    skipPublishThisCycle && connectedPeers.length >= 1 && dialBudget.deferBackgroundWork;
+  let consecutiveFailureCycles =
+    skippedForCongestion ? 0 : allSuccess ? 0 : 1;
   const computeNextDelay = (hadAnyFailure: boolean): number => {
     if (!hadAnyFailure) {
       consecutiveFailureCycles = 0;
@@ -1374,10 +1342,18 @@ export async function _advertisePublicDiscoveryTopics(
       void (async () => {
         try {
           const connected = ctx.requireMesh().getConnectedPeerIds();
-          const skip = connected.length < 1;
+          const dialBudget = assessDialBudget(
+            ctx.requireMesh().getConnectionStats?.()?.dialQueueLength ?? 0,
+          );
+          const skip =
+            connected.length < 1 || dialBudget.deferBackgroundWork;
           if (skip) {
+            const reason =
+              connected.length < 1
+                ? "no peers connected"
+                : `dialQueue=${dialBudget.dialQueueLength} congested`;
             console.warn(
-              `[node-service] Discovery advertise retry: no peers connected. ` +
+              `[node-service] Discovery advertise retry: ${reason}. ` +
                 `Skipping ${allTopics.length} DHT topic publishes this cycle.`,
             );
           }
@@ -1388,7 +1364,11 @@ export async function _advertisePublicDiscoveryTopics(
                 DISCOVERY_ADVERTISE_CONCURRENCY,
                 (topic) => advertiseOnce(topic),
               );
-          const allOk = results.every((status) => status === "ok");
+          // Congestion skip: keep healthy interval so provides don't fight hop recovery.
+          const skippedForCongestion =
+            skip && connected.length >= 1 && dialBudget.deferBackgroundWork;
+          const allOk =
+            skippedForCongestion || results.every((status) => status === "ok");
           if (allOk) {
             if (consecutiveFailureCycles > 0) {
               // First successful cycle after a streak of failures — useful
@@ -1435,9 +1415,11 @@ export async function _advertisePublicDiscoveryTopics(
   // attempt already failed (DHT not ready, slow bootstrap, etc.), don't wait
   // the full 5-minute healthy interval before trying again — switch straight
   // to the fast backoff so a freshly-bootstrapped DHT is picked up promptly.
-  const firstRetryDelay = allSuccess
-    ? DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS
-    : DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS;
+  // Congestion skip keeps the healthy interval (provides would worsen hop recovery).
+  const firstRetryDelay =
+    allSuccess || skippedForCongestion
+      ? DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS
+      : DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS;
   ctx.setAdvertiseInterestsTimer(scheduleRetry(firstRetryDelay));
 }
 

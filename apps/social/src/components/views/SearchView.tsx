@@ -18,6 +18,8 @@ import {
   widerEmptyHint,
   widerTopicHint,
 } from "../../lib/discover-empty-hints.js";
+import { waitForDiscoverReady } from "../../lib/discover-readiness.js";
+import { useCircuitReservationStatus } from "../../hooks/useCircuitReservationStatus.js";
 import { extractGeoCitySummary } from "../../lib/discover-friend-suggestion.js";
 import { loadOutboundHellos, markOutboundHello, resolvePeerHelloState } from "../../lib/discover-peer-state.js";
 import { publishSearchTopic } from "../../lib/publish-topic.js";
@@ -67,6 +69,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     acceptHello,
     declineHello,
   } = useNodeState();
+  const { ready: circuitReady } = useCircuitReservationStatus({ enabled: true, pollMs: 4000 });
 
   // Cached lookup of the bundled sponsor-friend proofOfContext. When the
   // installer ships a bundled sponsor-friend.json with a proofOfContext, the
@@ -77,6 +80,14 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     state: "pending" | "resolved";
     value: string | undefined;
   }>({ state: "pending", value: undefined });
+
+  /** Last network Discover attempt — used to retry once circuit hop becomes ready. */
+  const lastNetworkSearchRef = useRef<
+    | { kind: "query"; query: string }
+    | { kind: "geo"; scope: "country" | "city" | "town" | "nearby" }
+    | { kind: "auto" }
+    | null
+  >(null);
 
   // Opening Discover no longer auto-scans — user taps Refresh on People nearby.
 
@@ -160,17 +171,27 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     setNetworkSearching(true);
     const run = async () => {
       try {
+        await waitForDiscoverReady(nodeService);
         await nodeService.runCapabilityDiscovery({ find: true }).catch(() => {});
+        // Broad roster first, then interest/geo (EnvoyGo sample order).
+        const broad = await nodeService
+          .searchPeers({ topic: "mesh.discovery", maxResults: 20 })
+          .catch(() => [] as PeerSearchResult[]);
         const topics =
           loc && locPrecision && locPrecision !== "hidden"
             ? locationSearchTopics({ location: loc, scope: "city" })
             : [];
-        const results = await nodeService.searchPeers({
-          ...(interests.length > 0 ? { interests } : {}),
-          ...(topics.length > 0 ? { topics } : {}),
-          maxResults: 20,
-        });
+        const interestHits =
+          interests.length > 0 || topics.length > 0
+            ? await nodeService.searchPeers({
+                ...(interests.length > 0 ? { interests } : {}),
+                ...(topics.length > 0 ? { topics } : {}),
+                maxResults: 20,
+              })
+            : [];
+        const results = mergePeerSearchResults(broad, interestHits);
         if (!cancelled) {
+          lastNetworkSearchRef.current = { kind: "auto" };
           setNetworkResults(results);
           if (typeof localStorage !== "undefined") {
             localStorage.setItem(flagKey, "1");
@@ -226,7 +247,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : String(error);
           showToast?.(
-            t("discover.hello.autoSendFailed", { error: message }),
+            t("discover.search.failed", `Search failed: ${message}`),
             "error",
           );
         }
@@ -270,6 +291,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     setNetworkSearching(true);
     setNetworkResults([]);
     try {
+      await waitForDiscoverReady(nodeService);
       await nodeService.runCapabilityDiscovery({ find: true }).catch(() => {});
       let topics: string[] = [];
       if (scope === "nearby") {
@@ -302,9 +324,15 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
       }
       const results = await nodeService.searchPeers({ topics, maxResults: 20 });
       setNetworkResults(results);
+      lastNetworkSearchRef.current = { kind: "geo", scope };
     } catch (error) {
       console.error("[SearchView] geo search failed:", error);
       setNetworkResults([]);
+      const message = error instanceof Error ? error.message : String(error);
+      showToast?.(
+        t("discover.search.failed", `Search failed: ${message}`),
+        "error",
+      );
     } finally {
       setNetworkSearching(false);
     }
@@ -328,6 +356,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     }
     const startedAt = Date.now();
     try {
+      await waitForDiscoverReady(nodeService);
       await nodeService.runCapabilityDiscovery({ find: true }).catch(() => {});
       let results: PeerSearchResult[];
       const query = effectiveQuery;
@@ -455,9 +484,17 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
         await new Promise((r) => setTimeout(r, 800 - elapsed));
       }
       setResults(results);
+      if (!isPaste) {
+        lastNetworkSearchRef.current = { kind: "query", query: effectiveQuery };
+      }
     } catch (error) {
       console.error("[SearchView] search failed:", error);
       setResults([]);
+      const message = error instanceof Error ? error.message : String(error);
+      showToast?.(
+        t("discover.search.failed", `Search failed: ${message}`),
+        "error",
+      );
     } finally {
       setSearching(false);
     }
@@ -529,7 +566,36 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     nodeStatus,
     nodeConfig,
     humanProfile,
+    relayNotReady: !circuitReady && nodeStatus === "running",
   };
+
+  // One Discover retry when circuit hop becomes ready and last search was empty.
+  useEffect(() => {
+    if (!circuitReady) return;
+    if (networkSearching || pasteSearching) return;
+    if (networkResults.length > 0) return;
+    const last = lastNetworkSearchRef.current;
+    if (!last) return;
+    if (last.kind === "geo") {
+      void handleGeoSearch(last.scope);
+    } else if (last.kind === "query") {
+      void handleSearch("network", last.query);
+    } else if (last.kind === "auto") {
+      void (async () => {
+        setNetworkSearching(true);
+        try {
+          await waitForDiscoverReady(nodeService);
+          const broad = await nodeService
+            .searchPeers({ topic: "mesh.discovery", maxResults: 20 })
+            .catch(() => [] as PeerSearchResult[]);
+          setNetworkResults(broad);
+        } finally {
+          setNetworkSearching(false);
+        }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot on ready
+  }, [circuitReady]);
 
   return (
     <div className={`search-view${embedded ? " search-view--embedded" : ""}`}>

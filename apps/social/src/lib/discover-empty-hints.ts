@@ -7,6 +7,8 @@ export type DiscoverEmptyContext = {
   nodeStatus: string;
   nodeConfig: NodeConfig | null;
   humanProfile: HumanProfile | null;
+  /** True when circuit reservation is not live yet (WAN Discover soft-gate). */
+  relayNotReady?: boolean;
 };
 
 function discoveryProfile(config: NodeConfig | null): DiscoveryProfile | "unknown" {
@@ -36,6 +38,15 @@ export function codeEmptyHint(_ctx: DiscoverEmptyContext, t: TFunction): string 
 }
 
 export function widerEmptyHint(ctx: DiscoverEmptyContext, t: TFunction): string {
+  if (ctx.nodeStatus !== "running") {
+    return t("emptyHints.widerOffline", "Node is still starting — try again in a moment.");
+  }
+  if (ctx.relayNotReady) {
+    return t(
+      "emptyHints.widerRelayNotReady",
+      "Still connecting to the mesh relay. Search again in a few seconds — Discover needs a live hop to find people across the internet.",
+    );
+  }
   const profile = discoveryProfile(ctx.nodeConfig);
   const visibility = ctx.humanProfile?.profileVisibility ?? "private";
   const lines: string[] = [];

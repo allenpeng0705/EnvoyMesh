@@ -118,7 +118,7 @@ noteRelaySuccess(state, state.candidateRelays[0]!);
     expect(response.peers[0]?.visibility).toBe("public");
   });
 
-  it("returns only live-hop peers from hasLiveReservation (omits undialable)", () => {
+  it("includes checkin-only peers but ranks live-hop first", () => {
     const now = Date.parse("2026-04-27T10:00:00.000Z");
     const roster = createRelayRoster({ now: () => now, rosterTtlMs: 60_000 });
     for (const peerId of ["peer-a", "peer-b"]) {
@@ -146,10 +146,11 @@ noteRelaySuccess(state, state.candidateRelays[0]!);
         expiresAt: "2026-04-27T10:01:00.000Z",
       },
     });
-    expect(response.peers).toHaveLength(1);
-    expect(response.peers[0]?.peerId).toBe("peer-b");
+    expect(response.peers.map((p) => p.peerId)).toEqual(["peer-b", "peer-a"]);
     expect(response.peers[0]?.hasHopSlot).toBe(true);
     expect(response.peers[0]?.multiaddrs.length).toBeGreaterThan(0);
+    expect(response.peers[1]?.hasHopSlot).toBe(false);
+    expect(response.peers[1]?.multiaddrs).toEqual([]);
   });
 
   it("stores summaries and expires stale summary state", () => {

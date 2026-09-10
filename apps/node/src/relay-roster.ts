@@ -184,23 +184,23 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
           typeof hasLiveReservation === "function"
             ? hasLiveReservation(entry.peerId)
             : entry.reservationFreshUntil > current;
-        // Omit checkin-only peers from lookup: presence without a live hop
-        // is not dialable and confuses discovery / auto-bond.
-        if (!liveHop) {
-          continue;
-        }
+        // Discover findability: include check-in peers without a live hop.
+        // Prefer live-hop via sort; check-in-only get empty multiaddrs.
         candidates.push({
           peerId: entry.peerId,
           ownerId: visibility === "public" || visibility === "capability" ? undefined : entry.ownerId,
           displayName: entry.displayName,
-          multiaddrs: buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId),
+          multiaddrs: liveHop
+            ? buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId)
+            : [],
           viaRelayId: relayPeerId,
           capabilities: entry.capabilities,
           visibility,
           expiresAt: new Date(entry.expiresAt).toISOString(),
-          hasHopSlot: true,
+          hasHopSlot: liveHop,
         });
       }
+      candidates.sort((a, b) => Number(b.hasHopSlot) - Number(a.hasHopSlot));
       const capped = candidates.slice(0, payload.maxResults);
       return {
         queryId: payload.queryId,
@@ -344,9 +344,8 @@ function matchesLookup(entry: RelayRosterEntry, payload: RelayLookupPayload): bo
 
 /**
  * Exact peer/owner lookup is public when the peer advertised publicly or has
- * mesh.discovery. Lookup only returns peers with a live hop (see `lookup`);
- * knowing a peerId therefore confirms hoppable presence on this relay, not
- * mere checkin, and public hits still omit ownerId.
+ * mesh.discovery. Capability/topic lookups include check-in-only peers
+ * (`hasHopSlot: false`, empty multiaddrs) ranked after live-hop peers.
  */
 function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPayload): RelayVisibility {
   if (payload.targetPeerId || payload.targetOwnerId) {
