@@ -52,10 +52,6 @@ class AppLocalizationsDe extends AppLocalizations {
       'Wechseln Sie die Social-Identität zu einem gekoppelten Heimcomputer. Auf diesem Telefon sind Chats, Kontakte und Entdecken möglich.';
 
   @override
-  String get socialPhoneMeshForegroundHint =>
-      'Das Telefon-Mesh läuft, solange EnvoyGo geöffnet ist — für Chats auf diesem Telefon und Entdecken ohne Kopplung.';
-
-  @override
   String get socialPhoneMeshStarting => 'Telefon-Mesh wird gestartet…';
 
   @override
@@ -618,13 +614,6 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get knowledgeLede =>
       'Ihre Vault-Wissensdatenbank — Notizen unter notes/ versorgen EnvoyAI. Dokumente bleiben als Originale erhalten.';
-
-  @override
-  String get knowledgePairTitle => 'Koppeln, um Wissen zu nutzen';
-
-  @override
-  String get knowledgePairHint =>
-      'Ihre Notizen und Ask laufen auf dem Heimknoten. Koppeln Sie zuerst EnvoyMesh, dann kehren Sie hierher zurück.';
 
   @override
   String get knowledgePanelBrowse => 'Durchsuchen';
@@ -1732,6 +1721,10 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get pairingNeedHomeHint =>
       'Eigenes Zuhause einrichten? Installieren Sie EnvoyMesh zuerst auf einem Mac- oder Windows-PC und scannen Sie dann den QR-Code. Familie beitreten? Einfach deren Einladung scannen — keine PC-Installation nötig.';
+
+  @override
+  String get pairRequiredBody =>
+      'EnvoyGo ist der mobile Begleiter für deinen Computer — Chat, Inhalte, Dateien, Terminal, Wissen und KI laufen dort. Installiere EnvoyMesh auf einem Mac oder Windows-PC und scanne den QR-Code, oder tritt einem Familien-Heimknoten per Einladung bei (keine PC-Installation nötig).';
 
   @override
   String get pairingDownloadEnvoyMesh => 'EnvoyMesh Desktop-Downloads';
@@ -4269,6 +4262,13 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get setupGuidePhoneOnlyBody =>
       'Sie können Social für Telefon-Chats und Entdecken nutzen. Koppeln Sie später jederzeit unter Ich, sobald EnvoyMesh installiert ist.';
+
+  @override
+  String get setupGuideNoHomeTitle => 'Später koppeln ist in Ordnung';
+
+  @override
+  String get setupGuideNoHomeBody =>
+      'Du kannst jetzt fortfahren und jederzeit unter Ich → Koppeln koppeln. Chat, Inhalte, Dateien, Terminal und KI laufen auf deinem Computer — diese Bildschirme bitten zuerst um die Kopplung.';
 
   @override
   String get setupGuidePairCta => 'Jetzt koppeln';

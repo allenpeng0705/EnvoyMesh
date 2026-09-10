@@ -52,10 +52,6 @@ class AppLocalizationsFr extends AppLocalizations {
       'Passez l’identité sociale à un ordinateur domicile appairé. Sur ce téléphone : discussions, contacts et découverte.';
 
   @override
-  String get socialPhoneMeshForegroundHint =>
-      'Le mesh du téléphone est actif tant qu’EnvoyGo est ouvert — pour les discussions sur ce téléphone et la découverte sans appairage.';
-
-  @override
   String get socialPhoneMeshStarting => 'Démarrage du mesh téléphone…';
 
   @override
@@ -621,13 +617,6 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get knowledgeLede =>
       'Votre base de connaissances du coffre — les notes sous notes/ alimentent EnvoyAI. Les documents restent à l\'original.';
-
-  @override
-  String get knowledgePairTitle => 'Associez pour utiliser Connaissances';
-
-  @override
-  String get knowledgePairHint =>
-      'Vos notes et Ask tournent sur le nœud domicile. Associez d’abord EnvoyMesh, puis revenez ici.';
 
   @override
   String get knowledgePanelBrowse => 'Parcourir';
@@ -1731,6 +1720,10 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get pairingNeedHomeHint =>
       'Créer votre propre foyer ? Installez d\'abord EnvoyMesh sur un Mac ou PC Windows, puis scannez son QR. Rejoindre une famille ? Scannez leur invitation — pas d\'installation PC nécessaire.';
+
+  @override
+  String get pairRequiredBody =>
+      'EnvoyGo est le compagnon mobile de votre ordinateur : discussion, contenu, fichiers, terminal, connaissances et IA tournent là-bas. Installez EnvoyMesh sur un Mac ou un PC Windows et scannez son QR, ou rejoignez un domicile familial avec son invitation (aucune installation PC requise).';
 
   @override
   String get pairingDownloadEnvoyMesh =>
@@ -4275,6 +4268,13 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get setupGuidePhoneOnlyBody =>
       'Vous pouvez ouvrir Social pour les discussions téléphone et Découvrir. Appairez plus tard depuis Moi quand EnvoyMesh est installé.';
+
+  @override
+  String get setupGuideNoHomeTitle => 'Appairer plus tard, c’est possible';
+
+  @override
+  String get setupGuideNoHomeBody =>
+      'Vous pouvez continuer et appairer à tout moment depuis Moi → Appairer. Discussion, contenu, fichiers, terminal et IA tournent sur votre ordinateur : ces écrans vous demanderont d’abord l’appairage.';
 
   @override
   String get setupGuidePairCta => 'Appairer maintenant';

@@ -51,10 +51,6 @@ class AppLocalizationsIt extends AppLocalizations {
       'Passa l’identità Social a un computer home associato. Su questo telefono: chat, contatti e scopri.';
 
   @override
-  String get socialPhoneMeshForegroundHint =>
-      'Il mesh del telefono è attivo mentre EnvoyGo è aperto — per chat su questo telefono e Scopri senza associazione.';
-
-  @override
   String get socialPhoneMeshStarting => 'Avvio del mesh telefono…';
 
   @override
@@ -618,13 +614,6 @@ class AppLocalizationsIt extends AppLocalizations {
       'La tua base di conoscenza del vault — le note in notes/ alimentano EnvoyAI. I documenti restano in originale.';
 
   @override
-  String get knowledgePairTitle => 'Associa per usare Knowledge';
-
-  @override
-  String get knowledgePairHint =>
-      'Note e Ask girano sul nodo home. Associa prima EnvoyMesh, poi torna qui.';
-
-  @override
   String get knowledgePanelBrowse => 'Esplora';
 
   @override
@@ -931,7 +920,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String knowledgeSetupTestEmbeddingOk(int dimensions, int latencyMs) {
-    return 'Embedding OK — $dimensions dims in $latencyMs ms';
+    return 'Embedding completato — $dimensions dimensioni in $latencyMs ms';
   }
 
   @override
@@ -1729,6 +1718,10 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get pairingNeedHomeHint =>
       'Configuri la tua casa? Installa prima EnvoyMesh su un Mac o PC Windows, poi scansiona il QR. Entri in famiglia? Scansiona il loro invito — nessuna installazione sul PC necessaria.';
+
+  @override
+  String get pairRequiredBody =>
+      'EnvoyGo è il compagno mobile del tuo computer: chat, contenuti, file, terminale, conoscenza e IA girano lì. Installa EnvoyMesh su Mac o PC Windows e scansiona il QR, oppure unisciti a una casa famiglia con il suo invito (nessuna installazione su PC).';
 
   @override
   String get pairingDownloadEnvoyMesh => 'Download EnvoyMesh per computer';
@@ -4265,6 +4258,13 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get setupGuidePhoneOnlyBody =>
       'Puoi aprire Social per chat telefono e Scopri. Associa più tardi da Io quando EnvoyMesh è installato.';
+
+  @override
+  String get setupGuideNoHomeTitle => 'Associare più tardi va bene';
+
+  @override
+  String get setupGuideNoHomeBody =>
+      'Puoi continuare ora e associare quando vuoi da Io → Associa. Chat, contenuti, file, terminale e IA girano sul tuo computer, quindi quelle schermate ti chiederanno prima di associare.';
 
   @override
   String get setupGuidePairCta => 'Associa ora';

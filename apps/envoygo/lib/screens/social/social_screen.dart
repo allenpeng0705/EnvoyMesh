@@ -9,9 +9,11 @@ import '../../providers/contact_provider.dart';
 import '../../providers/content_engage_provider.dart';
 import '../../providers/feed_notify_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../services/feature_flags.dart';
 import '../../providers/social_context_provider.dart';
 import '../../widgets/connection_indicator.dart';
 import '../../widgets/phone_mesh_indicator.dart';
+import '../../widgets/pair_required_panel.dart';
 import '../../widgets/setup_guide_button.dart';
 import '../browser/browser_screen.dart';
 import '../chat/chat_list_screen.dart';
@@ -141,6 +143,15 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
     ref.watch(phoneMeshKeepAliveProvider);
 
     final paired = ref.watch(nodeProvider.select((s) => s.activeNode != null));
+    final mobileNodeEnabled = ref.watch(mobileNodeEnabledProvider);
+    // Unpaired with the mobile node off: every Social surface needs the home
+    // node (chat, feed, blog, market, Discover), so show one honest pairing
+    // surface instead of a row of tabs that cannot load anything. The mobile
+    // node flag keeps the two-tab (Chat + Discover) mesh experience alive.
+    final pairOnly = !paired && !mobileNodeEnabled;
+    if (pairOnly) {
+      return const _SocialPairOnlyScreen();
+    }
     // Sync before TabBar/TabBarView so length always matches [paired].
     if (_tabs == null || _pairedTabs != paired) {
       _ensureController(paired, notify: false);
@@ -299,6 +310,43 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
                 ContentExploreTab(),
               ],
       ),
+    );
+  }
+}
+
+
+/// Unpaired + mobile node off: nothing in Social can load without a home node.
+class _SocialPairOnlyScreen extends ConsumerWidget {
+  const _SocialPairOnlyScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/logo.png',
+                width: 28,
+                height: 28,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.medium,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(l10n.navSocial),
+          ],
+        ),
+        actions: const [SetupGuideButton()],
+      ),
+      body: const PairRequiredPanel(icon: Icons.link_off_outlined),
     );
   }
 }

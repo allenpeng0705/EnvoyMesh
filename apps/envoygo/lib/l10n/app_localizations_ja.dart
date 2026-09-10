@@ -50,10 +50,6 @@ class AppLocalizationsJa extends AppLocalizations {
       'この機能にはペアリング済みのホームパソコンへ切り替えてください。この端末ではチャット・連絡先・発見が使えます。';
 
   @override
-  String get socialPhoneMeshForegroundHint =>
-      'EnvoyGo を開いている間、端末メッシュが動作します — この端末のチャットと未ペア時の発見に使います。';
-
-  @override
   String get socialPhoneMeshStarting => '端末メッシュを起動中…';
 
   @override
@@ -594,13 +590,6 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get knowledgeLede =>
       'ボールト ナレッジ ベース — notes/ のノートが EnvoyAI を動かします。ドキュメントは原本のまま残ります。';
-
-  @override
-  String get knowledgePairTitle => 'ペアリングしてナレッジを使う';
-
-  @override
-  String get knowledgePairHint =>
-      'ノートと Ask はホームノード上で動きます。先に EnvoyMesh とペアリングしてから戻ってください。';
 
   @override
   String get knowledgePanelBrowse => '参照';
@@ -1664,6 +1653,10 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get pairingNeedHomeHint =>
       '自分のホームを作る場合は、まず Mac / Windows PC に EnvoyMesh をインストールしてから QR をスキャンしてください。家族に参加する場合は招待 QR だけでOKです（PC へのインストール不要）。';
+
+  @override
+  String get pairRequiredBody =>
+      'EnvoyGo はパソコンのスマホ側アプリです — チャット・コンテンツ・ファイル・ターミナル・ナレッジ・AI はすべてそのパソコンで動きます。Mac / Windows PC に EnvoyMesh を入れて QR を読み取るか、家族のホームの招待で参加できます（PC へのインストール不要）。';
 
   @override
   String get pairingDownloadEnvoyMesh => 'EnvoyMesh デスクトップ版ダウンロード';
@@ -4112,6 +4105,13 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get setupGuidePhoneOnlyBody =>
       '端末のチャットと発見にはソーシャルを開けます。EnvoyMesh を入れたら「自分」からいつでもペアリングできます。';
+
+  @override
+  String get setupGuideNoHomeTitle => 'あとでペアリングしても大丈夫です';
+
+  @override
+  String get setupGuideNoHomeBody =>
+      '今は続けて、あとから「自分」→「ペアリング」でいつでも設定できます。チャット・コンテンツ・ファイル・ターミナル・AI はすべてパソコンで動くため、それらの画面では先にペアリングを求められます。';
 
   @override
   String get setupGuidePairCta => '今すぐペアリング';

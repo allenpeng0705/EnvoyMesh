@@ -8,6 +8,7 @@ import '../../knowledge/knowledge_plugins_panel.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
+import '../../widgets/pair_required_panel.dart';
 import '../../screens/chat/chat_detail_screen.dart';
 import '../../widgets/connection_indicator.dart';
 import 'knowledge_library_screen.dart';
@@ -400,35 +401,8 @@ class _KnowledgeNeedsHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.menu_book_outlined, size: 64, color: scheme.outline),
-            const SizedBox(height: 16),
-            Text(
-              l10n.knowledgePairTitle,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              l10n.knowledgePairHint,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
+    // Vault notes and Ask run on the home node: same pairing panel as the rest.
+    return const PairRequiredPanel(icon: Icons.menu_book_outlined);
   }
 }
 

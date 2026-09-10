@@ -186,12 +186,6 @@ abstract class AppLocalizations {
   /// **'Switch Social identity to a paired home computer for this feature. On this phone supports chats, contacts, and discover.'**
   String get socialHomeOnlyBody;
 
-  /// No description provided for @socialPhoneMeshForegroundHint.
-  ///
-  /// In en, this message translates to:
-  /// **'Phone mesh is on while EnvoyGo is open — used for On this phone chats and unpaired Discover.'**
-  String get socialPhoneMeshForegroundHint;
-
   /// No description provided for @socialPhoneMeshStarting.
   ///
   /// In en, this message translates to:
@@ -1229,18 +1223,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your vault knowledge base — notes under notes/ power EnvoyAI. Documents stay as originals.'**
   String get knowledgeLede;
-
-  /// No description provided for @knowledgePairTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Pair to use Knowledge'**
-  String get knowledgePairTitle;
-
-  /// No description provided for @knowledgePairHint.
-  ///
-  /// In en, this message translates to:
-  /// **'Your vault notes and Ask run on the home node. Pair with EnvoyMesh first, then come back here.'**
-  String get knowledgePairHint;
 
   /// No description provided for @knowledgePanelBrowse.
   ///
@@ -3245,6 +3227,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Setting up your own home? Install EnvoyMesh on a Mac or Windows PC first, then scan its QR. Joining family? Scan their invite — no PC install needed.'**
   String get pairingNeedHomeHint;
+
+  /// No description provided for @pairRequiredBody.
+  ///
+  /// In en, this message translates to:
+  /// **'EnvoyGo is the phone companion for your computer — chat, content, files, terminal, knowledge and AI all run there. Install EnvoyMesh on a Mac or Windows PC and scan its QR, or join a family home with their invite (no PC install needed).'**
+  String get pairRequiredBody;
 
   /// No description provided for @pairingDownloadEnvoyMesh.
   ///
@@ -7625,6 +7613,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You can still open Social for phone chats and Discover. Pair later anytime from Me when you have EnvoyMesh installed.'**
   String get setupGuidePhoneOnlyBody;
+
+  /// No description provided for @setupGuideNoHomeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pairing later is fine'**
+  String get setupGuideNoHomeTitle;
+
+  /// No description provided for @setupGuideNoHomeBody.
+  ///
+  /// In en, this message translates to:
+  /// **'You can continue now and pair any time from Me → Pair. Chat, content, files, terminal and AI all run on your computer, so those screens will ask you to pair first.'**
+  String get setupGuideNoHomeBody;
 
   /// No description provided for @setupGuidePairCta.
   ///

@@ -50,10 +50,6 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 기능을 쓰려면 페어링된 홈 컴퓨터로 전환하세요. 이 휴대폰에서는 채팅, 연락처, 탐색을 사용할 수 있습니다.';
 
   @override
-  String get socialPhoneMeshForegroundHint =>
-      'EnvoyGo가 열려 있는 동안 휴대폰 메시가 동작합니다 — 이 휴대폰 채팅과 미페어링 탐색에 사용됩니다.';
-
-  @override
   String get socialPhoneMeshStarting => '휴대폰 메시 시작 중…';
 
   @override
@@ -593,13 +589,6 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get knowledgeLede =>
       '볼트 지식 베이스 — notes/의 노트가 EnvoyAI를 구동합니다. 문서는 원본 그대로 유지됩니다.';
-
-  @override
-  String get knowledgePairTitle => '페어링 후 지식 사용';
-
-  @override
-  String get knowledgePairHint =>
-      '노트와 Ask는 홈 노드에서 실행됩니다. 먼저 EnvoyMesh와 페어링한 뒤 여기로 돌아오세요.';
 
   @override
   String get knowledgePanelBrowse => '탐색';
@@ -1664,6 +1653,10 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get pairingNeedHomeHint =>
       '직접 홈을 만드시나요? 먼저 Mac/Windows PC에 EnvoyMesh를 설치한 뒤 QR을 스캔하세요. 가족에 참여하시나요? 초대 QR만 스캔하면 됩니다(PC 설치 불필요).';
+
+  @override
+  String get pairRequiredBody =>
+      'EnvoyGo는 컴퓨터의 휴대용 동반 앱입니다 — 채팅, 콘텐츠, 파일, 터미널, 지식, AI가 모두 그 컴퓨터에서 실행됩니다. Mac 또는 Windows PC에 EnvoyMesh를 설치하고 QR을 스캔하거나, 가족 홈의 초대로 참여하세요(PC 설치 불필요).';
 
   @override
   String get pairingDownloadEnvoyMesh => 'EnvoyMesh 데스크톱 다운로드';
@@ -4110,6 +4103,13 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get setupGuidePhoneOnlyBody =>
       '휴대폰 채팅과 탐색을 위해 소셜을 열 수 있습니다. EnvoyMesh를 설치한 뒤 나에서 언제든 페어링하세요.';
+
+  @override
+  String get setupGuideNoHomeTitle => '나중에 페어링해도 됩니다';
+
+  @override
+  String get setupGuideNoHomeBody =>
+      '지금 계속하고 나 → 페어링에서 언제든 페어링할 수 있습니다. 채팅, 콘텐츠, 파일, 터미널, AI는 모두 컴퓨터에서 실행되므로 해당 화면은 먼저 페어링을 요청합니다.';
 
   @override
   String get setupGuidePairCta => '지금 페어링';

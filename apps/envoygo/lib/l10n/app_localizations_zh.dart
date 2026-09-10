@@ -48,10 +48,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get socialHomeOnlyBody => '请切换到已配对的家庭电脑以使用此功能。本机支持聊天、联系人与探索。';
 
   @override
-  String get socialPhoneMeshForegroundHint =>
-      'EnvoyGo 打开时本机 mesh 保持运行 — 用于本机聊天与未配对时的探索。';
-
-  @override
   String get socialPhoneMeshStarting => '正在启动本机 mesh…';
 
   @override
@@ -587,12 +583,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get knowledgeLede => '本地知识库 — notes/ 下的笔记供 EnvoyAI 使用。文档原件保留。';
-
-  @override
-  String get knowledgePairTitle => '配对后使用知识库';
-
-  @override
-  String get knowledgePairHint => '笔记库和提问在家庭节点上运行。请先与 EnvoyMesh 配对，然后再回到这里。';
 
   @override
   String get knowledgePanelBrowse => '浏览';
@@ -1649,6 +1639,10 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get pairingNeedHomeHint =>
       '要建立自己的家庭节点？请先在 Mac 或 Windows 电脑上下载安装 EnvoyMesh，再扫描其二维码。加入家人？直接扫描他们的邀请码即可，手机无需安装电脑版。';
+
+  @override
+  String get pairRequiredBody =>
+      'EnvoyGo 是电脑的随身端——聊天、内容、文件、终端、知识库与 AI 都在那台电脑上运行。请在 Mac 或 Windows 电脑上安装 EnvoyMesh 并扫描其二维码；也可以直接用家人的邀请加入（无需安装电脑端）。';
 
   @override
   String get pairingDownloadEnvoyMesh => 'EnvoyMesh 电脑版下载';
@@ -4067,10 +4061,17 @@ class AppLocalizationsZh extends AppLocalizations {
       '仍可打开社交进行本机聊天与探索。安装 EnvoyMesh 后，随时可在「我」中配对。';
 
   @override
+  String get setupGuideNoHomeTitle => '稍后配对也可以';
+
+  @override
+  String get setupGuideNoHomeBody =>
+      '现在可以先继续，随时在「我」→「配对」中完成配对。聊天、内容、文件、终端与 AI 都在你的电脑上运行，因此这些页面会先提示你配对。';
+
+  @override
   String get setupGuidePairCta => '立即配对';
 
   @override
-  String get setupGuidePairLaterCta => '稍后配对';
+  String get setupGuidePairLaterCta => '暂不配对';
 
   @override
   String get setupGuideSkipCta => '先看看';

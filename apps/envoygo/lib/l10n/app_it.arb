@@ -260,6 +260,7 @@
   "pairingPasteUri": "Oppure incolla URI di associazione",
   "pairingUriHint": "envoy://pair?… o envoy://invite?…",
   "pairingNeedHomeHint": "Configuri la tua casa? Installa prima EnvoyMesh su un Mac o PC Windows, poi scansiona il QR. Entri in famiglia? Scansiona il loro invito — nessuna installazione sul PC necessaria.",
+  "pairRequiredBody": "EnvoyGo è il compagno mobile del tuo computer: chat, contenuti, file, terminale, conoscenza e IA girano lì. Installa EnvoyMesh su Mac o PC Windows e scansiona il QR, oppure unisciti a una casa famiglia con il suo invito (nessuna installazione su PC).",
   "pairingDownloadEnvoyMesh": "Download EnvoyMesh per computer",
   "pairingJoinFamily": "Unisciti alla famiglia",
   "pairingConnectTo": "Connettersi a {name}?",
@@ -838,8 +839,6 @@
   "contentKnowledge": "Conoscenza",
   "knowledgeTitle": "Conoscenza",
   "knowledgeLede": "La tua base di conoscenza del vault — le note in notes/ alimentano EnvoyAI. I documenti restano in originale.",
-  "knowledgePairTitle": "Associa per usare Knowledge",
-  "knowledgePairHint": "Note e Ask girano sul nodo home. Associa prima EnvoyMesh, poi torna qui.",
   "knowledgePanelBrowse": "Esplora",
   "knowledgePanelAsk": "Chiedi",
   "knowledgePanelPlugins": "Plugin",
@@ -903,7 +902,7 @@
   "knowledgeSetupReindexConfirm": "Ricostruire l'indice vettoriale del vault sul nodo di casa?",
   "knowledgeSetupTestEmbedding": "Testa embedding",
   "knowledgeSetupTestEmbeddingBusy": "Test…",
-  "knowledgeSetupTestEmbeddingOk": "Embedding OK — {dimensions} dims in {latencyMs} ms",
+  "knowledgeSetupTestEmbeddingOk": "Embedding completato — {dimensions} dimensioni in {latencyMs} ms",
   "@knowledgeSetupTestEmbeddingOk": {
     "placeholders": {
       "dimensions": {
@@ -1404,7 +1403,6 @@
   "socialContextNoHome": "Nessuna casa associata — associa un computer per usare Social Casa.",
   "socialHomeOnlyTitle": "Disponibile su Casa",
   "socialHomeOnlyBody": "Passa l’identità Social a un computer home associato. Su questo telefono: chat, contatti e scopri.",
-  "socialPhoneMeshForegroundHint": "Il mesh del telefono è attivo mentre EnvoyGo è aperto — per chat su questo telefono e Scopri senza associazione.",
   "socialPhoneMeshStarting": "Avvio del mesh telefono…",
   "crossPersonaSuggestionsTitle": "Conoscerli anche su questo telefono?",
   "crossPersonaSuggestionsSubtitle": "Persone già legate su Casa. Dire Ciao avvia un legame separato su questo telefono — le chat restano separate.",
@@ -1451,6 +1449,8 @@
   "setupGuideStep5Body": "A fine associazione, Social mostra chat e contenuti Casa. L’icona nuvola diventa connesso quando il nodo home è online.",
   "setupGuidePhoneOnlyTitle": "Usare EnvoyGo senza casa",
   "setupGuidePhoneOnlyBody": "Puoi aprire Social per chat telefono e Scopri. Associa più tardi da Io quando EnvoyMesh è installato.",
+  "setupGuideNoHomeTitle": "Associare più tardi va bene",
+  "setupGuideNoHomeBody": "Puoi continuare ora e associare quando vuoi da Io → Associa. Chat, contenuti, file, terminale e IA girano sul tuo computer, quindi quelle schermate ti chiederanno prima di associare.",
   "setupGuidePairCta": "Associa ora",
   "setupGuidePairLaterCta": "Associa più tardi",
   "setupGuideSkipCta": "Esplora prima",

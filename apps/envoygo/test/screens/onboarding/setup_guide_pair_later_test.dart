@@ -1,6 +1,8 @@
 import 'package:envoygo/l10n/app_localizations.dart';
 import 'package:envoygo/screens/onboarding/setup_guide_screen.dart';
+import 'package:envoygo/services/feature_flags.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,11 +16,20 @@ void main() {
     l10n = await AppLocalizations.delegate.load(const Locale('en'));
   });
 
-  Widget wrap(Widget child) => MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        locale: const Locale('en'),
-        home: child,
+  // The guide reads the mobile-node flag for its bottom card, so it needs a
+  // ProviderScope (and a deterministic flag value: off = unpaired mode).
+  Widget wrap(Widget child) => ProviderScope(
+        overrides: [
+          featureFlagsProvider.overrideWith(
+            (ref) => FeatureFlagsNotifier.withInitial(FeatureFlags()),
+          ),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: const Locale('en'),
+          home: child,
+        ),
       );
 
   testWidgets('gate mode calls onPairLater instead of closing the route',

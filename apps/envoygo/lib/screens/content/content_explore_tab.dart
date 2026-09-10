@@ -59,6 +59,13 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   @override
   void initState() {
     super.initState();
+    // With no home node and the mobile node off, Discover cannot search at all:
+    // never restore last session's people (they would look like live results).
+    if (!ref.read(mobileNodeEnabledProvider) &&
+        ref.read(nodeProvider).activeNode == null) {
+      PeopleSessionCache.clear();
+      return;
+    }
     if (PeopleSessionCache.hasResults) {
       _hadCacheOnMount = true;
       _mode = PeopleSessionCache.mode == PeopleSearchModeCache.interest

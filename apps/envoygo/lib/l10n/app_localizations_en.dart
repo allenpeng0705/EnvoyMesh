@@ -51,10 +51,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Switch Social identity to a paired home computer for this feature. On this phone supports chats, contacts, and discover.';
 
   @override
-  String get socialPhoneMeshForegroundHint =>
-      'Phone mesh is on while EnvoyGo is open — used for On this phone chats and unpaired Discover.';
-
-  @override
   String get socialPhoneMeshStarting => 'Starting phone mesh…';
 
   @override
@@ -611,13 +607,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get knowledgeLede =>
       'Your vault knowledge base — notes under notes/ power EnvoyAI. Documents stay as originals.';
-
-  @override
-  String get knowledgePairTitle => 'Pair to use Knowledge';
-
-  @override
-  String get knowledgePairHint =>
-      'Your vault notes and Ask run on the home node. Pair with EnvoyMesh first, then come back here.';
 
   @override
   String get knowledgePanelBrowse => 'Browse';
@@ -1713,6 +1702,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get pairingNeedHomeHint =>
       'Setting up your own home? Install EnvoyMesh on a Mac or Windows PC first, then scan its QR. Joining family? Scan their invite — no PC install needed.';
+
+  @override
+  String get pairRequiredBody =>
+      'EnvoyGo is the phone companion for your computer — chat, content, files, terminal, knowledge and AI all run there. Install EnvoyMesh on a Mac or Windows PC and scan its QR, or join a family home with their invite (no PC install needed).';
 
   @override
   String get pairingDownloadEnvoyMesh => 'EnvoyMesh desktop downloads';
@@ -4221,6 +4214,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get setupGuidePhoneOnlyBody =>
       'You can still open Social for phone chats and Discover. Pair later anytime from Me when you have EnvoyMesh installed.';
+
+  @override
+  String get setupGuideNoHomeTitle => 'Pairing later is fine';
+
+  @override
+  String get setupGuideNoHomeBody =>
+      'You can continue now and pair any time from Me → Pair. Chat, content, files, terminal and AI all run on your computer, so those screens will ask you to pair first.';
 
   @override
   String get setupGuidePairCta => 'Pair now';

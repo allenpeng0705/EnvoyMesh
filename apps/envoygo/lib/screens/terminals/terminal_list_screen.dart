@@ -5,6 +5,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/chat_thread.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../widgets/pair_required_panel.dart';
 import '../../providers/terminal_provider.dart';
 import '../../utils/localized_labels.dart';
 import '../../widgets/connection_indicator.dart';
@@ -169,6 +170,9 @@ class _EmptyTerminals extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    // No home node: the whole tab runs on the computer, so show the shared
+    // pairing panel rather than an empty list with a hint.
+    if (!hasHome) return const PairRequiredPanel(icon: Icons.terminal);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -186,7 +190,7 @@ class _EmptyTerminals extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              hasHome ? l10n.termEmptyHint : l10n.pairingNeedHomeHint,
+              l10n.termEmptyHint,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),

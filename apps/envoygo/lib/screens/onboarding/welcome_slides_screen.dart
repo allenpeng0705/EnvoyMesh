@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/onboarding_preferences.dart';
 import '../../theme/app_theme.dart';
-import 'setup_guide_screen.dart';
 
 /// First-launch carousel introducing EnvoyGo, EnvoyMesh, and pairing.
 class WelcomeSlidesScreen extends StatefulWidget {
@@ -42,8 +41,10 @@ class _WelcomeSlidesScreenState extends State<WelcomeSlidesScreen> {
     setState(() => _finishing = true);
     await OnboardingPreferences.setSlidesCompleted();
     if (!mounted) return;
-    await showSetupGuide(context, isFirstLaunch: true);
-    if (!mounted) return;
+    // Routing belongs to AppEntry: it decides between the pairing gate, the
+    // profile step and the app shell. Pushing the guide from here too used to
+    // stack two copies (tap "Explore first" → flash → the same page again with
+    // "Pair later").
     widget.onFinished();
   }
 

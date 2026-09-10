@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants/envoy_links.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/feature_flags.dart';
 import '../../services/onboarding_preferences.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/open_external_url.dart';
@@ -11,7 +13,7 @@ import '../pairing/pairing_scan_screen.dart';
 ///
 /// Shown automatically after welcome slides on first launch, and anytime
 /// via the info icon ([showSetupGuide]).
-class SetupGuideScreen extends StatefulWidget {
+class SetupGuideScreen extends ConsumerStatefulWidget {
   const SetupGuideScreen({
     super.key,
     this.isFirstLaunch = false,
@@ -31,10 +33,10 @@ class SetupGuideScreen extends StatefulWidget {
   final VoidCallback? onPairLater;
 
   @override
-  State<SetupGuideScreen> createState() => _SetupGuideScreenState();
+  ConsumerState<SetupGuideScreen> createState() => _SetupGuideScreenState();
 }
 
-class _SetupGuideScreenState extends State<SetupGuideScreen> {
+class _SetupGuideScreenState extends ConsumerState<SetupGuideScreen> {
   bool _closing = false;
 
   Future<void> _markCompleteIfNeeded() async {
@@ -82,6 +84,7 @@ class _SetupGuideScreenState extends State<SetupGuideScreen> {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final mobileNodeEnabled = ref.watch(mobileNodeEnabledProvider);
 
     return PopScope(
       canPop: false,
@@ -198,12 +201,18 @@ class _SetupGuideScreenState extends State<SetupGuideScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            l10n.setupGuidePhoneOnlyTitle,
+                            // With the mobile node off there is no unpaired
+                            // mode: never promise phone chats / Discover here.
+                            mobileNodeEnabled
+                                ? l10n.setupGuidePhoneOnlyTitle
+                                : l10n.setupGuideNoHomeTitle,
                             style: text.titleSmall,
                           ),
                           const SizedBox(height: AppTheme.sm),
                           Text(
-                            l10n.setupGuidePhoneOnlyBody,
+                            mobileNodeEnabled
+                                ? l10n.setupGuidePhoneOnlyBody
+                                : l10n.setupGuideNoHomeBody,
                             style: text.bodyMedium?.copyWith(
                               color: scheme.onSurfaceVariant,
                               height: 1.4,
