@@ -1882,6 +1882,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get peopleNoneFound => 'メッシュ上に公開プロフィールの人はまだいません。';
 
   @override
+  String get peopleSearchReportHint => '近く・インターネット・リレーを検索しました。';
+
+  @override
+  String get peopleSearchRelayUnreachable =>
+      'リレーが応答しませんでした — ネットワークで遮断されているか、相手の端末がオフラインの可能性があります。';
+
+  @override
   String get peopleHelloMessage => 'こんにちは — Envoy でつながりたいです。';
 
   @override
@@ -1979,6 +1986,12 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get profileBio => '自己紹介';
+
+  @override
+  String get profileHobbiesHint => '例：料理、ハイキング';
+
+  @override
+  String get profileKnowledgeHint => '例：家庭内ネットワーク';
 
   @override
   String get profileBioHint => '連絡先が識別できるよう短い自己紹介を追加してください。';
@@ -4009,6 +4022,23 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get setupGuideTitle => 'EnvoyGo の使い方';
+
+  @override
+  String get onboardingProfileTitle => 'プロフィールを設定';
+
+  @override
+  String get onboardingProfileLede =>
+      '名前と興味は、他の人があなたを見つける手がかりです — 近くでもインターネット越しでも。あとから「Me → プロフィールを編集」で変更できます。';
+
+  @override
+  String get onboardingProfileInterestsHint => '興味をいくつか追加してください — 相手はこれで検索します。';
+
+  @override
+  String get onboardingProfileSkipHint =>
+      'スキップできます。興味を追加するまで、他の人はトピックではなくネットワークアドレスでしかこの端末を見つけられません。';
+
+  @override
+  String get onboardingProfileNameRequired => '表示名を入力するか、スキップしてください。';
 
   @override
   String get setupGuideIntro =>

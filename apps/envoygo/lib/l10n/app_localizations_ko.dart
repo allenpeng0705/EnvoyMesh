@@ -1882,6 +1882,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get peopleNoneFound => '메시에서 공개된 사람을 아직 찾지 못했습니다.';
 
   @override
+  String get peopleSearchReportHint => '주변, 인터넷, 릴레이를 모두 검색했습니다.';
+
+  @override
+  String get peopleSearchRelayUnreachable =>
+      '릴레이가 응답하지 않았습니다 — 네트워크에서 차단되었거나 상대 기기가 오프라인일 수 있습니다.';
+
+  @override
   String get peopleHelloMessage => '안녕하세요 — Envoy에서 연결하고 싶습니다.';
 
   @override
@@ -1979,6 +1986,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get profileBio => '소개';
+
+  @override
+  String get profileHobbiesHint => '예: 요리, 등산';
+
+  @override
+  String get profileKnowledgeHint => '예: 홈 네트워킹';
 
   @override
   String get profileBioHint => '연락처가 알아볼 수 있도록 짧은 소개를 추가하세요.';
@@ -4006,6 +4019,24 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get setupGuideTitle => 'EnvoyGo 사용 방법';
+
+  @override
+  String get onboardingProfileTitle => '프로필 설정';
+
+  @override
+  String get onboardingProfileLede =>
+      '이름과 관심사는 다른 사람이 나를 찾는 방법입니다 — 근처에서도, 인터넷에서도. 언제든 Me → 프로필 편집에서 변경할 수 있습니다.';
+
+  @override
+  String get onboardingProfileInterestsHint =>
+      '관심사를 몇 개 추가하세요 — 다른 사람이 이 항목으로 검색합니다.';
+
+  @override
+  String get onboardingProfileSkipHint =>
+      '건너뛸 수 있습니다. 관심사를 추가하기 전까지 다른 사람은 주제가 아니라 네트워크 주소로만 이 휴대폰을 찾을 수 있습니다.';
+
+  @override
+  String get onboardingProfileNameRequired => '표시 이름을 입력하거나 건너뛰세요.';
 
   @override
   String get setupGuideIntro =>

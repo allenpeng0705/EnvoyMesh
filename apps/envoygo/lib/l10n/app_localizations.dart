@@ -3660,6 +3660,18 @@ abstract class AppLocalizations {
   /// **'No public people found on the mesh yet.'**
   String get peopleNoneFound;
 
+  /// No description provided for @peopleSearchReportHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Searched nearby, the internet, and the relays.'**
+  String get peopleSearchReportHint;
+
+  /// No description provided for @peopleSearchRelayUnreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'The relays did not answer — this network may block them, or the other device is offline.'**
+  String get peopleSearchRelayUnreachable;
+
   /// No description provided for @peopleHelloMessage.
   ///
   /// In en, this message translates to:
@@ -3833,6 +3845,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Bio'**
   String get profileBio;
+
+  /// No description provided for @profileHobbiesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. cooking, hiking'**
+  String get profileHobbiesHint;
+
+  /// No description provided for @profileKnowledgeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. home networking'**
+  String get profileKnowledgeHint;
 
   /// No description provided for @profileBioHint.
   ///
@@ -7445,6 +7469,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'How EnvoyGo works'**
   String get setupGuideTitle;
+
+  /// No description provided for @onboardingProfileTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up your profile'**
+  String get onboardingProfileTitle;
+
+  /// No description provided for @onboardingProfileLede.
+  ///
+  /// In en, this message translates to:
+  /// **'Your name and interests are how other people find you — nearby and over the internet. You can change this any time in Me → Edit profile.'**
+  String get onboardingProfileLede;
+
+  /// No description provided for @onboardingProfileInterestsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a few interests — peers search for these.'**
+  String get onboardingProfileInterestsHint;
+
+  /// No description provided for @onboardingProfileSkipHint.
+  ///
+  /// In en, this message translates to:
+  /// **'You can skip this. Until you add interests, others can only find this phone by its network address, not by topic.'**
+  String get onboardingProfileSkipHint;
+
+  /// No description provided for @onboardingProfileNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please add a display name, or skip for now.'**
+  String get onboardingProfileNameRequired;
 
   /// No description provided for @setupGuideIntro.
   ///

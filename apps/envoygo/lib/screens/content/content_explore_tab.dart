@@ -18,6 +18,7 @@ import '../../services/parse_public_blog_index.dart';
 import '../../services/people_session_cache.dart';
 import '../../widgets/cross_persona_suggestions_section.dart';
 import '../browser/browser_screen.dart';
+import '../profile/profile_screen.dart';
 
 const _sampleCap = 20;
 const _phoneSampleTimeout = Duration(seconds: 30);
@@ -184,6 +185,47 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     return out.take(_sampleCap).toList();
   }
 
+  /// Plain-language headline for a phone empty search, plus the per-plane
+  /// developer detail (which discovery leg answered). Without it an empty
+  /// Discover cannot be told apart from "the phone never queried anything".
+  String _phoneEmptyHeadline(AppLocalizations l10n) {
+    final report = _lastSearchReport;
+    if (report == null) return l10n.peopleNoneFound;
+    final relay = report['relay'] ?? 0;
+    final relays = report['relaysConfigured'] ?? 0;
+    final relaysDead = relays is int && relays > 0 && relay == 0;
+    return relaysDead
+        ? '${l10n.peopleNoneFound}\n${l10n.peopleSearchRelayUnreachable}'
+        : '${l10n.peopleNoneFound}\n${l10n.peopleSearchReportHint}';
+  }
+
+  /// Most recent per-plane search report from the phone discovery session.
+  Map<String, Object?>? get _lastSearchReport {
+    final backend = ref.read(socialBackendProvider);
+    if (backend is! PhoneSocialBackend) return null;
+    return backend.lastWanSearchReport;
+  }
+
+  /// True when the phone persona has never saved a profile: nothing but the
+  /// broad `mesh.discovery` capability is advertised, so interest search cannot
+  /// match this device and the empty state should offer the fix.
+  bool get _phoneProfileMissing {
+    final backend = ref.read(socialBackendProvider);
+    return backend is PhoneSocialBackend && !backend.hasProfile;
+  }
+
+  /// `lan=0 dht=0 relay=1 relays=2 queries=3` — developer detail, shown muted.
+  String? get _lastSearchReportDetail {
+    final report = _lastSearchReport;
+    if (report == null) return null;
+    final lan = report['lan'] ?? 0;
+    final dht = report['dht'] ?? 0;
+    final relay = report['relay'] ?? 0;
+    final relays = report['relaysConfigured'] ?? 0;
+    final queries = report['queries'] ?? 0;
+    return 'lan=$lan dht=$dht relay=$relay relays=$relays queries=$queries';
+  }
+
   /// Wait until phone WAN discovery attaches (`wanSearch`), or [maxWait] elapses.
   ///
   /// Discover samples often raced session start and got local-only empties
@@ -325,7 +367,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
           } else if (!discoveryReady) {
             _error = AppLocalizations.of(context).phoneMeshDescOffline;
           } else {
-            _error = AppLocalizations.of(context).peopleNoneFound;
+            _error = _phoneEmptyHeadline(AppLocalizations.of(context));
           }
         });
         _persistSession();
@@ -474,7 +516,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
           _results = filtered;
           _fromSample = false;
           _searching = false;
-          _error = filtered.isEmpty ? l10n.peopleNoneFound : null;
+          _error = filtered.isEmpty ? _phoneEmptyHeadline(l10n) : null;
         });
         _persistSession();
       } catch (e) {
@@ -1057,6 +1099,33 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
             ),
+            if (_results.isEmpty && _lastSearchReportDetail != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  // Developer detail last (AGENTS.md: headline for the user,
+                  // verbose block for the developer) — a bug report can quote it.
+                  _lastSearchReportDetail!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+            if (_results.isEmpty && _phoneProfileMissing)
+              // Interests are the discovery vocabulary: without them nobody can
+              // find this phone by topic, so offer the fix right where it bites.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const ProfileScreen(startInEditMode: true),
+                    ),
+                  ),
+                  child: Text(l10n.meEditProfile),
+                ),
+              ),
           ],
           const SizedBox(height: 16),
           Text(

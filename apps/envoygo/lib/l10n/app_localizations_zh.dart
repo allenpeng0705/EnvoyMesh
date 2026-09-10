@@ -1865,6 +1865,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peopleNoneFound => '网络上还没有公开的用户。';
 
   @override
+  String get peopleSearchReportHint => '已搜索附近、互联网和中继节点。';
+
+  @override
+  String get peopleSearchRelayUnreachable => '中继节点没有响应——可能被网络拦截，或对方设备不在线。';
+
+  @override
   String get peopleHelloMessage => '你好 — 我想在 Envoy 上建立联系。';
 
   @override
@@ -1962,6 +1968,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get profileBio => '简介';
+
+  @override
+  String get profileHobbiesHint => '例如：烹饪、徒步';
+
+  @override
+  String get profileKnowledgeHint => '例如：家庭网络';
 
   @override
   String get profileBioHint => '添加简短简介，方便联系人认出你。';
@@ -3965,6 +3977,23 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get setupGuideTitle => 'EnvoyGo 使用说明';
+
+  @override
+  String get onboardingProfileTitle => '设置你的资料';
+
+  @override
+  String get onboardingProfileLede =>
+      '你的名字和兴趣是别人找到你的方式——无论在附近还是通过互联网。之后可在「我 → 编辑资料」中修改。';
+
+  @override
+  String get onboardingProfileInterestsHint => '添加几个兴趣——其他人会按这些来搜索。';
+
+  @override
+  String get onboardingProfileSkipHint =>
+      '可以跳过。在添加兴趣之前，别人只能通过网络地址找到这台手机，无法按主题找到。';
+
+  @override
+  String get onboardingProfileNameRequired => '请填写显示名称，或选择跳过。';
 
   @override
   String get setupGuideIntro =>

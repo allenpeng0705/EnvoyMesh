@@ -85,6 +85,23 @@ class PhoneSocialBackend implements SocialBackend {
     return _store.bonds.values.toList(growable: false);
   }
 
+  /// Per-plane result of the most recent WAN/LAN search.
+  ///
+  /// Set by the discovery session so the UI can explain an empty result
+  /// ("LAN 0 · internet 0 · relay unreachable") instead of just "nobody found".
+  Map<String, Object?>? lastWanSearchReport;
+
+  /// Record the outcome of one WAN/LAN search (called by the discovery session).
+  void noteWanSearchReport(Map<String, Object?> report) {
+    lastWanSearchReport = report;
+  }
+
+  /// True once the user has actually saved a profile on this phone.
+  ///
+  /// [getHumanProfile] returns a display default ('EnvoyGo') when the store is
+  /// empty, so callers that want to prompt for setup must use this flag.
+  bool get hasProfile => _store.profile.isNotEmpty;
+
   @override
   Future<Map<String, dynamic>?> getHumanProfile() async {
     if (_store.profile.isEmpty) {

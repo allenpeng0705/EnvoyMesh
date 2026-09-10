@@ -1965,6 +1965,14 @@ class AppLocalizationsDe extends AppLocalizations {
       'Noch keine öffentlichen Personen im Mesh gefunden.';
 
   @override
+  String get peopleSearchReportHint =>
+      'In der Nähe, im Internet und über Relays gesucht.';
+
+  @override
+  String get peopleSearchRelayUnreachable =>
+      'Die Relays haben nicht geantwortet — das Netzwerk blockiert sie möglicherweise, oder das andere Gerät ist offline.';
+
+  @override
   String get peopleHelloMessage =>
       'Hallo — ich möchte mich auf Envoy verbinden.';
 
@@ -2067,6 +2075,12 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get profileBio => 'Bio';
+
+  @override
+  String get profileHobbiesHint => 'z. B. Kochen, Wandern';
+
+  @override
+  String get profileKnowledgeHint => 'z. B. Heimnetzwerk';
 
   @override
   String get profileBioHint =>
@@ -4162,6 +4176,25 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get setupGuideTitle => 'So funktioniert EnvoyGo';
+
+  @override
+  String get onboardingProfileTitle => 'Profil einrichten';
+
+  @override
+  String get onboardingProfileLede =>
+      'Name und Interessen sind es, worüber andere Sie finden — in der Nähe und über das Internet. Jederzeit änderbar unter Me → Profil bearbeiten.';
+
+  @override
+  String get onboardingProfileInterestsHint =>
+      'Fügen Sie einige Interessen hinzu — danach suchen andere.';
+
+  @override
+  String get onboardingProfileSkipHint =>
+      'Sie können überspringen. Solange keine Interessen hinterlegt sind, ist dieses Telefon nur über seine Netzwerkadresse auffindbar, nicht über Themen.';
+
+  @override
+  String get onboardingProfileNameRequired =>
+      'Bitte einen Anzeigenamen angeben oder überspringen.';
 
   @override
   String get setupGuideIntro =>

@@ -1965,6 +1965,14 @@ class AppLocalizationsFr extends AppLocalizations {
   String get peopleNoneFound => 'Aucune personne publique trouvée sur le mesh.';
 
   @override
+  String get peopleSearchReportHint =>
+      'Recherche effectuée en local, sur Internet et via les relais.';
+
+  @override
+  String get peopleSearchRelayUnreachable =>
+      'Les relais n’ont pas répondu — le réseau les bloque peut-être, ou l’autre appareil est hors ligne.';
+
+  @override
   String get peopleHelloMessage =>
       'Bonjour — j\'aimerais me connecter sur Envoy.';
 
@@ -2066,6 +2074,12 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get profileBio => 'Bio';
+
+  @override
+  String get profileHobbiesHint => 'ex. cuisine, randonnée';
+
+  @override
+  String get profileKnowledgeHint => 'ex. réseau domestique';
 
   @override
   String get profileBioHint =>
@@ -4168,6 +4182,25 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get setupGuideTitle => 'Comment EnvoyGo fonctionne';
+
+  @override
+  String get onboardingProfileTitle => 'Configurez votre profil';
+
+  @override
+  String get onboardingProfileLede =>
+      'Votre nom et vos centres d’intérêt permettent aux autres de vous trouver — à proximité comme sur Internet. Modifiable à tout moment dans Me → Modifier le profil.';
+
+  @override
+  String get onboardingProfileInterestsHint =>
+      'Ajoutez quelques centres d’intérêt — les autres les recherchent.';
+
+  @override
+  String get onboardingProfileSkipHint =>
+      'Vous pouvez passer. Tant qu’aucun centre d’intérêt n’est ajouté, les autres ne peuvent trouver ce téléphone que par son adresse réseau, pas par thème.';
+
+  @override
+  String get onboardingProfileNameRequired =>
+      'Ajoutez un nom d’affichage, ou passez cette étape.';
 
   @override
   String get setupGuideIntro =>

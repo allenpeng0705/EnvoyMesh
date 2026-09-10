@@ -280,6 +280,15 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
     final parts = await Future.wait([dhtFuture, relayFuture]);
     final dhtHits = parts[0];
     final relayHits = parts[1];
+    // Diagnostics: which plane answered, so an empty Discover can say why.
+    _backend.noteWanSearchReport({
+      'lan': lanHits.length,
+      'dht': dhtHits.length,
+      'relay': relayHits.length,
+      'relaysConfigured': _relayBootstrapAddrs.length,
+      'queries': queries.length,
+      'at': DateTime.now().toUtc().toIso8601String(),
+    });
 
     final merged = PhoneDiscoveryRuntime.mergeHits(
       [...lanHits, ...dhtHits, ...relayHits],

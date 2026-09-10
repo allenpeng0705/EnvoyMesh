@@ -10,6 +10,8 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart'
     show contactProvider, nodeServiceProvider;
 import '../../providers/node_provider.dart';
+import '../../providers/social_context_provider.dart'
+    show phoneSocialBackendProvider, socialContextProvider;
 import '../../services/library_read_cache.dart';
 import '../../services/vault_content_fetch.dart';
 
@@ -48,15 +50,57 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _displayNameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
   final _bioCtrl = TextEditingController();
+  final _interestCtrl = TextEditingController();
+  final _knowledgeCtrl = TextEditingController();
   XFile? _pendingAvatar;
+
+  /// Published discovery interests. Without these the phone advertises only the
+  /// broad `mesh.discovery` capability, so nobody can find it by interest.
+  List<String> _hobbies = const [];
+  List<String> _knowledge = const [];
 
   final _avatarKey = GlobalKey<_ProfileAvatarHostState>();
 
+  /// Unpaired/phone persona: the profile lives on this phone, not on a home node.
+  bool get _isPhonePersona => ref.read(socialContextProvider).isPhone;
+
   bool get _isSelf {
-    final self = ref.read(nodeProvider).ownerId?.trim();
     final target = widget.ownerId?.trim();
     if (target == null || target.isEmpty) return true;
+    final self = _isPhonePersona
+        ? ref.read(phoneSocialBackendProvider)?.ownerId.trim()
+        : ref.read(nodeProvider).ownerId?.trim();
     return self != null && self == target;
+  }
+
+  static List<String> _stringList(Object? raw) => raw is List
+      ? raw
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList(growable: false)
+      : const <String>[];
+
+  void _addInterest({required bool knowledge}) {
+    final value = _interestCtrl.text.trim();
+    if (value.isEmpty) return;
+    setState(() {
+      if (knowledge) {
+        if (!_knowledge.contains(value)) _knowledge = [..._knowledge, value];
+      } else if (!_hobbies.contains(value)) {
+        _hobbies = [..._hobbies, value];
+      }
+      _interestCtrl.clear();
+    });
+  }
+
+  void _removeInterest({required bool knowledge, required String value}) {
+    setState(() {
+      if (knowledge) {
+        _knowledge = _knowledge.where((e) => e != value).toList();
+      } else {
+        _hobbies = _hobbies.where((e) => e != value).toList();
+      }
+    });
   }
 
   @override
@@ -71,10 +115,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _displayNameCtrl.dispose();
     _usernameCtrl.dispose();
     _bioCtrl.dispose();
+    _interestCtrl.dispose();
+    _knowledgeCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _load({bool bypassVaultCache = false}) async {
+    // Phone persona (unpaired): the profile is stored on this phone and drives
+    // phone-mesh discovery advertising — it must be editable without a home.
+    if (_isPhonePersona && _isSelf) {
+      await _loadPhoneSelf();
+      return;
+    }
     final client = ref.read(nodeServiceProvider);
     if (client == null) {
       setState(() {
@@ -354,9 +406,54 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return 'image/jpeg';
   }
 
+  /// Load the phone persona's own profile (no home node required).
+  Future<void> _loadPhoneSelf() async {
+    final backend = ref.read(phoneSocialBackendProvider);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    if (backend == null) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = AppLocalizations.of(context).commonNotConnectedHome;
+      });
+      return;
+    }
+    Map<String, dynamic> profile = const {};
+    try {
+      profile = await backend.getHumanProfile() ?? const {};
+    } catch (_) {
+      /* fall through to the "not set up yet" state */
+    }
+    // An unsaved profile comes back with a display default — keep the fields
+    // empty so setup reads as setup, not as an already-chosen name.
+    final saved = backend.hasProfile;
+    final displayName =
+        saved ? (profile['displayName'] as String?)?.trim() ?? '' : '';
+    final username =
+        saved ? (profile['username'] as String?)?.trim() ?? '' : '';
+    final bio = saved ? (profile['bio'] as String?)?.trim() ?? '' : '';
+    if (!mounted) return;
+    setState(() {
+      _ownerId = backend.ownerId;
+      _displayName = displayName;
+      _username = username;
+      _bio = bio;
+      _hobbies = _stringList(profile['hobbies']);
+      _knowledge = _stringList(profile['knowledge']);
+      _displayNameCtrl.text = displayName;
+      _usernameCtrl.text = username;
+      _bioCtrl.text = bio;
+      _thumbBytes = null;
+      _gallery = const [];
+      _loading = false;
+    });
+  }
+
   Future<void> _save() async {
-    final client = ref.read(nodeServiceProvider);
-    if (client == null) return;
+    final isPhone = _isPhonePersona;
     final displayName = _displayNameCtrl.text.trim();
     final username = _usernameCtrl.text.trim();
     if (displayName.isEmpty && username.isEmpty) {
@@ -370,6 +467,37 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _error = null;
     });
     try {
+      if (isPhone) {
+        // Phone persona: persist locally and let the next checkin advertise
+        // these interests (computePhoneDiscoveryTopics reads this profile).
+        final backend = ref.read(phoneSocialBackendProvider);
+        if (backend == null) {
+          throw StateError('Phone profile storage is unavailable');
+        }
+        await backend.updateHumanProfile({
+          if (displayName.isNotEmpty) 'displayName': displayName,
+          if (username.isNotEmpty) 'username': username,
+          'bio': _bioCtrl.text,
+          'hobbies': _hobbies,
+          'knowledge': _knowledge,
+          'profileVisibility': 'public',
+        });
+        _pendingAvatar = null;
+        if (!mounted) return;
+        setState(() => _editing = false);
+        await _load();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).profileSaved)),
+        );
+        return;
+      }
+      // Home persona from here on: needs the home node RPC client.
+      final client = ref.read(nodeServiceProvider);
+      if (client == null) {
+        if (mounted) setState(() => _saving = false);
+        return;
+      }
       String? avatarVaultPath;
       if (_pendingAvatar != null) {
         final bytes = await _pendingAvatar!.readAsBytes();
@@ -403,6 +531,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         if (displayName.isNotEmpty) 'displayName': displayName,
         if (username.isNotEmpty) 'username': username,
         'bio': _bioCtrl.text,
+        'hobbies': _hobbies,
+        'knowledge': _knowledge,
       });
       await client.syncProfileToBonds();
       _pendingAvatar = null;
@@ -612,6 +742,40 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       maxLines: 4,
                       minLines: 3,
                     ),
+                    const SizedBox(height: 16),
+                    // Interests are what peers search for: each entry is
+                    // published as an `interest:<slug>` topic (phone mesh and
+                    // home node alike), so an empty list means nobody can find
+                    // this profile by topic.
+                    Text(
+                      l10n.peopleInterest,
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    _InterestEditor(
+                      values: _hobbies,
+                      hint: l10n.profileHobbiesHint,
+                      onAdd: () => _addInterest(knowledge: false),
+                      onRemove: (v) =>
+                          _removeInterest(knowledge: false, value: v),
+                      controller: _interestCtrl,
+                      addLabel: l10n.commonAdd,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      l10n.contentKnowledge,
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    _InterestEditor(
+                      values: _knowledge,
+                      hint: l10n.profileKnowledgeHint,
+                      onAdd: () => _addInterest(knowledge: true),
+                      onRemove: (v) =>
+                          _removeInterest(knowledge: true, value: v),
+                      controller: _knowledgeCtrl,
+                      addLabel: l10n.commonAdd,
+                    ),
                   ] else ...[
                     Text(
                       _displayName.isNotEmpty ? _displayName : l10n.profileUnnamed,
@@ -620,6 +784,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             letterSpacing: -0.3,
                           ),
                     ),
+                    if (_hobbies.isNotEmpty || _knowledge.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final v in [..._hobbies, ..._knowledge])
+                            Chip(
+                              label: Text(v),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                        ],
+                      ),
+                    ],
                     if (_username.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -798,6 +976,69 @@ class _ProfileAvatarHostState extends State<_ProfileAvatarHost> {
           fontSize: widget.radius * 0.7,
         ),
       ),
+    );
+  }
+}
+
+
+/// Chip list + input for profile interests (hobbies / knowledge).
+class _InterestEditor extends StatelessWidget {
+  const _InterestEditor({
+    required this.values,
+    required this.hint,
+    required this.onAdd,
+    required this.onRemove,
+    required this.controller,
+    required this.addLabel,
+  });
+
+  final List<String> values;
+  final String hint;
+  final VoidCallback onAdd;
+  final void Function(String value) onRemove;
+  final TextEditingController controller;
+  final String addLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (values.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final v in values)
+                  InputChip(
+                    label: Text(v),
+                    visualDensity: VisualDensity.compact,
+                    onDeleted: () => onRemove(v),
+                  ),
+              ],
+            ),
+          ),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  hintText: hint,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => onAdd(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(onPressed: onAdd, child: Text(addLabel)),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -1943,6 +1943,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peopleNoneFound => 'No public people found on the mesh yet.';
 
   @override
+  String get peopleSearchReportHint =>
+      'Searched nearby, the internet, and the relays.';
+
+  @override
+  String get peopleSearchRelayUnreachable =>
+      'The relays did not answer — this network may block them, or the other device is offline.';
+
+  @override
   String get peopleHelloMessage => 'Hi — I\'d like to connect on Envoy.';
 
   @override
@@ -2041,6 +2049,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profileBio => 'Bio';
+
+  @override
+  String get profileHobbiesHint => 'e.g. cooking, hiking';
+
+  @override
+  String get profileKnowledgeHint => 'e.g. home networking';
 
   @override
   String get profileBioHint => 'Add a short bio so contacts recognize you.';
@@ -4115,6 +4129,25 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupGuideTitle => 'How EnvoyGo works';
+
+  @override
+  String get onboardingProfileTitle => 'Set up your profile';
+
+  @override
+  String get onboardingProfileLede =>
+      'Your name and interests are how other people find you — nearby and over the internet. You can change this any time in Me → Edit profile.';
+
+  @override
+  String get onboardingProfileInterestsHint =>
+      'Add a few interests — peers search for these.';
+
+  @override
+  String get onboardingProfileSkipHint =>
+      'You can skip this. Until you add interests, others can only find this phone by its network address, not by topic.';
+
+  @override
+  String get onboardingProfileNameRequired =>
+      'Please add a display name, or skip for now.';
 
   @override
   String get setupGuideIntro =>
