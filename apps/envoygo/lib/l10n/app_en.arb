@@ -2086,6 +2086,8 @@
   "phoneMeshDescConnectedDiscovering": "Phone mesh is running and advertising so others can find you on this phone.",
   "phoneMeshDescConnecting": "Starting phone mesh… This may take a moment.",
   "phoneMeshDescOffline": "Phone mesh is not ready yet.",
+  "phoneMeshRetryNow": "Retry now",
+  "phoneMeshLanHint": "Nearby (same Wi-Fi) discovery is off — on iPhone allow Local Network in Settings → EnvoyGo. Searching over the internet still works.",
   "phoneMeshDescErrorGeneric": "Phone mesh hit a problem. Try leaving Social and coming back, or restart the app.",
   "phoneMeshDescError": "Phone mesh error: {error}",
   "@phoneMeshDescError": {

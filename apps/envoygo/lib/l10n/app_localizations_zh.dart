@@ -4058,6 +4058,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get phoneMeshDescOffline => '本机 mesh 尚未就绪。';
 
   @override
+  String get phoneMeshRetryNow => '立即重试';
+
+  @override
+  String get phoneMeshLanHint =>
+      '同一 Wi‑Fi 的附近发现已关闭 — iPhone 请在 设置 → EnvoyGo 中允许“本地网络”。通过互联网搜索仍可使用。';
+
+  @override
   String get phoneMeshDescErrorGeneric => '本机 mesh 出现问题。可先离开社交再返回，或重启应用。';
 
   @override

@@ -1449,6 +1449,8 @@
   "phoneMeshDescConnectedDiscovering": "端末メッシュが動作し広告中です。他の人がこの端末上のあなたを見つけられます。",
   "phoneMeshDescConnecting": "端末メッシュを起動中… 少々お待ちください。",
   "phoneMeshDescOffline": "端末メッシュはまだ準備できていません。",
+  "phoneMeshRetryNow": "今すぐ再試行",
+  "phoneMeshLanHint": "同じ Wi‑Fi の近くの検出がオフです — iPhone では 設定 → EnvoyGo で「ローカルネットワーク」を許可してください。インターネット経由の検索は利用できます。",
   "phoneMeshDescErrorGeneric": "端末メッシュで問題が発生しました。ソーシャルをいったん離れて戻るか、アプリを再起動してください。",
   "phoneMeshDescError": "端末メッシュエラー: {error}"
 }

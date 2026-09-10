@@ -4213,6 +4213,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get phoneMeshDescOffline => 'Phone mesh is not ready yet.';
 
   @override
+  String get phoneMeshRetryNow => 'Retry now';
+
+  @override
+  String get phoneMeshLanHint =>
+      'Nearby (same Wi-Fi) discovery is off — on iPhone allow Local Network in Settings → EnvoyGo. Searching over the internet still works.';
+
+  @override
   String get phoneMeshDescErrorGeneric =>
       'Phone mesh hit a problem. Try leaving Social and coming back, or restart the app.';
 

@@ -1,11 +1,75 @@
 # EnvoyMesh — Dedicated Coding Tab Design
 
-**Status:** Reviewed design (not yet implemented)  
+**Status:** Design locked for review — **not implemented** (do not build until explicitly asked to execute)  
 **Date:** 2026-09-10  
 **Audience:** Product + engineering  
-**Related:** [product_intro.md](product_intro.md), Paseo research (paseo.sh / `../paseo`), Ext Agent presets in `packages/api/src/ext-agent.ts`
 
-This document is the durable reference for introducing a first-class **Coding** top-level tab. It supersedes the working Cursor plan for day-to-day reading; update this file when decisions change.
+**This file is the single source of truth** for the Coding tab product + UI/UX design (Social and EnvoyGo). All decisions from design discussions live here. Cursor plan files are short pointers only — update **this** document when anything changes.
+
+**Related (context only, not Coding IA):** [product_intro.md](product_intro.md) · Ext Agent presets [`packages/api/src/ext-agent.ts`](packages/api/src/ext-agent.ts)
+
+### Contents
+
+1. [Why this design](#why-this-design) — problem, goals, Paseo website + source
+2. [Decisions locked](#0-decisions-locked)
+3. [Product thesis](#1-product-thesis) · [Paseo providers](#1b-what-paseo-supports-reference)
+4. [Information architecture](#2-information-architecture) — nav order, object/status model
+5. [Social UI detail](#3-detailed-ui--social-desktop--tauri)
+6. [EnvoyGo UI detail](#3b-detailed-ui--envoygo-flutter)
+7. [Shared contract](#3c-shared-contract-both-clients)
+8. [Home-link transports](#3d-home-link-transports-envoygo--home-node-only) — IP:port / SSH add-ons
+9. [Provider tiers](#4-provider-tiers-unified-coding-ux)
+10. [Boundaries](#5-boundaries) · [Mesh differentiator](#5b-mesh-differentiator-must-not-stay-vapor) · [Backend](#6-backend--data)
+11. [Phases](#7-migration-sequence) · [Non-goals](#9-non-goals-v1) · [NFRs](#9b-nfrs--test-plan-design-requirements) · [Success](#10-success-criteria)
+12. [Touchpoints](#11-implementation-touchpoints-when-building) · [Review](#12-design-review-notes) · [Open items](#13-open-items-do-not-block-c0-if-0-accepted) · [Checklist](#14-encapsulation-checklist)
+
+---
+
+## Why this design
+
+### The problem in EnvoyMesh today
+
+Coding work is scattered across the wrong surfaces:
+
+- **Chat** hosts a “Coding” section (Pi, Envoy Harness threads) next to people and EnvoyAI — Social [`ChatSidebar.tsx`](apps/social/src/components/views/ChatSidebar.tsx) and EnvoyGo [`chat_list_screen.dart`](apps/envoygo/lib/screens/chat/chat_list_screen.dart).
+- **Terminal** also offers Pi / Envoy TUI create paths — Social [`TerminalSidebar.tsx`](apps/social/src/components/terminals/TerminalSidebar.tsx), EnvoyGo [`terminal_create_actions.dart`](apps/envoygo/lib/screens/terminals/terminal_create_actions.dart).
+- **Settings / Ext Agent** hold Claude Code, Codex, Cursor, and other CLIs under a different IA.
+- Contact chat can bridge Ext Agents again.
+
+Users cannot run a coherent “fix this bug in this repo” loop in one place. Phone and desktop do not share a clear “continue the same coding session” story. Chat becomes noisy; Terminal becomes a junk drawer for coding agents.
+
+### What we want
+
+1. A dedicated **Coding** tab — the home-node control plane for **repo / workspace coding**.
+2. **One UI** for every first-class coding harness (adapter changes; chrome does not).
+3. **Chat** = people + EnvoyAI (and general assistants). **Terminal** = shell PTY only. **Coding** = Pi, Envoy Harness, Claude Code, Codex, OpenCode, Cursor, DeepSeek harness, …
+4. **EnvoyGo** as a thin remote of the **same** home sessions (list → resume), not a second agent runtime.
+5. Keep EnvoyMesh strengths: local-first home node, family/coding gates, **Envoy Harness** mesh/review, bonds — not a hosted coding SaaS.
+
+### Why we referenced Paseo
+
+[Paseo](https://www.paseo.sh) is a strong product proof of “daemon on the computer + phone/desktop as remote control for coding agents.” We studied it so EnvoyMesh Coding can match the **patterns that work** (workspace container, status-first session list, resume on mobile, multi-provider switcher, composer tracks, inline permissions) without cloning Paseo’s brand, stack, or entire ACP catalog.
+
+We are **not** building a Paseo fork. We map lessons onto EnvoyMesh’s Social + EnvoyGo + home-node JSON-RPC model.
+
+### Paseo references (website + source)
+
+| Kind | Path / URL |
+|------|------------|
+| **Product site** | [https://www.paseo.sh](https://www.paseo.sh) |
+| **Supported providers (docs)** | [https://www.paseo.sh/docs/supported-providers](https://www.paseo.sh/docs/supported-providers) |
+| **Local checkout (sibling of EnvoyMesh)** | [`../paseo`](../paseo) → `/Users/shileipeng/Documents/mygithub/paseo` |
+| **Public docs in repo** | [`../paseo/public-docs/`](../paseo/public-docs/) — especially [`supported-providers.md`](../paseo/public-docs/supported-providers.md), [`workspaces.md`](../paseo/public-docs/workspaces.md), [`connectivity.md`](../paseo/public-docs/connectivity.md), [`why.md`](../paseo/public-docs/why.md) |
+| **Mobile / desktop app UI** | [`../paseo/packages/app/`](../paseo/packages/app/) — session list, composer tracks, status dots, mobile panels |
+| **Daemon / server** | [`../paseo/packages/server/`](../paseo/packages/server/) |
+| **Protocol** | [`../paseo/packages/protocol/`](../paseo/packages/protocol/) |
+| **Repo README** | [`../paseo/README.md`](../paseo/README.md) |
+
+**Patterns we take from Paseo:** project → workspace → agent session; status-first list; phone opens **existing** home sessions; composer tracks; permission container; harness fixed at create; optional **direct host / Tailscale** for home link (SSH is Desktop/CLI in Paseo — we match that).
+
+**Patterns we keep EnvoyMesh-native:** Envoy Harness + mesh (§5b); Chat vs Coding vs Terminal; family `CODING_GATED_RPC`; phone mesh libp2p; global Terminal for shells only.
+
+Detail on providers and mobile UX continues in §1b and §§3–3b.
 
 ---
 
@@ -13,16 +77,41 @@ This document is the durable reference for introducing a first-class **Coding** 
 
 | Decision | Choice |
 |----------|--------|
-| Ship clients | **Social/desktop (+ Tauri) and EnvoyGo** both get Coding — same IA. Desktop may land first in the repo, but EnvoyGo is **not** an afterthought: remove Pi/EH from EnvoyGo Chat and ship a dedicated Coding tab |
+| **Canonical doc** | **This file only** — `product_coding_tab_design.md` encapsulates the full Coding tab design |
+| **Implement when** | Design/plan first; **no implementation** until product explicitly asks to execute |
+| Ship clients | **Social/desktop (+ Tauri) and EnvoyGo** both get Coding — same IA |
 | Chat keeps | **EnvoyAI** (OpenClaw) + human chats only for AI — **no Coding section** on Social **or EnvoyGo** |
-| Chat loses | Entire Coding section; Pi and Envoy Harness threads **move into Coding** (desktop + phone) |
-| Terminal stays | **General-purpose shell PTY only** (ops, servers, logs, Terminal Agent `/goal`) on desktop + EnvoyGo |
-| Terminal loses | **Pi and Envoy Harness** — no Pi/EH create buttons, no Pi/EH TUI sessions in Terminal; those are **Coding harnesses only** |
-| Coding UI | **One unified chrome** for every coding harness (stream adapter only changes) |
-| Mobile UX reference | **Paseo mobile app** — especially workspace/agent list that **loads and resumes existing coding sessions** on the home daemon |
-| Coding engines (first-class) | **Pi, Envoy Harness, Claude Code, Codex, OpenCode, Cursor, DeepSeek harness** — same Coding UX |
-| Not Coding engines | HomeClaw / Hermes / OpenHuman (general assistants); EnvoyAI stays in Chat |
-| Long tail | Optional later ACP-style catalog (Paseo has 30+); **not** required to ship Coding tab, but design allows expansion |
+| Chat loses | Entire Coding section; Pi and Envoy Harness threads **move into Coding** |
+| Terminal stays | **Shell PTY only** (ops, servers, logs, Terminal Agent `/goal`) |
+| Terminal loses | **Pi and Envoy Harness** — but **only after** Coding hosts a working replacement (see strip gate below) |
+| Coding UI | **One unified chrome** for stream-based harnesses; harness **immutable per session** (switcher is create/draft only) |
+| Social nav order | `Social \| Coding \| Knowledge \| Terminal \| Team jobs \| Settings` (copy matches `nav.chains` = “Team jobs”) |
+| Social Inbox | **Icon + badge only** (no text label); keep `aria-label` / `title` |
+| EnvoyGo nav | **Per-profile visible-tab list** (not index arithmetic). Owner: Social, Coding, Knowledge, Terminal, Me. Family+coding: Chats, Coding, Me. Family−coding: Chats, Me |
+| Mobile UX reference | **Paseo** — list/resume ([paseo.sh](https://www.paseo.sh) + [`../paseo`](../paseo)); patterns only unless NOTICE’d Apache-2.0 copy |
+| **Code reuse from Paseo** | **No code copy in v1** — patterns/IA only; if later copying Apache-2.0 code, add NOTICE + compliance review |
+| Coding engines (first-class) | **Pi, Envoy Harness, Claude Code, Codex, OpenCode, Cursor, DeepSeek = CodeWhale** (`codewhale`) |
+| Not Coding engines | HomeClaw / Hermes / OpenHuman; EnvoyAI stays in Chat; Copilot = Tier C later (Paseo built-in, not ACP catalog) |
+| Home ↔ phone link | Default relay/LAN/WS; **C1c:** manual `host:port` + document VPN/Tailscale; **SSH = desktop/CLI only** (not EnvoyGo) |
+| Phone mesh | Always **libp2p + relay** |
+| **IDs** | Home **`chatId` / `sessionId` canonical**; client thread keys are adapters only (`__envoy_harness__:<id>` vs `<nodeId>:eh:<id>`) |
+| **Timeline contract** | **Promote** [`EhTimelineUpdate`](packages/api/src/eh-timeline.ts) / `reduceEhTimeline` / revision (generalize naming later); add `sinceRevision` on history fetch |
+| **Status UI buckets** | Derive from `EhAgentStateName` + pending permission + `eh:files_changed` (not a parallel enum) |
+| **Workspaces** | **Promote** [`EhChatWorkspaceSummary`](packages/api/src/eh-chat-workspace.ts) (+ `projectId` / isolation / status); do not invent a parallel store in C1 |
+| **Phone Pi** | No Pi agent timeline today. **C1b:** EH stream under Coding. **Pi:** transitional `sessionKind: tui` **inside Coding** (wrap `ensurePiTerminalSession`) until **C2 Pi timeline** mirrors `eh:*`; then deprecate TUI-in-Coding |
+| **Strip gate** | Must not remove Chat/Terminal Pi/EH until Coding can open the same sessions (provisional map + no-orphan + read-only legacy fallback). Live `role: pi\|envoy-harness` PTYs = **C1 blocker** |
+| **Turn ownership** | **Home node owns the turn**; cross-client via `eh:prompt_busy` + turn queue (generalize `useEhTurnQueue` / EnvoyGo `EhTurnQueue`); define queue vs interrupt |
+| Cap | Keep [`MAX_ENVOY_HARNESS_CHATS = 5`](packages/api/src/eh-chat-workspace.ts) for C1; document; raise later with server-side concurrent-session caps |
+| Long tail | Optional later ACP catalog; **not** required to ship Coding tab |
+
+### Scope decisions locked after DeepSeek review (2026-09-10)
+
+| # | Topic | Decision |
+|---|--------|----------|
+| 1 | Phone Pi | Transitional TUI-in-Coding until C2 Pi timeline; never leave phone with no Pi after Terminal strip |
+| 2 | Timeline / workspace | Rebase on EH timeline + `EhChatWorkspaceSummary`; promote, don’t invent |
+| 3 | Removal order | Strip Chat/Terminal only with provisional mapping + orphan check + live-PTY migration |
+| 4 | §3d transports | EnvoyGo: `host:port` + VPN/Tailscale docs; SSH desktop/CLI only |
 
 ---
 
@@ -38,14 +127,7 @@ This document is the durable reference for introducing a first-class **Coding** 
 
 ### Why (pain today)
 
-Coding is fragmented across:
-
-- Chat sidebar “Coding” (Pi, Envoy Harness threads) — Social [`ChatSidebar.tsx`](apps/social/src/components/views/ChatSidebar.tsx) and EnvoyGo chat list / AI rows
-- Terminal (Pi TUI, EH TUI, shell) — Social [`TerminalSidebar.tsx`](apps/social/src/components/terminals/TerminalSidebar.tsx) / EnvoyGo [`terminal_create_actions.dart`](apps/envoygo/lib/screens/terminals/terminal_create_actions.dart)
-- Settings Ext Agent (Claude Code, Codex, Cursor, …)
-- Contact chat Ext Agent bridge
-
-Users cannot run a full “fix bug in this repo” loop in one place. When Coding ships: **Chat’s Coding section is removed**; **Terminal loses Pi / Envoy create and sessions**; Pi and Envoy Harness live **only under Coding** (unified with Claude Code, Codex, OpenCode, Cursor, DeepSeek, …). Terminal remains for plain shells.
+See **Why this design** (top). Summary: coding is split across Chat, Terminal, and Ext Agent settings — this tab consolidates it.
 
 ### EnvoyMesh vs Paseo
 
@@ -53,9 +135,9 @@ Take from Paseo: workspace container, session tabs, diff rail, composer tracks, 
 
 Differentiate:
 
-- **Envoy Harness** as mesh-aware / review / team engine (EHUI, turn review, peer pool) — Paseo has no equivalent
-- **Approvals / bonds / family coding gate** in the same permission UX
-- Keep a **global Terminal** tab for **shells only** (Paseo folds terminal inside workspaces; we keep a separate tab but **without** coding harnesses)
+- **Envoy Harness** mesh/peer-pool/bonds/trust — Paseo has subagents/review orchestration but not Envoy mesh semantics; cash differentiator via §5b
+- **Approvals / bonds / family coding gate** (`CODING_GATED_RPC` + family profiles)
+- Global Terminal tab for **shells only**
 
 “Better than Paseo” means measurable UX, not a clone:
 
@@ -69,38 +151,44 @@ Differentiate:
 
 ## 1b. What Paseo supports (reference)
 
-Source: [paseo.sh/docs/supported-providers](https://www.paseo.sh/docs/supported-providers) and `../paseo/public-docs/supported-providers.md` (as of 2026-09).
+Sources (read at Paseo `d7c7044df` / ~v0.8.0, 2026-09-10): [paseo.sh/docs/supported-providers](https://www.paseo.sh/docs/supported-providers), [`../paseo/public-docs/`](../paseo/public-docs/), [`../paseo/packages/protocol/src/provider-manifest.ts`](../paseo/packages/protocol/src/provider-manifest.ts), ACP catalog metadata (e.g. CodeWhale). Public marketing docs are incomplete — **prefer the protocol manifest + catalog**.
 
-### Paseo — Native (out of the box once CLI installed)
+### Paseo — Native (built-in; 6, not 4)
 
-| Provider | Notes |
-|----------|--------|
-| **Claude Code** | Anthropic coding agent |
-| **Codex** | OpenAI workspace agent |
-| **OpenCode** | Open-source multi-provider assistant |
-| **Pi** | Minimal terminal coding agent |
+| Id | Notes |
+|----|--------|
+| `claude` | Claude Code |
+| `codex` | OpenAI Codex |
+| `copilot` | GitHub Copilot — **built-in**, not ACP catalog |
+| `opencode` | OpenCode |
+| `pi` | Pi |
+| `omp` | Oh My Pi |
 
-### Paseo — ACP catalog (one-click install; long list)
+### Paseo — ACP catalog
 
-Includes among many others: **Cursor**, CodeWhale (**DeepSeek** V4 / open models), Gemini CLI, GitHub Copilot, Cline, Kimi Code, Qwen Code, goose, Amp, TRAE CLI, Hermes Agent, Aider-adjacent tools, etc. Full list is version-pinned in Paseo’s in-app catalog (~30+ entries).
+~**38** catalog entries (version-pinned in-repo). **GitHub Copilot is not in the catalog** (built-in). **Aider** is marketing-only, not a first-class catalog ship. DeepSeek-oriented entry: **`codewhale`** — “Terminal coding agent for DeepSeek V4 and open models” (`codewhale serve --acp`).
 
 ### EnvoyMesh Coding — target first-class set
 
-Align with Paseo’s **native** core, plus our mesh harness and the majors you called out:
-
 | EnvoyMesh Coding harness | Paseo analogue | EnvoyMesh today |
 |--------------------------|----------------|-----------------|
-| **Envoy Harness** | *(none — our differentiator)* | Built-in EH chat + TUI |
-| **Pi** | Native Pi | Pi RPC + Pi TUI + Ext Agent `:8022` |
-| **Claude Code** | Native Claude Code | Ext Agent `claudecode` `:8024` |
-| **Codex** | Native Codex | Ext Agent `codex` `:8023` |
-| **OpenCode** | Native OpenCode | **Add** Coding adapter |
+| **Envoy Harness** | No mesh/peer-pool/bonds equivalent (Paseo *does* have subagents / review-orchestration — do not overclaim “no review”) | Built-in EH chat + TUI + timeline |
+| **Pi** | Native `pi` | Pi TUI + `sendToPi` / proposals; **no** Pi timeline stream yet; `PiChatPanel` is dead |
+| **Claude Code** | Native `claude` | Ext Agent `claudecode` `:8024` |
+| **Codex** | Native `codex` | Ext Agent `codex` `:8023` |
+| **OpenCode** | Native `opencode` | **Add** Coding adapter |
 | **Cursor** | ACP: Cursor | Ext Agent `cursor` `:8025` |
-| **DeepSeek harness** | ACP: CodeWhale (DeepSeek-oriented) / or EH model | EH already runs DeepSeek **models**; add/choose a **DeepSeek coding CLI** (e.g. CodeWhale or vendor CLI) as a Coding harness when packaging — do not leave DeepSeek only as “pick model on EH” |
+| **DeepSeek / CodeWhale** | ACP: `codewhale` | Package/probe CodeWhale; EH may still use DeepSeek **models** |
 
-**All of the above use the same Coding tab UI/UX** (workspace, stream, composer, tracks, diff, permissions). Only the backend adapter differs.
+HEAD Ext Agent presets also include HomeClaw/Hermes/OpenHuman (Chat) and Aider/MMX (Tier C / later) — ports in [`ext-agent.ts`](packages/api/src/ext-agent.ts).
 
-**Expansion path (not blocking Coding ship):** a Paseo-like ACP / Ext Agent catalog for the long tail (Gemini, Copilot, Cline, Kimi, …) can plug into the same `CodingSession` contract later. v1 must not wait on wrapping every ACP entry.
+**Harness immutability:** provider is fixed at session **create** (Paseo-compatible). Composer chip does **not** mutate an in-flight session’s harness; it starts/focuses another session. Mode/model may change where the adapter allows.
+
+**Permissions UX:** Paseo stacks a permission **container above the composer**; plan cards can be inline. EnvoyMesh may keep EH docks + optional inline cards — claim “inline” as ours where we diverge.
+
+**Tracks:** “track” concept; pills = Tasks + Subagents; Queue is a composer lane (not a third pill by default).
+
+**Licence:** Paseo is Apache-2.0 — patterns OK; v1 = no code copy (see §0).
 
 ---
 
@@ -108,43 +196,64 @@ Align with Paseo’s **native** core, plus our mesh harness and the majors you c
 
 ### Top navigation
 
-**Social** today ([`Header.tsx`](apps/social/src/components/Header.tsx)): `Social | Terminal | Knowledge | Chains | Settings | Profile`  
-**Social** target: `Social | Coding | Terminal | Knowledge | Chains | Settings | Profile`
+**Social** today ([`Header.tsx`](apps/social/src/components/Header.tsx)): `Social | Terminal | Knowledge | Chains | Settings` (+ Inbox + Profile)  
+**Social** target:
 
-**EnvoyGo** owner today ([`owner_tabs.dart`](apps/envoygo/lib/navigation/owner_tabs.dart)): `Social | Terminal | Knowledge | Me`  
-**EnvoyGo** target: `Social | Coding | Terminal | Knowledge | Me` (Coding at index 1)
+```
+Social | Coding | Knowledge | Terminal | Team jobs | Settings
+```
 
-Add Social `ViewName` `"coding"`. Legacy `"pi"` alias may redirect to Coding (or Terminal if raw TUI was intended — default **Coding** for how-to CTAs). Screen-level layouts: §§3–3b.
+- **Inbox:** icon only (no visible text label); keep `aria-label` / `title` for accessibility (`nav.inbox`).
+- **Profile:** avatar control (unchanged).
+- **Team jobs** = existing Chains view (`ViewName "chains"`; `nav.chains` already “Team jobs”).
+
+**EnvoyGo** — use a **per-profile visible-tab list** (do not assume `isOwner ? tab : …` index math in [`home_screen.dart`](apps/envoygo/lib/screens/home_screen.dart)):
+
+| Profile | Tabs (order) |
+|---------|----------------|
+| Owner | Social, Coding, Knowledge, Terminal, Me |
+| Family + `codingEnabled` | Chats, Coding, Me |
+| Family − coding | Chats, Me |
+
+Persisted `selectedTab` must map by **tab id**, not raw index, when the list changes.
+
+Add Social `ViewName` `"coding"`. Legacy `"pi"` → Coding (how-to) or Terminal if shell-only CTA. Deep link: **in-page** `CustomEvent` `envoymesh:open-coding` (mirror `OPEN_TERMINAL_EVENT`) — not an OS/`envoy://` intent unless a later platform item adds it.
 
 ### Object model
 
 ```text
 Project (registered folder / git repo on home node)
- └── Workspace (one task: title + cwd + isolation)
-      ├── Agent session(s)   — harness profile + timeline
-      ├── Task shell (opt.)  — PTY bound to workspace cwd
-      ├── Changes / Diff     — uncommitted / turn review
-      └── (later) PR / worktree setup
+ └── Workspace (promote EhChatWorkspaceSummary + projectId)
+      ├── Agent session(s)   — harness fixed at create; timeline via EhTimeline*
+      ├── Task shell (opt.)  — plain PTY cwd = workspace
+      ├── Changes / Diff
+      └── (later) PR / worktree / mesh invite
 ```
 
 | Object | Meaning | Persistence note |
 |--------|---------|------------------|
-| **Project** | Absolute path on home | Unify EH project path + Ext Agent `projectPath` into one registry |
-| **Workspace** | One task under a project | `{ id, projectId, title, cwd, isolation: local\|worktree, createdAt }` |
-| **Session** | Runnable tab | EH `chatId`, Pi chat id, or Ext Agent conversation id mapped to `CodingSession` |
-| **Harness profile** | Provider + defaults | Built-in + curated; probe/install state |
+| **Project** | Absolute path on home | Unify EH + Ext Agent paths |
+| **Workspace** | One task under a project | **Promote** [`EhChatWorkspaceSummary`](packages/api/src/eh-chat-workspace.ts) `{ id: chatId, cwd, title, … }` + `projectId` / `isolation` / derived status |
+| **Session** | Runnable unit | Canonical id = **`chatId`** (EH) or future provider session id; Social thread key `__envoy_harness__:<chatId>`; EnvoyGo `<nodeId>:eh:<chatId>` — **adapters only** |
+| **Harness profile** | Provider + defaults | Immutable per session after create |
 
-**Isolation:** v1 = `local` only (shared checkout). `worktree` = later phase (needs git worktree + setup hooks).
+**Isolation:** v1 = `local` only. `worktree` = later.
 
-### Status model (workspace / session)
+### Status model (UI buckets — derived, not a second enum)
 
-| Status | Meaning | UI |
-|--------|---------|-----|
-| `idle` | No running turn | Quiet |
-| `running` | Agent turn in progress | Spinner / pulse |
-| `needs_you` | Permission, plan, or question waiting | Badge on workspace |
-| `ready_to_review` | Turn done with file changes | Distinct marker + open Changes |
-| `error` | Failed / disconnected | Error affordance |
+Home truth is [`EhAgentStateName`](packages/api/src/eh-timeline.ts) (11 states). Coding UI **derives** five sidebar buckets (Paseo-style), with an explicit ladder:
+
+| UI bucket | Derive from | Dot / a11y |
+|-----------|-------------|------------|
+| `needs_input` | `waiting_for_approval` \| `waiting_for_answer` (+ pending permission/question) | Amber + text “Needs you” |
+| `failed` | `failed` \| `cancelled` (policy: cancel may map idle) | Red + “Failed” |
+| `attention` | turn `completed` + outstanding file changes (`eh:files_changed` / change-set) | Green + “Ready to review” |
+| `running` | `submitting` \| `thinking` \| `running_tool` \| `verifying` \| `reconnecting` | Blue + “Working” |
+| `done` / quiet | `ready` \| `completed` with no pending review | Muted + “Idle” |
+
+Sidebar sort default: needs_input → failed → attention → running → done. Status must not be color-only (text or icon+label).
+
+Do **not** invent a parallel wire enum.
 
 ---
 
@@ -154,13 +263,14 @@ Project (registered folder / git repo on home node)
 
 | Today ([`Header.tsx`](apps/social/src/components/Header.tsx)) | Target |
 |--------------------------------------------------------------|--------|
-| Social \| Terminal \| Knowledge \| Chains \| Settings \| Profile | **Social \| Coding \| Terminal \| Knowledge \| Chains \| Settings \| Profile** |
+| Social \| Terminal \| Knowledge \| Team jobs \| Settings (+ Inbox w/ label + Profile) | **Social \| Coding \| Knowledge \| Terminal \| Team jobs \| Settings** (+ **Inbox icon-only** + Profile) |
 
 - Add `ViewName = "coding"` in [`App.tsx`](apps/social/src/App.tsx).
 - Header button `data-testid="nav-coding"`, label `nav.coding`.
-- Legacy `"pi"` deep links that meant “coding chat” → Coding; Terminal CTAs that meant raw TUI stay Terminal.
-- Keep-alive: same pattern as Terminal (`codingEverOpened` + hidden `main-view-slot`) so streams survive tab switches.
-
+- Order: Coding after Social; **Knowledge before Terminal**; Team jobs (`nav.chains`) after Terminal; Settings last among text tabs.
+- **Inbox:** icon + badge only — remove `header-inbox-label`; keep `aria-label` / `title`.
+- Deep link: in-page `CustomEvent` `envoymesh:open-coding` (not OS deep link unless later platform work).
+- Keep-alive: `codingEverOpened` + hidden slot like Terminal.
 Deep link: `envoymesh:open-coding` with optional `{ projectId?, workspaceId?, sessionId?, harness?, startNew? }` (mirror [`open-terminal-nav.ts`](apps/social/src/lib/open-terminal-nav.ts)).
 
 ### Three-pane layout (default ≥1100px)
@@ -207,7 +317,9 @@ Deep link: `envoymesh:open-coding` with optional `{ projectId?, workspaceId?, se
 | Composer | Harness chip (Tier A+B), attachments ([`AgentAttachmentComposerLeading`](apps/social/src/components/AgentAttachmentComposerLeading.tsx)), queue when busy ([`useEhTurnQueue`](apps/social/src/hooks/useEhTurnQueue.ts) generalized), Stop / Interrupt |
 | Tracks pills | Tasks · subagents · `+N −M` diff — tap opens rail or popover |
 
-**Harness switch:** changing chip mid-workspace starts or focuses a session for that harness — **outer chrome never swaps**. EH-only: optional EHUI rail segment in context (not a different page).
+**Harness create (not in-session mutate):** New session / draft flow picks harness. Changing chip mid-workspace **starts or focuses another session** — never mutates the current session’s provider. Outer chrome never swaps. EH-only: EHUI in context rail.
+
+**C1 adapters:** Rehost [`EnvoyHarnessPanel`](apps/social/src/components/views/EnvoyHarnessPanel.tsx). **Pi RPC panel is new** ([`PiChatPanel.tsx`](apps/social/src/components/views/PiChatPanel.tsx) is dead / unwired) — do not call it “rehost.” Until Pi timeline exists, Social may offer Pi as transitional TUI-under-Coding like EnvoyGo.
 
 ### Right rail — Context
 
@@ -234,7 +346,7 @@ Deep link: `envoymesh:open-coding` with optional `{ projectId?, workspaceId?, se
 | Shell | New `CodingView.tsx` |
 | Sidebar | New `CodingSidebar.tsx` (pattern: [`ChatSidebar`](apps/social/src/components/views/ChatSidebar.tsx) / [`TerminalSidebar`](apps/social/src/components/terminals/TerminalSidebar.tsx)) |
 | Session | New `CodingSessionPanel.tsx` wrapping adapters |
-| C1 adapters | Rehost [`EnvoyHarnessPanel`](apps/social/src/components/views/EnvoyHarnessPanel.tsx); Pi RPC panel (not TUI) |
+| C1 adapters | Rehost `EnvoyHarnessPanel`; **new** Pi path (dead `PiChatPanel` is not a rehost) |
 | Remove | Chat sidebar Coding section ([`ChatSidebar.tsx`](apps/social/src/components/views/ChatSidebar.tsx) ~Coding block); EH routing out of [`ChatView.tsx`](apps/social/src/components/views/ChatView.tsx) |
 
 ### Key Social flows
@@ -261,24 +373,22 @@ Migrate from Chat
 
 ## 3b. Detailed UI — EnvoyGo (Flutter)
 
-### Nav placement (locked)
+### Nav placement (locked — per-profile list)
 
-Owner bottom nav today ([`owner_tabs.dart`](apps/envoygo/lib/navigation/owner_tabs.dart) / [`home_screen.dart`](apps/envoygo/lib/screens/home_screen.dart)):
+Owner bottom nav today: `Social | Terminal | Knowledge | Me`
 
-```text
-Social | Terminal | Knowledge | Me
-```
+**Target visible tabs:**
 
-Target:
+| Profile | Tabs |
+|---------|------|
+| Owner | Social \| Coding \| Knowledge \| Terminal \| Me |
+| Family + coding | Chats \| Coding \| Me |
+| Family − coding | Chats \| Me |
 
-```text
-Social | Coding | Terminal | Knowledge | Me
-```
+Implement as an explicit tab-id list in [`home_screen.dart`](apps/envoygo/lib/screens/home_screen.dart) / [`owner_tabs.dart`](apps/envoygo/lib/navigation/owner_tabs.dart) — **do not** extend `isOwner ? maxTab : 1` index arithmetic (inserting Coding at index 1 breaks family routing and persisted `selectedTab`).
 
-- Insert `OwnerTabs.coding` at **index 1**; shift Terminal/Knowledge/Me.
-- Label: `navCoding` (“Coding”); icon: `Icons.code` or `Icons.integration_instructions_outlined` (match EH glyph).
-- **Family profile with `codingEnabled`:** show **Coding** tab (even if Terminal/Knowledge remain owner-only). Family without coding: no Coding tab.
-- Unpaired / no home: Coding tab visible for owners but body = pair CTA (`pairingNeedHomeHint` pattern).
+- Label: `navCoding`; icon: code / integration_instructions.
+- Unpaired / no home: Coding body = pair CTA.
 
 ### Screen hierarchy (single-pane)
 
@@ -345,19 +455,19 @@ Bottom: track pills (horizontal)
 | Changes | [`EhChangesBanner`](apps/envoygo/lib/widgets/eh/eh_changes_banner.dart) → [`eh_turn_review_sheet`](apps/envoygo/lib/widgets/eh/eh_turn_review_sheet.dart) |
 | Permissions | Bottom sheet actions; sticky until answered (Paseo) |
 | Keyboard | `resizeToAvoidBottomInset`; pills above IME |
-| Pi agent (C1b) | Coding session via Pi RPC adapter under Coding chrome — **not** Terminal |
-| Pi / EH TUI | **Removed from Terminal product UI** — do not offer in Terminal FAB / list |
+| Pi agent | **C2:** Pi timeline mirroring `eh:*`. **Until then:** Coding session `sessionKind: tui` wrapping `ensurePiTerminalSession` (not under Terminal tab) |
+| Pi / EH TUI in Terminal | Removed from Terminal **only after** Coding hosts replacements (strip gate §3c) |
 
 ### What moves out of Chat / Terminal vs stays
 
 | Surface | After Coding ships |
 |---------|-------------------|
-| Chat list “Coding” section (EH + Pi row) | **Removed** from [`chat_list_screen.dart`](apps/envoygo/lib/screens/chat/chat_list_screen.dart) |
-| EH chat threads | Live under **Coding** list only |
-| Pi / EH **TUI** create (Terminal FAB / empty: New Envoy, New Pi) | **Removed** from [`terminal_create_actions.dart`](apps/envoygo/lib/screens/terminals/terminal_create_actions.dart) / [`TerminalHomeScreen`](apps/envoygo/lib/screens/terminals/terminal_list_screen.dart) |
-| Terminal list rows with `role: pi` / `envoy-harness` | **Hidden or migrated** — do not show as Terminal sessions; open via Coding if still live |
+| Chat list “Coding” section (EH + Pi row) | **Removed** after Coding list shows same EH chats |
+| EH **chat** threads (`envoyHarness`) | Live under **Coding** only |
+| EH **TUI** threads (`ChatThreadType.terminal` + `role: envoy-harness`) | **Migrate/hide** from Terminal; open via Coding (prefer chat; TUI only if needed) |
+| Pi TUI (`role: pi`) | Move into Coding as transitional TUI session; strip Terminal FAB/empty |
 | Shell PTY + Terminal Agent | **Terminal only** |
-| Me → Coding agents settings | Keep [`PiSettingsScreen`](apps/envoygo/lib/screens/settings/pi_settings_screen.dart); point “Open Coding” |
+| Me → Coding agents settings | Keep; CTA “Open Coding” |
 
 ### EnvoyGo screen map
 
@@ -395,18 +505,56 @@ Match [`AppTheme`](apps/envoygo/lib/theme/app_theme.dart): Material 3, Inter, pr
 
 ## 3c. Shared contract (both clients)
 
-Both UIs bind to the **same** home-node objects and status enum (§2). Cross-client resume is a hard requirement.
+Both UIs bind the **same home `chatId`**. Cross-client resume is required. **Promote EH contracts** — do not invent a parallel timeline/store for C1.
 
-| UI need | RPC / events (target) | C1 interim |
-|---------|----------------------|------------|
-| List | `coding.listProjects` / `listWorkspaces` / `listSessions` | EH `listEnvoyHarnessChats` (+ Pi agent list if any) |
-| Start | `coding.startSession` | `createEnvoyHarnessChat` / Pi start |
-| Send / cancel | `coding.send` / `coding.cancel` | `startEnvoyHarnessTurn` / `cancelEnvoyHarnessTurn` |
-| Timeline | history + push | `getEnvoyHarnessChatHistory` + `eh:*` |
-| Permissions | respond RPCs | `ehRespondToPermission` / Pi proposal |
-| Diff / review | coding or EH review APIs | existing EH turn review |
+### Canonical IDs
 
-**IDs:** stable `projectId` / `workspaceId` / `sessionId` on home. Until C2, map `eh:{chatId}` → provisional workspace/session so phone and desktop already share threads.
+| Layer | Value |
+|-------|--------|
+| Home | `chatId` (= workspace/session id for EH) |
+| Social thread adapter | `__envoy_harness__:<chatId>` ([`envoyHarnessThreadKey`](packages/api/src/eh-chat-workspace.ts)) |
+| EnvoyGo thread adapter | `<nodeId>:eh:<chatId>` (`split(':eh:')`) |
+
+### Timeline (already exists)
+
+| Piece | Source |
+|-------|--------|
+| Items | `EhTimelineItem` = message / activity-group / approval / question / change-set / completion / error |
+| Wire | `EhTimelineSnapshot{revision}`, `EhTimelineUpdate{snapshot\|upsert\|remove\|state}` |
+| Reduce | `reduceEhTimeline()` — idempotent upserts; stale revisions ignored |
+| Push | `eh:timeline`, `eh:turn_started`, `eh:turn_token`, `eh:turn_complete`, `eh:permission`, `eh:user_question`, `eh:files_changed`, `eh:prompt_busy`, `eh:activity`, `eh:turn_hints`, … (**no** `eh:turn`) |
+
+**C1 deliverable:** clients consume EH timeline as today under Coding chrome. **C2:** add `sinceRevision` (or equivalent) to history fetch so phone reconnect does not re-download full transcripts; optionally rename types to drop `Eh` prefix behind a thin alias.
+
+### Workspaces
+
+**Promote** `EhChatWorkspaceSummary` + `MAX_ENVOY_HARNESS_CHATS = 5`. Add fields over time: `projectId`, `isolation`, derived UI bucket. Open item “workspace id scheme” → **reuse `chatId`**.
+
+### Turn ownership (multi-client)
+
+- **Home node owns the in-flight turn.**
+- Second client sees `eh:prompt_busy` / queue UI (Social `useEhTurnQueue`, EnvoyGo `EhTurnQueue`).
+- Policy: queue by default; explicit Interrupt/Stop cancels on home; no dual composers racing without busy signal.
+
+### RPC mapping
+
+| UI need | C1 (EH) | Later `coding.*` façade |
+|---------|---------|-------------------------|
+| List | `listEnvoyHarnessChats` | `coding.listSessions` → same store |
+| Start | `createEnvoyHarnessChat` | `coding.startSession` |
+| Send / cancel | `startEnvoyHarnessTurn` / `cancelEnvoyHarnessTurn` | `coding.send` / `coding.cancel` |
+| History | `getEnvoyHarnessChatHistory(chatId)` → add **`sinceRevision`** | same |
+| Permissions | `ehRespondToPermission` / user question | same |
+| Diff / review | existing EH turn review APIs | same |
+
+### Provisional mapping + strip gate (C1/C1b **exit criteria**)
+
+Before removing Chat Coding / Terminal Pi/EH:
+
+1. Map every EH chat + Pi/EH TUI session into Coding list (adapters above).
+2. **No-orphan check:** opening Coding can reach every previously listed coding thread.
+3. **Read-only legacy fallback** for one release if map misses.
+4. Live `role: pi` / `envoy-harness` PTYs: hide from Terminal **and** open under Coding (TUI-in-Coding for Pi; EH prefer chat session) — **C1 blocker** if in-flight sessions would strand.
 
 ```mermaid
 flowchart LR
@@ -415,55 +563,46 @@ flowchart LR
     EnvoyGo[EnvoyGo CodingHome]
   end
   subgraph home [Home node]
-    Registry[Workspace session registry]
-    Adapters[Harness adapters]
+    EhStore[EhChatWorkspaceSummary]
+    Timeline[EhTimelineUpdate revision]
+    Turn[Turn owner + prompt_busy]
   end
-  Social -->|JSON-RPC / events| Registry
-  EnvoyGo -->|JSON-RPC / events| Registry
-  Registry --> Adapters
+  Social -->|chatId adapters| EhStore
+  EnvoyGo -->|chatId adapters| EhStore
+  EhStore --> Timeline
+  Timeline --> Turn
 ```
 
 ---
 
 ## 3d. Home link transports (EnvoyGo ↔ home node only)
 
-**Decision: yes — support IP:port and SSH as optional add-ons for the EnvoyGo ↔ home-node pairing/connection.** They do **not** apply to mesh features that run on the phone.
+**Decision (corrected):** EnvoyGo home-link add-ons = **manual `host:port` WebSocket** + **document VPN/Tailscale**. **SSH is desktop/CLI only** (Paseo: mobile uses relay or Tailscale; SSH is Desktop/CLI — [`../paseo/public-docs/connectivity.md`](../paseo/public-docs/connectivity.md)). Do **not** ship a Flutter SSH client in C1c.
 
-EnvoyGo has **two separate networking planes**:
+EnvoyGo has **two networking planes**:
 
-| Plane | What it is | Transports |
-|-------|------------|------------|
-| **Home link** | Pair + stay connected to the **home EnvoyMesh node** (thin client). Used by Home Social, Coding, Terminal-to-home, Home Browser, etc. | Default: WS via LAN / relay / libp2p circuit to home. **Add-ons:** direct `host:port` WS, SSH tunnel to home localhost WS. |
-| **Phone mesh** | On-device / unpaired mesh (e.g. mobile node for On-this-phone chat, unpaired Discover, bonds while phone mesh is on) | **Always libp2p + relay.** No IP:port or SSH substitutes. |
+| Plane | Transports |
+|-------|------------|
+| **Home link** | Default: LAN/`lanWsUrl` → relay/`relayWsUrl` → libp2p circuit. **Add:** manual `host:port` candidate into existing [`HomeRemoteClient`](packages/envoy-thin-client-dart/lib/services/home_remote_client.dart) / candidate resolver. **Document:** Tailscale/VPN IP as a `host:port`. |
+| **Phone mesh** | Always libp2p + relay |
 
-IP:port and SSH only stabilize **plane 1** (phone → home). Everything that is “EnvoyMesh on EnvoyGo” as a peer still uses libp2p/relay.
-
-| Home-link path | Role | Who it’s for |
-|----------------|------|----------------|
-| **libp2p + relay / circuit to home** | **Default / always available** — no public IP, works on cellular | Everyone |
-| **Direct `host:port` (WebSocket to home)** | Prefer when reachable (LAN today via `lanWsUrl`; also public IP, Tailscale/VPN IP) | Users with LAN, public IP, or VPN |
-| **SSH tunnel to home** | Power-user add-on: tunnel to home’s local WS/API (Paseo-style) | Developers who already SSH to the machine |
-
-**Already true today:** pairing QR carries `wsUrl` / `lanWsUrl` / `relayWsUrl` — phone prefers LAN WS, falls back to relay ([`PairingPayload`](packages/api/src/ws-protocol.ts)). Gap: first-class **manual** public/`host:port` entry and **SSH** as documented, UI-supported home-link add-ons (not only what’s baked into the QR).
+| Path | Client | Role |
+|------|--------|------|
+| Relay / LAN WS | EnvoyGo + Social | Default |
+| Manual `host:port` / Tailscale IP | EnvoyGo | C1c — cheap, uses existing candidate timeouts/upgrade sweep |
+| SSH tunnel | **Desktop / Tauri / CLI only** | Power-user; Tier C for any future mobile SSH |
 
 **Rules**
-1. **Scope = home pairing/connection only.** Never route phone-mesh peer traffic over SSH or raw IP:port instead of libp2p.
-2. **Identity still pairs cryptographically** (QR / token / device cert). Entering `ip:port` or SSH only sets a **home-link transport preference**.
-3. **Preference order for home JSON-RPC:** reachable direct WS (`ip:port` / LAN / Tailscale) → SSH tunnel → relay / libp2p circuit to home.
-4. **Never require** public IP or SSH for product features (including Coding). Default home link stays no-public-IP.
-5. **Security:** direct bind stays token/session-authenticated; SSH uses the user’s existing SSH hardening; do not advertise open unauthenticated ports as “pair by IP.”
-6. **Scope of work:** EnvoyGo home-link settings (+ QR fields), not Coding-tab-only and not phone-mesh. Suggested ship: after C1b, parallel with or before C2 resume polish.
+1. Home pairing/connection only — never replace phone-mesh libp2p.
+2. Crypto pairing unchanged; transport is preference only.
+3. Preference: reachable direct WS (LAN / manual / Tailscale) → relay / circuit.
+4. Never require public IP for Coding.
+5. Auth on bind: session/token; no open unauthenticated “pair by IP.”
 
 ```text
-Plane 1 — Home link (add-ons allowed)
-  EnvoyGo ──► prefer direct WS to home (LAN / public IP / Tailscale)
-           ──► else SSH tunnel to home localhost WS
-           ──► else relay / libp2p circuit to home
-                ▼
-           Home node JSON-RPC (Coding / Terminal / Home Social / …)
-
-Plane 2 — Phone mesh (libp2p only)
-  EnvoyGo mobile node ──► libp2p + relay ──► peers / Discover / On-this-phone
+EnvoyGo home link: LAN / host:port / Tailscale IP → else relay/circuit → home JSON-RPC
+Desktop optional: SSH tunnel → home localhost WS
+Phone mesh: libp2p + relay only
 ```
 
 ---
@@ -477,9 +616,9 @@ Plane 2 — Phone mesh (libp2p only)
 | Id | Role today | Coding role |
 |----|------------|-------------|
 | `envoy-harness` | [`EnvoyHarnessPanel.tsx`](apps/social/src/components/views/EnvoyHarnessPanel.tsx) | Mesh / review / team coding; may use DeepSeek (or other) **models** |
-| `pi` | Pi RPC chat + Pi TUI | Local folder coding agent |
+| `pi` | Pi TUI + `sendToPi` / proposals; no timeline yet; `PiChatPanel` dead | C1: TUI-in-Coding transitional; C2: Pi timeline adapter |
 
-**Pi / EH duality (resolved):** Pi and Envoy Harness are **Coding harnesses only**. Product UI does **not** offer Pi/EH under Terminal. Coding uses the unified agent stream (RPC/chat adapters). Raw Pi/EH PTY processes may remain as **internal/legacy** node capabilities but are **not** exposed as Terminal create actions or Terminal sidebar rows.
+**Pi / EH:** Coding-only after strip gate. Terminal product UI loses Pi/EH create. Prefer stream chrome; Pi TUI-in-Coding is an explicit temporary exception until C2.
 
 ### Tier B — First-class Coding harnesses (same UI; probe/install)
 
@@ -491,7 +630,7 @@ Must appear in the Coding harness switcher with install/probe state:
 | `codex` | Native | Ext Agent `:8023` | Wire into CodingSession |
 | `opencode` | Native | Missing | Add adapter + probe |
 | `cursor` | ACP catalog | Ext Agent `:8025` | Wire into CodingSession |
-| `deepseek-harness` | ACP: CodeWhale (DeepSeek-oriented) | EH models only | Package a DeepSeek **coding CLI** harness + adapter; EH DeepSeek **models** remain on Envoy Harness sessions |
+| `deepseek` / `codewhale` | ACP: `codewhale` | Probe/install CodeWhale; EH DeepSeek **models** stay on EH sessions |
 
 Reuse Ext Agent ports/daemons where they already exist — **do not** duplicate processes.
 
@@ -499,17 +638,17 @@ Reuse Ext Agent ports/daemons where they already exist — **do not** duplicate 
 
 Paseo’s remaining ACP catalog (Gemini, Copilot, Cline, Kimi, Qwen, goose, …) and leftovers like Aider / MMX: same `CodingSession` contract when worth it. **Does not block** shipping Coding with Tier A+B.
 
-### Unification: `CodingSession`
+### Unification: session provider
 
 ```ts
+// Closed union for first-class; Tier C uses capabilities field — not `string` escape
 providerId:
   | "envoy-harness" | "pi"
-  | "claudecode" | "codex" | "opencode" | "cursor" | "deepseek-harness"
-  | string // Tier C later
-events: user | assistant | tool | permission | plan | turn_done | error
+  | "claudecode" | "codex" | "opencode" | "cursor" | "codewhale"
+tier: "A" | "B" | "C"
+sessionKind: "agent-stream" | "tui" // tui = transitional Pi (and rare EH TUI)
+// Timeline: EhTimelineItem / EhTimelineUpdate (promote / alias)
 ```
-
-UI binds to normalized events; adapters wrap EH / Pi / Ext Agent / new backends.
 
 ### Settings IA
 
@@ -527,84 +666,79 @@ Once Coding ships: remove Pi / EH / Claude Code / Codex / Cursor / OpenCode / De
 ### Terminal keeps
 
 - Global **shell** sessions, exec panes, Terminal Agent (`/goal`)
-- Caps for shell PTYs (today’s shell cap); **no** product UI for `role: pi` / `role: envoy-harness`
+- Social Terminal UI is **not** family-gated today (buttons render; node denies coding PTYs via `CODING_GATED_RPC`) — after strip, only shells remain visible
 
-### Terminal loses (both Social + EnvoyGo)
+### Terminal loses (after strip gate §3c)
 
-- Sidebar / FAB / empty-state actions: **New Envoy**, **New Pi**, “π Pi”, Envoy TUI
-- Listing or creating Pi / EH TUI sessions in the Terminal tab
-- Deep links that open Terminal **to start Pi/EH** — redirect to **Coding** instead
+- New Envoy / New Pi / π rows; listing `role: pi` / `envoy-harness`
+- Deep links that start Pi/EH in Terminal → Coding
 
-Touchpoints today to strip on ship:
-
-- Social: [`TerminalSidebar.tsx`](apps/social/src/components/terminals/TerminalSidebar.tsx) Envoy / Pi buttons; [`TerminalView.tsx`](apps/social/src/components/views/TerminalView.tsx) `startPi` / ensure Envoy flows
-- EnvoyGo: [`terminal_create_actions.dart`](apps/envoygo/lib/screens/terminals/terminal_create_actions.dart), [`terminal_list_screen.dart`](apps/envoygo/lib/screens/terminals/terminal_list_screen.dart) empty + FAB
-- Nav: `openTerminal({ startPi: true })` → `envoymesh:open-coding` (or Coding with harness `pi`)
+Touchpoints: Social `TerminalSidebar` / `TerminalView`; EnvoyGo `terminal_create_actions` / terminal list; `openTerminal({ startPi })` → `envoymesh:open-coding`.
 
 ### Coding → Terminal
 
-- **Embed** optional **shell** tab in a workspace (cwd = workspace) — plain shell only, not Pi/EH TUI
-- **Pop out to Terminal** for that shell session (same session id when possible)
+- Embed optional **shell** tab (plain PTY); pop out to Terminal for that shell id only
 
-### Chat loses
+### Chat loses / keeps
 
-- `showCodingSection` / Pi & EH thread rows
-- `ChatView` routing to `EnvoyHarnessPanel` via `__envoy_harness__:` thread keys
+- Loses Coding section + EH panel routing via `__envoy_harness__:` keys (resolve into Coding)
+- Keeps EnvoyAI, humans, general Ext Agents
 
-### Chat keeps
-
-- EnvoyAI
-- Human DMs / rooms / family
-- Optional general Ext Agents
-
-### Deep links / migration UX
+### Deep links / migration
 
 | Old | New |
 |-----|-----|
-| Chat → Coding section → EH chat | Coding → workspace/session |
-| Chat → Pi | Coding → Pi session |
-| Terminal → New Pi / New Envoy | Coding → start harness (`pi` / `envoy-harness`) |
-| How-to “Open Chat coding” / “Open Terminal Pi” | “Open Coding” |
-| `envoyHarnessThreadKey(chatId)` | Resolve to Coding workspace + session |
-| `openTerminal({ startPi: true })` | `open-coding` with harness `pi` |
+| Chat → EH / Pi | Coding → session (`chatId`) |
+| Terminal → New Pi / Envoy | Coding → start harness (stream or transitional TUI) |
+| `openTerminal({ startPi })` | In-page `envoymesh:open-coding` `{ harness: "pi" }` |
+| How-to “Chat coding” | “Open Coding” |
+
+---
+
+## 5b. Mesh differentiator (must not stay vapor)
+
+§1 claims EH/mesh as differentiator — cash it in with at least one **named** flow per phase band:
+
+| Phase | Mesh / team coding slice |
+|-------|---------------------------|
+| C1 | EH peer execution identity already on timeline (`EhExecutionIdentity`); surface “running on peer” in Coding chrome |
+| C2 | “Invite bonded peer to review this workspace” (bond-gated; deep-link peer to read-only or review session) |
+| C3+ | “Delegate repo task via Team jobs” — handoff from Coding workspace → Chains/Team jobs worker recruit |
+
+Without these, Coding is only a local control plane. Track as success criteria, not slogans.
 
 ---
 
 ## 6. Backend / data
 
-Prefer **promoting** existing stores over a greenfield DB.
+Prefer **promoting** EH stores and timeline over a greenfield DB.
 
 | Concern | Approach |
 |---------|----------|
-| Projects | Registry of home absolute paths (merge EH + Ext Agent paths) |
-| Workspaces | New JSON store under profile dir |
-| Sessions | Map EH chats / Pi chats / Ext Agent convos → session records |
-| Timeline | Per-provider adapter → normalized events |
-| Diff | Start with EH git-diff / `EhSplitDiff`; then workspace `git status` helper |
-| AuthZ | `familyProfileMayUseCoding` gates Coding tab (same as today’s Chat coding gate) |
-| Security | Harnesses stay on **local tools / home node**; never raw libp2p from external CLIs ([`external-agent-gateway.ts`](apps/node/src/external-agent-gateway.ts) rule) |
+| Projects | Registry of home paths (merge EH + Ext Agent) |
+| Workspaces | **Promote** `EhChatWorkspaceSummary`; add `projectId` / isolation |
+| Sessions | `chatId` canonical; client thread-key adapters |
+| Timeline | `EhTimelineUpdate` / `reduceEhTimeline`; add `sinceRevision` |
+| Diff | Existing EH review / `EhSplitDiff` |
+| AuthZ | Node **`CODING_GATED_RPC`** (~31 methods) in [`json-rpc-router.ts`](apps/node/src/json-rpc-router.ts) + `familyProfileMayUseCoding()` — **not** “Chat UI gate only”. Social Terminal buttons are ungated in UI; node denies. **Every new `coding.*` RPC must join `CODING_GATED_RPC` + [`owner-only-rpc.test.ts`](apps/node/test/)** (fail-closed). Note: `listEnvoyHarnessChats` is only **soft**-denied (`[]`) today — harden or document |
+| Security / trust | Pairing ≠ unbounded agent. Specify: family path allowlist vs whole project registry; per-harness credential ownership (`saveSkillApiKeys` precedent); whether phone permission cards can auto-approve; egress expectations for Tier B CLIs. [`external-agent-gateway.ts`](apps/node/src/external-agent-gateway.ts) is a **session/tool registry** (no libp2p import; approval-queue header not enforced) — do not cite it as a libp2p block |
+| Audit | EH pushes `eh:*` but little/no audit trail vs Pi `pi.tool.*`. Coding must define audit events for start/cancel/permission/review/delegate (AGENTS.md audit-first) |
+| Cap | `MAX_ENVOY_HARNESS_CHATS = 5`; add server concurrent agent-session budget later |
+| Thin-client NFRs | JSON-RPC alone lacks Paseo’s socket lease / watermarks — track app-level ping/pong + outbound caps as follow-up for phone-as-remote |
 
-Illustrative RPCs:
-
-- `coding.listProjects` / `coding.registerProject`
-- `coding.createWorkspace` / `coding.listWorkspaces`
-- `coding.listSessions` / `coding.startSession`
-- `coding.send` / `coding.cancel`
-- Push events on existing node → Social channel
+Illustrative façade RPCs (optional alias over EH): `coding.listSessions`, `coding.startSession`, `coding.send`, `coding.cancel` — still gated.
 
 ---
 
 ## 7. Migration sequence
 
-1. **C1 Desktop shell** — Nav + `CodingView` with **unified chrome**; host Pi + Envoy Harness as first two adapters; **delete Social Chat Coding section**; **strip Pi/EH from Social Terminal**; redirects.
-2. **C1b EnvoyGo shell** — Add Coding tab; **remove Pi / EH from EnvoyGo Chat and from Terminal** (FAB/empty/list); list + open sessions via home RPC (even if list is EH/Pi-only at first).
-3. **C1c Home-link add-ons (optional parallel)** — Manual `host:port` WS + SSH tunnel for **EnvoyGo ↔ home only**; phone mesh stays libp2p+relay. Does not block Coding shell.
-4. **C2 Workspace model** — Persist projects/workspaces; **same IDs on desktop + phone**; sidebar / mobile list; map EH chats → workspaces; **resume existing sessions** is a C2 exit criterion.
-5. **C3 First-class harnesses** — Claude Code, Codex, OpenCode, Cursor in the same switcher (probe/install); DeepSeek harness when CLI choice is fixed — both clients.
-6. **C4 UX+** — Diff rail / sheets, tracks, permission cards, queue/interrupt/steer; mobile sheets for Changes/permissions.
-7. **Later** — Worktrees, PR panel, Tier C ACP catalog expansion.
-
-No big-bang rewrite of Envoy Harness runtime — wrap it as an adapter behind the unified UI.
+1. **C1 Desktop shell** — Coding tab + EH under unified chrome; provisional `chatId` mapping; **strip gate** before removing Chat Coding / Terminal Pi/EH; live PTY migration; redirects; AuthZ tests for any new RPCs.
+2. **C1b EnvoyGo shell** — Per-profile tab list + Coding; EH stream; Pi transitional TUI-in-Coding; strip Chat + Terminal Pi/EH only after no-orphan; family tab arithmetic fixed.
+3. **C1c Home-link** — Manual `host:port` + Tailscale/VPN docs; **no** Flutter SSH (SSH desktop later).
+4. **C2** — `sinceRevision` history; Pi timeline (`eh:*`-like); promote workspace fields; mesh “invite peer to review” slice; harden soft-denied list RPCs.
+5. **C3** — Tier B harnesses (incl. CodeWhale); same chrome; probe/install.
+6. **C4** — Polish on **existing** docks/diff/queue (`EhChangesDock`, `EhPermissionDock`, … EnvoyGo review sheets) — not greenfield; tracks/a11y/i18n.
+7. **Later** — Worktrees, Team jobs delegate from Coding, Tier C ACP, desktop SSH, socket lease NFRs.
 
 ---
 
@@ -612,42 +746,56 @@ No big-bang rewrite of Envoy Harness runtime — wrap it as an adapter behind th
 
 | Phase | Outcome | Exit criteria |
 |-------|---------|---------------|
-| **C0** | This design locked | Doc reviewed; defaults accepted |
-| **C1** | Social Coding tab; Pi+EH unified; Chat Coding **gone**; Terminal **shell-only** | Cannot open Pi/EH from Social Chat **or** Terminal |
-| **C1b** | EnvoyGo Coding tab; Pi/EH **gone** from Chat **and** Terminal | Phone Coding opens; chat/terminal have no Pi/EH create or rows |
-| **C1c** | Home-link `host:port` + SSH add-ons | Prefer direct/SSH when set; mesh features still libp2p-only |
-| **C2** | Shared workspace/session persistence | Desktop + phone see the **same** sessions; resume works |
-| **C3** | Claude Code, Codex, OpenCode, Cursor (+ DeepSeek harness when CLI ready) | Same chrome on both clients; probe/install honest |
-| **C4** | Diff + tracks + permissions + queue | No chrome swap; mobile sheets usable |
+| **C0** | This design locked (post–DeepSeek corrections) | Doc reviewed; scope decisions in §0 accepted |
+| **C1** | Social Coding + EH; strip gate satisfied | Cannot open Pi/EH from Chat/Terminal **without** Coding path; provisional map + no-orphan; live PTYs migrated; `CODING_GATED_RPC` / tests updated if new methods |
+| **C1b** | EnvoyGo Coding; per-profile tabs; Chat/Terminal strip gated | Same as C1 on phone; family tabs correct; EH resume works |
+| **C1c** | Manual host:port + VPN docs | Candidate list accepts manual host; SSH not required on mobile |
+| **C2** | Revisioned history + Pi timeline + mesh review slice | Phone reconnect incremental; Pi stream in Coding; peer-review CTA exists |
+| **C3** | Claude Code, Codex, OpenCode, Cursor, CodeWhale | Same chrome; honest probe/install |
+| **C4** | Diff/tracks/permissions polish | Reuses EH docks; a11y status not color-only |
 
 ---
 
 ## 9. Non-goals (v1)
 
 - Full IDE (LSP, Monaco multi-file editor)
-- Shipping Paseo’s **entire** ACP catalog on day one (expansion is Tier C)
-- Replacing or merging away the Terminal tab
+- Shipping Paseo’s entire ACP catalog on day one
+- Flutter SSH client on EnvoyGo
+- Copying Paseo source without NOTICE (v1 = patterns only)
+- Replacing the Terminal tab
 - Moving EnvoyAI into Coding
 - Hosted coding relay product
-- Pixel-clone of Paseo (desktop *or* mobile) — **patterns** yes, visual clone no
-- Worktree isolation (explicit later)
-- Keeping a Chat “Coding” section on Social **or** EnvoyGo
-- Keeping Pi / Envoy Harness create or sessions under the **Terminal** tab
-- Phone-only coding without desktop (or vice versa) as the end state
+- Pixel-clone of Paseo
+- Worktree isolation (later)
+- Keeping Chat “Coding” or Terminal Pi/EH **after** strip gate passes
+- Inventing a parallel timeline/store beside EH in C1
+
+---
+
+## 9b. NFRs & test plan (design requirements)
+
+| Area | Requirement |
+|------|-------------|
+| i18n | Social ~7 locales / many modules; EnvoyGo ARBs + `flutter gen-l10n` — all new strings |
+| a11y | Status buckets = color **and** text/icon; not color-only dots |
+| Performance | Timeline virtualization for long sessions; `sinceRevision` on reconnect |
+| Telemetry | Reuse / extend `eh:ux_telemetry` carefully; no raw prompts in logs |
+| Tests | Update `owner-only-rpc.test.ts` for every gated method; unit tests for tab visibility matrix; orchestrator `dev`/`full` as CI gates |
+| Caps | Cite `MAX_ENVOY_HARNESS_CHATS = 5`; document concurrent agent budget on home |
 
 ---
 
 ## 10. Success criteria
 
-- Full “fix bug in repo” loop **without opening Chat** (desktop and phone)
-- Chat has **no** Coding / Pi / EH section on Social **or** EnvoyGo
-- Terminal has **no** Pi / Envoy Harness create or sessions — shell (+ Terminal Agent) only
-- **Resume:** from EnvoyGo Coding, user can open an **existing** home session started on desktop (and the reverse) without recreating it — Paseo-mobile parity
-- Terminal still the place for non-coding shell work
-- Harness switch across Pi / EH / Claude Code / Codex / OpenCode / Cursor / DeepSeek does not change Coding chrome (adapter only)
-- Missing Tier B binaries show honest probe/install state
-- Family profiles without coding permission do not see Coding (or see locked empty state)
-- Documented parity story vs Paseo native providers + Envoy Harness differentiator
+- “Fix bug in repo” without Chat (desktop + phone)
+- Chat has no Coding / Pi / EH section after strip gate
+- Terminal has no Pi / EH after strip gate; shell + Terminal Agent only
+- Resume same `chatId` across Social and EnvoyGo
+- Harness immutable per session; create-flow switcher only
+- Family without coding: no Coding tab / fail-closed RPCs
+- At least one mesh slice shipped (§5b) by C2
+- Audit events for core Coding actions
+- Documented parity vs Paseo natives + EH mesh differentiator (narrow claim)
 
 ---
 
@@ -669,31 +817,42 @@ No big-bang rewrite of Envoy Harness runtime — wrap it as an adapter behind th
 
 ## 12. Design review notes
 
-**2026-09-10 (initial):** DeepSeek-as-model-only; Cursor demoted to Tier C; EnvoyGo deferred — **superseded**.
+**2026-09-10 — DeepSeek review (accepted):** Verified path accuracy, `CODING_GATED_RPC`, EH timeline/workspace already exist, Paseo connectivity (SSH ≠ mobile), phone Pi hole, strip-before-replace risk, EnvoyGo tab index hazard, thread-key adapters, soft-denied list RPC, dead `PiChatPanel`, C4 baseline docks. Corrections applied throughout this doc; four scope decisions locked in §0.
 
-**2026-09-10 (revision — harness list + Paseo map):** First-class Claude Code, Codex, OpenCode, Cursor, DeepSeek harness; §1b Paseo providers.
-
-**2026-09-10 (revision — EnvoyGo + Paseo mobile):**
-
-1. EnvoyGo **must** remove Pi / EH from Chat and ship a **Coding** tab (same IA as desktop).
-2. Mobile UX explicitly references **Paseo mobile**: list/resume **existing** home coding sessions is a hard success criterion (C2).
-3. Shared workspace/session IDs across desktop and phone.
-4. Phases: **C1b** for EnvoyGo shell; C5 merged into C1b–C4 (no “phone later maybe”).
-5. Docs at repo root (`product_coding_tab_design.md`) because `/docs` is gitignored.
+Earlier chronology (superseded where conflicting): harness list expansion; EnvoyGo + Paseo mobile; detailed UI; Terminal shell-only; nav order + Inbox icon-only; encapsulation as single source of truth.
 
 ---
 
-## 13. Open items (do not block C0–C1)
+## 13. Open items (do not block C0 if §0 accepted)
 
-- Exact workspace id scheme vs existing `envoyHarnessThreadKey`
-- OpenCode adapter effort estimate before C3
-- Which DeepSeek coding CLI to package (`deepseek-harness`) — CodeWhale vs vendor CLI
-- Whether existing live `role: pi` / `envoy-harness` PTYs on upgrade are auto-hidden, one-time migrated into Coding, or closed with a notice
+- OpenCode adapter effort before C3
+- Whether `cancelled` maps to `failed` or `done` in UI buckets
+- Exact concurrent agent-session RAM/API budget on home (beyond chat cap 5)
+- Socket lease / watermark design for thin-client (post-C2)
+- Soft-deny → hard-deny for `listEnvoyHarnessChats` timing
+- Desktop SSH UX (Tauri/CLI) — not EnvoyGo
 
-**Resolved 2026-09-10:** EnvoyGo owner nav = `Social | Coding | Terminal | Knowledge | Me` (Coding at index 1). Family with `codingEnabled` gets Coding tab.
+**Decisions (were “Resolved” targets — not yet HEAD):** see §0 table (nav order, Inbox icon-only, Terminal strip gate, IDs, timeline promote, phone Pi transitional, §3d host:port, no v1 Paseo code copy).
 
-**Resolved 2026-09-10:** Pi and Envoy Harness are **not** in Terminal — Coding only. Terminal = shell (+ Terminal Agent). “Pop out to Terminal” applies to **workspace shell** tabs only, not Pi/EH TUI.
+---
 
-**2026-09-10 (revision — detailed UI):** §§3–3c expanded to screen-level Social three-pane + EnvoyGo list/session/sheets, shared RPC contract, component reuse maps, and locked nav.
+## 14. Encapsulation checklist
 
-**2026-09-10 (revision — Terminal shell-only):** Pi and Envoy Harness **removed from Terminal** on Social and EnvoyGo. They are Coding harnesses only; Terminal = shell PTY + Terminal Agent. C1/C1b exit criteria include stripping Terminal Pi/EH UI.
+Everything discussed for the Coding tab is intended to live **in this file**. If a topic is missing, add it here — do not split into parallel design docs.
+
+| Topic | Section |
+|-------|---------|
+| Why + Paseo site/source | Why this design |
+| Scope decisions (Pi, timeline, strip, transports) | §0 |
+| Status buckets from EhAgentStateName | §2 |
+| Social / EnvoyGo UI | §3 / §3b |
+| Promote EhTimeline + chatId adapters | §3c |
+| host:port / Tailscale; SSH desktop-only | §3d |
+| Harness tiers + CodeWhale | §1b, §4 |
+| Mesh cash-in | §5b |
+| AuthZ / audit / security | §6 |
+| Phases + strip gate | §7–§8 |
+| NFRs / tests | §9b |
+| Encapsulation | §14 |
+
+**Document path:** `/Users/shileipeng/Documents/mygithub/EnvoyMesh/product_coding_tab_design.md`

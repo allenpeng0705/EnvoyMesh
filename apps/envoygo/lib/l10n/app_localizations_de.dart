@@ -4260,6 +4260,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get phoneMeshDescOffline => 'Telefon-Mesh ist noch nicht bereit.';
 
   @override
+  String get phoneMeshRetryNow => 'Jetzt erneut versuchen';
+
+  @override
+  String get phoneMeshLanHint =>
+      'Die Erkennung in der Nähe (gleiches W‑LAN) ist aus — auf dem iPhone „Lokales Netzwerk“ unter Einstellungen → EnvoyGo erlauben. Die Suche über das Internet funktioniert weiterhin.';
+
+  @override
   String get phoneMeshDescErrorGeneric =>
       'Telefon-Mesh hat ein Problem. Verlassen Sie Social und kehren Sie zurück, oder starten Sie die App neu.';
 

@@ -9,6 +9,12 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Phase 31I — FCM alert notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- S7 LAN discovery — Android drops inbound multicast (mDNS) unless the
+         app declares this AND holds a WifiManager MulticastLock while
+         browsing; see MainActivity (envoygo/multicast_lock channel). Without
+         it "discover peers on the same Wi-Fi" silently finds nothing. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <application
         android:label="EnvoyGo"
         android:name="${applicationName}"

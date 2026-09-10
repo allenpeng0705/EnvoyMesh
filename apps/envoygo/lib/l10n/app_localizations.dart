@@ -7614,6 +7614,18 @@ abstract class AppLocalizations {
   /// **'Phone mesh is not ready yet.'**
   String get phoneMeshDescOffline;
 
+  /// No description provided for @phoneMeshRetryNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry now'**
+  String get phoneMeshRetryNow;
+
+  /// No description provided for @phoneMeshLanHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Nearby (same Wi-Fi) discovery is off — on iPhone allow Local Network in Settings → EnvoyGo. Searching over the internet still works.'**
+  String get phoneMeshLanHint;
+
   /// No description provided for @phoneMeshDescErrorGeneric.
   ///
   /// In en, this message translates to:

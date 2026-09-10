@@ -122,6 +122,49 @@ export const DISCOVERY_ADVERTISE_CONCURRENCY = 8;
  */
 export const DISCOVERY_ADVERTISE_MAX_CONGESTION_SKIPS = 3;
 
+/**
+ * Whether this node can be discovered by peers that are *not* on its LAN.
+ *
+ * Search and advertise used to disagree about this: searching accepted an
+ * enabled relay configuration (`canSearchTopics = isPublicNetwork ||
+ * isPrivateRelay`), while advertising only counted `bootstrapPresets` /
+ * `bootstrapPeers`. A node whose only WAN path is a configured relay could
+ * therefore search other people but never be found itself — its relay checkin
+ * carried no topicHashes, so nobody could discover its interests. Both planes
+ * now share this predicate.
+ *
+ * Relay reachability counts because the relay roster *is* the WAN discovery
+ * plane: a node that checks into a public relay is findable through it.
+ */
+export function hasPublicDiscoveryReachability(
+  config: {
+    bootstrapPresets?: readonly string[];
+    bootstrapPeers?: readonly string[];
+    relayEnabled?: boolean;
+    configuredRelays?: readonly unknown[];
+  } | null | undefined,
+): boolean {
+  if (!config) return false;
+  if ((config.bootstrapPresets?.length ?? 0) > 0) return true;
+  if ((config.bootstrapPeers?.length ?? 0) > 0) return true;
+  return config.relayEnabled === true && (config.configuredRelays?.length ?? 0) > 0;
+}
+
+/** Human-readable reason for the reachability decision (logs / diagnostics). */
+export function describePublicDiscoveryReachability(
+  config: {
+    bootstrapPresets?: readonly string[];
+    bootstrapPeers?: readonly string[];
+    relayEnabled?: boolean;
+    configuredRelays?: readonly unknown[];
+  } | null | undefined,
+): string {
+  const presets = config?.bootstrapPresets?.length ?? 0;
+  const peers = config?.bootstrapPeers?.length ?? 0;
+  const relays = config?.relayEnabled === true ? (config?.configuredRelays?.length ?? 0) : 0;
+  return `presets=${presets} peers=${peers} enabledRelays=${relays}`;
+}
+
 async function mapWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,
@@ -417,8 +460,7 @@ export async function updateHumanProfileViaRuntime(
   const signedProfile = await _signAndSaveHumanProfile(ctx, updatedPayload);
 
   const config = await ctx.getConfigStore().load();
-  const isPublicNetwork = (config?.bootstrapPresets && config.bootstrapPresets.length > 0) ||
-    (config?.bootstrapPeers && config.bootstrapPeers.length > 0);
+  const isPublicNetwork = hasPublicDiscoveryReachability(config);
   const interests = [...(updatedPayload.hobbies ?? []), ...(updatedPayload.knowledge ?? [])];
   const username = updatedPayload.username;
   const locationTopics = deriveLocationDiscoveryTopics({
@@ -1547,10 +1589,9 @@ export async function _advertiseInterestsIfPublic(ctx: IdentityContext): Promise
   const profile = await ctx.getHumanProfileStore().loadHumanProfile();
   if (!config || !profile) return;
 
-  const isPublicNetwork = (config.bootstrapPresets && config.bootstrapPresets.length > 0) ||
-    (config.bootstrapPeers && config.bootstrapPeers.length > 0);
+  const isPublicNetwork = hasPublicDiscoveryReachability(config);
   console.log(
-    `[advertiseInterests] visibility=${profile.profileVisibility} presets=${config.bootstrapPresets?.length ?? 0} peers=${config.bootstrapPeers?.length ?? 0} isPublicNetwork=${isPublicNetwork}`,
+    `[advertiseInterests] visibility=${profile.profileVisibility} ${describePublicDiscoveryReachability(config)} publicReachability=${isPublicNetwork}`,
   );
   if (profile.profileVisibility === "public" && isPublicNetwork) {
     setRelayClientPublicDiscoveryActive(true);

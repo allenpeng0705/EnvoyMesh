@@ -66,6 +66,31 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
   }) =>
       _node.findCapabilityTopicProviders(topic, maxResults: maxResults);
 
+  /// (Re)enable LAN mDNS. Safe to call repeatedly; returns whether it is up.
+  ///
+  /// This used to be a single fire-and-forget call inside [start], which made
+  /// two transient failures permanent for the whole session:
+  ///
+  /// 1. `Libp2pNode.enableMdns()` no-ops (and logs only) when the host has no
+  ///    TCP listen address yet — the listen addrs populate asynchronously, so a
+  ///    fast start hit this and never retried.
+  /// 2. On iOS the first multicast use raises the Local Network permission
+  ///    prompt; until the user grants it, the socket errors out.
+  ///
+  /// Both recover on their own (permission granted, addrs settled), so callers
+  /// should retry instead of treating the first failure as final.
+  Future<bool> ensureMdns() async {
+    if (!_enableMdns) return false;
+    if (!_node.isStarted) return false;
+    if (_node.mdnsActive) return true;
+    try {
+      await _node.enableMdns();
+    } catch (e) {
+      _log('[PhoneDiscoverySession] mDNS enable failed: $e');
+    }
+    return _node.mdnsActive;
+  }
+
   Future<void> start() async {
     if (_active) return;
     if (!_node.isStarted || _node.peerId == null) {
@@ -79,13 +104,8 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
 
     if (_enableMdns) {
       // mDNS can be slow / flaky on cellular — do not block discovery "active".
-      unawaited(() async {
-        try {
-          await _node.enableMdns();
-        } catch (e) {
-          _log('[PhoneDiscoverySession] mDNS start failed: $e');
-        }
-      }());
+      // Retryable on purpose: see [ensureMdns].
+      unawaited(ensureMdns());
     }
 
     // First DHT/checkin can hang on WAN — keep discovery "active" and retry

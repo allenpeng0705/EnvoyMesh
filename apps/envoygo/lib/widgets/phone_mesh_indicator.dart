@@ -136,13 +136,56 @@ class _PhoneMeshStatusSheet extends ConsumerWidget {
                     ),
               ),
             ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text(l10n.setupGuideDoneCta),
+            if (mesh.discoveryActive && !mesh.lanActive)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  l10n.phoneMeshLanHint,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.4,
+                      ),
+                ),
               ),
+            const SizedBox(height: 8),
+            if (mesh.diagnostics != null && mesh.diagnostics!.isNotEmpty)
+              // Developer detail last, per the "headline for the user, verbose
+              // block for the developer" rule in AGENTS.md.
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  mesh.diagnostics!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        color: scheme.onSurfaceVariant,
+                        height: 1.3,
+                      ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (status != _PhoneMeshUiStatus.connected)
+                  TextButton(
+                    onPressed: () {
+                      ref
+                          .read(phoneMeshRuntimeProvider.notifier)
+                          .retryNow();
+                      Navigator.of(context).pop();
+                    },
+                    child: Text(l10n.phoneMeshRetryNow),
+                  ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(l10n.setupGuideDoneCta),
+                ),
+              ],
             ),
           ],
         ),

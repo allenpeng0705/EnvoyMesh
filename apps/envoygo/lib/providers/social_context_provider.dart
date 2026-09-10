@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../mesh/home_social_backend.dart';
 import '../mesh/phone_social_local_db.dart';
+import '../services/mdns_multicast_lock.dart';
 import '../services/node_service_client.dart';
 import '../storage/local_database.dart';
 import '../storage/secure_storage.dart';
@@ -100,6 +101,19 @@ class _PhoneBackendHolderNotifier extends StateNotifier<_PhoneBackendState> {
   static const _snapshotKey = 'phone_social_store_v1';
   bool _starting = false;
 
+  /// Last load failure, kept for diagnostics (the runtime retries this).
+  Object? lastLoadError;
+
+  /// Retry a failed persona/store load.
+  ///
+  /// `_ensure()` used to be fire-and-forget from the constructor: a transient
+  /// keychain / local-db failure left `backend == null` forever, which the
+  /// phone-mesh runtime can only report as an unexplained "not ready".
+  void retryEnsure() {
+    if (state.backend != null) return;
+    unawaited(_ensure());
+  }
+
   Future<void> _ensure() async {
     if (state.backend != null || _starting) return;
     _starting = true;
@@ -139,6 +153,10 @@ class _PhoneBackendHolderNotifier extends StateNotifier<_PhoneBackendState> {
         },
       );
       state = _PhoneBackendState(backend: backend);
+      lastLoadError = null;
+    } catch (e) {
+      lastLoadError = e;
+      debugPrint('[PhoneBackendHolder] load failed: $e');
     } finally {
       _starting = false;
     }
@@ -256,15 +274,43 @@ class PhoneMeshRuntimeState {
   const PhoneMeshRuntimeState({
     this.sessionActive = false,
     this.discoveryActive = false,
+    this.lanActive = false,
     this.starting = false,
     this.lastError,
+    this.attempts = 0,
+    this.diagnostics,
   });
 
   final bool sessionActive;
   final bool discoveryActive;
+  /// LAN (mDNS) plane up. Independent of WAN: relay discovery works without it.
+  final bool lanActive;
   /// True while cold-start / ensureLibp2p is in flight (UI "Connecting…").
   final bool starting;
   final String? lastError;
+
+  /// Consecutive self-healing attempts since the last fully-up state.
+  final int attempts;
+
+  /// One-line developer detail (host / session / discovery / mDNS), shown at the
+  /// bottom of the status sheet so a bug report does not need `flutter logs`.
+  final String? diagnostics;
+
+  /// True when both the mesh session and WAN/LAN discovery are up.
+  bool get fullyUp => sessionActive && discoveryActive;
+}
+
+/// Backoff for the phone-mesh self-healing retry loop (pure; unit-tested).
+///
+/// Every prerequisite (persona/store load, libp2p host boot, discovery start)
+/// can finish *after* the first `_apply()` attempt. Without a retry loop a
+/// missed edge left the app grey/offline until the user backgrounded and
+/// resumed — which is exactly the workaround reported on device.
+Duration phoneMeshRetryDelay(int attempt) {
+  const capMs = 30 * 1000;
+  final clamped = attempt < 1 ? 1 : (attempt > 5 ? 5 : attempt);
+  final ms = 2000 * (1 << (clamped - 1));
+  return Duration(milliseconds: ms > capMs ? capMs : ms);
 }
 
 /// Enables phone mesh handlers (+ WAN/LAN discovery when unpaired or foreground).
@@ -304,10 +350,73 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
   static const _libp2pStartTimeout = Duration(seconds: 12);
   bool _awaitingSlowStart = false;
 
+  /// Self-healing retry: keeps re-applying while foregrounded and not fully up.
+  Timer? _retryTimer;
+  int _attempts = 0;
+
+  /// Bounded window for LAN-only retries (≈2 min at the 30s cap).
+  static const _maxLanRetries = 6;
+
+  /// Manual escape hatch (status sheet "Retry now").
+  void retryNow() {
+    _attempts = 0;
+    _cancelRetry();
+    debugPrint('[PhoneMeshRuntime] manual retry requested');
+    unawaited(_apply());
+  }
+
+  void _cancelRetry() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+  }
+
+  void _scheduleRetry(String why) {
+    if (_disposed || !_foreground) return;
+    if (_retryTimer != null) return;
+    _attempts += 1;
+    final delay = phoneMeshRetryDelay(_attempts);
+    _retryTimer = Timer(delay, () {
+      _retryTimer = null;
+      unawaited(_apply());
+    });
+    debugPrint(
+      '[PhoneMeshRuntime] retry #$_attempts in ${delay.inSeconds}s ($why)',
+    );
+  }
+
+  void _clearRetry() {
+    _cancelRetry();
+    _attempts = 0;
+  }
+
+  /// Compact one-line state for the status sheet / bug reports.
+  String _diagnostics({Libp2pNode? node}) {
+    final host = node ?? _ref.read(nodeProvider.notifier).libp2pNode;
+    return 'host=${host?.isStarted == true ? 'up' : 'down'}'
+        ' epoch=${host?.hostEpoch ?? '-'}'
+        ' session=${_session?.isActive == true ? 'on' : 'off'}'
+        ' discovery=${_discovery?.isActive == true ? 'on' : 'off'}'
+        ' mdns=${_discovery?.mdnsActive == true ? 'on' : 'off'}'
+        ' relays=${host?.relayAdvertisedMultiaddrs().length ?? 0}'
+        ' attempts=$_attempts'
+        ' foreground=${_foreground ? 'yes' : 'no'}';
+  }
+
   /// Pause WAN advertise/lookup when the app backgrounds (S6).
   void setForeground(bool foreground) {
     if (_foreground == foreground) return;
     _foreground = foreground;
+    debugPrint(
+      '[PhoneMeshRuntime] foreground=${foreground ? 'yes' : 'no'} '
+      '(${_diagnostics()})',
+    );
+    if (foreground) {
+      // Resume: always give it a fresh, immediate attempt.
+      _clearRetry();
+    } else {
+      // Backgrounded: stop self-healing so we do not burn battery.
+      _cancelRetry();
+    }
     unawaited(_apply());
   }
 
@@ -322,7 +431,18 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
         _pending = false;
         final backend = _ref.read(phoneSocialBackendProvider);
         if (backend == null) {
+          // Persona/store load may have failed or still be running: nudge the
+          // loader and keep retrying instead of waiting for a lifecycle event.
+          final holder = _ref.read(_phoneBackendHolderProvider.notifier);
+          holder.retryEnsure();
           await _teardown();
+          final loadError = holder.lastLoadError;
+          state = PhoneMeshRuntimeState(
+            attempts: _attempts,
+            diagnostics:
+                'backend=loading${loadError == null ? '' : ' lastError=$loadError'}',
+          );
+          _scheduleRetry('phone backend not loaded');
           continue;
         }
 
@@ -352,10 +472,12 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
               '[PhoneMeshRuntime] ensureLibp2pStarted timed out '
               'after ${_libp2pStartTimeout.inSeconds}s — will retry when ready',
             );
-            state = const PhoneMeshRuntimeState(
+            state = PhoneMeshRuntimeState(
               sessionActive: false,
               starting: true,
               lastError: null,
+              attempts: _attempts,
+              diagnostics: _diagnostics(),
             );
             if (!_awaitingSlowStart) {
               _awaitingSlowStart = true;
@@ -368,6 +490,9 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
                 unawaited(_apply());
               }));
             }
+            // Belt and braces: the follow-up covers a slow-but-successful host
+            // boot, the retry timer covers a boot that never completes.
+            _scheduleRetry('libp2p host still starting');
             // Don't spin the do-while on the same hung start — follow-up
             // above re-applies when the host finishes (or lifecycle does).
             break;
@@ -379,6 +504,7 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
             starting: false,
             lastError: 'Could not start mesh host',
           );
+          _scheduleRetry('ensureLibp2pStarted returned null');
           continue;
         }
 
@@ -404,6 +530,8 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
         if (_foreground) {
           _discovery ??= PhoneDiscoverySession(node: node, backend: backend);
           if (!_discovery!.isActive) {
+            // Android needs an app-held multicast lock for inbound mDNS.
+            await MdnsMulticastLock.acquire();
             try {
               await _discovery!.start();
             } catch (e) {
@@ -411,12 +539,43 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
             }
           }
           if (_disposed) return;
+          final sessionUp = _session!.isActive;
+          final discoveryUp = _discovery?.isActive ?? false;
+          // LAN plane: the first attempt can lose a race (host TCP addrs still
+          // settling) or hit the unanswered iOS Local Network prompt. Retry it
+          // on the same backoff loop instead of leaving LAN discovery dead.
+          if (discoveryUp && !(_discovery!.mdnsActive)) {
+            await _discovery!.ensureMdns();
+          }
+          if (_disposed) return;
+          final lanUp = _discovery?.mdnsActive ?? false;
           state = PhoneMeshRuntimeState(
-            sessionActive: _session!.isActive,
-            discoveryActive: _discovery?.isActive ?? false,
+            sessionActive: sessionUp,
+            discoveryActive: discoveryUp,
+            lanActive: lanUp,
             starting: false,
             lastError: null,
+            attempts: _attempts,
+            diagnostics: _diagnostics(node: node),
           );
+          debugPrint(
+            '[PhoneMeshRuntime] ${sessionUp && discoveryUp ? 'up' : 'partial'} '
+            '(${state.diagnostics})',
+          );
+          if (sessionUp && discoveryUp && lanUp) {
+            _clearRetry();
+          } else if (sessionUp && discoveryUp) {
+            // WAN/discovery is fine, LAN is not: retry mDNS for a bounded window
+            // (covers the iOS Local Network prompt and late-settling listen
+            // addrs), then stop chasing a plane this network may never offer.
+            if (_attempts < _maxLanRetries) {
+              _scheduleRetry('mDNS/LAN not active');
+            }
+          } else {
+            _scheduleRetry(
+              sessionUp ? 'discovery not active' : 'session not active',
+            );
+          }
         } else {
           await _stopDiscovery();
           state = PhoneMeshRuntimeState(
@@ -424,6 +583,8 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
             discoveryActive: false,
             starting: false,
             lastError: null,
+            attempts: _attempts,
+            diagnostics: _diagnostics(node: node),
           );
         }
       } while (_pending);
@@ -433,7 +594,10 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
         sessionActive: false,
         starting: false,
         lastError: e.toString(),
+        attempts: _attempts,
+        diagnostics: _diagnostics(),
       );
+      _scheduleRetry('apply threw: $e');
     } finally {
       _busy = false;
       if (_pending) {
@@ -444,6 +608,7 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
   }
 
   Future<void> _stopDiscovery() async {
+    await MdnsMulticastLock.release();
     final discovery = _discovery;
     _discovery = null;
     if (discovery != null) {
@@ -476,6 +641,7 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
   @override
   void dispose() {
     _disposed = true;
+    _cancelRetry();
     final discovery = _discovery;
     _discovery = null;
     unawaited(discovery?.stop() ?? Future.value());

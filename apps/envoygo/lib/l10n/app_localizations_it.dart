@@ -4257,6 +4257,13 @@ class AppLocalizationsIt extends AppLocalizations {
       'Il mesh del telefono non è ancora pronto.';
 
   @override
+  String get phoneMeshRetryNow => 'Riprova ora';
+
+  @override
+  String get phoneMeshLanHint =>
+      'La scoperta nelle vicinanze (stesso Wi‑Fi) è disattivata — su iPhone consenti Rete locale in Impostazioni → EnvoyGo. La ricerca via Internet funziona comunque.';
+
+  @override
   String get phoneMeshDescErrorGeneric =>
       'Il mesh del telefono ha un problema. Esci da Social e rientra, oppure riavvia l’app.';
 

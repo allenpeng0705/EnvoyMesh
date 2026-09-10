@@ -47,6 +47,7 @@ import { deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
 import { displayNameTopicFor, interestTopicFor, expandDiscoveryTopicQueries } from "./capability-discovery.js";
 import type { createNodeConfigStore } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
+import { hasPublicDiscoveryReachability } from "./node-service-identity.js";
 import {
   buildForwardedDiscoveryPayload,
   queueDiscoveryForwardApproval,
@@ -294,13 +295,14 @@ export class NodeDiscoveryRuntime {
 
       // 3. Determine search mode based on network configuration
       const config = await this.deps.configStore.load();
-      const isPublicNetwork = (config?.bootstrapPresets && config.bootstrapPresets.length > 0) ||
-        (config?.bootstrapPeers && config.bootstrapPeers.length > 0);
-      const isPrivateRelay = config?.relayEnabled && config?.configuredRelays && config.configuredRelays.length > 0;
-      // Any DHT-capable or relay-capable config can search topics.
-      // searchByTopic() has a relay.lookup fallback when DHT returns empty,
-      // so the gate just needs to allow the search to run — not guarantee DHT.
-      const canSearchTopics = isPublicNetwork || isPrivateRelay;
+      const isPrivateRelay = Boolean(
+        config?.relayEnabled && (config?.configuredRelays?.length ?? 0) > 0,
+      );
+      // Same predicate the advertising path uses (bootstrap presets/peers OR an
+      // enabled relay config) — a relay-only node must be able to search *and*
+      // be findable; see hasPublicDiscoveryReachability.
+      const hasWanReachability = hasPublicDiscoveryReachability(config);
+      const canSearchTopics = hasWanReachability;
 
       const results: PeerSearchResult[] = [];
 
@@ -381,7 +383,7 @@ export class NodeDiscoveryRuntime {
       }
 
       // 8. If neither public network nor relays configured, local-only mode
-      if (!isPublicNetwork && !isPrivateRelay && results.length === 0) {
+      if (!hasWanReachability && results.length === 0) {
         await this.warmLocalPeerProfilesForSearch(query, maxResults);
         return this.searchLocalPeers(query, maxResults);
       }

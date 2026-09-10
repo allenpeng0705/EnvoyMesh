@@ -4103,6 +4103,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get phoneMeshDescOffline => '휴대폰 메시가 아직 준비되지 않았습니다.';
 
   @override
+  String get phoneMeshRetryNow => '지금 다시 시도';
+
+  @override
+  String get phoneMeshLanHint =>
+      '같은 Wi‑Fi 근처 검색이 꺼져 있습니다 — iPhone에서는 설정 → EnvoyGo에서 \'로컬 네트워크\'를 허용하세요. 인터넷 검색은 계속 작동합니다.';
+
+  @override
   String get phoneMeshDescErrorGeneric =>
       '휴대폰 메시에 문제가 있습니다. 소셜을 나갔다가 다시 들어오거나 앱을 다시 시작하세요.';
 

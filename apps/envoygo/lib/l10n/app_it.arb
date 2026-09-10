@@ -1449,6 +1449,8 @@
   "phoneMeshDescConnectedDiscovering": "Il mesh del telefono è attivo e in annuncio, così altri possono trovarti su questo telefono.",
   "phoneMeshDescConnecting": "Avvio del mesh telefono… Potrebbe richiedere un momento.",
   "phoneMeshDescOffline": "Il mesh del telefono non è ancora pronto.",
+  "phoneMeshRetryNow": "Riprova ora",
+  "phoneMeshLanHint": "La scoperta nelle vicinanze (stesso Wi‑Fi) è disattivata — su iPhone consenti Rete locale in Impostazioni → EnvoyGo. La ricerca via Internet funziona comunque.",
   "phoneMeshDescErrorGeneric": "Il mesh del telefono ha un problema. Esci da Social e rientra, oppure riavvia l’app.",
   "phoneMeshDescError": "Errore mesh telefono: {error}"
 }

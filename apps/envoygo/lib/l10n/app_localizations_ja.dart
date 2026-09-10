@@ -4105,6 +4105,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get phoneMeshDescOffline => '端末メッシュはまだ準備できていません。';
 
   @override
+  String get phoneMeshRetryNow => '今すぐ再試行';
+
+  @override
+  String get phoneMeshLanHint =>
+      '同じ Wi‑Fi の近くの検出がオフです — iPhone では 設定 → EnvoyGo で「ローカルネットワーク」を許可してください。インターネット経由の検索は利用できます。';
+
+  @override
   String get phoneMeshDescErrorGeneric =>
       '端末メッシュで問題が発生しました。ソーシャルをいったん離れて戻るか、アプリを再起動してください。';
 

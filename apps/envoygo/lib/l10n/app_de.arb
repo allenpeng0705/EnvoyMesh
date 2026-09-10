@@ -1449,6 +1449,8 @@
   "phoneMeshDescConnectedDiscovering": "Telefon-Mesh läuft und wirbt, damit andere Sie auf diesem Telefon finden können.",
   "phoneMeshDescConnecting": "Telefon-Mesh wird gestartet… Das kann einen Moment dauern.",
   "phoneMeshDescOffline": "Telefon-Mesh ist noch nicht bereit.",
+  "phoneMeshRetryNow": "Jetzt erneut versuchen",
+  "phoneMeshLanHint": "Die Erkennung in der Nähe (gleiches W‑LAN) ist aus — auf dem iPhone „Lokales Netzwerk“ unter Einstellungen → EnvoyGo erlauben. Die Suche über das Internet funktioniert weiterhin.",
   "phoneMeshDescErrorGeneric": "Telefon-Mesh hat ein Problem. Verlassen Sie Social und kehren Sie zurück, oder starten Sie die App neu.",
   "phoneMeshDescError": "Telefon-Mesh-Fehler: {error}"
 }
