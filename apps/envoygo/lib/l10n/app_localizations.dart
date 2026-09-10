@@ -3630,6 +3630,18 @@ abstract class AppLocalizations {
   /// **'Hello sent'**
   String get peopleHelloSent;
 
+  /// No description provided for @peoplePendingHop.
+  ///
+  /// In en, this message translates to:
+  /// **'Reachable in a moment'**
+  String get peoplePendingHop;
+
+  /// No description provided for @peoplePendingHopHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This person is online, but their connection is still being set up. Try again in a few seconds.'**
+  String get peoplePendingHopHint;
+
   /// No description provided for @peopleEnterSearch.
   ///
   /// In en, this message translates to:

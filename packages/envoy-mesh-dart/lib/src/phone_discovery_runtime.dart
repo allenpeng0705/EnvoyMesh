@@ -254,15 +254,17 @@ class PhoneDiscoveryRuntime {
     for (final c in candidates) {
       if (c.peerId.isEmpty || c.peerId == selfLibp2pPeerId) continue;
       if (c.ownerId.isNotEmpty && c.ownerId == selfOwnerId) continue;
-      // Public relay responses strip ownerId — invent provisional so Discover
-      // UI filters (empty ownerId) do not drop the hit.
+      // Public relay responses strip ownerId — invent a *relay* placeholder so
+      // Discover UI filters (empty ownerId) do not drop the hit. `relay:` (not
+      // `lan:`) matters: a relay hit may hold no live hop, so callers must not
+      // treat it as a directly dialable LAN peer.
       final owner = c.ownerId.isNotEmpty
           ? c.ownerId
-          : provisionalLanOwnerId(c.peerId);
+          : provisionalRelayOwnerId(c.peerId);
       hits.add(MeshPeerHit(
         nodeId: c.peerId,
         ownerId: owner,
-        displayName: c.displayName,
+        displayName: c.displayName ?? 'Peer (${shortPeerLabel(c.peerId)})',
         multiaddrs: c.multiaddrs,
         interests: c.capabilities,
         profileVisibility: c.visibility,

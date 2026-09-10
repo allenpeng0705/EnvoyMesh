@@ -198,20 +198,39 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   /// Discover samples often raced session start and got local-only empties
   /// because `PhoneSocialBackend.searchPeers` returns store hits only while
   /// `wanSearch` is null.
+  ///
+  /// Fast path: when discovery was active within [_discoveryReadyMemoWindow],
+  /// skip the wait — only a genuinely cold start should pay it.
+  static const _discoveryReadyMemoWindow = Duration(minutes: 1);
+  static DateTime? _lastDiscoveryReadyAt;
+
+  bool get _phoneDiscoveryRecentlyReady {
+    final at = _lastDiscoveryReadyAt;
+    return at != null &&
+        DateTime.now().difference(at) < _discoveryReadyMemoWindow;
+  }
+
   Future<void> _waitForPhoneDiscoveryReady({
     Duration maxWait = _phoneDiscoveryReadyWait,
   }) async {
+    if (_phoneDiscoveryRecentlyReady) return;
     final deadline = DateTime.now().add(maxWait);
     while (DateTime.now().isBefore(deadline)) {
       if (!mounted) return;
       final rt = ref.read(phoneMeshRuntimeProvider);
-      if (rt.discoveryActive) return;
+      if (rt.discoveryActive) {
+        _lastDiscoveryReadyAt = DateTime.now();
+        return;
+      }
       if (rt.lastError != null && rt.lastError!.isNotEmpty) return;
       await Future.delayed(const Duration(milliseconds: 250));
     }
   }
 
-  Future<List<PeerSearchResult>> _samplePhoneMesh(SocialBackend backend) async {
+  Future<List<PeerSearchResult>> _samplePhoneMesh(
+    SocialBackend backend, {
+    void Function(List<PeerSearchResult> rows)? onPartial,
+  }) async {
     final out = <PeerSearchResult>[];
 
     // 1) Broad `mesh.discovery` / empty-topic first. Most phones only
@@ -225,6 +244,12 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
           );
       _merge(out, _filterNonBonded(all.map(_hitToPeerResult).toList()));
     } catch (_) {}
+
+    // Show the broad roster as soon as it lands instead of holding results back
+    // for the slower interest probes (first paint was up to ~23s worst case).
+    if (onPartial != null && out.isNotEmpty) {
+      onPartial(List<PeerSearchResult>.from(out));
+    }
 
     if (out.length >= _sampleCap) {
       out.shuffle(Random());
@@ -276,13 +301,29 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
         await _refreshExclude();
         await _waitForPhoneDiscoveryReady();
         if (!mounted) return;
-        final rows = await _samplePhoneMesh(backend).timeout(
+        final rows = await _samplePhoneMesh(
+          backend,
+          // First paint: show the broad roster while the slower interest probes
+          // are still running (keeps the busy indicator up).
+          onPartial: (partial) {
+            if (!mounted) return;
+            final shown = List<PeerSearchResult>.from(partial)..shuffle(Random());
+            setState(() {
+              _results = shown.take(_sampleCap).toList();
+              _fromSample = true;
+              _error = null;
+              _loading = false;
+              _searching = true;
+            });
+          },
+        ).timeout(
           _phoneSampleTimeout,
           onTimeout: () => const <PeerSearchResult>[],
         );
         if (!mounted) return;
         final discoveryReady =
             ref.read(phoneMeshRuntimeProvider).discoveryActive;
+        if (discoveryReady) _lastDiscoveryReadyAt = DateTime.now();
         setState(() {
           _results = rows;
           _fromSample = true;
@@ -1054,8 +1095,14 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
             ..._results.map((peer) {
               final name = (peer.displayName?.trim().isNotEmpty == true)
                   ? peer.displayName!.trim()
-                  : peer.ownerId;
+                  : (isProvisionalOwnerId(peer.ownerId)
+                      ? shortPeerLabel(peer.nodeId)
+                      : peer.ownerId);
               final helloSent = _outboundHellos.contains(peer.ownerId);
+              // Relay-roster hits can be listed while holding no live circuit
+              // hop (`hasHopSlot: false`) or with no dialable addresses: fine to
+              // show, but a hello would have no transport path.
+              final canSayHello = peer.dialable;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Column(
@@ -1104,6 +1151,20 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                           Text(
                             l10n.peopleHelloSent,
                             style: Theme.of(context).textTheme.bodySmall,
+                          )
+                        else if (!canSayHello)
+                          Tooltip(
+                            message: l10n.peoplePendingHopHint,
+                            child: Text(
+                              l10n.peoplePendingHop,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    fontStyle: FontStyle.italic,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                            ),
                           )
                         else
                           FilledButton.tonal(

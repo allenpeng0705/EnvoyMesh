@@ -324,6 +324,8 @@
   "peopleBlog": "Blog",
   "peopleSayHello": "Saluta",
   "peopleHelloSent": "Saluto inviato",
+  "peoplePendingHop": "Raggiungibile a breve",
+  "peoplePendingHopHint": "Questa persona è online, ma la connessione è ancora in preparazione. Riprova tra qualche secondo.",
   "peopleEnterSearch": "Inserisci un argomento o interesse per cercare.",
   "peopleNoMatches": "Nessuna corrispondenza per questa ricerca.",
   "peopleNoneFound": "Nessuna persona pubblica trovata sulla mesh.",

@@ -33,6 +33,7 @@ import {
   type UpdateProfileGalleryPhotoVisibilityParams,
 } from "@envoymesh/api";
 import { resolveDidImportInput, resolveDidExportInput } from "@envoymesh/api/did-import";
+import { setRelayClientPublicDiscoveryActive } from "./relay-client-cycle.js";
 import { signHumanProfile, signUnsignedEnvelope } from "@envoymesh/identity";
 import type {
   CachedPeerProfile,
@@ -111,6 +112,15 @@ export const DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS = 5 * 60_000;
 export const DISCOVERY_ADVERTISE_RETRY_BACKOFF_MAX_MS = 5 * 60_000;
 /** Max parallel DHT provides per advertise cycle (caps overnight microtask fan-out). */
 export const DISCOVERY_ADVERTISE_CONCURRENCY = 8;
+/**
+ * Consecutive dial-queue-congested cycles before we probe the DHT anyway.
+ *
+ * A congestion skip is deliberately *not* a failure (see the backoff logic), so
+ * without a backstop an indefinitely congested dial queue would silently stop
+ * topic advertising forever. After this many skips we run one probe cycle, emit
+ * `discovery:advertise-congestion-skip` for observability, then resume skipping.
+ */
+export const DISCOVERY_ADVERTISE_MAX_CONGESTION_SKIPS = 3;
 
 async function mapWithConcurrency<T, R>(
   items: readonly T[],
@@ -1065,6 +1075,10 @@ export async function _applyProfileDiscoveryAdvertising(
     `[node-service] Checking DHT advertising: visibility=${input.profileVisibility}, isPublicNetwork=${input.isPublicNetwork}, interests=${JSON.stringify(input.interests)}, locationTopics=${JSON.stringify(input.locationTopics)}, capabilityTopics=${JSON.stringify(input.capabilityTopics)}`,
   );
   if (input.profileVisibility === "public" && input.isPublicNetwork) {
+    // Broadcast-roster gate: the relay checkin advertises `mesh.discovery`
+    // publicly only while this is true, so a contacts-only profile is not
+    // listed in broad Discover lookups (see relay-client-cycle).
+    setRelayClientPublicDiscoveryActive(true);
     await _advertisePublicDiscoveryTopics(ctx, {
       interests: input.interests,
       username: input.username,
@@ -1115,6 +1129,10 @@ export async function _cancelDiscoveryTopics(ctx: IdentityContext, topics: strin
 }
 
 export async function _cancelAutoAdvertisedDiscoveryTopics(ctx: IdentityContext): Promise<void> {
+  // Not publicly discoverable any more — the next relay.checkin publishes the
+  // `mesh.discovery` row as `capability` visibility (exact peerId lookups keep
+  // working; broad public roster listing does not).
+  setRelayClientPublicDiscoveryActive(false);
   const removed = [...ctx.getAutoAdvertisedDiscoveryTopics()];
   ctx.setAutoAdvertisedDiscoveryTopics([]);
   const timer = ctx.getAdvertiseInterestsTimer();
@@ -1264,12 +1282,54 @@ export async function _advertisePublicDiscoveryTopics(
   // dial queue is congested (provide thrash starves circuit reservation).
   // Relay-roster notify runs regardless — Discover phone lookup uses checkin
   // topicHashes even when DHT puts are deferred.
-  const connectedPeers = ctx.requireMesh().getConnectedPeerIds();
-  const dialBudget = assessDialBudget(
-    ctx.requireMesh().getConnectionStats?.()?.dialQueueLength ?? 0,
-  );
+  let congestionSkips = 0;
+  /**
+   * Congestion bookkeeping for one cycle: counts consecutive skips and decides
+   * when to probe anyway (see DISCOVERY_ADVERTISE_MAX_CONGESTION_SKIPS). A
+   * non-congested cycle resets the counter; a probe cycle resets it too so the
+   * next congested run gets a fresh budget. Emits
+   * `discovery:advertise-congestion-skip` on every congested cycle so "we are
+   * not advertising" is observable instead of only a warn line.
+   */
+  const evaluateCongestion = (): {
+    connected: string[];
+    budget: ReturnType<typeof assessDialBudget>;
+    congestionBlocked: boolean;
+    probeAnyway: boolean;
+  } => {
+    const connected = ctx.requireMesh().getConnectedPeerIds();
+    const budget = assessDialBudget(
+      ctx.requireMesh().getConnectionStats?.()?.dialQueueLength ?? 0,
+    );
+    const congestionBlocked = connected.length >= 1 && budget.deferBackgroundWork;
+    if (!congestionBlocked) {
+      congestionSkips = 0;
+      return { connected, budget, congestionBlocked, probeAnyway: false };
+    }
+    congestionSkips += 1;
+    const probeAnyway = congestionSkips > DISCOVERY_ADVERTISE_MAX_CONGESTION_SKIPS;
+    ctx.emit("discovery:advertise-congestion-skip", {
+      dialQueueLength: budget.dialQueueLength,
+      consecutiveSkips: congestionSkips,
+      probingAnyway: probeAnyway,
+    });
+    if (probeAnyway) congestionSkips = 0;
+    return { connected, budget, congestionBlocked, probeAnyway };
+  };
+  const initialCongestion = evaluateCongestion();
+  const connectedPeers = initialCongestion.connected;
+  const dialBudget = initialCongestion.budget;
+  const congestionProbeNow = initialCongestion.probeAnyway;
   const skipPublishThisCycle =
-    connectedPeers.length < 1 || dialBudget.deferBackgroundWork;
+    connectedPeers.length < 1 ||
+    (initialCongestion.congestionBlocked && !congestionProbeNow);
+  if (congestionProbeNow) {
+    console.warn(
+      `[node-service] Discovery advertise: dialQueue=${dialBudget.dialQueueLength} congested for ` +
+        `${DISCOVERY_ADVERTISE_MAX_CONGESTION_SKIPS}+ consecutive cycles — probing ` +
+        `${allTopics.length} topic(s) anyway so Discover does not go dark.`,
+    );
+  }
   if (skipPublishThisCycle) {
     const reason =
       connectedPeers.length < 1
@@ -1341,12 +1401,16 @@ export async function _advertisePublicDiscoveryTopics(
       retryInFlight = true;
       void (async () => {
         try {
-          const connected = ctx.requireMesh().getConnectedPeerIds();
-          const dialBudget = assessDialBudget(
-            ctx.requireMesh().getConnectionStats?.()?.dialQueueLength ?? 0,
-          );
+          const attempt = evaluateCongestion();
+          const { connected, budget: dialBudget } = attempt;
           const skip =
-            connected.length < 1 || dialBudget.deferBackgroundWork;
+            connected.length < 1 || (attempt.congestionBlocked && !attempt.probeAnyway);
+          if (attempt.probeAnyway) {
+            console.warn(
+              `[node-service] Discovery advertise retry: dialQueue=${dialBudget.dialQueueLength} congested for ` +
+                `${DISCOVERY_ADVERTISE_MAX_CONGESTION_SKIPS}+ consecutive cycles — probing anyway.`,
+            );
+          }
           if (skip) {
             const reason =
               connected.length < 1
@@ -1489,6 +1553,7 @@ export async function _advertiseInterestsIfPublic(ctx: IdentityContext): Promise
     `[advertiseInterests] visibility=${profile.profileVisibility} presets=${config.bootstrapPresets?.length ?? 0} peers=${config.bootstrapPeers?.length ?? 0} isPublicNetwork=${isPublicNetwork}`,
   );
   if (profile.profileVisibility === "public" && isPublicNetwork) {
+    setRelayClientPublicDiscoveryActive(true);
     const { interests, usernameTopic, locationTopics, capabilityTopics } =
       computePublicDiscoveryTopics(profile);
     const username = (profile.username ?? "").toLowerCase();

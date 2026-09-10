@@ -14,7 +14,7 @@ void main() {
       );
 
       var calls = 0;
-      backend.replaceWanSearch(({topic, interests, maxResults = 20}) async {
+      backend.replaceWanSearch(({topic, interests, peerId, maxResults = 20}) async {
         calls++;
         return [
           const MeshPeerHit(

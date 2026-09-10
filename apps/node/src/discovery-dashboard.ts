@@ -20,6 +20,7 @@ import { createInboundMessageGuard, peerIdFromRelayTarget } from "./inbound-guar
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
 import { logRelayReachableAddrsForCheckin, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
+import { relayDiscoveryAdvertisementVisibility } from "./relay-client-cycle.js";
 
 const CLEAR = "\x1b[2J\x1b[H";
 const BOLD = "\x1b[1m";
@@ -372,7 +373,13 @@ async function sendRelayCheckin(input: {
     ownerId: profile.owner.ownerId,
     relayReachableAddrs: mesh.getRelayAdvertisedMultiaddrs(),
     capabilities,
-    advertisements: [{ capability: "mesh.discovery", visibility: "public", expiresAt }],
+    advertisements: [
+      {
+        capability: "mesh.discovery",
+        visibility: relayDiscoveryAdvertisementVisibility(),
+        expiresAt,
+      },
+    ],
     relayHints: bootstrapPeers.map((addr) => ({
       relayId: relayIdFromAddr(addr),
       multiaddrs: [addr],

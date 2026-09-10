@@ -1866,6 +1866,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get peopleHelloSent => '인사를 보냈습니다';
 
   @override
+  String get peoplePendingHop => '곧 연결할 수 있습니다';
+
+  @override
+  String get peoplePendingHopHint =>
+      '상대방은 온라인이지만 아직 연결을 설정하는 중입니다. 몇 초 후 다시 시도하세요.';
+
+  @override
   String get peopleEnterSearch => '주제나 관심사를 입력해 검색하세요.';
 
   @override

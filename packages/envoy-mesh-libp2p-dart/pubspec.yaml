@@ -15,6 +15,15 @@ dependencies:
   crypto: ^3.0.3
   dcid: ^1.0.0
   meta: ^1.12.0
+  # dart_libp2p pins `mdns_dart ^2.0.1` → 2.2.1, which fails to compile on
+  # Dart 3.13+ (InternetAddress vs InterfaceAddress); 2.2.2 fixes it. The
+  # constraint can only be widened once dart_libp2p allows it, so every *pub
+  # root* that resolves this package must override it, e.g.
+  #   dependency_overrides:
+  #     mdns_dart: 2.2.2
+  # (see apps/envoygo/pubspec.yaml). Not added here on purpose: dependency
+  # overrides are only honoured from the root package, and this package's
+  # pubspec.lock is tracked — adding one would desync it for consumers.
   dart_libp2p: ^1.0.1
   dart_libp2p_kad_dht: ^1.2.0
   envoy_mesh:

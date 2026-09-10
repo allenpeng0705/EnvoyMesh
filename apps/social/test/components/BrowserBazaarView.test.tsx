@@ -16,6 +16,9 @@ const runCapabilityDiscovery = vi.fn();
 const listAgentCards = vi.fn();
 const sendHello = vi.fn();
 const on = vi.fn(() => () => undefined);
+// Discover soft-gates on a live circuit hop (useCircuitReservationStatus +
+// waitForDiscoverReady). Default to "reserved" so People sampling runs.
+const getCircuitReservationStatus = vi.fn();
 
 beforeEach(() => {
   listFeedNotifications.mockResolvedValue([]);
@@ -24,6 +27,13 @@ beforeEach(() => {
   runCapabilityDiscovery.mockResolvedValue(undefined);
   listAgentCards.mockResolvedValue([]);
   sendHello.mockResolvedValue(undefined);
+  getCircuitReservationStatus.mockResolvedValue({
+    state: "reserved",
+    live: true,
+    everReserved: true,
+    relayPeerIds: ["12D3KooWRelay"],
+    checkedAt: new Date().toISOString(),
+  });
   libraryRead.mockResolvedValue({
     status: "not_found",
     peerOwnerId: "envoy:owner:x",
@@ -41,6 +51,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     searchPeers,
     runCapabilityDiscovery,
     listAgentCards,
+    getCircuitReservationStatus,
     getPeerProfile: vi.fn(async () => null),
     requestPeerProfile: vi.fn(async () => undefined),
     on,

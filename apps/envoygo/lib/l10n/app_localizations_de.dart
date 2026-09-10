@@ -1947,6 +1947,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get peopleHelloSent => 'Hallo gesendet';
 
   @override
+  String get peoplePendingHop => 'Gleich erreichbar';
+
+  @override
+  String get peoplePendingHopHint =>
+      'Diese Person ist online, aber ihre Verbindung wird noch aufgebaut. Versuchen Sie es in einigen Sekunden erneut.';
+
+  @override
   String get peopleEnterSearch =>
       'Geben Sie ein Thema oder Interesse ein, um zu suchen.';
 

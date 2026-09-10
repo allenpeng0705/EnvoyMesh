@@ -282,7 +282,9 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
       );
     }).toList();
 
-    // Persist dial hints for hello (WAN + provisional LAN owners).
+    // Persist dial hints for hello. A hit with no addresses is only useful when
+    // it is a LAN peer (`lan:` placeholder — mDNS dials it directly); a
+    // relay-roster hit with no live hop has nothing to store yet.
     for (final hit in merged) {
       if (hit.ownerId.isEmpty) continue;
       if (hit.multiaddrs.isEmpty && !isProvisionalLanOwnerId(hit.ownerId)) {

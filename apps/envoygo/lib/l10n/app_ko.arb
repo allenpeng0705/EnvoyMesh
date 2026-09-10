@@ -324,6 +324,8 @@
   "peopleBlog": "블로그",
   "peopleSayHello": "인사하기",
   "peopleHelloSent": "인사를 보냈습니다",
+  "peoplePendingHop": "곧 연결할 수 있습니다",
+  "peoplePendingHopHint": "상대방은 온라인이지만 아직 연결을 설정하는 중입니다. 몇 초 후 다시 시도하세요.",
   "peopleEnterSearch": "주제나 관심사를 입력해 검색하세요.",
   "peopleNoMatches": "해당 검색과 일치하는 결과가 없습니다.",
   "peopleNoneFound": "메시에서 공개된 사람을 아직 찾지 못했습니다.",

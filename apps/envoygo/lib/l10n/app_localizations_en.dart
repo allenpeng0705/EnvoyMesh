@@ -1926,6 +1926,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peopleHelloSent => 'Hello sent';
 
   @override
+  String get peoplePendingHop => 'Reachable in a moment';
+
+  @override
+  String get peoplePendingHopHint =>
+      'This person is online, but their connection is still being set up. Try again in a few seconds.';
+
+  @override
   String get peopleEnterSearch =>
       'Enter an interest, topic, peer ID, or contact link.';
 

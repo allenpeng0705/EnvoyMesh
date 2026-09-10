@@ -1740,6 +1740,13 @@ button.secondary:not(.danger):disabled,
   color: var(--color-warning);
 }
 
+/* Checked in, but no live circuit hop yet: the person is listed (findability)
+   while a "Say Hello" would have no transport path. Soft warning, no action. */
+.discover-peer-card__status--pending-hop {
+  color: var(--color-warning);
+  font-style: italic;
+}
+
 /* Holds the "Hello sent — waiting for them to accept" badge plus a small
    "Resend" affordance on the search-result card and friend-suggestion card.
    Keeps the badge and button stacked or side-by-side depending on width. */

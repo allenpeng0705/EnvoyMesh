@@ -269,7 +269,7 @@ import {
   noteRelaySuccess,
 } from "./relay-roster.js";
 import { preferRelayPeerCandidate } from "./relay-lookup-merge.js";
-import { getRelayClientAdvertisedTopics } from "./relay-client-cycle.js";
+import { getRelayClientAdvertisedTopics, relayDiscoveryAdvertisementVisibility } from "./relay-client-cycle.js";
 import { createRelayLookupRouter } from "./relay-lookup-router.js";
 import { collectRelayControlTargets } from "./relay-reservation-health.js";
 import { logRelayReachableAddrsForCheckin, logRelayServerCheckinAccepted, logRelayServerLookupResponse, logClientRelayLookupResponse } from "./relay-checkin-log.js";
@@ -5195,11 +5195,13 @@ async function runRelayCheckinCycle(source: "startup" | "periodic" | "post-adver
       advertisements: [
         ...capabilities.map((capability) => ({
           capability,
-          visibility: (capability === "mesh.discovery" ? "public" : "bonded") as
-            | "public"
-            | "bonded"
-            | "private"
-            | "capability",
+          // `mesh.discovery` is the broad-roster listing switch: public only
+          // while the profile is public on a public network (see
+          // relayDiscoveryAdvertisementVisibility). Non-public profiles keep a
+          // `capability` row so exact peerId lookups still resolve.
+          visibility: (capability === "mesh.discovery"
+            ? relayDiscoveryAdvertisementVisibility()
+            : "bonded") as "public" | "bonded" | "private" | "capability",
           expiresAt,
         })),
         ...topicAds,

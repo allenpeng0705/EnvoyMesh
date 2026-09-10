@@ -1850,6 +1850,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peopleHelloSent => '已发送打招呼';
 
   @override
+  String get peoplePendingHop => '稍后即可连接';
+
+  @override
+  String get peoplePendingHopHint => '对方在线，但连接仍在建立中。请几秒后重试。';
+
+  @override
   String get peopleEnterSearch => '输入兴趣、话题、peer ID 或联系链接。';
 
   @override

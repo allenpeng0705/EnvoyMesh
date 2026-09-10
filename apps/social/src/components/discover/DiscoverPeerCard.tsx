@@ -21,6 +21,19 @@ export function DiscoverPeerCard({
   const ownerId = peer.ownerId?.trim() || "";
   const canOpenProfile = ownerId.startsWith("envoy:owner:");
   const openLabel = t("discoverCards.openProfile", "Open profile");
+  /**
+   * Relay-roster hits carry `hasHopSlot: false` while the peer is checked in but
+   * holds no live circuit hop (see relay-roster `hasHopSlot`). Such a peer is
+   * fine to *show* — they are on the mesh — but a hello has no transport path
+   * yet, so it would fail with a confusing error. `undefined` means the source
+   * did not report hoppability (LAN/DHT/local hits): treat as reachable so this
+   * only ever narrows the relay-roster case.
+   */
+  const reachable = peer.hasHopSlot !== false;
+  const pendingHopHint = t(
+    "discover.peer.pendingHopHint",
+    "This person is online, but their connection is still being set up. Try again in a few seconds.",
+  );
 
   const identity = (
     <>
@@ -60,6 +73,15 @@ export function DiscoverPeerCard({
       ) : helloState === "sent" ? (
         <span className="discover-peer-card__status discover-peer-card__status--sent" role="status">
           {t("common.helloSentWaiting")}
+        </span>
+      ) : !reachable && onSayHello ? (
+        <span
+          className="discover-peer-card__status discover-peer-card__status--pending-hop"
+          role="status"
+          data-testid="discover-peer-pending-hop"
+          title={pendingHopHint}
+        >
+          {t("discover.peer.pendingHop", "Reachable in a moment")}
         </span>
       ) : onSayHello ? (
         <button type="button" className="say-hello-btn" onClick={onSayHello}>

@@ -1,7 +1,11 @@
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
-# mobile_scanner 7+ / Vision need iOS 13+. Keep explicit for simulator builds.
+# iOS 15.0 — raised from 13.0 (2026-09-10). mobile_scanner 7+ / Vision need
+# 13+, but the current Flutter/plugin set (flutter_inappwebview, flutter_webrtc,
+# Firebase pods) only builds cleanly at 15.0. Product impact: iOS 13/14 devices
+# are no longer supported; keep this in sync with IPHONEOS_DEPLOYMENT_TARGET in
+# Runner.xcodeproj/project.pbxproj (all three configurations).
 platform :ios, '15.0'
 
 project 'Runner', {

@@ -324,6 +324,8 @@
   "peopleBlog": "ブログ",
   "peopleSayHello": "挨拶する",
   "peopleHelloSent": "挨拶を送信しました",
+  "peoplePendingHop": "まもなく接続できます",
+  "peoplePendingHopHint": "相手はオンラインですが、接続を準備中です。数秒後にもう一度お試しください。",
   "peopleEnterSearch": "トピックまたは興味を入力して検索してください。",
   "peopleNoMatches": "その検索に一致する結果はありません。",
   "peopleNoneFound": "メッシュ上に公開プロフィールの人はまだいません。",

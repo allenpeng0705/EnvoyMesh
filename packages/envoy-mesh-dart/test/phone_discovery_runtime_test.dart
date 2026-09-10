@@ -147,7 +147,7 @@ void main() {
       expect(merged.single.multiaddrs, isNotEmpty);
     });
 
-    test('hitsFromRelayCandidates invents provisional owner when relay strips it', () {
+    test('hitsFromRelayCandidates invents a relay (not LAN) provisional owner', () {
       final host = _FakeHost();
       final runtime = PhoneDiscoveryRuntime(host: host);
       final hits = runtime.hitsFromRelayCandidates(
@@ -163,8 +163,30 @@ void main() {
         selfOwnerId: 'envoy:owner:alice',
       );
       expect(hits, hasLength(1));
-      expect(hits.single.ownerId, provisionalLanOwnerId('12D3KooPublic'));
+      // `relay:` — a WAN roster hit with no hop is findable, not LAN-dialable.
+      expect(hits.single.ownerId, provisionalRelayOwnerId('12D3KooPublic'));
+      expect(isProvisionalRelayOwnerId(hits.single.ownerId), isTrue);
+      expect(isProvisionalLanOwnerId(hits.single.ownerId), isFalse);
+      expect(isProvisionalOwnerId(hits.single.ownerId), isTrue);
       expect(hits.single.displayName, 'Emily');
+    });
+
+    test('hitsFromRelayCandidates labels a nameless relay hit', () {
+      final host = _FakeHost();
+      final runtime = PhoneDiscoveryRuntime(host: host);
+      final hits = runtime.hitsFromRelayCandidates(
+        const [
+          RelayLookupCandidate(
+            peerId: '12D3KooWNameless',
+            ownerId: '',
+            displayName: null,
+            multiaddrs: [],
+          ),
+        ],
+        selfLibp2pPeerId: '12D3KooSelf',
+        selfOwnerId: 'envoy:owner:alice',
+      );
+      expect(hits.single.displayName, 'Peer (12D3KooW…less)');
     });
   });
 

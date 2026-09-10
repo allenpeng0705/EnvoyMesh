@@ -186,6 +186,13 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
             : entry.reservationFreshUntil > current;
         // Discover findability: include check-in peers without a live hop.
         // Prefer live-hop via sort; check-in-only get empty multiaddrs.
+        // A bare capability token must not widen *public* broad-roster listing
+        // for a peer we cannot dial yet: broad lookups need an explicit,
+        // expiring `advertisements[]` row. Exact-ID lookups are unaffected.
+        const isExactLookup = Boolean(payload.targetPeerId || payload.targetOwnerId);
+        if (!liveHop && !isExactLookup && !hasExplicitAdvertisement(entry, payload)) {
+          continue;
+        }
         candidates.push({
           peerId: entry.peerId,
           ownerId: visibility === "public" || visibility === "capability" ? undefined : entry.ownerId,
@@ -343,9 +350,29 @@ function matchesLookup(entry: RelayRosterEntry, payload: RelayLookupPayload): bo
 }
 
 /**
+ * True when the entry carries an explicit `advertisements[]` row for the
+ * requested capability / topicHash.
+ *
+ * Keeps check-in-only peers out of public broad-roster results unless they
+ * actually published that advertisement — `visibilityFor` otherwise upgrades a
+ * bare capability token to `public`.
+ */
+function hasExplicitAdvertisement(
+  entry: RelayRosterEntry,
+  payload: RelayLookupPayload,
+): boolean {
+  return entry.advertisements.some(
+    (ad) =>
+      (payload.capability !== undefined && ad.capability === payload.capability) ||
+      (payload.topicHash !== undefined && ad.topicHash === payload.topicHash),
+  );
+}
+
+/**
  * Exact peer/owner lookup is public when the peer advertised publicly or has
  * mesh.discovery. Capability/topic lookups include check-in-only peers
- * (`hasHopSlot: false`, empty multiaddrs) ranked after live-hop peers.
+ * (`hasHopSlot: false`, empty multiaddrs) ranked after live-hop peers, but only
+ * when the peer published an explicit matching `advertisements[]` row.
  */
 function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPayload): RelayVisibility {
   if (payload.targetPeerId || payload.targetOwnerId) {

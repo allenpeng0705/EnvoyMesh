@@ -84,8 +84,13 @@ describe("AgentNetworkProfilePanel", () => {
     await waitFor(() => {
       expect(updateNodeConfig).toHaveBeenCalledWith({ useMAP: true });
     });
+    // The panel reports the outcome as a toast ("… adapter is now the primary
+    // executor"), not as inline "Status: …" text any more.
     await waitFor(() => {
-      expect(screen.getByText(/Status:.*primary/i)).toBeTruthy();
+      expect(showToast).toHaveBeenCalledWith(
+        expect.stringMatching(/primary executor/i),
+        "success",
+      );
     });
   });
 

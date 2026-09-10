@@ -282,6 +282,14 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
           typeof hasLiveReservation === "function"
             ? hasLiveReservation(entry.peerId)
             : entry.reservationFreshUntil > current;
+        // A bare capability token must not widen *public* broad-roster listing
+        // for a peer that cannot be dialed yet. Broad lookups (no
+        // targetPeerId/targetOwnerId) require an explicit, expiring
+        // `advertisements[]` row for this capability/topic — i.e. the peer
+        // published a visibility for it. Exact-ID lookups and live-hop peers are
+        // unaffected (the caller already knows the peer / can dial it).
+        const isExactLookup = Boolean(payload.targetPeerId || payload.targetOwnerId);
+        if (!liveHop && !isExactLookup && !hasExplicitAdvertisement(entry, payload)) continue;
         candidates.push({
           peerId: entry.peerId,
           ownerId: visibility === "public" || visibility === "capability" ? undefined : entry.ownerId,
@@ -437,6 +445,25 @@ export function isVisible(candidate: RelayVisibility, requested: RelayVisibility
     return requested === "capability" || requested === "bonded";
   }
   return true;
+}
+
+/**
+ * True when the entry carries an explicit `advertisements[]` row for the
+ * requested capability / topicHash.
+ *
+ * Used to keep check-in-only peers out of public broad-roster results unless
+ * they actually published that advertisement (see `visibilityFor`, which
+ * otherwise upgrades a bare capability token to `public`).
+ */
+export function hasExplicitAdvertisement(
+  entry: RelayRosterEntry,
+  payload: RelayLookupPayload,
+): boolean {
+  return entry.advertisements.some(
+    (ad) =>
+      (payload.capability !== undefined && ad.capability === payload.capability) ||
+      (payload.topicHash !== undefined && ad.topicHash === payload.topicHash),
+  );
 }
 
 function matchesLookup(entry: RelayRosterEntry, payload: RelayLookupPayload): boolean {

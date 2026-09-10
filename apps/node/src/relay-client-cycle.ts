@@ -52,6 +52,42 @@ const advertisedByScope: Record<RelayClientAdvertisementScope, string[]> = {
 
 let currentAdvertisedTopics: string[] = [];
 
+/**
+ * Public-discovery gate, mirrored from the identity layer.
+ *
+ * `advertiseInterests` already refuses to publish DHT topics when the human
+ * profile is not `public` (or the node is not on a public network). The relay
+ * roster must follow the same rule: the `mesh.discovery` advertisement is what
+ * makes a peer listable in *broad* `capability: mesh.discovery` lookups, so a
+ * non-public profile must not publish that row as `public`.
+ *
+ * Default `true` preserves legacy behaviour for callers that never call
+ * {@link setRelayClientPublicDiscoveryActive} (CLI checkin, dashboard).
+ */
+let publicDiscoveryActive = true;
+
+export function setRelayClientPublicDiscoveryActive(active: boolean): void {
+  publicDiscoveryActive = active;
+}
+
+export function isRelayClientPublicDiscoveryActive(): boolean {
+  return publicDiscoveryActive;
+}
+
+/**
+ * Visibility to publish on the `mesh.discovery` roster advertisement.
+ *
+ * - `public` — profile visibility is public on a public network: list this
+ *   peer in broad Discover lookups.
+ * - `capability` — private / contacts-only profile: keep the advertisement row
+ *   so `matchesLookup` and exact `targetPeerId` / `targetOwnerId` lookups keep
+ *   working for people who already know this peer, but stay out of public
+ *   broad-roster results.
+ */
+export function relayDiscoveryAdvertisementVisibility(): "public" | "capability" {
+  return publicDiscoveryActive ? "public" : "capability";
+}
+
 function rebuildAdvertisedTopics(): void {
   const cleaned = dedupeTopics([
     ...advertisedByScope.identity,
@@ -242,6 +278,16 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
 
 async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): Promise<RelayCheckinAttempt[]> {
   const { mesh, profile } = deps;
+  const discoveryAdvertisementVisibility = relayDiscoveryAdvertisementVisibility();
+  if (!isRelayClientPublicDiscoveryActive()) {
+    // Answers "why am I not in Discover?" without reading the audit log: the
+    // profile is contacts-only/private (or the node is off the public network),
+    // so the roster gets a capability-scoped row instead of a public one.
+    console.log(
+      "[relay-client] relay.checkin: mesh.discovery advertised as capability-scoped " +
+        "(profile not public) — excluded from broad Discover listing, exact peerId lookups still work",
+    );
+  }
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
   const topicHashes = await Promise.all(
     currentAdvertisedTopics.map((topic) => topicToHash(topic).catch(() => null)),
@@ -258,7 +304,11 @@ async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): 
     relayReachableAddrs: mesh.getRelayAdvertisedMultiaddrs(),
     capabilities: relayCheckinCapabilities(profile.deviceCertificate.capabilities),
     advertisements: [
-      { capability: "mesh.discovery", visibility: "public", expiresAt },
+      {
+        capability: "mesh.discovery",
+        visibility: discoveryAdvertisementVisibility,
+        expiresAt,
+      },
       ...topicAds,
     ],
     relayHints: targets.map((addr) => ({

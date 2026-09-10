@@ -571,5 +571,55 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       expect(congested).toBe(true);
       warnSpy.mockRestore();
     });
+
+    it("stops skipping after MAX consecutive congested cycles and probes anyway", async () => {
+      const mesh = createMockMesh(async () => ({ cid: {} as never }));
+      (mesh.getConnectedPeerIds as ReturnType<typeof vi.fn>).mockReturnValue([
+        "12D3KooWCommunityRelay",
+        "12D3KooWPeerB",
+      ]);
+      (mesh.getConnectionStats as ReturnType<typeof vi.fn>).mockReturnValue({
+        dialQueueLength: 51, // congested, and it never clears in this test
+        totalConnections: 2,
+        totalPeerIds: 2,
+      });
+
+      const nodeService = new NodeServiceImpl(
+        mesh as any,
+        createMockTrustStore(),
+        createMockPeerDirectoryStore(),
+        createMockHumanProfileStore(),
+        "/tmp/test",
+      );
+      setConfigStore(nodeService, createNullConfigStore());
+      setExternalMesh(nodeService, mesh);
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      await _advertisePublicDiscoveryTopics((nodeService as any)._identityContext(), {
+        interests: ["music"],
+        username: "alice",
+        displayName: "",
+        locationTopics: [],
+      });
+      await flushAsync();
+      // Cycle 1 (initial) skipped: topics never land with an unbounded skip.
+      expect(mesh.provideCapabilityTopic).not.toHaveBeenCalled();
+
+      // Each congestion skip keeps the healthy 5-minute interval, so three
+      // further cycles reach the backstop (skip #4 > MAX=3).
+      for (let cycle = 0; cycle < 3; cycle++) {
+        await vi.advanceTimersByTimeAsync(DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS);
+        await flushAsync();
+      }
+
+      const probedAnyway = warnSpy.mock.calls.some((args) => {
+        const msg = args[0];
+        return typeof msg === "string" && msg.includes("probing");
+      });
+      expect(probedAnyway).toBe(true);
+      expect(mesh.provideCapabilityTopic).toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
   });
 });

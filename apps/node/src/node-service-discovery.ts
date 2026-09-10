@@ -589,10 +589,13 @@ export class NodeDiscoveryRuntime {
         return [];
       }
 
-      console.log(`[searchPeers] Searching DHT for topic: "${topic}" (limit: ${maxResults})`);
       // Broad roster sample: peers advertise `capability: mesh.discovery` on
-      // relay.checkin (not a topicHash). Skip DHT for this sentinel.
+      // relay.checkin (not a topicHash). Skip DHT for this sentinel — it is
+      // answered by capability relay.lookup only (no DHT provide exists for it).
       if (topic === "mesh.discovery" && this.deps.queryRelayLookupByTopic) {
+        console.log(
+          `[searchPeers] Broad roster lookup via relay capability="mesh.discovery" (limit: ${maxResults})`,
+        );
         try {
           return await withTimeoutFallback(
             this.deps.queryRelayLookupByTopic({
@@ -611,6 +614,8 @@ export class NodeDiscoveryRuntime {
           return [];
         }
       }
+
+      console.log(`[searchPeers] Searching DHT for topic: "${topic}" (limit: ${maxResults})`);
       let providers: Awaited<ReturnType<EnvoyMesh["findCapabilityTopicProviders"]>> = [];
       try {
         providers = await mesh.findCapabilityTopicProviders(topic, {

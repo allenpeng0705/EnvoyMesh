@@ -1944,6 +1944,13 @@ class AppLocalizationsIt extends AppLocalizations {
   String get peopleHelloSent => 'Saluto inviato';
 
   @override
+  String get peoplePendingHop => 'Raggiungibile a breve';
+
+  @override
+  String get peoplePendingHopHint =>
+      'Questa persona è online, ma la connessione è ancora in preparazione. Riprova tra qualche secondo.';
+
+  @override
   String get peopleEnterSearch =>
       'Inserisci un argomento o interesse per cercare.';
 

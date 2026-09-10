@@ -1948,6 +1948,13 @@ class AppLocalizationsFr extends AppLocalizations {
   String get peopleHelloSent => 'Bonjour envoyé';
 
   @override
+  String get peoplePendingHop => 'Bientôt joignable';
+
+  @override
+  String get peoplePendingHopHint =>
+      'Cette personne est en ligne, mais sa connexion est encore en cours d’établissement. Réessayez dans quelques secondes.';
+
+  @override
   String get peopleEnterSearch =>
       'Entrez un sujet ou un intérêt pour rechercher.';
 

@@ -1867,6 +1867,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get peopleHelloSent => '挨拶を送信しました';
 
   @override
+  String get peoplePendingHop => 'まもなく接続できます';
+
+  @override
+  String get peoplePendingHopHint => '相手はオンラインですが、接続を準備中です。数秒後にもう一度お試しください。';
+
+  @override
   String get peopleEnterSearch => 'トピックまたは興味を入力して検索してください。';
 
   @override

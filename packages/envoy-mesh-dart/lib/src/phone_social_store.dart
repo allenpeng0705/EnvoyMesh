@@ -118,13 +118,14 @@ class PhoneSocialStore {
             : {...prev.profile, ...peer.profile},
       );
     }
-    // Real owner supersedes provisional lan:<libp2pPeerId> placeholder.
-    if (!isProvisionalLanOwnerId(peer.ownerId) &&
+    // Real owner supersedes any locally invented placeholder (`lan:` /
+    // `relay:<libp2pPeerId>`) for the same libp2p peer.
+    if (!isProvisionalOwnerId(peer.ownerId) &&
         peer.libp2pPeerId.isNotEmpty) {
       final libp2p = peer.libp2pPeerId;
       peersByOwner.removeWhere(
         (id, p) =>
-            isProvisionalLanOwnerId(id) && p.libp2pPeerId == libp2p,
+            isProvisionalOwnerId(id) && p.libp2pPeerId == libp2p,
       );
     }
   }

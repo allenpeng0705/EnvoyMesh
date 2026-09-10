@@ -63,6 +63,15 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     requestAgentCard: vi.fn(async () => ({ ok: true })),
     searchPeers: vi.fn(async () => []),
     runCapabilityDiscovery: vi.fn(async () => undefined),
+    // Discover soft-gates on a live circuit hop (useCircuitReservationStatus +
+    // waitForDiscoverReady); report reserved so People sampling runs.
+    getCircuitReservationStatus: vi.fn(async () => ({
+      state: "reserved",
+      live: true,
+      everReserved: true,
+      relayPeerIds: ["12D3KooWRelay"],
+      checkedAt: new Date().toISOString(),
+    })),
     listAgentCards: vi.fn(async () => []),
     getPeerProfile: vi.fn(async () => null),
     getContentEngagement: vi.fn(async () => ({

@@ -153,6 +153,54 @@ noteRelaySuccess(state, state.candidateRelays[0]!);
     expect(response.peers[1]?.multiaddrs).toEqual([]);
   });
 
+  it("broad lookup omits checkin-only peers with a bare capability token", () => {
+    const now = Date.parse("2026-04-27T10:00:00.000Z");
+    const roster = createRelayRoster({ now: () => now, rosterTtlMs: 60_000 });
+    roster.checkin({
+      peerId: "peer-bare",
+      relayReachableAddrs: [],
+      capabilities: ["mesh.discovery"],
+      advertisements: [],
+      relayHints: [],
+      expiresAt: "2026-04-27T10:01:00.000Z",
+    });
+    const response = roster.lookup({
+      requesterPeerId: "seeker",
+      relayPeerId: "relay-1",
+      relayMultiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-1"],
+      hasLiveReservation: () => false,
+      payload: {
+        queryId: "broad",
+        capability: "mesh.discovery",
+        maxResults: 10,
+        maxHops: 0,
+        maxFanout: 2,
+        visibilityScope: "public",
+        expiresAt: "2026-04-27T10:01:00.000Z",
+      },
+    });
+    expect(response.peers).toHaveLength(0);
+
+    // ...but someone who already knows the peerId still resolves it.
+    const byId = roster.lookup({
+      requesterPeerId: "seeker",
+      relayPeerId: "relay-1",
+      relayMultiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-1"],
+      hasLiveReservation: () => false,
+      payload: {
+        queryId: "by-id",
+        targetPeerId: "peer-bare",
+        capability: "mesh.discovery",
+        maxResults: 10,
+        maxHops: 0,
+        maxFanout: 2,
+        visibilityScope: "public",
+        expiresAt: "2026-04-27T10:01:00.000Z",
+      },
+    });
+    expect(byId.peers.map((p) => p.peerId)).toEqual(["peer-bare"]);
+  });
+
   it("stores summaries and expires stale summary state", () => {
     let now = Date.parse("2026-04-27T10:00:00.000Z");
     const roster = createRelayRoster({ now: () => now });

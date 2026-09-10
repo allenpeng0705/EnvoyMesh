@@ -596,6 +596,8 @@
   "peopleBlog": "博客",
   "peopleSayHello": "打招呼",
   "peopleHelloSent": "已发送打招呼",
+  "peoplePendingHop": "稍后即可连接",
+  "peoplePendingHopHint": "对方在线，但连接仍在建立中。请几秒后重试。",
   "peopleEnterSearch": "输入兴趣、话题、peer ID 或联系链接。",
   "peopleNoMatches": "没有匹配的搜索结果。",
   "peopleNoneFound": "网络上还没有公开的用户。",
