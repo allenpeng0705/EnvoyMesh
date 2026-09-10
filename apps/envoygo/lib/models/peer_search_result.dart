@@ -1,3 +1,5 @@
+import 'package:envoy_mesh/envoy_mesh.dart' show peerDialable;
+
 /// Result row from home-node `searchPeers` (mesh discovery).
 class PeerSearchResult {
   final String nodeId;
@@ -28,10 +30,9 @@ class PeerSearchResult {
 
   /// True when a Say Hello has a chance of reaching this peer.
   ///
-  /// Falls back to "has dialable addresses" when the source did not report a
-  /// hop slot, so relay-roster hits with empty multiaddrs are not treated as
-  /// dialable while LAN/direct hits still are.
-  bool get dialable => hasHopSlot ?? multiaddrs.isNotEmpty;
+  /// Delegates to the SDK rule (`peerDialable`) so the phone SDK and this UI
+  /// model cannot disagree; see that function for the precedence.
+  bool get dialable => peerDialable(hasHopSlot: hasHopSlot, multiaddrs: multiaddrs);
 
   factory PeerSearchResult.fromJson(Map<String, dynamic> json) {
     final rawInterests = json['interests'];

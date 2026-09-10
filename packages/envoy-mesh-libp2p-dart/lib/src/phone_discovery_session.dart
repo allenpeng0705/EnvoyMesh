@@ -297,6 +297,10 @@ class PhoneDiscoverySession implements PhoneDiscoveryHost {
           libp2pPeerId: hit.nodeId,
           displayName: hit.displayName,
           multiaddrs: hit.multiaddrs,
+          // Remember the hop report too: stored `/p2p-circuit/` addrs stop
+          // working when the reservation lapses, and a `false` report clears an
+          // earlier positive one.
+          hopFreshUntilMs: hopFreshUntilForReport(hit.hasHopSlot),
         ));
       } catch (_) {}
     }

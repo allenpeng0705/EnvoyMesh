@@ -96,4 +96,27 @@ class MeshPeerHit {
   /// `false` = checked in but not dialable yet. `null` = source silent
   /// (LAN / DHT / local) — callers treat address presence as dialability.
   final bool? hasHopSlot;
+
+  /// True when this hit can be dialed right now (Say Hello has a chance).
+  bool get dialable => peerDialable(hasHopSlot: hasHopSlot, multiaddrs: multiaddrs);
 }
+
+/// Shared dialability rule — one implementation for both clients.
+///
+/// A *direct* address decides on its own: a relay hop report only governs
+/// `/p2p-circuit/` paths, so a hit that a DHT/LAN merge gave real addresses
+/// stays dialable even when a roster said "no slot right now". Otherwise the
+/// hop report decides, falling back to address presence when the source was
+/// silent. Used by `MeshPeerHit.dialable` and EnvoyGo
+/// `PeerSearchResult.dialable` so the two cannot drift.
+bool peerDialable({bool? hasHopSlot, List<String> multiaddrs = const []}) {
+  if (multiaddrs.any(isDirectPeerAddress)) return true;
+  return hasHopSlot ?? multiaddrs.isNotEmpty;
+}
+
+/// True for an address that does not need a relay circuit reservation.
+bool isDirectPeerAddress(String addr) => !addr.contains('/p2p-circuit');
+
+/// True when every known address needs a live relay circuit reservation.
+bool allAddressesNeedRelayHop(List<String> multiaddrs) =>
+    multiaddrs.isNotEmpty && multiaddrs.every((a) => !isDirectPeerAddress(a));

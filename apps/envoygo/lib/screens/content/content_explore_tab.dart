@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../mesh/social_model_adapters.dart';
 import '../../models/peer_search_result.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
@@ -183,17 +184,6 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     return out.take(_sampleCap).toList();
   }
 
-  PeerSearchResult _hitToPeerResult(MeshPeerHit h) => PeerSearchResult(
-        nodeId: h.nodeId,
-        ownerId: h.ownerId,
-        displayName: h.displayName,
-        interests: h.interests,
-        profileVisibility: h.profileVisibility,
-        trustLevel: h.trustLevel,
-        multiaddrs: h.multiaddrs,
-        hasHopSlot: h.hasHopSlot,
-      );
-
   /// Wait until phone WAN discovery attaches (`wanSearch`), or [maxWait] elapses.
   ///
   /// Discover samples often raced session start and got local-only empties
@@ -243,7 +233,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
             const Duration(seconds: 15),
             onTimeout: () => const <MeshPeerHit>[],
           );
-      _merge(out, _filterNonBonded(all.map(_hitToPeerResult).toList()));
+      _merge(out, _filterNonBonded(all.map(peerFromMesh).toList()));
     } catch (_) {}
 
     // Show the broad roster as soon as it lands instead of holding results back
@@ -271,7 +261,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     });
     final parts = await Future.wait(slugFutures);
     for (final hits in parts) {
-      _merge(out, _filterNonBonded(hits.map(_hitToPeerResult).toList()));
+      _merge(out, _filterNonBonded(hits.map(peerFromMesh).toList()));
     }
 
     out.shuffle(Random());
@@ -476,15 +466,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
         }
         final filtered = _filterNonBonded(
           hits
-              .map((h) => PeerSearchResult(
-                    nodeId: h.nodeId,
-                    ownerId: h.ownerId,
-                    displayName: h.displayName,
-                    interests: h.interests,
-                    profileVisibility: h.profileVisibility,
-                    trustLevel: h.trustLevel,
-                    multiaddrs: h.multiaddrs,
-                  ))
+              .map(peerFromMesh)
               .toList(),
         );
         if (!mounted) return;
@@ -650,15 +632,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                 onTimeout: () => const <MeshPeerHit>[],
               );
           rows = hits
-              .map((h) => PeerSearchResult(
-                    nodeId: h.nodeId,
-                    ownerId: h.ownerId,
-                    displayName: h.displayName,
-                    interests: h.interests,
-                    profileVisibility: h.profileVisibility,
-                    trustLevel: h.trustLevel,
-                    multiaddrs: h.multiaddrs,
-                  ))
+              .map(peerFromMesh)
               .toList();
         }
         if (rows.isEmpty &&
@@ -697,6 +671,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                   : (peerId != null && peerId.isNotEmpty
                       ? ['/p2p/$peerId']
                       : const []),
+              hasHopSlot: first.hasHopSlot,
             ),
             ...rows.skip(1),
           ];
@@ -745,6 +720,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
               profileVisibility: first.profileVisibility,
               trustLevel: first.trustLevel,
               multiaddrs: first.multiaddrs,
+              hasHopSlot: first.hasHopSlot,
             ),
             ...rows.skip(1),
           ];
@@ -791,6 +767,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
             libp2pPeerId: peer.nodeId,
             displayName: peer.displayName,
             multiaddrs: peer.multiaddrs,
+            hopFreshUntilMs: hopFreshUntilForReport(peer.hasHopSlot),
           ));
         }
         final profile = await backend.getHumanProfile() ??

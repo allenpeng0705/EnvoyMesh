@@ -1,5 +1,6 @@
 import type { PeerSearchResult } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
+import { isPeerReachableNow } from "../../lib/discover-dialability.js";
 import { nearbyPeerLabel } from "../../lib/display.js";
 import { openPeerProfile } from "../../lib/open-peer-profile.js";
 import type { PeerHelloUiState } from "../../lib/discover-peer-state.js";
@@ -25,11 +26,10 @@ export function DiscoverPeerCard({
    * Relay-roster hits carry `hasHopSlot: false` while the peer is checked in but
    * holds no live circuit hop (see relay-roster `hasHopSlot`). Such a peer is
    * fine to *show* — they are on the mesh — but a hello has no transport path
-   * yet, so it would fail with a confusing error. `undefined` means the source
-   * did not report hoppability (LAN/DHT/local hits): treat as reachable so this
-   * only ever narrows the relay-roster case.
+   * yet, so it would fail with a confusing error. A direct address still wins
+   * (see `isPeerReachableNow`).
    */
-  const reachable = peer.hasHopSlot !== false;
+  const reachable = isPeerReachableNow(peer);
   const pendingHopHint = t(
     "discover.peer.pendingHopHint",
     "This person is online, but their connection is still being set up. Try again in a few seconds.",

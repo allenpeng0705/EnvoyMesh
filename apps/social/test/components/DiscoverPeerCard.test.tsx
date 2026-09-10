@@ -70,6 +70,23 @@ describe("DiscoverPeerCard dialability", () => {
     expect(onSayHello).not.toHaveBeenCalled();
   });
 
+  it("keeps Say Hello when a direct address exists despite hasHopSlot false", () => {
+    const onSayHello = vi.fn();
+    const { getByText, queryByTestId } = renderWithI18n(
+      <DiscoverPeerCard
+        peer={peer({
+          hasHopSlot: false,
+          multiaddrs: ["/ip4/192.168.1.9/tcp/4001/p2p/12D3KooWPeerA"],
+        })}
+        helloState="none"
+        onSayHello={onSayHello}
+      />,
+    );
+    expect(queryByTestId("discover-peer-pending-hop")).toBeNull();
+    fireEvent.click(getByText(/say hello/i));
+    expect(onSayHello).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the real hello state authoritative (sent/connected win over pending hop)", () => {
     const sent = renderWithI18n(
       <DiscoverPeerCard peer={peer({ hasHopSlot: false })} helloState="sent" onSayHello={() => undefined} />,

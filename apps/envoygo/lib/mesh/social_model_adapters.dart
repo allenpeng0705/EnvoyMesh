@@ -33,6 +33,13 @@ ChatMessage chatFromMesh(MeshChatMessage m) => ChatMessage(
       isOutbound: m.isOutbound,
     );
 
+/// Single `MeshPeerHit` → `PeerSearchResult` bridge for the whole app.
+///
+/// Every field matters: `multiaddrs` feeds the hello dial path and
+/// `hasHopSlot` decides whether Say Hello can work yet (see
+/// `PeerSearchResult.dialable`). Do not add a hand-rolled copy of this mapping
+/// in a screen — a dropped `hasHopSlot` silently re-enables hello for peers the
+/// relay says are not dialable.
 PeerSearchResult peerFromMesh(MeshPeerHit h) => PeerSearchResult(
       nodeId: h.nodeId,
       ownerId: h.ownerId,
@@ -40,4 +47,6 @@ PeerSearchResult peerFromMesh(MeshPeerHit h) => PeerSearchResult(
       interests: h.interests,
       profileVisibility: h.profileVisibility,
       trustLevel: h.trustLevel,
+      multiaddrs: h.multiaddrs,
+      hasHopSlot: h.hasHopSlot,
     );

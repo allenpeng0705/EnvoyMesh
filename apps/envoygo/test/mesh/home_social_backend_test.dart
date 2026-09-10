@@ -22,6 +22,8 @@ class _StubClient extends NodeServiceClient {
   @override
   Future<List<Contact>> getBonds() async => bonds;
 
+  List<PeerSearchResult> peers = const [];
+
   @override
   Future<List<PeerSearchResult>> searchPeers({
     String? topic,
@@ -30,7 +32,7 @@ class _StubClient extends NodeServiceClient {
     String? peerId,
     int maxResults = 20,
   }) async =>
-      const [];
+      peers;
 
   @override
   Future<Map<String, dynamic>> sendHello({
@@ -123,6 +125,32 @@ void main() {
 
     final history = await backend.listChatHistory('envoy:owner:friend');
     expect(history.single.text, 'hi');
+    await backend.dispose();
+  });
+
+  test('HomeSocialBackend.searchPeers keeps multiaddrs and hop status', () async {
+    final client = _StubClient()
+      ..peers = const [
+        PeerSearchResult(
+          nodeId: '12D3KooWPeer',
+          ownerId: 'envoy:owner:peer',
+          displayName: 'Emily',
+          multiaddrs: ['/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer'],
+          hasHopSlot: false,
+        ),
+      ];
+    final backend = HomeSocialBackend(
+      nodeId: 'home-1',
+      client: client,
+      ownerIdReader: () => 'envoy:owner:home',
+    );
+
+    final hits = await backend.searchPeers(maxResults: 5);
+    expect(hits, hasLength(1));
+    // Dropping either of these used to make a hop-less peer look dialable.
+    expect(hits.single.multiaddrs, isNotEmpty);
+    expect(hits.single.hasHopSlot, isFalse);
+    expect(hits.single.dialable, isFalse);
     await backend.dispose();
   });
 }

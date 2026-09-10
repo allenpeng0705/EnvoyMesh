@@ -155,6 +155,8 @@ class PhoneSocialBackend implements SocialBackend {
           profileVisibility: 'public',
           trustLevel: bond?.bondLevel,
           multiaddrs: peer.multiaddrs,
+          // Stored circuit addrs stop working once the reservation lapses.
+          hasHopSlot: hopSlotForRecord(peer),
         ));
         if (local.length >= maxResults) break;
       }
@@ -227,6 +229,8 @@ class PhoneSocialBackend implements SocialBackend {
         profileVisibility: 'public',
         trustLevel: bond?.bondLevel,
         multiaddrs: peer.multiaddrs,
+        // Stored circuit addrs stop working once the reservation lapses.
+        hasHopSlot: hopSlotForRecord(peer),
       ));
       if (local.length >= maxResults) break;
     }

@@ -107,6 +107,8 @@ class HomeSocialBackend implements SocialBackend {
               interests: h.interests,
               profileVisibility: h.profileVisibility,
               trustLevel: h.trustLevel,
+              multiaddrs: h.multiaddrs,
+              hasHopSlot: h.hasHopSlot,
             ))
         .toList();
   }

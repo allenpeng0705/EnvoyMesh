@@ -16,6 +16,7 @@ class PhonePeerRecord {
     this.displayName,
     this.multiaddrs = const [],
     this.profile = const {},
+    this.hopFreshUntilMs,
   });
 
   final String ownerId;
@@ -25,11 +26,21 @@ class PhonePeerRecord {
   final List<String> multiaddrs;
   final Map<String, dynamic> profile;
 
+  /// Relay-hop state from the last discovery that saw this peer, as epoch ms.
+  ///
+  /// `null` = never reported (unknown), `0` = explicitly reported as *not* live,
+  /// otherwise the deadline of a positive report. Stored addresses can be
+  /// `/p2p-circuit/` paths, which stop working when the reservation lapses —
+  /// without this a remembered peer would keep looking dialable forever.
+  /// Read it with [hopSlotForRecord]; write it with [hopFreshUntilForReport].
+  final int? hopFreshUntilMs;
+
   PhonePeerRecord copyWith({
     String? displayName,
     String? devicePeerId,
     List<String>? multiaddrs,
     Map<String, dynamic>? profile,
+    int? hopFreshUntilMs,
   }) {
     return PhonePeerRecord(
       ownerId: ownerId,
@@ -38,6 +49,7 @@ class PhonePeerRecord {
       displayName: displayName ?? this.displayName,
       multiaddrs: multiaddrs ?? this.multiaddrs,
       profile: profile ?? this.profile,
+      hopFreshUntilMs: hopFreshUntilMs ?? this.hopFreshUntilMs,
     );
   }
 
@@ -48,10 +60,12 @@ class PhonePeerRecord {
         if (displayName != null) 'displayName': displayName,
         'multiaddrs': multiaddrs,
         'profile': profile,
+        if (hopFreshUntilMs != null) 'hopFreshUntilMs': hopFreshUntilMs,
       };
 
   factory PhonePeerRecord.fromJson(Map<String, dynamic> json) {
     final addrs = json['multiaddrs'];
+    final hop = json['hopFreshUntilMs'];
     return PhonePeerRecord(
       ownerId: json['ownerId'] as String,
       libp2pPeerId: json['libp2pPeerId'] as String,
@@ -59,8 +73,38 @@ class PhonePeerRecord {
       displayName: json['displayName'] as String?,
       multiaddrs: addrs is List ? addrs.map((e) => e.toString()).toList() : const [],
       profile: (json['profile'] as Map?)?.cast<String, dynamic>() ?? const {},
+      hopFreshUntilMs: hop is num ? hop.toInt() : null,
     );
   }
+}
+
+/// How long a positive relay-hop report stays trusted without a refresh.
+///
+/// Comfortably longer than the phone's discovery/checkin cadence, so an open
+/// Discover list does not flicker between dialable and pending; far shorter
+/// than the relay's ~30 min reservation TTL, so a lapsed reservation is caught
+/// within minutes instead of never.
+const int phoneHopFreshWindowMs = 5 * 60 * 1000;
+
+/// Encode a discovery hop report for persistence.
+///
+/// `null` (source silent) keeps whatever was stored before; `false` is recorded
+/// as `0` ("reported not live") so it also *clears* an earlier positive report.
+int? hopFreshUntilForReport(bool? hasHopSlot, {int? nowMs}) {
+  if (hasHopSlot == null) return null;
+  if (!hasHopSlot) return 0;
+  return (nowMs ?? DateTime.now().millisecondsSinceEpoch) + phoneHopFreshWindowMs;
+}
+
+/// Relay-hop state for a stored peer, or `null` when never reported.
+///
+/// The deadline is inclusive: `hopFreshUntilMs` is the instant the report stops
+/// being fresh.
+bool? hopSlotForRecord(PhonePeerRecord record, {int? nowMs}) {
+  final until = record.hopFreshUntilMs;
+  if (until == null) return null;
+  if (until <= 0) return false;
+  return until >= (nowMs ?? DateTime.now().millisecondsSinceEpoch);
 }
 
 /// Pending inbound hello awaiting user accept.
@@ -116,6 +160,9 @@ class PhoneSocialStore {
         profile: peer.profile.isEmpty
             ? prev.profile
             : {...prev.profile, ...peer.profile},
+        // Newest hop report wins — including an explicit `0` (not live), which
+        // clears an earlier positive report for the same peer.
+        hopFreshUntilMs: peer.hopFreshUntilMs ?? prev.hopFreshUntilMs,
       );
     }
     // Real owner supersedes any locally invented placeholder (`lan:` /
