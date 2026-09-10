@@ -454,6 +454,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get mePushNotifications => '푸시 알림';
 
   @override
+  String get meMobileNode => '이 휴대폰에서 모바일 노드 사용';
+
+  @override
+  String get meMobileNodeHint =>
+      '이 휴대폰을 독립적인 EnvoyMesh 피어로 사용합니다: 홈 노드 없이 근처 검색과 휴대폰 간 채팅이 가능합니다. 아직 검토 중이므로 기본적으로 꺼져 있습니다.';
+
+  @override
   String get mePushNotificationsHint => '앱이 백그라운드일 때 알림';
 
   @override
@@ -1980,6 +1987,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get profileSaved => '프로필이 저장됨';
+
+  @override
+  String get profilePhotoFromHome => '사진은 홈 노드 프로필에서 가져옵니다';
 
   @override
   String get profileUsername => '사용자 이름';
@@ -4018,6 +4028,20 @@ class AppLocalizationsKo extends AppLocalizations {
       '페어링 후 홈 채팅, 피드, 블로그, 마켓을 씁니다. 페어링 없이도 이 휴대폰 메시에서 탐색과 채팅이 가능합니다.';
 
   @override
+  String get welcomeSlideRequiredTitle => '페어링이 필요합니다';
+
+  @override
+  String get welcomeSlideRequiredBody =>
+      'EnvoyGo에는 EnvoyMesh가 실행되는 컴퓨터가 필요합니다. 채팅, 콘텐츠, 파일, 터미널, AI가 모두 그 컴퓨터에서 실행됩니다 — 계속하려면 컴퓨터와 페어링하세요.';
+
+  @override
+  String get setupGuidePairRequiredTitle => '페어링하고 계속';
+
+  @override
+  String get setupGuidePairRequiredBody =>
+      'EnvoyGo는 컴퓨터의 휴대용 동반 앱입니다. 페어링된 컴퓨터가 없으면 여기에 표시할 내용이 없습니다.';
+
+  @override
   String get setupGuideTitle => 'EnvoyGo 사용 방법';
 
   @override
@@ -4089,6 +4113,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get setupGuidePairCta => '지금 페어링';
+
+  @override
+  String get setupGuidePairLaterCta => '나중에 페어링';
 
   @override
   String get setupGuideSkipCta => '먼저 둘러보기';

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../providers/social_context_provider.dart';
+import '../services/feature_flags.dart';
 
 enum _PhoneMeshUiStatus { offline, connecting, connected, error }
 
@@ -27,6 +28,9 @@ class PhoneMeshIndicator extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // The indicator is the phone-mesh surface: with the mobile node off there is
+    // no phone plane to report on.
+    if (!ref.watch(mobileNodeEnabledProvider)) return const SizedBox.shrink();
     final l10n = AppLocalizations.of(context);
     final mesh = ref.watch(phoneMeshRuntimeProvider);
     final backend = ref.watch(phoneSocialBackendProvider);

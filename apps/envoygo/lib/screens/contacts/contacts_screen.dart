@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../models/contact.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../services/feature_flags.dart';
 import '../../widgets/contact_tile.dart';
 import '../chat/chat_detail_screen.dart';
 import '../profile/profile_screen.dart';
@@ -19,7 +21,10 @@ class ContactsScreen extends ConsumerWidget {
     final contactState = ref.watch(contactProvider);
     final homeId = ref.watch(nodeProvider).activeNode?.id;
     final homeBonds = contactState.homeBonds;
-    final phoneBonds = contactState.phoneBonds;
+    // Phone-plane contacts only exist while the mobile node is enabled.
+    final phoneBonds = ref.watch(mobileNodeEnabledProvider)
+        ? contactState.phoneBonds
+        : const <Contact>[];
     final empty = homeBonds.isEmpty && phoneBonds.isEmpty;
 
     if (empty) {

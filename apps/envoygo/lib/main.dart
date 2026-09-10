@@ -12,6 +12,7 @@ import 'providers/chat_provider.dart';
 import 'providers/content_engage_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/node_provider.dart';
+import 'services/feature_flags.dart';
 import 'providers/social_context_provider.dart';
 import 'screens/browser/browser_screen.dart';
 import 'screens/chat/chat_detail_screen.dart';
@@ -25,6 +26,10 @@ void main() async {
   // Load locale override before the first frame so a saved language
   // (e.g. zh) does not flash system/English briefly.
   final initialLocaleCode = await LocalePreferences.getOverride();
+  // Resolve feature flags once, before the first frame: the mobile node must be
+  // off (or on) from the very first build, not flip after async hydration, and
+  // every reader shares this one value.
+  final initialFeatureFlags = await FeatureFlags.load();
   // Phase 50 — initialize push BEFORE runApp so getInitialMessage()
   // (Android cold-start) resolves before _EnvoyGoRootState.initState()
   // drains the pending-tap buffer. initialize() is idempotent + swallows
@@ -39,6 +44,9 @@ void main() async {
       overrides: [
         localeOverrideProvider.overrideWith(
           (ref) => LocaleOverrideNotifier.withInitial(initialLocaleCode),
+        ),
+        featureFlagsProvider.overrideWith(
+          (ref) => FeatureFlagsNotifier.withInitial(initialFeatureFlags),
         ),
       ],
       child: const _EnvoyGoRoot(),
@@ -73,15 +81,29 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
       }
       // Warm the shared libp2p host in the background so opening Social is
       // not stuck on a cold "Starting phone mesh…" for tens of seconds.
-      unawaited(() async {
-        try {
-          await ref.read(nodeProvider.notifier).ensureLibp2pStarted();
-        } catch (e) {
-          developer.log('[main] ensureLibp2pStarted warm failed: $e',
-              name: 'EnvoyGo');
-        }
-      }());
-      // Kick phone mesh runtime (persona + handlers) without waiting on UI.
+      //
+      // Only when something actually needs the host: the mobile node (phone
+      // mesh) or a paired home node (its circuit dial). With the mobile node
+      // flag off and nothing paired we start nothing at all.
+      final mobileNodeEnabled = ref.read(mobileNodeEnabledProvider);
+      final hasHome = ref.read(nodeProvider).activeNode != null;
+      if (mobileNodeEnabled || hasHome) {
+        unawaited(() async {
+          try {
+            await ref.read(nodeProvider.notifier).ensureLibp2pStarted();
+          } catch (e) {
+            developer.log('[main] ensureLibp2pStarted warm failed: $e',
+                name: 'EnvoyGo');
+          }
+        }());
+      } else {
+        developer.log(
+          '[main] mobile node disabled + no home paired — libp2p host not started',
+          name: 'EnvoyGo',
+        );
+      }
+      // Kick phone mesh runtime (persona + handlers) without waiting on UI —
+      // it is a no-op while the feature flag is off.
       ref.read(phoneMeshRuntimeProvider);
       // Phase 50 — after nodes load, retry any buffered cold-start tap
       // that couldn't route because activeNode was null.

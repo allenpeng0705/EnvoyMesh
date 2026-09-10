@@ -471,6 +471,13 @@ class AppLocalizationsFr extends AppLocalizations {
   String get mePushNotifications => 'Notifications push';
 
   @override
+  String get meMobileNode => 'Nœud mobile sur ce téléphone';
+
+  @override
+  String get meMobileNodeHint =>
+      'Utiliser ce téléphone comme pair EnvoyMesh autonome : découverte à proximité et discussion entre téléphones sans nœud domestique. Désactivé par défaut (fonctionnalité à l’étude).';
+
+  @override
   String get mePushNotificationsHint =>
       'Alertes lorsque l\'app est en arrière-plan';
 
@@ -2068,6 +2075,10 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get profileSaved => 'Profil enregistré';
+
+  @override
+  String get profilePhotoFromHome =>
+      'La photo provient du profil de votre nœud domestique';
 
   @override
   String get profileUsername => 'Nom d\'utilisateur';
@@ -4181,6 +4192,20 @@ class AppLocalizationsFr extends AppLocalizations {
       'Après l’appairage : discussions domicile, Fil, Blog et Marché. Sans appairage, vous pouvez toujours Découvrir et discuter sur le mesh de ce téléphone.';
 
   @override
+  String get welcomeSlideRequiredTitle => 'L’appairage est requis';
+
+  @override
+  String get welcomeSlideRequiredBody =>
+      'EnvoyGo a besoin d’un ordinateur exécutant EnvoyMesh. Discussion, contenu, fichiers, terminal et IA tournent là-bas — appairez l’ordinateur pour continuer.';
+
+  @override
+  String get setupGuidePairRequiredTitle => 'Appairer pour continuer';
+
+  @override
+  String get setupGuidePairRequiredBody =>
+      'EnvoyGo est le compagnon mobile de votre ordinateur. Sans ordinateur appairé, il n’y a rien à afficher ici.';
+
+  @override
   String get setupGuideTitle => 'Comment EnvoyGo fonctionne';
 
   @override
@@ -4253,6 +4278,9 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get setupGuidePairCta => 'Appairer maintenant';
+
+  @override
+  String get setupGuidePairLaterCta => 'Appairer plus tard';
 
   @override
   String get setupGuideSkipCta => 'Explorer d’abord';

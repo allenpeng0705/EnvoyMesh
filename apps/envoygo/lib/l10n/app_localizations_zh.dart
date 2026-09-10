@@ -450,6 +450,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mePushNotifications => '推送通知';
 
   @override
+  String get meMobileNode => '在本机启用移动节点';
+
+  @override
+  String get meMobileNodeHint =>
+      '把这台手机作为独立的 EnvoyMesh 节点：无需家庭节点即可发现附近的人并与手机互聊。仍在调研阶段，默认关闭。';
+
+  @override
   String get mePushNotificationsHint => '应用在后台时接收提醒';
 
   @override
@@ -1962,6 +1969,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get profileSaved => '资料已保存';
+
+  @override
+  String get profilePhotoFromHome => '照片来自家庭节点资料';
 
   @override
   String get profileUsername => '用户名';
@@ -3976,6 +3986,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get welcomeSlide4Body => '配对后可使用家庭聊天、动态、博客与市集。未配对时仍可在本机 mesh 上探索与聊天。';
 
   @override
+  String get welcomeSlideRequiredTitle => '需要先完成配对';
+
+  @override
+  String get welcomeSlideRequiredBody =>
+      'EnvoyGo 需要一台运行 EnvoyMesh 的电脑。聊天、内容、文件、终端与 AI 都在那台电脑上运行——请先配对后再继续。';
+
+  @override
+  String get setupGuidePairRequiredTitle => '配对后继续';
+
+  @override
+  String get setupGuidePairRequiredBody =>
+      'EnvoyGo 是电脑的随身端。没有配对的电脑时，这里还无法显示任何内容。';
+
+  @override
   String get setupGuideTitle => 'EnvoyGo 使用说明';
 
   @override
@@ -4044,6 +4068,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get setupGuidePairCta => '立即配对';
+
+  @override
+  String get setupGuidePairLaterCta => '稍后配对';
 
   @override
   String get setupGuideSkipCta => '先看看';

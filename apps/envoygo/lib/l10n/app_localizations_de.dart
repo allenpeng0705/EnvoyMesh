@@ -472,6 +472,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get mePushNotifications => 'Push-Benachrichtigungen';
 
   @override
+  String get meMobileNode => 'Mobiler Knoten auf diesem Telefon';
+
+  @override
+  String get meMobileNodeHint =>
+      'Dieses Telefon als eigenständigen EnvoyMesh-Peer nutzen: Erkennung in der Nähe und Chat zwischen Telefonen ohne Home-Knoten. Standardmäßig aus, da noch in Prüfung.';
+
+  @override
   String get mePushNotificationsHint =>
       'Hinweise, wenn die App im Hintergrund ist';
 
@@ -2069,6 +2076,10 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get profileSaved => 'Profil gespeichert';
+
+  @override
+  String get profilePhotoFromHome =>
+      'Das Foto stammt aus dem Profil deines Home-Knotens';
 
   @override
   String get profileUsername => 'Benutzername';
@@ -4175,6 +4186,20 @@ class AppLocalizationsDe extends AppLocalizations {
       'Nach dem Koppeln erhalten Sie Zuhause-Chats, Feed, Blog und Markt. Ohne Kopplung können Sie trotzdem Entdecken und im Mesh dieses Telefons chatten.';
 
   @override
+  String get welcomeSlideRequiredTitle => 'Kopplung erforderlich';
+
+  @override
+  String get welcomeSlideRequiredBody =>
+      'EnvoyGo braucht einen Computer mit EnvoyMesh. Chat, Inhalte, Dateien, Terminal und KI laufen dort — koppeln Sie den Computer, um fortzufahren.';
+
+  @override
+  String get setupGuidePairRequiredTitle => 'Zum Fortfahren koppeln';
+
+  @override
+  String get setupGuidePairRequiredBody =>
+      'EnvoyGo ist der mobile Begleiter für deinen Computer. Ohne gekoppelten Computer gibt es hier noch nichts anzuzeigen.';
+
+  @override
   String get setupGuideTitle => 'So funktioniert EnvoyGo';
 
   @override
@@ -4247,6 +4272,9 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get setupGuidePairCta => 'Jetzt koppeln';
+
+  @override
+  String get setupGuidePairLaterCta => 'Später koppeln';
 
   @override
   String get setupGuideSkipCta => 'Erst entdecken';

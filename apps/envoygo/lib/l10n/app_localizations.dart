@@ -978,6 +978,18 @@ abstract class AppLocalizations {
   /// **'Push notifications'**
   String get mePushNotifications;
 
+  /// No description provided for @meMobileNode.
+  ///
+  /// In en, this message translates to:
+  /// **'Mobile node on this phone'**
+  String get meMobileNode;
+
+  /// No description provided for @meMobileNodeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this phone as its own EnvoyMesh peer: nearby discovery and phone-to-phone chat without a home node. Off by default while it is still being investigated.'**
+  String get meMobileNodeHint;
+
   /// No description provided for @mePushNotificationsHint.
   ///
   /// In en, this message translates to:
@@ -3833,6 +3845,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Profile saved'**
   String get profileSaved;
+
+  /// No description provided for @profilePhotoFromHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo comes from your home node profile'**
+  String get profilePhotoFromHome;
 
   /// No description provided for @profileUsername.
   ///
@@ -7464,6 +7482,30 @@ abstract class AppLocalizations {
   /// **'After pairing you get Home chats, Feed, Blog, and Market. Without pairing you can still Discover and chat on this phone’s mesh.'**
   String get welcomeSlide4Body;
 
+  /// No description provided for @welcomeSlideRequiredTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pairing is required'**
+  String get welcomeSlideRequiredTitle;
+
+  /// No description provided for @welcomeSlideRequiredBody.
+  ///
+  /// In en, this message translates to:
+  /// **'EnvoyGo needs a computer running EnvoyMesh. Chat, content, files, terminal and AI all run there — pair with the computer to continue.'**
+  String get welcomeSlideRequiredBody;
+
+  /// No description provided for @setupGuidePairRequiredTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair to continue'**
+  String get setupGuidePairRequiredTitle;
+
+  /// No description provided for @setupGuidePairRequiredBody.
+  ///
+  /// In en, this message translates to:
+  /// **'EnvoyGo is the phone companion for your computer. Without a paired computer there is nothing to show here yet.'**
+  String get setupGuidePairRequiredBody;
+
   /// No description provided for @setupGuideTitle.
   ///
   /// In en, this message translates to:
@@ -7589,6 +7631,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Pair now'**
   String get setupGuidePairCta;
+
+  /// No description provided for @setupGuidePairLaterCta.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair later'**
+  String get setupGuidePairLaterCta;
 
   /// No description provided for @setupGuideSkipCta.
   ///

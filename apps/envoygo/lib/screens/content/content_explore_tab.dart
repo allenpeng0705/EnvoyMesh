@@ -11,6 +11,7 @@ import '../../models/peer_search_result.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../providers/social_context_provider.dart';
+import '../../services/feature_flags.dart';
 import '../../services/discover_contact_code.dart';
 import '../../services/envoy_url.dart';
 import '../../services/node_service_client.dart';
@@ -246,6 +247,8 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   Future<void> _waitForPhoneDiscoveryReady({
     Duration maxWait = _phoneDiscoveryReadyWait,
   }) async {
+    // Mobile node off: there is no mesh to wait for (and no retry coming).
+    if (!ref.read(mobileNodeEnabledProvider)) return;
     if (_phoneDiscoveryRecentlyReady) return;
     final deadline = DateTime.now().add(maxWait);
     while (DateTime.now().isBefore(deadline)) {
@@ -315,9 +318,14 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     if (socialCtx.isPhone) {
       final backend = ref.read(socialBackendProvider);
       if (backend == null) {
+        // Includes the mobile-node-off case: nothing local to search, so point
+        // at pairing instead of an empty mesh.
         setState(() {
           _loading = false;
-          _error = null;
+          _searching = false;
+          _error = ref.read(mobileNodeEnabledProvider)
+              ? null
+              : AppLocalizations.of(context).peopleConnectHint;
           if (!keepExisting) _results = const [];
         });
         return;
@@ -464,6 +472,8 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     if (socialCtx.isPhone) {
       final backend = ref.read(socialBackendProvider);
       if (backend == null) {
+        // Same as above: whether the flag is off or the persona is still
+        // loading, the actionable next step is pairing.
         setState(() {
           _searching = false;
           _error = l10n.peopleConnectHint;

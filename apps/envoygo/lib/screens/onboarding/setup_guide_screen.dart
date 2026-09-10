@@ -15,10 +15,20 @@ class SetupGuideScreen extends StatefulWidget {
   const SetupGuideScreen({
     super.key,
     this.isFirstLaunch = false,
+    this.requirePairing = false,
+    this.onPairLater,
   });
 
   /// When true, closing marks the guide as completed for first-run gating.
   final bool isFirstLaunch;
+
+  /// Pairing-gate mode: the guide is the app entry (rendered by [AppEntry]
+  /// rather than pushed), so it must not pop the root route and must answer to
+  /// [onPairLater] instead.
+  final bool requirePairing;
+
+  /// Gate mode only: the user chose to pair later, so open the app shell.
+  final VoidCallback? onPairLater;
 
   @override
   State<SetupGuideScreen> createState() => _SetupGuideScreenState();
@@ -43,12 +53,25 @@ class _SetupGuideScreenState extends State<SetupGuideScreen> {
       final route = MaterialPageRoute(
         builder: (_) => const PairingScanScreen(),
       );
+      // Gate mode: the guide is the root route's content, so it must stay
+      // beneath the pairing flow — the success path pops to the *first* route
+      // (PairingConfirmScreen), which would otherwise strand the user there.
+      if (widget.requirePairing) {
+        await nav.push(route);
+        return;
+      }
       if (widget.isFirstLaunch) {
         await nav.pushReplacement(route);
         return;
       }
       nav.pop();
       await nav.push(route);
+      return;
+    }
+    // Gate mode: never pop the root route — hand control back to the caller.
+    final onPairLater = widget.onPairLater;
+    if (onPairLater != null) {
+      onPairLater();
       return;
     }
     nav.pop();
@@ -86,6 +109,37 @@ class _SetupGuideScreenState extends State<SetupGuideScreen> {
                   AppTheme.lg,
                 ),
                 children: [
+                  if (widget.requirePairing) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AppTheme.md),
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(AppTheme.md),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l10n.setupGuidePairRequiredTitle,
+                            style: text.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: scheme.onPrimaryContainer,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            l10n.setupGuidePairRequiredBody,
+                            style: text.bodyMedium?.copyWith(
+                              color: scheme.onPrimaryContainer,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppTheme.lg),
+                  ],
                   Text(
                     l10n.setupGuideIntro,
                     style: text.bodyLarge?.copyWith(
@@ -186,9 +240,11 @@ class _SetupGuideScreenState extends State<SetupGuideScreen> {
                     TextButton(
                       onPressed: _closing ? null : () => _finish(),
                       child: Text(
-                        widget.isFirstLaunch
-                            ? l10n.setupGuideSkipCta
-                            : l10n.setupGuideDoneCta,
+                        widget.requirePairing
+                            ? l10n.setupGuidePairLaterCta
+                            : (widget.isFirstLaunch
+                                ? l10n.setupGuideSkipCta
+                                : l10n.setupGuideDoneCta),
                       ),
                     ),
                   ],

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:envoy_mesh/envoy_mesh.dart' show phoneLocalContextId;
+
+import '../../services/feature_flags.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
@@ -139,8 +141,10 @@ class ChatListScreen extends ConsumerWidget {
     final allDirect = isOwner
         ? threads.where((t) => t.type == ChatThreadType.direct).toList()
         : <ChatThread>[];
-    final phoneContacts =
-        allDirect.where((t) => t.nodeId == phoneId).toList();
+    // Phone-plane threads are hidden while the mobile node is disabled.
+    final phoneContacts = ref.watch(mobileNodeEnabledProvider)
+        ? allDirect.where((t) => t.nodeId == phoneId).toList()
+        : <ChatThread>[];
     final homeContacts = allDirect
         .where((t) => homeId != null && t.nodeId == homeId)
         .toList();

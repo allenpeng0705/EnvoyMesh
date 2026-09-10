@@ -455,6 +455,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get mePushNotifications => 'プッシュ通知';
 
   @override
+  String get meMobileNode => 'この端末でモバイルノードを使う';
+
+  @override
+  String get meMobileNodeHint =>
+      'この端末を独立した EnvoyMesh ピアとして使います：ホームノードなしで近くの検索と端末同士のチャットができます。検討中のため既定ではオフです。';
+
+  @override
   String get mePushNotificationsHint => 'バックグラウンド時の通知';
 
   @override
@@ -1980,6 +1987,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get profileSaved => 'プロフィールを保存しました';
+
+  @override
+  String get profilePhotoFromHome => '写真はホームノードのプロフィールを使用します';
 
   @override
   String get profileUsername => 'ユーザー名';
@@ -4021,6 +4031,20 @@ class AppLocalizationsJa extends AppLocalizations {
       'ペアリング後はホームのチャット、フィード、ブログ、マーケットが使えます。未ペアでもこの端末のメッシュで発見とチャットができます。';
 
   @override
+  String get welcomeSlideRequiredTitle => 'ペアリングが必要です';
+
+  @override
+  String get welcomeSlideRequiredBody =>
+      'EnvoyGo には EnvoyMesh を実行するコンピューターが必要です。チャット・コンテンツ・ファイル・ターミナル・AI はすべてそのコンピューターで動きます。続けるにはペアリングしてください。';
+
+  @override
+  String get setupGuidePairRequiredTitle => 'ペアリングして続行';
+
+  @override
+  String get setupGuidePairRequiredBody =>
+      'EnvoyGo はコンピューターの携帯コンパニオンです。ペアリングされたコンピューターがないと、ここに表示できるものがありません。';
+
+  @override
   String get setupGuideTitle => 'EnvoyGo の使い方';
 
   @override
@@ -4091,6 +4115,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get setupGuidePairCta => '今すぐペアリング';
+
+  @override
+  String get setupGuidePairLaterCta => 'あとでペアリング';
 
   @override
   String get setupGuideSkipCta => 'まずは見る';

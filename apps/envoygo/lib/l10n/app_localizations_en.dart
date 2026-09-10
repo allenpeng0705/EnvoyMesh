@@ -465,6 +465,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mePushNotifications => 'Push notifications';
 
   @override
+  String get meMobileNode => 'Mobile node on this phone';
+
+  @override
+  String get meMobileNodeHint =>
+      'Use this phone as its own EnvoyMesh peer: nearby discovery and phone-to-phone chat without a home node. Off by default while it is still being investigated.';
+
+  @override
   String get mePushNotificationsHint =>
       'Alerts when the app is in the background';
 
@@ -2043,6 +2050,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profileSaved => 'Profile saved';
+
+  @override
+  String get profilePhotoFromHome => 'Photo comes from your home node profile';
 
   @override
   String get profileUsername => 'Username';
@@ -4128,6 +4138,20 @@ class AppLocalizationsEn extends AppLocalizations {
       'After pairing you get Home chats, Feed, Blog, and Market. Without pairing you can still Discover and chat on this phone’s mesh.';
 
   @override
+  String get welcomeSlideRequiredTitle => 'Pairing is required';
+
+  @override
+  String get welcomeSlideRequiredBody =>
+      'EnvoyGo needs a computer running EnvoyMesh. Chat, content, files, terminal and AI all run there — pair with the computer to continue.';
+
+  @override
+  String get setupGuidePairRequiredTitle => 'Pair to continue';
+
+  @override
+  String get setupGuidePairRequiredBody =>
+      'EnvoyGo is the phone companion for your computer. Without a paired computer there is nothing to show here yet.';
+
+  @override
   String get setupGuideTitle => 'How EnvoyGo works';
 
   @override
@@ -4200,6 +4224,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupGuidePairCta => 'Pair now';
+
+  @override
+  String get setupGuidePairLaterCta => 'Pair later';
 
   @override
   String get setupGuideSkipCta => 'Explore first';

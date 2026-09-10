@@ -12,8 +12,24 @@ import '../../providers/contact_provider.dart'
 import '../../providers/node_provider.dart';
 import '../../providers/social_context_provider.dart'
     show phoneSocialBackendProvider, socialContextProvider;
+import '../../services/feature_flags.dart';
 import '../../services/library_read_cache.dart';
+import '../../services/node_service_client.dart';
 import '../../services/vault_content_fetch.dart';
+
+/// Display name for the phone persona.
+///
+/// When paired, the phone is the same human on the mesh, so an unset phone name
+/// falls back to the home profile's name instead of showing the "EnvoyGo"
+/// placeholder. An explicit phone name still wins.
+String effectivePhoneDisplayName({
+  required String? phoneName,
+  required String? homeName,
+}) {
+  final phone = phoneName?.trim() ?? '';
+  if (phone.isNotEmpty) return phone;
+  return homeName?.trim() ?? '';
+}
 
 /// Unified profile view / edit — same UX for Me and bonded contacts.
 ///
@@ -62,7 +78,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _avatarKey = GlobalKey<_ProfileAvatarHostState>();
 
   /// Unpaired/phone persona: the profile lives on this phone, not on a home node.
-  bool get _isPhonePersona => ref.read(socialContextProvider).isPhone;
+  ///
+  /// False while the mobile node feature is off — there is no phone persona to
+  /// edit, so the screen follows the home/pair path instead.
+  bool get _isPhonePersona =>
+      ref.read(socialContextProvider).isPhone &&
+      ref.read(mobileNodeEnabledProvider);
 
   bool get _isSelf {
     final target = widget.ownerId?.trim();
@@ -430,8 +451,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     // An unsaved profile comes back with a display default — keep the fields
     // empty so setup reads as setup, not as an already-chosen name.
     final saved = backend.hasProfile;
-    final displayName =
+    final phoneName =
         saved ? (profile['displayName'] as String?)?.trim() ?? '' : '';
+
+    // Paired: this phone is the same human, so borrow the home identity's
+    // photo (and name when the phone has none of its own) instead of showing
+    // initials on one page and a photo on the other.
+    String? homeName;
+    Uint8List? homeThumb;
+    final homeClient = ref.read(nodeServiceProvider);
+    // Only the *owner* profile's face may be borrowed: a family member using
+    // this phone must not be shown the owner's photo on their own page.
+    if (_isPhonePersona &&
+        homeClient != null &&
+        ref.read(nodeProvider).isOwnerProfile) {
+      try {
+        final homeProfile = await homeClient.getHumanProfile();
+        homeName = (homeProfile['displayName'] as String?)?.trim();
+        homeThumb = await _loadHomeThumbnail(homeClient, homeProfile);
+      } catch (_) {
+        /* unpaired/degraded: fall back to initials */
+      }
+    }
+    final displayName =
+        effectivePhoneDisplayName(phoneName: phoneName, homeName: homeName);
     final username =
         saved ? (profile['username'] as String?)?.trim() ?? '' : '';
     final bio = saved ? (profile['bio'] as String?)?.trim() ?? '' : '';
@@ -446,10 +489,64 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _displayNameCtrl.text = displayName;
       _usernameCtrl.text = username;
       _bioCtrl.text = bio;
-      _thumbBytes = null;
+      _thumbBytes = homeThumb;
       _gallery = const [];
       _loading = false;
     });
+  }
+
+  /// Cached home-profile thumbnail bytes, or fetch them from the home vault.
+  ///
+  /// Reuses the same cache key the home profile screen uses, so the two pages
+  /// cannot disagree about which photo is current.
+  Future<Uint8List?> _loadHomeThumbnail(
+    NodeServiceClient client,
+    Map<String, dynamic> homeProfile,
+  ) async {
+    final ownerId = (homeProfile['ownerId'] as String?)?.trim() ?? '';
+    final thumb = homeProfile['publicThumbnail'];
+    final path = thumb is Map ? (thumb['vaultRelativePath'] as String?)?.trim() : null;
+    if (ownerId.isNotEmpty) {
+      final cached =
+          await LibraryReadCache.instance.peekBlob(peerThumbCacheKey(ownerId));
+      if (cached != null && cached.isNotEmpty) return cached;
+    }
+    if (path == null || path.isEmpty) return null;
+    try {
+      final homePeerId = ref.read(nodeProvider).activeNode?.homePeerId.trim() ?? '';
+      final fetched = homePeerId.isNotEmpty
+          ? await getOrFetchVaultContent(
+              ({required relativePath, int? maxBytes, int? offset}) =>
+                  client.readLibraryItemContent(
+                relativePath: relativePath,
+                maxBytes: maxBytes,
+                offset: offset,
+              ),
+              homePeerId: homePeerId,
+              relativePath: path,
+            )
+          : await fetchVaultContent(
+              ({required relativePath, int? maxBytes, int? offset}) =>
+                  client.readLibraryItemContent(
+                relativePath: relativePath,
+                maxBytes: maxBytes,
+                offset: offset,
+              ),
+              relativePath: path,
+            );
+      if (fetched.bytes.isEmpty) return null;
+      if (ownerId.isNotEmpty) {
+        await LibraryReadCache.instance.putBlob(
+          peerThumbCacheKey(ownerId),
+          fetched.bytes,
+          contentType: (thumb is Map ? thumb['mimeType'] as String? : null) ??
+              fetched.mimeType,
+        );
+      }
+      return fetched.bytes;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _save() async {
@@ -625,7 +722,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       children: [
                         const SizedBox(height: 28),
                         GestureDetector(
-                          onTap: _isSelf && _editing ? _pickAvatar : null,
+                          // Phone persona: the photo follows the home profile
+                          // (see _loadPhoneSelf), so there is nothing local to pick.
+                          onTap: _isSelf && _editing && !_isPhonePersona
+                              ? _pickAvatar
+                              : null,
                           child: Stack(
                             alignment: Alignment.bottomRight,
                             children: [
@@ -639,7 +740,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 ownerId: _ownerId,
                                 isSelf: _isSelf,
                               ),
-                              if (_isSelf && _editing)
+                              if (_isSelf && _editing && !_isPhonePersona)
                                 Container(
                                   padding: const EdgeInsets.all(6),
                                   decoration: BoxDecoration(
@@ -661,6 +762,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             ],
                           ),
                         ),
+                        if (_isPhonePersona && _thumbBytes != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            l10n.profilePhotoFromHome,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: scheme.onPrimary.withValues(alpha: 0.85),
+                                ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         Text(
                           title,

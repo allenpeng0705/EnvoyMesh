@@ -10,6 +10,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/locale_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../services/feature_flags.dart';
 import '../../services/locale_preferences.dart';
 import '../../services/push_preferences.dart';
 import '../../utils/localized_labels.dart';
@@ -760,6 +761,21 @@ class _MeScreenState extends ConsumerState<MeScreen> {
             },
           ),
         ),
+        // Mobile node (phone persona + on-device mesh). Off by default; the
+        // switch is only exposed in builds made with
+        // --dart-define=ENVOYGO_MOBILE_NODE_TOGGLE=1 so a release has no
+        // user-visible entry for an unfinished plane.
+        if (ref.watch(featureFlagsProvider).mobileNodeOverrideAvailable)
+          Card(
+            child: SwitchListTile(
+              title: Text(l10n.meMobileNode),
+              subtitle: Text(l10n.meMobileNodeHint),
+              value: ref.watch(mobileNodeEnabledProvider),
+              onChanged: (enabled) => ref
+                  .read(featureFlagsProvider.notifier)
+                  .setMobileNodeEnabled(enabled),
+            ),
+          ),
         Card(
           child: SwitchListTile(
             title: Text(l10n.mePushNotifications),

@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import '../services/feature_flags.dart';
 
 import 'package:envoy_mesh/envoy_mesh.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -96,6 +97,14 @@ class CrossPersonaSuggestionsNotifier
     try {
       final nodeState = _ref.read(nodeProvider);
       final phoneBackend = _ref.read(phoneSocialBackendProvider);
+
+      // These suggestions all end in a phone-persona Hello, so they only exist
+      // while the mobile node feature is on (otherwise every home bond would be
+      // suggested with an action that cannot work).
+      if (!_ref.read(mobileNodeEnabledProvider)) {
+        state = const CrossPersonaSuggestionsState();
+        return;
+      }
 
       // Suggestions live on Discover while paired: Home bonds → Hello on phone.
       if (nodeState.activeNode == null) {

@@ -24,6 +24,7 @@ All product decisions from design discussions live here. Update **this** documen
 6. [EnvoyGo UI detail](#3b-detailed-ui--envoygo-flutter)
 7. [Shared contract](#3c-shared-contract-both-clients)
 8. [Home-link transports](#3d-home-link-transports-envoygo--home-node-only) — IP:port / SSH add-ons
+8b. [Paseo UI reference map](#3e-paseo-ui-reference-map-social--envoygo--think-carefully) — Social + EnvoyGo carefully
 9. [Provider tiers](#4-provider-tiers-unified-coding-ux)
 10. [Boundaries](#5-boundaries) · [Mesh differentiator](#5b-mesh-differentiator-must-not-stay-vapor) · [Backend](#6-backend--data)
 11. [Phases](#7-migration-sequence) · [Non-goals](#9-non-goals-v1) · [NFRs](#9b-nfrs--test-plan-design-requirements) · [Success](#10-success-criteria)
@@ -75,7 +76,7 @@ We are **not** building a Paseo fork. We map lessons onto EnvoyMesh’s Social +
 
 **Patterns we keep EnvoyMesh-native:** Envoy Harness + mesh (§5b); Chat vs Coding vs Terminal; family `CODING_GATED_RPC`; phone mesh libp2p; global Terminal for shells only.
 
-Detail on providers and mobile UX continues in §1b and §§3–3b.
+Detail on providers and mobile UX continues in §1b, **§3e (Paseo UI reference map)**, and §§3–3b.
 
 ---
 
@@ -95,6 +96,8 @@ Detail on providers and mobile UX continues in §1b and §§3–3b.
 | Social Inbox | **Icon + badge only** (no text label); keep `aria-label` / `title` |
 | EnvoyGo nav | **Per-profile visible-tab list** (not index arithmetic). Owner: Social, Coding, Knowledge, Terminal, Me. Family+coding: Chats, Coding, Me. Family−coding: Chats, Me |
 | Mobile UX reference | **Paseo** — list/resume ([paseo.sh](https://www.paseo.sh) + [`../paseo`](../paseo)); patterns only unless NOTICE’d Apache-2.0 copy |
+| **UI IA — Social** | **Paseo desktop analogue:** three-pane (list \| stream \| Changes) under Coding nav; EnvoyMesh visual language — **§3e** |
+| **UI IA — EnvoyGo** | **Keep bottom-nav multi-tab product**; adopt Paseo **only inside** Coding (resume-first list → push session → sheets). Do **not** replace app shell with Paseo three-panel — **§3e** |
 | **Code reuse from Paseo** | **No code copy in v1** — patterns/IA only; if later copying Apache-2.0 code, add NOTICE + compliance review |
 | Coding engines (first-class) | **Pi, Envoy Harness, Claude Code, Codex, OpenCode, Cursor, DeepSeek = CodeWhale** (`codewhale`) |
 | Not Coding engines | HomeClaw / Hermes / OpenHuman; EnvoyAI stays in Chat; Copilot = Tier C later (Paseo built-in, not ACP catalog) |
@@ -118,6 +121,7 @@ Detail on providers and mobile UX continues in §1b and §§3–3b.
 | 2 | Timeline / workspace | Rebase on EH timeline + `EhChatWorkspaceSummary`; promote, don’t invent |
 | 3 | Removal order | Strip Chat/Terminal only with provisional mapping + orphan check + live-PTY migration |
 | 4 | §3d transports | EnvoyGo: `host:port` + VPN/Tailscale docs; SSH desktop/CLI only |
+| 5 | §3e UI reference | Social ≈ Paseo three-pane (EnvoyMesh skin); EnvoyGo = Paseo patterns inside Coding only; no pixel clone; list-drawer in-session = C4+ |
 
 ---
 
@@ -446,15 +450,17 @@ FAB: New session
 
 **Empty list:** “No coding sessions on home” + tonal buttons: Start Envoy Harness · Start Pi · (later other harnesses). Unpaired: pair home CTA only.
 
-### Session screen — `CodingSessionScreen`
+### Session screen — `CodingSessionScreen` (Paseo session anatomy, EnvoyGo chrome)
 
 ```text
-AppBar: workspace title · harness chip · ⋮ (cwd, open Changes, Stop)
-Body:  timeline (scroll)
-       [permission/plan cards inline]
-Bottom: track pills (horizontal)
-        composer (text + attach + send/stop)
+AppBar: [← or list]  title · status text  [⋮ Changes · Stop · cwd]
+Body:   timeline (scroll)
+        permission / plan cards (sticky until answered)
+Bottom: track pills (Tasks · Subagents · diff) — tap → sheet
+        composer (attach · send/stop · queue when busy)
 ```
+
+Align with Paseo session **structure** (header / transcript / permission block / tracks / composer), not Paseo git/provider chrome. See §3e.
 
 | Concern | Reuse / pattern |
 |---------|-----------------|
@@ -507,7 +513,68 @@ No home link
 
 ### Theme
 
-Match [`AppTheme`](apps/envoygo/lib/theme/app_theme.dart): Material 3, Inter, primary `#1A73E8`, section headers like Chat, FAB primary, sheets with drag handle. Status dots are semantic colors (not decorative purple glow).
+Match [`AppTheme`](apps/envoygo/lib/theme/app_theme.dart): Material 3, Inter, primary `#1A73E8`, section headers like Chat, FAB primary, sheets with drag handle. Status dots follow §2 semantics (amber/blue/green/red/muted) **plus text** — map Paseo’s status meanings, not necessarily Paseo’s hex values.
+
+---
+
+## 3e. Paseo UI reference map (Social + EnvoyGo) — think carefully
+
+We **did** study Paseo’s app UI ([paseo.sh](https://www.paseo.sh), [`../paseo/packages/app`](../paseo/packages/app)). That does **not** mean EnvoyGo becomes a Paseo clone. Paseo is a **coding-only** client; EnvoyGo is a **multi-surface** product (Social, Coding, Terminal, Knowledge, Me). The mapping must respect that.
+
+### What Paseo’s UI actually is
+
+| Layer | Paseo behavior | Source (approx.) |
+|-------|----------------|------------------|
+| App shell (mobile) | **Three panels:** agent-list (left) \| session (center) \| file explorer (right); edge-swipe + hamburger; **no product bottom tabs** | `mobile-panels/*`, `_layout.tsx` |
+| List | Status- or project-grouped; leading status; title + meta; trailing time/diff; pinned section; “New workspace” vs tap-to-resume | `sidebar-workspace-list.tsx`, status view-model |
+| Session | Compact app bar `[☰] title [⋮]`; transcript; **permission cards** (above composer / in stream); **floating track pills**; bottom composer; sheets on compact | `workspace-screen.tsx`, `composer/tracks.tsx`, `agent-stream/view.tsx` |
+| Create vs resume | Dedicated **New** screen (compose-first); list tap = resume; optional Sessions history | `new-workspace-screen.tsx`, `sessions-screen.tsx` |
+| Desktop | Persistent left sidebar + optional right explorer; denser header | `_layout.tsx` breakpoints (`sm` ~576) |
+
+### Social (desktop) — how we refer to Paseo
+
+| Copy from Paseo | Adapt to EnvoyMesh | Skip |
+|-----------------|--------------------|------|
+| Three-pane: list \| stream \| changes | Header **Coding** tab hosts that shell; reuse chat-view grid | Git worktree/PR explorer as primary chrome |
+| Status-first / project-grouped sidebar | Group-by-cwd in C1; Project registry later | Multi-host / daemon picker |
+| Permission container + tracks + queue | EH docks + pills; harness fixed at create | Provider thinking toggles unless EH has equiv |
+| Diff / review in context rail | EH turn review / split diff | Forge/PR branding |
+
+**Verdict:** Social Coding three-pane is the right Paseo-desktop analogue. Stay inside EnvoyMesh visual language (existing Social CSS), not Unistyles.
+
+### EnvoyGo — how we refer to Paseo (critical)
+
+**Do not** replace EnvoyGo’s bottom nav with Paseo’s three-panel-as-app. Coding is **one tab among many**.
+
+| Copy from Paseo (inside Coding tab) | EnvoyGo adaptation | Skip |
+|-------------------------------------|--------------------|------|
+| **Resume-first list** as home when sessions exist | `CodingHomeScreen` = tab root; status buckets (§2) | Making list a global left drawer over Social/Terminal |
+| **Tap row → live session** (not recreate) | Push `CodingSessionScreen`; same `chatId` | Multi-daemon host UI |
+| **Create ≠ home** | FAB / “New” → harness + folder flow (sheet or full-screen); never force empty composer as default | Git branch/worktree pickers as required step |
+| **Session anatomy** | AppBar: back/list · title · ⋮ (Changes, Stop, cwd); timeline; permission sheet/dock; track pills above composer; composer+queue | Terminal/browser as workspace tabs (we have global Terminal) |
+| **Changes as secondary surface** | Bottom sheet / full-screen sheet (Paseo’s right panel analogue) | Edge-swipe file explorer as app-wide gesture |
+| **Status semantics** | Amber needs you / blue working / green review / red failed + **text** | Pixel-copy Paseo colors if they fight `AppTheme` |
+| **Sheets on compact** | `showModalBottomSheet` for permissions, tracks, Changes | RN Reanimated / gorhom stack |
+
+**Optional later (C4+, not C1b):** While **inside** a Coding session, a hamburger that opens the **session list as a drawer** (Paseo left panel) without leaving the Coding tab — still under bottom-nav Coding. Do **not** do this for C1b; push/pop is enough and matches existing EnvoyGo Chat/Terminal.
+
+**Family / unpaired:** Keep EnvoyGo rules (pair CTA; family tab list). Paseo has no family profiles.
+
+### EnvoyGo Coding UX principles (locked)
+
+1. **Bottom tab = product entry**; Paseo patterns apply **inside** Coding only.
+2. **Open Coding → see existing home sessions** (status-first) when any exist — primary Paseo lesson.
+3. **One session at a time** on phone (push detail); no desktop three-column.
+4. **New session is secondary** (FAB), not the default empty state when work exists.
+5. **Permissions block the “needs you” path** until answered (sheet + sticky).
+6. **Visual:** EnvoyGo Material 3 / Inter / brand blue; Paseo = interaction patterns + status meaning, not skin.
+7. **Pi TUI-in-Coding** is transitional chrome, not a Paseo pattern — call it out in UI as console/legacy until C2 stream.
+
+### Honesty check (what we had wrong / soft)
+
+- Early drafts implied “pixel Paseo mobile.” **Rejected** — patterns only.
+- Early EnvoyGo hierarchy mentioned “Open in Terminal” for TUI — **rejected** (conflicts with Terminal strip).
+- “Three-pane on phone” without saying “inside Coding tab” would fight Social/Terminal/Knowledge IA — **clarified here**.
 
 ---
 
@@ -831,6 +898,8 @@ Earlier chronology (superseded where conflicting): harness list expansion; Envoy
 
 ---
 
+**2026-09-10 (UI reference pass):** Added **§3e Paseo UI reference map** — Social ≈ Paseo desktop three-pane; EnvoyGo keeps bottom-nav multi-surface IA and adopts Paseo **inside** Coding only (resume-first list, session anatomy, sheets). Explicit skip: three-panel-as-app, git/worktree chrome, pixel skin.
+
 **2026-09-10 (second pass review):** Fixed stale bucket names in Social sort/flows; C1 flat list vs Project hierarchy clarified; stream chrome vs TUI exception; EnvoyGo hierarchy no longer points Pi back to Terminal; §1 Paseo wording aligned with harness immutability; Phase 68 C1.2 exit / C1.5 test timing clarified.
 
 ---
@@ -858,6 +927,7 @@ Everything discussed for the Coding tab is intended to live **in this file**. If
 | Scope decisions (Pi, timeline, strip, transports) | §0 |
 | Status buckets from EhAgentStateName | §2 |
 | Social / EnvoyGo UI | §3 / §3b |
+| Paseo UI map (Social vs EnvoyGo) | §3e |
 | Promote EhTimeline + chatId adapters | §3c |
 | host:port / Tailscale; SSH desktop-only | §3d |
 | Harness tiers + CodeWhale | §1b, §4 |

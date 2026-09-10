@@ -10,7 +10,12 @@ class WelcomeSlidesScreen extends StatefulWidget {
   const WelcomeSlidesScreen({
     super.key,
     required this.onFinished,
+    this.requirePairing = false,
   });
+
+  /// When true the app cannot be used unpaired, so the last slide says so
+  /// instead of promising an on-phone mesh.
+  final bool requirePairing;
 
   /// Called after slides are marked complete (guide may still be pending).
   final VoidCallback onFinished;
@@ -58,6 +63,7 @@ class _WelcomeSlidesScreenState extends State<WelcomeSlidesScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final mobileNodeEnabled = !widget.requirePairing;
     final pages = [
       _SlideData(
         icon: Icons.phone_iphone_outlined,
@@ -74,10 +80,16 @@ class _WelcomeSlidesScreenState extends State<WelcomeSlidesScreen> {
         title: l10n.welcomeSlide3Title,
         body: l10n.welcomeSlide3Body,
       ),
+      // With the mobile node off, unpaired use is not a mode we support — say so
+      // instead of promising an on-phone mesh.
       _SlideData(
         icon: Icons.hub_outlined,
-        title: l10n.welcomeSlide4Title,
-        body: l10n.welcomeSlide4Body,
+        title: mobileNodeEnabled
+            ? l10n.welcomeSlide4Title
+            : l10n.welcomeSlideRequiredTitle,
+        body: mobileNodeEnabled
+            ? l10n.welcomeSlide4Body
+            : l10n.welcomeSlideRequiredBody,
       ),
     ];
 

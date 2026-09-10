@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/feature_flags.dart';
 import '../providers/node_provider.dart';
 import '../providers/social_context_provider.dart';
 
@@ -14,6 +15,12 @@ class SocialContextSwitcher extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final ctx = ref.watch(socialContextProvider);
     final nodeState = ref.watch(nodeProvider);
+    // The phone persona is part of the mobile node feature: never offer it while
+    // that feature is off (the widget is currently unused; this keeps a future
+    // usage from leaking the switch into a release build).
+    if (!ref.watch(mobileNodeEnabledProvider)) {
+      return const SizedBox.shrink();
+    }
     final label = ctx.isPhone
         ? l10n.socialContextPhone
         : (nodeState.activeNode?.name ?? l10n.socialContextHome);

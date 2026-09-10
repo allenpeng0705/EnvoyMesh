@@ -2,6 +2,57 @@
 
 Flutter thin client for remote access to an EnvoyMesh home node. Supports iOS, Android, and web.
 
+## Pairing is required
+
+EnvoyGo is the phone companion for a computer running EnvoyMesh: chat, content,
+files, terminal, knowledge and coding all execute on that home node. So with the
+mobile node off (the default) the app is **pair-gated**:
+
+- the welcome slides end on a "Pairing is required" slide
+- the setup guide is the app entry on first launch, with **Pair now** as the
+  primary action and **Pair later** as the escape hatch
+- "Pair later" opens the app shell exactly as before — every feature then shows
+  its own pairing CTA — and is remembered, so the gate does not reappear
+- the gate is driven by node state (paired ⇒ straight to the shell), so it
+  disappears the moment pairing succeeds
+
+`lib/services/onboarding_gate.dart` holds the rule; flip the mobile node flag on
+to allow unpaired use again.
+
+## Feature flags
+
+### Mobile node (off by default)
+
+The **mobile node** is the on-device phone persona: its own mesh identity, LAN/WAN
+discovery, and phone-plane direct chat with other phones. It is **disabled by
+default** while it is still being evaluated — in practice it currently only buys
+unpaired chatting, and everything else in the app runs against the home node.
+
+While it is off, the phone:
+
+- does **not** load or mint a phone identity, and does not open the phone store/DB
+- does **not** start the libp2p host (unless a home node is paired, which needs it)
+- shows no phone-plane UI: no cell-tower indicator, no "On this phone" contact or
+  chat sections, no cross-persona "say hello on your phone" suggestions, and
+  Discover shows the pairing CTA instead of mesh search
+- skips the onboarding profile step (that step configures the phone persona)
+
+Nothing is deleted. Identity, contacts and DM history stay on disk and reappear
+when the flag is turned back on.
+
+```bash
+# Default-on build (e.g. for investigation)
+flutter run --dart-define=ENVOYGO_MOBILE_NODE=1
+
+# Same, plus the in-app switch (Me → Settings → "Mobile node on this phone")
+flutter run --dart-define=ENVOYGO_MOBILE_NODE=1 \
+            --dart-define=ENVOYGO_MOBILE_NODE_TOGGLE=1
+```
+
+The in-app switch is hidden unless `ENVOYGO_MOBILE_NODE_TOGGLE=1` is set, so a
+release build has no user-visible entry for an unfinished plane. See
+`lib/services/feature_flags.dart`.
+
 ## Platforms
 
 | Platform | Status | Notes |

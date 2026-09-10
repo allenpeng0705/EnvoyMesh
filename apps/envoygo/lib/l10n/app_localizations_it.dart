@@ -469,6 +469,13 @@ class AppLocalizationsIt extends AppLocalizations {
   String get mePushNotifications => 'Notifiche push';
 
   @override
+  String get meMobileNode => 'Nodo mobile su questo telefono';
+
+  @override
+  String get meMobileNodeHint =>
+      'Usa questo telefono come peer EnvoyMesh autonomo: scoperta nelle vicinanze e chat tra telefoni senza nodo di casa. Disattivato per impostazione predefinita, ancora in valutazione.';
+
+  @override
   String get mePushNotificationsHint => 'Avvisi quando l\'app è in background';
 
   @override
@@ -2064,6 +2071,10 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get profileSaved => 'Profilo salvato';
+
+  @override
+  String get profilePhotoFromHome =>
+      'La foto proviene dal profilo del nodo di casa';
 
   @override
   String get profileUsername => 'Username';
@@ -4171,6 +4182,20 @@ class AppLocalizationsIt extends AppLocalizations {
       'Dopo l’associazione: chat Casa, Feed, Blog e Mercato. Senza associazione puoi comunque Scoprire e chattare sul mesh di questo telefono.';
 
   @override
+  String get welcomeSlideRequiredTitle => 'Associazione necessaria';
+
+  @override
+  String get welcomeSlideRequiredBody =>
+      'EnvoyGo richiede un computer con EnvoyMesh. Chat, contenuti, file, terminale e IA girano lì — associa il computer per continuare.';
+
+  @override
+  String get setupGuidePairRequiredTitle => 'Associa per continuare';
+
+  @override
+  String get setupGuidePairRequiredBody =>
+      'EnvoyGo è il compagno mobile del tuo computer. Senza un computer associato non c\'è ancora nulla da mostrare qui.';
+
+  @override
   String get setupGuideTitle => 'Come funziona EnvoyGo';
 
   @override
@@ -4243,6 +4268,9 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get setupGuidePairCta => 'Associa ora';
+
+  @override
+  String get setupGuidePairLaterCta => 'Associa più tardi';
 
   @override
   String get setupGuideSkipCta => 'Esplora prima';

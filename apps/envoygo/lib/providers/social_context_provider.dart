@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../mesh/home_social_backend.dart';
 import '../mesh/phone_social_local_db.dart';
+import '../services/feature_flags.dart';
 import '../services/mdns_multicast_lock.dart';
 import '../services/node_service_client.dart';
 import '../storage/local_database.dart';
@@ -90,14 +91,32 @@ class _PhoneBackendState {
 final _phoneBackendHolderProvider =
     StateNotifierProvider<_PhoneBackendHolderNotifier, _PhoneBackendState>(
         (ref) {
-  return _PhoneBackendHolderNotifier();
+  return _PhoneBackendHolderNotifier(ref);
 });
 
 class _PhoneBackendHolderNotifier extends StateNotifier<_PhoneBackendState> {
-  _PhoneBackendHolderNotifier() : super(const _PhoneBackendState()) {
-    _ensure();
+  _PhoneBackendHolderNotifier(this._ref) : super(const _PhoneBackendState()) {
+    if (_ref.read(mobileNodeEnabledProvider)) {
+      _ensure();
+    } else {
+      debugPrint(
+        '[PhoneBackendHolder] mobile node disabled — persona not loaded, '
+        'no identity minted, no local DB opened',
+      );
+    }
+    // Turning the feature on loads the persona then; turning it off stops
+    // serving the backend. The instance is kept (not disposed) so a quick flip
+    // back does not re-open the keychain/DB, and nothing on disk is touched.
+    _ref.listen(featureFlagsProvider, (prev, next) {
+      if (next.mobileNodeEnabled) {
+        unawaited(_ensure());
+      } else {
+        state = const _PhoneBackendState();
+      }
+    });
   }
 
+  final Ref _ref;
   static const _snapshotKey = 'phone_social_store_v1';
   bool _starting = false;
 
@@ -111,11 +130,14 @@ class _PhoneBackendHolderNotifier extends StateNotifier<_PhoneBackendState> {
   /// phone-mesh runtime can only report as an unexplained "not ready".
   void retryEnsure() {
     if (state.backend != null) return;
+    if (!_ref.read(mobileNodeEnabledProvider)) return;
     unawaited(_ensure());
   }
 
   Future<void> _ensure() async {
     if (state.backend != null || _starting) return;
+    // Never mint or load a phone identity while the mobile node is off.
+    if (!_ref.read(mobileNodeEnabledProvider)) return;
     _starting = true;
     try {
       final storage = SecureStorage();
@@ -329,6 +351,10 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
     _ref.listen(_phoneBackendHolderProvider, (_, __) {
       unawaited(_apply());
     });
+    // Turning the mobile node on/off takes effect immediately.
+    _ref.listen(featureFlagsProvider, (_, __) {
+      unawaited(_apply());
+    });
     // Do not re-run on every home connection state change — that used to
     // re-enter ensureTcpListen while addrs were still settling and restart
     // the host (endless "Starting phone mesh…").
@@ -421,6 +447,18 @@ class PhoneMeshRuntimeNotifier extends StateNotifier<PhoneMeshRuntimeState> {
   }
 
   Future<void> _apply() async {
+    // Mobile node disabled (default): no phone mesh session, no discovery, no
+    // retry loop. The persona's data stays on disk for when it is re-enabled.
+    if (!_ref.read(mobileNodeEnabledProvider)) {
+      _cancelRetry();
+      await _teardown();
+      if (!_disposed) {
+        state = const PhoneMeshRuntimeState(
+          diagnostics: 'mobile node disabled (feature flag)',
+        );
+      }
+      return;
+    }
     if (_busy) {
       _pending = true;
       return;
