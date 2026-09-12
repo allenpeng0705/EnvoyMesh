@@ -20,28 +20,27 @@ import {
 import { CodingSidebar } from "./CodingSidebar.js";
 import { CodingWorkspaceShell } from "./CodingWorkspaceShell.js";
 import { EnvoyHarnessPanel } from "./EnvoyHarnessPanel.js";
-import { ExtAgentCodingPanel } from "./ExtAgentCodingPanel.js";
+import { CodingHarnessPanel } from "./ExtAgentCodingPanel.js";
 import { PiCodingPanel } from "./PiCodingPanel.js";
 import { codingHarnessLabel } from "@envoymesh/api";
 
 export type CodingViewProps = {
   /** Whether the Coding tab is the visible top view. */
   active: boolean;
-  /** Opens Settings → AI for Coding defaults / harness install. */
-  onOpenCodingSettings?: () => void;
 };
 
 /**
  * Coding tab: Projects | Workspace (Chat/Shell).
  * Changes is a closable overlay over the workspace (Paseo Cmd+E pattern).
  */
-export function CodingView({ active, onOpenCodingSettings }: CodingViewProps) {
+export function CodingView({ active }: CodingViewProps) {
   const t = useT();
   const { sessions: terminalSessions } = useTerminalSessions();
   const [selected, setSelected] = useState<CodingSessionRef | null>(null);
   const [reviewOnly, setReviewOnly] = useState(() => isCodingReviewReadonly());
   const [openCreateRequest, setOpenCreateRequest] = useState(0);
   const [openAddProjectRequest, setOpenAddProjectRequest] = useState(0);
+  const [openDefaultsRequest, setOpenDefaultsRequest] = useState(0);
   const [changesOpen, setChangesOpen] = useState(false);
   const [ehChangedFiles, setEhChangedFiles] = useState<string[]>([]);
   const [openEhReviewRequest, setOpenEhReviewRequest] = useState(0);
@@ -59,6 +58,8 @@ export function CodingView({ active, onOpenCodingSettings }: CodingViewProps) {
     if (!ref || ref.kind !== "eh") {
       setReviewOnly(false);
       clearCodingReviewReadonly();
+    } else if (!isCodingReviewReadonly()) {
+      setReviewOnly(false);
     }
   };
 
@@ -92,6 +93,8 @@ export function CodingView({ active, onOpenCodingSettings }: CodingViewProps) {
     };
     runDetail(takePendingCodingOpen());
     const onOpen = (ev: Event) => {
+      // Drain pending so a later mount does not re-apply this open.
+      takePendingCodingOpen();
       const detail = (ev as CustomEvent<OpenCodingDetail>).detail;
       runDetail(detail);
     };
@@ -240,7 +243,7 @@ export function CodingView({ active, onOpenCodingSettings }: CodingViewProps) {
         <CodingSidebar
           selected={selected}
           onSelect={selectSession}
-          onOpenCodingSettings={onOpenCodingSettings}
+          openDefaultsRequest={openDefaultsRequest}
           openCreateRequest={openCreateRequest}
           openAddProjectRequest={openAddProjectRequest}
           hotkeysEnabled={active}
@@ -316,7 +319,7 @@ export function CodingView({ active, onOpenCodingSettings }: CodingViewProps) {
               changesOpen={changesOpen}
               onToggleChanges={toggleChanges}
               chatBody={
-                <ExtAgentCodingPanel
+                <CodingHarnessPanel
                   key={selected.sessionId}
                   sessionId={selected.sessionId}
                   harness={selected.harness}
@@ -356,24 +359,22 @@ export function CodingView({ active, onOpenCodingSettings }: CodingViewProps) {
                     )}
                   </span>
                 </button>
-                {onOpenCodingSettings ? (
-                  <button
-                    type="button"
-                    className="coding-home__tile"
-                    onClick={onOpenCodingSettings}
-                    data-testid="coding-home-settings"
-                  >
-                    <strong>
-                      {t("codingView.settingsFooter", "Harness and defaults")}
-                    </strong>
-                    <span>
-                      {t(
-                        "codingView.homeSettingsHint",
-                        "Install coding agents in Settings → AI → Coding harnesses.",
-                      )}
-                    </span>
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  className="coding-home__tile"
+                  onClick={() => setOpenDefaultsRequest((n) => n + 1)}
+                  data-testid="coding-home-settings"
+                >
+                  <strong>
+                    {t("codingView.settingsFooter", "Coding defaults")}
+                  </strong>
+                  <span>
+                    {t(
+                      "codingView.homeSettingsHint",
+                      "Default agent and model for projects that have no override.",
+                    )}
+                  </span>
+                </button>
               </div>
             </div>
           )}

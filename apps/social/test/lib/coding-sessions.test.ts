@@ -56,4 +56,38 @@ describe("coding-sessions auto-title", () => {
     const label = codingHarnessLabel("opencode");
     expect(shouldAutoSetCodingExtTitle(label, "opencode")).toBe(true);
   });
+
+  it("does not persist apiKey in localStorage", () => {
+    createCodingExtSession({
+      harness: "cursor",
+      cwd: "/tmp/demo",
+      model: "auto",
+    });
+    const raw = localStorage.getItem("envoymesh.codingExtSessions") ?? "";
+    expect(raw).not.toMatch(/apiKey/);
+    expect(JSON.parse(raw)[0].model).toBe("auto");
+  });
+
+  it("strips legacy apiKey on load", () => {
+    localStorage.setItem(
+      "envoymesh.codingExtSessions",
+      JSON.stringify([
+        {
+          id: "ext:cursor:legacy",
+          harness: "cursor",
+          cwd: "/tmp/demo",
+          title: "t",
+          createdAt: "2020-01-01T00:00:00.000Z",
+          lastUsedAt: "2020-01-01T00:00:00.000Z",
+          apiKey: "sk-legacy",
+        },
+      ]),
+    );
+    const s = getCodingExtSession("ext:cursor:legacy");
+    expect(s).toBeTruthy();
+    expect((s as { apiKey?: string }).apiKey).toBeUndefined();
+    expect(localStorage.getItem("envoymesh.codingExtSessions")).not.toMatch(
+      /sk-legacy/,
+    );
+  });
 });

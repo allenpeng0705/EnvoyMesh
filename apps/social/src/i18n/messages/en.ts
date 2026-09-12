@@ -82,7 +82,7 @@ export const en = {
       "Select a workspace on the left, or use + on a project to create one.",
     homeAddProjectHint: "Register a folder on your home node.",
     homeSettingsHint:
-      "Install coding agents in Settings → AI → Coding harnesses.",
+      "Default agent and model for projects that have no override.",
     emptySession: "Select a workspace or start a new one from Coding.",
     emptyChanges: "File changes and review will appear here when a workspace is active.",
     changesPlaceholder: "File changes for this workspace will show here.",
@@ -121,7 +121,7 @@ export const en = {
     projectSettings: "Project settings",
     projectSettingsTitle: "Project settings",
     projectSettingsDesc:
-      "Defaults for new workspaces in this project. A workspace can override them when you create it.",
+      "Overrides for new workspaces in this project. Leave agent or model empty to use Coding defaults.",
     projectName: "Name",
     projectLocation: "Location",
     projectOpenInFileManager: "Open in file manager",
@@ -134,31 +134,46 @@ export const en = {
     projectDefaultModelHint:
       "Used when creating a new workspace. The workspace can override it.",
     projectWorkspaceCount: "{n} workspace(s) in this project",
-    projectOpenCodingDefaults: "API keys & harness install…",
+    projectOpenCodingDefaults: "Edit Coding defaults…",
     modelLabel: "Model",
     modelPlaceholder: "e.g. gpt-4o or claude-sonnet…",
-    modelPlaceholderSettingsAi: "Empty = Settings → AI ({model})",
-    modelPlaceholderSettingsAiEmpty: "Empty = Settings → AI",
+    modelPlaceholderCodingDefaults: "Empty = Coding defaults ({model})",
+    modelPlaceholderCodingDefaultsEmpty: "Empty = Coding defaults",
+    modelPlaceholderEnvoymeshAi: "Empty = EnvoyMesh AI ({model})",
+    modelPlaceholderEnvoymeshAiEmpty: "Empty = EnvoyMesh AI",
     modelLoading: "Loading models…",
     modelLockHint:
       "Locked for this workspace at start. Overrides the project default.",
-    modelHintSettingsAi:
-      "Envoy and Pi use Settings → AI by default. Set a model here only to override.",
+    modelHintCodingDefaults:
+      "Envoy and Pi use Coding defaults when empty. Set a model here only to override.",
+    modelHintEnvoymeshAi:
+      "Envoy and Pi use EnvoyMesh AI when empty. Set a model here only to override.",
+    defaultsModelHint: "Applied when a project has no model override.",
     providerKindLabel: "Provider",
     providerAgentDefault: "Agent default",
-    providerSettingsAi: "Settings → AI (default)",
+    providerCodingDefaults: "Coding defaults",
+    providerEnvoymeshAi: "EnvoyMesh AI (default)",
     providerOpenAI: "OpenAI-compatible",
     providerAnthropic: "Anthropic-compatible",
     providerKindHint:
       "Optional custom endpoint and API key for this project or workspace.",
-    providerKindHintSettingsAi:
-      "Leave on Settings → AI to reuse your EnvoyMesh model and keys. Pick OpenAI/Anthropic-compatible only for a custom endpoint and key.",
+    providerKindHintCodingDefaults:
+      "Leave on Coding defaults to reuse your Coding default model and keys. Pick OpenAI/Anthropic-compatible only for a custom endpoint and key.",
+    providerKindHintEnvoymeshAi:
+      "Leave on EnvoyMesh AI to reuse your EnvoyMesh model and keys. Pick OpenAI/Anthropic-compatible only for a custom endpoint and key.",
     providerEndpoint: "Endpoint URL",
     providerApiKey: "API key",
     projectSettingsSave: "Save",
     projectSettingsSaving: "Saving…",
     projectSettingsSaved: "Project settings saved.",
     projectSettingsSaveFailed: "Couldn’t save project settings. Try again.",
+    defaultsTitle: "Coding defaults",
+    defaultsDesc:
+      "Used when a project has no override. Empty model or provider for Envoy and Pi uses EnvoyMesh AI.",
+    defaultsSave: "Save",
+    defaultsSaving: "Saving…",
+    defaultsSaved: "Coding defaults saved.",
+    defaultsSaveFailed: "Couldn’t save Coding defaults. Try again.",
     removeWorkspaceTitle: "Remove workspace?",
     removeWorkspaceMessage:
       "Remove “{title}” from Coding? Your folder, repo, and files on disk are not deleted.",
@@ -180,9 +195,7 @@ export const en = {
     reviewOnlyBanner: "Review only",
     harnessLabel: "Harness",
     startSession: "Start workspace",
-    settingsFooter: "Harness and defaults",
-    harnessSettingsHint:
-      "Install coding agents in Settings → AI → Coding harnesses",
+    settingsFooter: "Coding defaults",
     heartbeatAdd: "Add heartbeat…",
     heartbeatAddTitle: "Add heartbeat",
     heartbeatAddDesc:
@@ -191,13 +204,30 @@ export const en = {
     heartbeatDefaultPrompt:
       "Check progress on this workspace and continue useful next steps.",
     heartbeatName: "Name",
-    heartbeatSchedule: "Schedule",
+    heartbeatSchedule: "How often",
     heartbeatPreset: {
       "5m": "5 min",
       "15m": "15 min",
       "1h": "Hourly",
       daily: "Daily",
       custom: "Custom",
+    },
+    cronCustomEvery: "Every",
+    cronCustomAmount: "Interval",
+    cronCustomUnit: "Unit",
+    cronCustomHint:
+      "Pick how often it should run. Times use UTC (world clock).",
+    cronUnit: {
+      minutes: "minutes",
+      hours: "hours",
+      days: "days",
+    },
+    cronSummary: {
+      everyMinutes: "Every {n} minutes · UTC",
+      everyHour: "Every hour · UTC",
+      everyHours: "Every {n} hours · UTC",
+      dailyAt: "Every day at {time} UTC",
+      everyDaysAt: "Every {n} days at {time} UTC",
     },
     heartbeatPrompt: "Prompt",
     heartbeatEnabled: "Enable now",

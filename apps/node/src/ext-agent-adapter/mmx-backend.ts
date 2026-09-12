@@ -81,7 +81,11 @@ export class MmxBackend extends OneShotCliBackend {
     this.extraArgs = opts.extraArgs ?? [];
   }
 
-  protected buildArgs(text: string, _sessionKey: string): string[] {
+  protected buildArgs(
+    text: string,
+    _sessionKey: string,
+    _opts?: import("./types.js").ExtAgentAskOpts,
+  ): string[] {
     return [
       "text",
       "chat",

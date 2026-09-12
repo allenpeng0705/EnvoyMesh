@@ -807,13 +807,7 @@ export function App() {
                 aria-hidden={!codingVisible}
               >
                 <SwipeBack onSwipeBack={() => navigateTo("social")}>
-                  <CodingView
-                    active={codingVisible}
-                    onOpenCodingSettings={() => {
-                      setSettingsTab("ai");
-                      navigateTo("settings");
-                    }}
-                  />
+                  <CodingView active={codingVisible} />
                 </SwipeBack>
               </div>
             )}

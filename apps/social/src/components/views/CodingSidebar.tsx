@@ -47,7 +47,7 @@ import {
   codingProjectLabel,
   ensureCodingProjectsFromCwds,
   getCodingProject,
-  loadCodingLastUsedPrefill,
+  loadCodingDefaults,
   loadCodingProjects,
   modelProvidersToCodingSpec,
   normalizeCodingModelSpec,
@@ -55,9 +55,13 @@ import {
   normalizeCodingProviderKind,
   removeCodingProject,
   resolveCodingWorkspacePrefill,
+  saveCodingDefaults,
   saveCodingLastUsedPrefill,
   seedCodingProjectDefaultsIfEmpty,
   updateCodingProject,
+  CODING_DEFAULTS_CHANGED_EVENT,
+  CODING_PROJECTS_CHANGED_EVENT,
+  type CodingDefaults,
   type CodingProject,
   type CodingProviderKind,
   type CodingWorkspacePrefill,
@@ -82,6 +86,7 @@ import {
   type ExtProbeStatus,
 } from "../../lib/coding-status-label.js";
 import { AddIcon, SearchIcon, SettingsIcon } from "../../icons.js";
+import { CodingDefaultsModal } from "../CodingDefaultsModal.js";
 import {
   CodingNewSessionSheet,
   type HarnessProbeBadge,
@@ -105,8 +110,8 @@ import { openChatWithPeer } from "../../lib/open-chat-nav.js";
 export type CodingSidebarProps = {
   selected: CodingSessionRef | null;
   onSelect: (ref: CodingSessionRef | null) => void;
-  /** Opens Settings → AI (Coding defaults / harness install). */
-  onOpenCodingSettings?: () => void;
+  /** When bumped, open Coding defaults. */
+  openDefaultsRequest?: number;
   /** When bumped, open the New workspace sheet (deep link; needs a project). */
   openCreateRequest?: number;
   /** When bumped, open Add project (home empty / deep link). */
@@ -174,7 +179,7 @@ function harnessFromListRow(row: ListRow): CodingHarnessId {
 export function CodingSidebar({
   selected,
   onSelect,
-  onOpenCodingSettings,
+  openDefaultsRequest = 0,
   openCreateRequest = 0,
   openAddProjectRequest = 0,
   extBusySessionId = null,
@@ -200,6 +205,12 @@ export function CodingSidebar({
   const [sheetInitialProject, setSheetInitialProject] = useState("");
   const [sheetInitialPrefill, setSheetInitialPrefill] =
     useState<CodingWorkspacePrefill>(() => resolveCodingWorkspacePrefill({}));
+  const [codingDefaults, setCodingDefaults] = useState<CodingDefaults>(() =>
+    loadCodingDefaults(),
+  );
+  const [defaultsOpen, setDefaultsOpen] = useState(false);
+  const [defaultsBusy, setDefaultsBusy] = useState(false);
+  const [defaultsError, setDefaultsError] = useState<string | null>(null);
   const [projectSettingsTarget, setProjectSettingsTarget] =
     useState<CodingProject | null>(null);
   const [projectSettingsBusy, setProjectSettingsBusy] = useState(false);
@@ -237,6 +248,10 @@ export function CodingSidebar({
   const [pendingInstall, setPendingInstall] = useState<{
     harness: CodingHarnessId;
     cwd: string;
+    model?: string;
+    providerKind?: CodingProviderKind;
+    endpoint?: string;
+    apiKey?: string;
     guide: ExtAgentInstallGuide;
     installState: InstallState;
   } | null>(null);
@@ -258,10 +273,17 @@ export function CodingSidebar({
     Array<{ name: string; path: string }>
   >([]);
 
-  const settingsAiModelHint = useMemo(
+  const envoymeshAiModelHint = useMemo(
     () => modelProvidersToCodingSpec(nodeConfig?.modelProviders),
     [nodeConfig?.modelProviders],
   );
+  const codingDefaultsModelHint = codingDefaults.model.trim();
+
+  const openCodingDefaults = () => {
+    setCodingDefaults(loadCodingDefaults());
+    setDefaultsError(null);
+    setDefaultsOpen(true);
+  };
 
   const mayUseCoding = useMemo(() => {
     if (nodeConfig?.callerIsOwnerProfile) return true;
@@ -380,13 +402,33 @@ export function CodingSidebar({
     setProjects((prev) => {
       if (
         prev.length === next.length &&
-        prev.every((p, i) => p.path === next[i]?.path && p.label === next[i]?.label)
+        prev.every(
+          (p, i) =>
+            p.path === next[i]?.path &&
+            p.label === next[i]?.label &&
+            p.defaultHarness === next[i]?.defaultHarness &&
+            p.defaultModel === next[i]?.defaultModel,
+        )
       ) {
         return prev;
       }
       return next;
     });
   }, [ehChats, piSessions, extSessions]);
+
+  useEffect(() => {
+    const tick = () => setProjects(loadCodingProjects());
+    window.addEventListener(CODING_PROJECTS_CHANGED_EVENT, tick);
+    return () =>
+      window.removeEventListener(CODING_PROJECTS_CHANGED_EVENT, tick);
+  }, []);
+
+  useEffect(() => {
+    const tick = () => setCodingDefaults(loadCodingDefaults());
+    window.addEventListener(CODING_DEFAULTS_CHANGED_EVENT, tick);
+    return () =>
+      window.removeEventListener(CODING_DEFAULTS_CHANGED_EVENT, tick);
+  }, []);
 
   useEffect(() => {
     const tick = () => setExtSessions(loadCodingExtSessions());
@@ -436,7 +478,9 @@ export function CodingSidebar({
     return () => {
       cancelled = true;
     };
-  }, [workspaceSheetOpen, nodeService, nodeService.isConnected]);
+    // Intentionally omit nodeService object identity — only sheet open + connection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceSheetOpen, nodeService.isConnected]);
 
   // Probe harnesses that already have Ext sessions (sidebar Ready/Install chips).
   useEffect(() => {
@@ -469,7 +513,9 @@ export function CodingSidebar({
     return () => {
       cancelled = true;
     };
-  }, [extSessions, nodeService, nodeService.isConnected]);
+    // Intentionally omit nodeService object identity — only sessions + connection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extSessions, nodeService.isConnected]);
 
   useEffect(() => {
     if (openCreateRequest > 0) {
@@ -484,6 +530,13 @@ export function CodingSidebar({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open on bump only
   }, [openAddProjectRequest]);
+
+  useEffect(() => {
+    if (openDefaultsRequest > 0) {
+      openCodingDefaults();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open on bump only
+  }, [openDefaultsRequest]);
 
   const projectGroups = useMemo((): ProjectGroup[] => {
     const rows: ListRow[] = [
@@ -738,11 +791,11 @@ export function CodingSidebar({
         focusedEhChatId:
           selected?.kind === "eh" ? selected.chatId : null,
         canInvitePeer: selected?.kind === "eh",
-        canOpenSettings: Boolean(onOpenCodingSettings),
+        canOpenSettings: true,
         labels: {
           newWorkspace: t("codingView.newSessionCta", "New workspace"),
           addProject: t("codingView.addProjectCta", "Add project"),
-          openSettings: t("codingView.settingsFooter", "Coding settings"),
+          openSettings: t("codingView.settingsFooter", "Coding defaults"),
           invitePeer: t("codingView.inviteReview", "Invite peer to review"),
           newSchedule: t("codingView.scheduleNew", "New schedule"),
         },
@@ -752,7 +805,6 @@ export function CodingSidebar({
       paletteWorkspaces,
       paletteCwdFiles,
       selected,
-      onOpenCodingSettings,
       t,
     ],
   );
@@ -768,7 +820,7 @@ export function CodingSidebar({
     setSheetInitialPrefill(
       resolveCodingWorkspacePrefill({
         project,
-        lastUsed: loadCodingLastUsedPrefill(),
+        defaults: loadCodingDefaults(),
       }),
     );
     setSheetError(null);
@@ -837,7 +889,7 @@ export function CodingSidebar({
       setSheetInitialPrefill(
         resolveCodingWorkspacePrefill({
           project,
-          lastUsed: loadCodingLastUsedPrefill(),
+          defaults: loadCodingDefaults(),
         }),
       );
       setWorkspaceSheetOpen(true);
@@ -860,26 +912,30 @@ export function CodingSidebar({
       return;
     }
     addCodingProject(path);
-    seedCodingProjectDefaultsIfEmpty(path, {
-      harness: opts.harness,
-      model: opts.model,
-      providerKind: opts.providerKind,
-      endpoint: opts.endpoint,
-      apiKey: opts.apiKey,
-    });
     setProjects(loadCodingProjects());
     const lockedModel = normalizeCodingModelSpec(opts.model);
     const lockedEndpoint = normalizeCodingModelSpec(opts.endpoint);
     const lockedApiKey = normalizeCodingModelSpec(opts.apiKey);
     const providerKind = normalizeCodingProviderKind(opts.providerKind) ?? "";
-    saveCodingLastUsedPrefill({
-      harness: opts.harness,
-      ...(lockedModel ? { model: lockedModel } : {}),
-      ...(providerKind ? { providerKind } : {}),
-      ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
-      ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
-    });
     const ehHostModel = codingModelToEhHostModel(lockedModel, providerKind);
+
+    const commitProjectDefaults = () => {
+      seedCodingProjectDefaultsIfEmpty(path, {
+        harness: opts.harness,
+        model: opts.model,
+        providerKind: opts.providerKind,
+        endpoint: opts.endpoint,
+        apiKey: opts.apiKey,
+      });
+      saveCodingLastUsedPrefill({
+        harness: opts.harness,
+        ...(lockedModel ? { model: lockedModel } : {}),
+        ...(providerKind ? { providerKind } : {}),
+        ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+        // API keys stay on the home node — never last-used in the browser.
+      });
+      setProjects(loadCodingProjects());
+    };
 
     if (opts.harness === "envoy-harness") {
       if (ehChats.length >= MAX_ENVOY_HARNESS_CHATS) {
@@ -900,6 +956,7 @@ export function CodingSidebar({
         try {
           const created = await nodeService.createEnvoyHarnessChat({
             cwd: path,
+            forceNew: true,
             ...(ehHostModel ? { model: ehHostModel } : {}),
             ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
             ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
@@ -915,6 +972,7 @@ export function CodingSidebar({
           await nodeService.setEnvoyHarnessProjectPath(path);
           chatId = null;
         }
+        commitProjectDefaults();
         setWorkspaceSheetOpen(false);
         await refreshEhChats();
         if (chatId) {
@@ -946,23 +1004,20 @@ export function CodingSidebar({
           );
           return;
         }
-        try {
-          await nodeService.setExtAgentProjectPath?.({
-            agentId,
-            path,
-          });
-        } catch {
-          // non-fatal
-        }
         const reach = await nodeService.probeExtAgent({ agentId });
         if (
           reach.installState === "not-installed" ||
           (reach.installGuide && !reach.installGuide.installed)
         ) {
           if (reach.installGuide) {
+            commitProjectDefaults();
             setPendingInstall({
               harness: opts.harness,
               cwd: path,
+              ...(lockedModel ? { model: lockedModel } : {}),
+              ...(providerKind ? { providerKind } : {}),
+              ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+              ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
               guide: reach.installGuide,
               installState: reach.installState,
             });
@@ -978,24 +1033,29 @@ export function CodingSidebar({
           }
           return;
         }
-        if (lockedModel && nodeService.setExtAgentSessionModel) {
-          try {
-            await nodeService.setExtAgentSessionModel({
-              agentId,
-              model: lockedModel,
-            });
-          } catch {
-            // soft-fail
-          }
-        }
         const session = createCodingExtSession({
           harness: opts.harness,
           cwd: path,
           ...(lockedModel ? { model: lockedModel } : {}),
           ...(providerKind ? { providerKind } : {}),
           ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
-          ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
         });
+        try {
+          await nodeService.setCodingHarnessRuntime?.({
+            codingSessionId: session.id,
+            cwd: path,
+            runtime: {
+              ...(lockedModel ? { model: lockedModel } : {}),
+              ...(providerKind ? { providerKind } : {}),
+              ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+              ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
+            },
+          });
+        } catch (e: unknown) {
+          removeCodingExtSession(session.id);
+          throw e;
+        }
+        commitProjectDefaults();
         setExtSessions(loadCodingExtSessions());
         setWorkspaceSheetOpen(false);
         onSelect({
@@ -1023,7 +1083,7 @@ export function CodingSidebar({
               : undefined;
       const result = await nodeService.ensurePiTerminalSession({
         projectPath: path,
-        forceRestart: false,
+        forceRestart: true,
         ...(modelName
           ? {
               modelOverride: {
@@ -1044,6 +1104,7 @@ export function CodingSidebar({
         setSheetError(result.reason);
         return;
       }
+      commitProjectDefaults();
       setWorkspaceSheetOpen(false);
       await refreshTerminalSessions();
       onSelect({
@@ -1085,7 +1146,7 @@ export function CodingSidebar({
         openAddProject();
         return;
       case "open-settings":
-        onOpenCodingSettings?.();
+        openCodingDefaults();
         return;
       case "invite-peer": {
         if (selected?.kind !== "eh") return;
@@ -1164,6 +1225,9 @@ export function CodingSidebar({
   };
 
   const handleRemoveExtSession = (session: CodingExtSession) => {
+    void nodeService.clearCodingHarnessRuntime?.({
+      codingSessionId: session.id,
+    }).catch(() => undefined);
     removeCodingExtSession(session.id);
     setExtSessions(loadCodingExtSessions());
     if (selected?.kind === "ext" && selected.sessionId === session.id) {
@@ -1185,6 +1249,9 @@ export function CodingSidebar({
             sessionId: row.session.sessionId,
           });
         } else {
+          void nodeService.clearCodingHarnessRuntime?.({
+            codingSessionId: row.session.id,
+          }).catch(() => undefined);
           removeCodingExtSession(row.session.id);
         }
       }
@@ -1668,9 +1735,6 @@ export function CodingSidebar({
       </div>
 
       <div className="coding-sidebar-footer">
-        <div className="coding-sidebar-footer__label">
-          {t("codingView.automationsFooter", "Automations")}
-        </div>
         <button
           type="button"
           className="coding-sidebar-settings"
@@ -1687,23 +1751,22 @@ export function CodingSidebar({
         >
           {t("codingView.scheduleListTitle", "Schedules")}
         </button>
-        {onOpenCodingSettings ? (
+        <>
+          <div
+            className="coding-sidebar-footer__sep"
+            role="separator"
+            aria-hidden
+          />
           <button
             type="button"
             className="coding-sidebar-settings"
-            onClick={onOpenCodingSettings}
+            onClick={openCodingDefaults}
             data-testid="coding-settings"
           >
             <SettingsIcon size={16} />
-            {t("codingView.settingsFooter", "Harness and defaults")}
+            {t("codingView.settingsFooter", "Coding defaults")}
           </button>
-        ) : null}
-        <p className="coding-sidebar-harness-hint" data-testid="coding-harness-settings-hint">
-          {t(
-            "codingView.harnessSettingsHint",
-            "Install coding agents in Settings → AI → Coding harnesses",
-          )}
-        </p>
+        </>
       </div>
 
       {heartbeatsPanelOpen ? (
@@ -1960,7 +2023,12 @@ export function CodingSidebar({
           busy={projectSettingsBusy}
           error={projectSettingsError}
           revealBusy={revealBusyPath === projectSettingsTarget.path}
-          settingsAiModelHint={settingsAiModelHint}
+          codingDefaultsModelHint={codingDefaultsModelHint}
+          onOpenCodingDefaults={() => {
+            setProjectSettingsTarget(null);
+            setProjectSettingsError(null);
+            openCodingDefaults();
+          }}
           onCancel={() => {
             if (!projectSettingsBusy) {
               setProjectSettingsTarget(null);
@@ -1974,7 +2042,9 @@ export function CodingSidebar({
             try {
               const projectPatch = {
                 label: patch.label,
-                defaultHarness: patch.defaultHarness,
+                ...(patch.defaultHarness
+                  ? { defaultHarness: patch.defaultHarness }
+                  : {}),
                 defaultModel: patch.defaultModel,
                 defaultProviderKind: patch.defaultProviderKind,
                 defaultEndpoint: patch.defaultEndpoint,
@@ -2011,6 +2081,44 @@ export function CodingSidebar({
         />
       ) : null}
 
+      {defaultsOpen ? (
+        <CodingDefaultsModal
+          defaults={codingDefaults}
+          busy={defaultsBusy}
+          error={defaultsError}
+          envoymeshAiModelHint={envoymeshAiModelHint}
+          onCancel={() => {
+            if (!defaultsBusy) {
+              setDefaultsOpen(false);
+              setDefaultsError(null);
+            }
+          }}
+          onSave={(next) => {
+            if (defaultsBusy) return;
+            setDefaultsBusy(true);
+            setDefaultsError(null);
+            try {
+              const saved = saveCodingDefaults(next);
+              setCodingDefaults(saved);
+              setDefaultsOpen(false);
+              showToast(
+                t("codingView.defaultsSaved", "Coding defaults saved."),
+                "success",
+              );
+            } catch {
+              setDefaultsError(
+                t(
+                  "codingView.defaultsSaveFailed",
+                  "Couldn’t save Coding defaults. Try again.",
+                ),
+              );
+            } finally {
+              setDefaultsBusy(false);
+            }
+          }}
+        />
+      ) : null}
+
       {workspaceSheetOpen ? (
         <CodingNewSessionSheet
           key={`${sheetInitialProject}:${sheetInitialPrefill.harness}:${sheetInitialPrefill.model}`}
@@ -2018,7 +2126,7 @@ export function CodingSidebar({
           projects={projects}
           initialProjectPath={sheetInitialProject}
           initialPrefill={sheetInitialPrefill}
-          settingsAiModelHint={settingsAiModelHint}
+          codingDefaultsModelHint={codingDefaultsModelHint}
           busy={sheetBusy}
           error={sheetError}
           enabledHarnesses={CODING_ALL_HARNESSES}
@@ -2065,12 +2173,44 @@ export function CodingSidebar({
               setPendingInstall(null);
               return;
             }
-            void nodeService.probeExtAgent({ agentId }).then((r) => {
+            void nodeService.probeExtAgent({ agentId }).then(async (r) => {
               if (r.installState === "installed") {
                 const session = createCodingExtSession({
                   harness: pendingInstall.harness,
                   cwd: pendingInstall.cwd,
+                  ...(pendingInstall.model
+                    ? { model: pendingInstall.model }
+                    : {}),
+                  ...(pendingInstall.providerKind
+                    ? { providerKind: pendingInstall.providerKind }
+                    : {}),
+                  ...(pendingInstall.endpoint
+                    ? { endpoint: pendingInstall.endpoint }
+                    : {}),
                 });
+                try {
+                  await nodeService.setCodingHarnessRuntime?.({
+                    codingSessionId: session.id,
+                    cwd: pendingInstall.cwd,
+                    runtime: {
+                      ...(pendingInstall.model
+                        ? { model: pendingInstall.model }
+                        : {}),
+                      ...(pendingInstall.providerKind
+                        ? { providerKind: pendingInstall.providerKind }
+                        : {}),
+                      ...(pendingInstall.endpoint
+                        ? { endpoint: pendingInstall.endpoint }
+                        : {}),
+                      ...(pendingInstall.apiKey
+                        ? { apiKey: pendingInstall.apiKey }
+                        : {}),
+                    },
+                  });
+                } catch {
+                  removeCodingExtSession(session.id);
+                  return;
+                }
                 setExtSessions(loadCodingExtSessions());
                 setPendingInstall(null);
                 onSelect({

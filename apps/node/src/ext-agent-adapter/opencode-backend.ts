@@ -48,10 +48,18 @@ export class OpenCodeBackend extends OneShotCliBackend {
     this.extraArgs = opts.extraArgs ?? [];
   }
 
-  protected buildArgs(text: string, _sessionKey: string): string[] {
+  protected buildArgs(
+    text: string,
+    _sessionKey: string,
+    opts?: import("./types.js").ExtAgentAskOpts,
+  ): string[] {
     // Non-interactive one-shot. `--format json` yields parseable events;
     // plain text stdout is accepted as a fallback in parseOutput.
-    return ["run", "--format", "json", ...this.extraArgs, text];
+    const args = ["run", "--format", "json", ...this.extraArgs];
+    const model = opts?.model?.trim();
+    if (model) args.push("--model", model);
+    args.push(text);
+    return args;
   }
 
   protected parseOutput(

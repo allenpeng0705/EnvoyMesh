@@ -7,6 +7,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { NodeConfig } from "@envoymesh/api";
 import { CodingView } from "../../src/components/views/CodingView.js";
 import { saveCodingProjects } from "../../src/lib/coding-projects.js";
+import { clearCodingReviewReadonly } from "../../src/lib/open-coding-nav.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const listEnvoyHarnessChats = vi.fn();
@@ -129,6 +130,24 @@ vi.mock("../../src/components/views/PiCodingPanel.js", () => ({
 }));
 
 vi.mock("../../src/components/views/ExtAgentCodingPanel.js", () => ({
+  CodingHarnessPanel: ({
+    harness,
+    sessionId,
+    onStatusChange,
+  }: {
+    harness: string;
+    sessionId: string;
+    onStatusChange?: (status: string | null) => void;
+  }) => {
+    React.useEffect(() => {
+      onStatusChange?.("ready");
+    }, [onStatusChange]);
+    return (
+      <div data-testid="ext-agent-coding-panel">
+        ext:{harness}:{sessionId}
+      </div>
+    );
+  },
   ExtAgentCodingPanel: ({
     harness,
     sessionId,
@@ -168,6 +187,7 @@ vi.mock("../../src/components/HomeFolderPicker.js", () => ({
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
+  clearCodingReviewReadonly();
   listEnvoyHarnessChats.mockResolvedValue([]);
   createEnvoyHarnessChat.mockResolvedValue({
     id: "chat-new",
@@ -222,11 +242,8 @@ afterEach(() => {
 });
 
 describe("CodingView — Project → Workspace → Chat", () => {
-  it("shows home empty + single footer Add project (no global New workspace)", async () => {
-    const onOpenCodingSettings = vi.fn();
-    renderWithI18n(
-      <CodingView active onOpenCodingSettings={onOpenCodingSettings} />,
-    );
+  it("shows home empty + opens Coding defaults from footer (not Settings)", async () => {
+    renderWithI18n(<CodingView active />);
     expect(await screen.findByTestId("coding-home")).toBeDefined();
     expect(screen.getByTestId("coding-home-add-project")).toBeDefined();
     expect(screen.getByTestId("coding-add-project")).toBeDefined();
@@ -236,11 +253,17 @@ describe("CodingView — Project → Workspace → Chat", () => {
     expect(screen.getByTestId("coding-settings")).toBeDefined();
     expect(screen.getByTestId("coding-sidebar-empty")).toBeDefined();
     fireEvent.click(screen.getByTestId("coding-settings"));
-    expect(onOpenCodingSettings).toHaveBeenCalled();
+    expect(await screen.findByTestId("coding-defaults-settings")).toBeDefined();
+  });
+
+  it("home settings tile opens Coding defaults", async () => {
+    renderWithI18n(<CodingView active />);
+    fireEvent.click(await screen.findByTestId("coding-home-settings"));
+    expect(await screen.findByTestId("coding-defaults-settings")).toBeDefined();
   });
 
   it("Add project from home registers folder then opens New workspace", async () => {
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     fireEvent.click(await screen.findByTestId("coding-home-add-project"));
     expect(await screen.findByTestId("coding-add-project-confirm")).toBeDefined();
     fireEvent.change(screen.getByTestId("home-folder-picker"), {
@@ -264,7 +287,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
         addedAt: new Date().toISOString(),
       },
     ]);
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     expect(await screen.findByTestId("coding-project-group-app")).toBeDefined();
     fireEvent.click(screen.getByTestId("coding-project-new-workspace-app"));
     expect(await screen.findByTestId("coding-new-session-sheet")).toBeDefined();
@@ -276,6 +299,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
     await waitFor(() => {
       expect(createEnvoyHarnessChat).toHaveBeenCalledWith({
         cwd: "/projects/app",
+        forceNew: true,
       });
     });
     expect(await screen.findByTestId("coding-workspace-shell")).toBeDefined();
@@ -293,7 +317,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
         messageCount: 1,
       },
     ]);
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     fireEvent.click(await screen.findByTestId("coding-workspace-chat-1"));
     expect(await screen.findByTestId("coding-workspace-shell")).toBeDefined();
     expect(screen.queryByTestId("coding-context-rail")).toBeNull();
@@ -313,7 +337,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
         addedAt: new Date().toISOString(),
       },
     ]);
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     fireEvent.click(await screen.findByTestId("coding-project-new-workspace-app"));
     await screen.findByTestId("coding-new-session-sheet");
     fireEvent.click(screen.getByTestId("coding-harness-pi"));
@@ -322,7 +346,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
     await waitFor(() => {
       expect(ensurePiTerminalSession).toHaveBeenCalledWith({
         projectPath: "/projects/app",
-        forceRestart: false,
+        forceRestart: true,
       });
     });
     expect(await screen.findByTestId("coding-workspace-shell")).toBeDefined();
@@ -345,7 +369,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
         role: "pi",
       },
     ];
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     expect(await screen.findByTestId("coding-workspace-pi-pi-1")).toBeDefined();
     fireEvent.click(screen.getByTestId("coding-workspace-pi-pi-1"));
     expect(await screen.findByTestId("coding-workspace-shell")).toBeDefined();
@@ -383,7 +407,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
         lastUsedAt: new Date().toISOString(),
       },
     ]);
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     expect(await screen.findByTestId("coding-project-group-app")).toBeDefined();
     expect(screen.getByTestId("coding-project-group-lib")).toBeDefined();
     expect(screen.getByTestId("coding-project-group-empty-only")).toBeDefined();
@@ -407,7 +431,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
         messageCount: 2,
       },
     ]);
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     await screen.findByTestId("coding-workspace-chat-1");
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-btn-chat-1"));
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-remove-chat-1"));
@@ -443,7 +467,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
       listEnvoyHarnessChats.mockResolvedValue([]);
       return { removed: true };
     });
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     await screen.findByTestId("coding-project-group-app");
     fireEvent.click(screen.getByTestId("coding-project-menu-app-btn"));
     fireEvent.click(screen.getByTestId("coding-project-menu-app-remove"));
@@ -471,7 +495,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
         messageCount: 2,
       },
     ]);
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     await screen.findByTestId("coding-workspace-chat-1");
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-btn-chat-1"));
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-invite-chat-1"));
@@ -502,7 +526,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
         lastUsedAt: new Date().toISOString(),
       },
     ]);
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     openCoding({ chatId: "chat-1", reviewOnly: true });
     expect(await screen.findByTestId("eh-panel-stub")).toBeDefined();
     expect(screen.getByTestId("eh-review-only-flag")).toBeDefined();
@@ -522,7 +546,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
         agentState: "thinking",
       },
     ]);
-    renderWithI18n(<CodingView active onOpenCodingSettings={() => {}} />);
+    renderWithI18n(<CodingView active />);
     expect(await screen.findByTestId("coding-status-chip-chat-run")).toBeDefined();
     expect(screen.getByTestId("coding-status-chip-chat-run").textContent).toMatch(
       /Running/i,

@@ -4,11 +4,13 @@ import {
   codingModelToEhHostModel,
   ensureCodingProjectsFromCwds,
   getCodingProject,
+  loadCodingDefaults,
   loadCodingProjects,
   modelProvidersToCodingSpec,
   normalizeCodingProjectPath,
   removeCodingProject,
   resolveCodingWorkspacePrefill,
+  saveCodingDefaults,
   saveCodingProjects,
   seedCodingProjectDefaultsIfEmpty,
   updateCodingProject,
@@ -140,7 +142,7 @@ describe("coding-projects", () => {
     expect(cleared?.defaultProviderKind).toBeUndefined();
   });
 
-  it("resolveCodingWorkspacePrefill prefers project over last-used (no Settings)", () => {
+  it("resolveCodingWorkspacePrefill prefers project over Coding defaults", () => {
     expect(
       resolveCodingWorkspacePrefill({
         project: {
@@ -153,7 +155,7 @@ describe("coding-projects", () => {
           defaultEndpoint: "https://x",
           defaultApiKey: "sk",
         },
-        lastUsed: {
+        defaults: {
           harness: "pi",
           model: "other",
           providerKind: "anthropic-compatible",
@@ -190,7 +192,30 @@ describe("coding-projects", () => {
     ).toBe("x");
   });
 
-  it("resolveCodingWorkspacePrefill leaves Envoy/Pi model empty for Settings fallback", () => {
+  it("resolveCodingWorkspacePrefill uses Coding defaults then system", () => {
+    installMemoryStorage();
+    saveCodingDefaults({
+      harness: "cursor",
+      model: "auto",
+      providerKind: "",
+      endpoint: "",
+      apiKey: "",
+    });
+    expect(
+      resolveCodingWorkspacePrefill({
+        project: {
+          path: "/p",
+          label: "p",
+          addedAt: "2020-01-01T00:00:00.000Z",
+        },
+      }),
+    ).toEqual({
+      harness: "cursor",
+      model: "auto",
+      providerKind: "",
+      endpoint: "",
+      apiKey: "",
+    });
     expect(
       resolveCodingWorkspacePrefill({
         project: {
@@ -199,7 +224,53 @@ describe("coding-projects", () => {
           addedAt: "2020-01-01T00:00:00.000Z",
           defaultHarness: "envoy-harness",
         },
-        lastUsed: null,
+        defaults: {
+          harness: "pi",
+          model: "",
+          providerKind: "",
+          endpoint: "",
+          apiKey: "",
+        },
+      }),
+    ).toEqual({
+      harness: "envoy-harness",
+      model: "",
+      providerKind: "",
+      endpoint: "",
+      apiKey: "",
+    });
+  });
+
+  it("load/save Coding defaults round-trip", () => {
+    installMemoryStorage();
+    expect(loadCodingDefaults().harness).toBe("envoy-harness");
+    const saved = saveCodingDefaults({
+      harness: "codex",
+      model: "gpt-4o",
+      providerKind: "openai-compatible",
+      endpoint: "https://api.example/v1",
+      apiKey: "sk-x",
+    });
+    expect(saved.harness).toBe("codex");
+    expect(loadCodingDefaults()).toEqual(saved);
+  });
+
+  it("resolveCodingWorkspacePrefill leaves Envoy/Pi model empty for EnvoyMesh AI fallback", () => {
+    expect(
+      resolveCodingWorkspacePrefill({
+        project: {
+          path: "/p",
+          label: "p",
+          addedAt: "2020-01-01T00:00:00.000Z",
+          defaultHarness: "envoy-harness",
+        },
+        defaults: {
+          harness: "envoy-harness",
+          model: "",
+          providerKind: "",
+          endpoint: "",
+          apiKey: "",
+        },
       }),
     ).toEqual({
       harness: "envoy-harness",

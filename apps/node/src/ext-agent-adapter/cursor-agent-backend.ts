@@ -76,7 +76,11 @@ export class CursorAgentBackend extends OneShotCliBackend {
     this.extraArgs = opts.extraArgs ?? [];
   }
 
-  protected buildArgs(text: string, _sessionKey: string): string[] {
+  protected buildArgs(
+    text: string,
+    _sessionKey: string,
+    opts?: import("./types.js").ExtAgentAskOpts,
+  ): string[] {
     // Current Cursor Agent CLI (2026.06+): positional prompt + --print
     // for headless. Do not use --prompt / --output (removed).
     const args = [
@@ -86,7 +90,10 @@ export class CursorAgentBackend extends OneShotCliBackend {
       "--trust",
       ...this.extraArgs,
     ];
-    const workspace = getExtAgentProjectPathCwd("cursor");
+    const model = opts?.model?.trim();
+    if (model) args.push("--model", model);
+    const workspace =
+      opts?.cwd?.trim() || getExtAgentProjectPathCwd("cursor");
     if (workspace) args.push("--workspace", workspace);
     args.push(text);
     return args;

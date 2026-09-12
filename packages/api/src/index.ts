@@ -120,6 +120,7 @@ export * from "./pi-timeline.js";
 export * from "./ext-timeline.js";
 export * from "./coding-ui-bucket.js";
 export * from "./coding-harness.js";
+export * from "./coding-harness-runtime.js";
 export * from "./coding-review-ref.js";
 export * from "./coding-heartbeat.js";
 export * from "./coding-schedule.js";

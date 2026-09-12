@@ -1,6 +1,7 @@
 /**
- * Client-side Coding Tier B (Ext Agent) session registry.
- * EH / Pi live on the home node; Tier B sessions are local only.
+ * Client-side Coding Tier B session registry.
+ * EH / Pi live on the home node; Tier B session list is local.
+ * API keys live on the home node (coding-runtime-store), not here.
  */
 
 import {
@@ -27,7 +28,6 @@ export type CodingExtSession = {
   model?: string;
   providerKind?: "openai-compatible" | "anthropic-compatible";
   endpoint?: string;
-  apiKey?: string;
 };
 
 function emitChanged(): void {
@@ -52,15 +52,19 @@ export function loadCodingExtSessions(): CodingExtSession[] {
     if (!Array.isArray(parsed)) return [];
     const out: CodingExtSession[] = [];
     const seen = new Set<string>();
+    let strippedSecrets = false;
     for (const row of parsed) {
       if (!row || typeof row !== "object") continue;
-      const r = row as Partial<CodingExtSession>;
+      const r = row as Partial<CodingExtSession> & { apiKey?: string };
       const id = String(r.id ?? "").trim();
       const harness = String(r.harness ?? "").trim() as CodingHarnessId;
       const cwd = String(r.cwd ?? "").trim();
       if (!id || !cwd || !isCodingTierBHarness(harness)) continue;
       if (seen.has(id)) continue;
       seen.add(id);
+      if (typeof r.apiKey === "string" && r.apiKey.trim()) {
+        strippedSecrets = true;
+      }
       const createdAt =
         typeof r.createdAt === "string" && r.createdAt
           ? r.createdAt
@@ -88,14 +92,19 @@ export function loadCodingExtSessions(): CodingExtSession[] {
         ...(typeof r.endpoint === "string" && r.endpoint.trim()
           ? { endpoint: r.endpoint.trim() }
           : {}),
-        ...(typeof r.apiKey === "string" && r.apiKey.trim()
-          ? { apiKey: r.apiKey.trim() }
-          : {}),
       });
     }
-    return out.sort((a, b) =>
+    const sorted = out.sort((a, b) =>
       b.lastUsedAt.localeCompare(a.lastUsedAt),
     );
+    if (strippedSecrets) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
+      } catch {
+        /* private mode */
+      }
+    }
+    return sorted;
   } catch {
     return [];
   }
@@ -117,7 +126,6 @@ export function createCodingExtSession(opts: {
   model?: string;
   providerKind?: "openai-compatible" | "anthropic-compatible";
   endpoint?: string;
-  apiKey?: string;
 }): CodingExtSession {
   if (!isCodingTierBHarness(opts.harness)) {
     throw new Error(`Not a Tier B harness: ${opts.harness}`);
@@ -127,7 +135,6 @@ export function createCodingExtSession(opts: {
   const now = new Date().toISOString();
   const model = opts.model?.trim();
   const endpoint = opts.endpoint?.trim();
-  const apiKey = opts.apiKey?.trim();
   const session: CodingExtSession = {
     id: newId(opts.harness),
     harness: opts.harness,
@@ -141,7 +148,6 @@ export function createCodingExtSession(opts: {
       ? { providerKind: opts.providerKind }
       : {}),
     ...(endpoint ? { endpoint } : {}),
-    ...(apiKey ? { apiKey } : {}),
   };
   const all = loadCodingExtSessions();
   all.unshift(session);

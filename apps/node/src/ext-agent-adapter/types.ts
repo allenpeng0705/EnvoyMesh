@@ -52,6 +52,12 @@ export interface ExtAgentInboundMessage {
 /** Optional ask options — streaming backends call `onDelta` per token chunk. */
 export type ExtAgentAskOpts = {
   onDelta?: (chunk: string) => void;
+  /** Per-ask working directory (Coding harness); overrides project-path store. */
+  cwd?: string;
+  /** Per-ask model id / alias (Coding harness). */
+  model?: string;
+  /** Extra env merged for this spawn only (API keys / base URLs). */
+  env?: NodeJS.ProcessEnv;
 };
 
 export interface ExtAgentBackend {

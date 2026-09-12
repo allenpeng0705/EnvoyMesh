@@ -354,8 +354,19 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
 
     try {
       const options: Options = {
-        model: getExtAgentSessionModel("claudecode", sessionKey) ?? this.model,
-        cwd: getExtAgentProjectPathCwd("claudecode") ?? this.cwd,
+        model:
+          opts?.model?.trim() ||
+          (sessionKey.startsWith("coding:")
+            ? this.model
+            : (getExtAgentSessionModel("claudecode", sessionKey) ??
+              this.model)),
+        cwd:
+          opts?.cwd?.trim() ||
+          getExtAgentProjectPathCwd("claudecode") ||
+          this.cwd,
+        ...(opts?.env
+          ? { env: { ...process.env, ...opts.env } as Record<string, string> }
+          : {}),
         abortController: ac,
         permissionMode: this.permissionMode,
         allowDangerouslySkipPermissions: this.allowDangerouslySkipPermissions,

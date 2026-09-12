@@ -169,6 +169,9 @@ export const CODING_GATED_RPC = new Set<string>([
   "updateCodingHeartbeat",
   "deleteCodingHeartbeat",
   "runCodingHeartbeatNow",
+  "askCodingHarness",
+  "setCodingHarnessRuntime",
+  "clearCodingHarnessRuntime",
   "listCodingSchedules",
   "createCodingSchedule",
   "updateCodingSchedule",
@@ -949,6 +952,18 @@ export async function routeRpcMethod(
             ? params.streamSessionId
             : undefined,
       });
+    case "askCodingHarness":
+      return ns.askCodingHarness(
+        params as import("@envoymesh/api").AskCodingHarnessParams,
+      );
+    case "setCodingHarnessRuntime":
+      return ns.setCodingHarnessRuntime(
+        params as import("@envoymesh/api").SetCodingHarnessRuntimeParams,
+      );
+    case "clearCodingHarnessRuntime":
+      return ns.clearCodingHarnessRuntime(
+        params as import("@envoymesh/api").ClearCodingHarnessRuntimeParams,
+      );
     case "getExtAgentCommandCatalog":
       return ns.getExtAgentCommandCatalog({
         agentId: params.agentId as string | undefined,

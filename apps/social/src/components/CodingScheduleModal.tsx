@@ -1,46 +1,26 @@
 /**
  * Create a Coding schedule — new workspace each fire (Phase 68-C7).
  */
-import { useMemo, useState } from "react"
+import { useState } from "react";
 import {
   CODING_ALL_HARNESSES,
   CODING_CRON_PRESETS,
   codingHarnessLabel,
-  type CodingCronPreset,
   type CodingScheduleHarness,
   type CreateCodingScheduleInput,
-} from "@envoymesh/api"
-import { useT } from "../context/I18nContext.js"
-import type { CodingProject } from "../lib/coding-projects.js"
-import { ModalPortal } from "./ModalPortal.js"
+} from "@envoymesh/api";
+import { useT } from "../context/I18nContext.js";
+import type { CodingProject } from "../lib/coding-projects.js";
+import { CodingCronFields } from "./CodingCronFields.js";
+import { ModalPortal } from "./ModalPortal.js";
 
 export type CodingScheduleModalProps = {
-  projects: CodingProject[]
-  busy?: boolean
-  error?: string | null
-  onCancel: () => void
-  onSave: (input: CreateCodingScheduleInput) => void
-}
-
-const PRESET_KEYS: CodingCronPreset[] = ["5m", "15m", "1h", "daily"]
-
-function presetLabel(
-  t: (key: string, fallback: string) => string,
-  key: CodingCronPreset | "custom",
-): string {
-  switch (key) {
-    case "5m":
-      return t("codingView.heartbeatPreset.5m", "5 min")
-    case "15m":
-      return t("codingView.heartbeatPreset.15m", "15 min")
-    case "1h":
-      return t("codingView.heartbeatPreset.1h", "Hourly")
-    case "daily":
-      return t("codingView.heartbeatPreset.daily", "Daily")
-    case "custom":
-      return t("codingView.heartbeatPreset.custom", "Custom")
-  }
-}
+  projects: CodingProject[];
+  busy?: boolean;
+  error?: string | null;
+  onCancel: () => void;
+  onSave: (input: CreateCodingScheduleInput) => void;
+};
 
 export function CodingScheduleModal({
   projects,
@@ -49,36 +29,30 @@ export function CodingScheduleModal({
   onCancel,
   onSave,
 }: CodingScheduleModalProps) {
-  const t = useT()
+  const t = useT();
   const [name, setName] = useState(
     () => t("codingView.scheduleDefaultName", "Scheduled run"),
-  )
-  const [cwd, setCwd] = useState(() => projects[0]?.path ?? "")
-  const [harness, setHarness] = useState<CodingScheduleHarness>("envoy-harness")
-  const [preset, setPreset] = useState<CodingCronPreset | "custom">("15m")
-  const [customCron, setCustomCron] = useState("*/15 * * * *")
+  );
+  const [cwd, setCwd] = useState(() => projects[0]?.path ?? "");
+  const [harness, setHarness] = useState<CodingScheduleHarness>("envoy-harness");
+  const [cron, setCron] = useState(CODING_CRON_PRESETS["15m"]);
   const [prompt, setPrompt] = useState(
     () =>
       t(
         "codingView.scheduleDefaultPrompt",
         "Start this scheduled coding task and make useful progress.",
       ),
-  )
-  const [enabled, setEnabled] = useState(true)
+  );
+  const [enabled, setEnabled] = useState(true);
 
-  const cron = useMemo(() => {
-    if (preset === "custom") return customCron.trim()
-    return CODING_CRON_PRESETS[preset]
-  }, [preset, customCron])
-
-  const selectedProject = projects.find((p) => p.path === cwd) ?? null
+  const selectedProject = projects.find((p) => p.path === cwd) ?? null;
 
   const canSave =
     !busy &&
     name.trim().length > 0 &&
     prompt.trim().length > 0 &&
     cwd.trim().length > 0 &&
-    cron.length > 0
+    cron.trim().length > 0;
 
   return (
     <ModalPortal>
@@ -87,7 +61,7 @@ export function CodingScheduleModal({
         role="presentation"
         data-testid="coding-schedule-modal"
         onMouseDown={(e) => {
-          if (e.target === e.currentTarget && !busy) onCancel()
+          if (e.target === e.currentTarget && !busy) onCancel();
         }}
       >
         <section
@@ -170,7 +144,7 @@ export function CodingScheduleModal({
             </label>
 
             <label className="modal-field">
-              <span>{t("codingView.scheduleHarness", "Harness")}</span>
+              <span>{t("codingView.scheduleHarness", "Agent")}</span>
               <select
                 value={harness}
                 disabled={busy}
@@ -187,58 +161,13 @@ export function CodingScheduleModal({
               </select>
             </label>
 
-            <fieldset className="modal-field coding-job-modal__schedule" disabled={busy}>
-              <legend>{t("codingView.scheduleCron", "How often")}</legend>
-              <div
-                className="coding-job-modal__presets"
-                role="group"
-                aria-label={t("codingView.scheduleCron", "How often")}
-              >
-                {PRESET_KEYS.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`coding-job-modal__preset${
-                      preset === key ? " coding-job-modal__preset--active" : ""
-                    }`}
-                    data-testid={`coding-schedule-preset-${key}`}
-                    onClick={() => setPreset(key)}
-                  >
-                    {presetLabel(t, key)}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className={`coding-job-modal__preset${
-                    preset === "custom"
-                      ? " coding-job-modal__preset--active"
-                      : ""
-                  }`}
-                  data-testid="coding-schedule-preset-custom"
-                  onClick={() => setPreset("custom")}
-                >
-                  {presetLabel(t, "custom")}
-                </button>
-              </div>
-              {preset === "custom" ? (
-                <input
-                  type="text"
-                  className="coding-job-modal__cron-input"
-                  value={customCron}
-                  data-testid="coding-schedule-cron"
-                  placeholder="*/15 * * * *"
-                  spellCheck={false}
-                  onChange={(e) => setCustomCron(e.target.value)}
-                />
-              ) : (
-                <p
-                  className="coding-job-modal__cron-preview"
-                  data-testid="coding-schedule-cron-preview"
-                >
-                  {cron} · UTC
-                </p>
-              )}
-            </fieldset>
+            <CodingCronFields
+              testIdPrefix="coding-schedule"
+              legend={t("codingView.scheduleCron", "How often")}
+              busy={busy}
+              value={cron}
+              onChange={setCron}
+            />
 
             <label className="modal-field">
               <span>{t("codingView.schedulePrompt", "Prompt")}</span>
@@ -284,15 +213,15 @@ export function CodingScheduleModal({
               disabled={!canSave}
               data-testid="coding-schedule-save"
               onClick={() => {
-                if (!canSave) return
+                if (!canSave) return;
                 onSave({
                   name: name.trim(),
-                  cron,
+                  cron: cron.trim(),
                   prompt: prompt.trim(),
                   cwd: cwd.trim(),
                   harness,
                   enabled,
-                })
+                });
               }}
             >
               {busy
@@ -303,5 +232,5 @@ export function CodingScheduleModal({
         </section>
       </div>
     </ModalPortal>
-  )
+  );
 }

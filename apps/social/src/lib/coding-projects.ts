@@ -13,9 +13,13 @@ import {
 const STORAGE_KEY = "envoymesh.codingProjects";
 const DISMISSED_KEY = "envoymesh.codingProjects.dismissed";
 const LAST_PREFILL_KEY = "envoymesh.coding.lastWorkspacePrefill";
+const DEFAULTS_KEY = "envoymesh.coding.defaults";
 
 /** Fired on window when the Coding project registry changes. */
 export const CODING_PROJECTS_CHANGED_EVENT = "envoymesh:coding-projects-changed";
+
+/** Fired on window when Coding defaults change. */
+export const CODING_DEFAULTS_CHANGED_EVENT = "envoymesh:coding-defaults-changed";
 
 /** Inline Coding provider (not Settings → AI). */
 export type CodingProviderKind = "openai-compatible" | "anthropic-compatible";
@@ -62,6 +66,26 @@ export type CodingProjectPatch = {
   defaultApiKey?: string | null;
 };
 
+/**
+ * Global Coding defaults (not Settings → AI).
+ * Empty model/provider for Envoy/Pi means EnvoyMesh AI at runtime.
+ */
+export type CodingDefaults = {
+  harness: CodingHarnessId;
+  model: string;
+  providerKind: CodingProviderKind | "";
+  endpoint: string;
+  apiKey: string;
+};
+
+export const SYSTEM_CODING_DEFAULTS: CodingDefaults = {
+  harness: "envoy-harness",
+  model: "",
+  providerKind: "",
+  endpoint: "",
+  apiKey: "",
+};
+
 /** Normalize a model / endpoint / key string (empty → undefined). */
 export function normalizeCodingModelSpec(
   raw: string | null | undefined,
@@ -106,39 +130,94 @@ export function modelProvidersToCodingSpec(
   }
 }
 
+function parseCodingDefaults(raw: unknown): CodingDefaults {
+  if (!raw || typeof raw !== "object") return { ...SYSTEM_CODING_DEFAULTS };
+  const o = raw as Record<string, unknown>;
+  const harnessRaw = typeof o.harness === "string" ? o.harness : "";
+  return {
+    harness:
+      harnessRaw && isCodingHarnessId(harnessRaw)
+        ? harnessRaw
+        : SYSTEM_CODING_DEFAULTS.harness,
+    model: normalizeCodingModelSpec(typeof o.model === "string" ? o.model : "") ?? "",
+    providerKind:
+      normalizeCodingProviderKind(
+        typeof o.providerKind === "string" ? o.providerKind : "",
+      ) ?? "",
+    endpoint:
+      normalizeCodingModelSpec(typeof o.endpoint === "string" ? o.endpoint : "") ??
+      "",
+    apiKey:
+      normalizeCodingModelSpec(typeof o.apiKey === "string" ? o.apiKey : "") ?? "",
+  };
+}
+
+export function loadCodingDefaults(): CodingDefaults {
+  try {
+    const raw = localStorage.getItem(DEFAULTS_KEY);
+    if (!raw) return { ...SYSTEM_CODING_DEFAULTS };
+    return parseCodingDefaults(JSON.parse(raw) as unknown);
+  } catch {
+    return { ...SYSTEM_CODING_DEFAULTS };
+  }
+}
+
+export function saveCodingDefaults(next: CodingDefaults): CodingDefaults {
+  const normalized: CodingDefaults = {
+    harness: isCodingHarnessId(next.harness)
+      ? next.harness
+      : SYSTEM_CODING_DEFAULTS.harness,
+    model: normalizeCodingModelSpec(next.model) ?? "",
+    providerKind: normalizeCodingProviderKind(next.providerKind) ?? "",
+    endpoint: normalizeCodingModelSpec(next.endpoint) ?? "",
+    apiKey: normalizeCodingModelSpec(next.apiKey) ?? "",
+  };
+  try {
+    localStorage.setItem(DEFAULTS_KEY, JSON.stringify(normalized));
+  } catch {
+    /* ignore quota */
+  }
+  try {
+    window.dispatchEvent(new Event(CODING_DEFAULTS_CHANGED_EVENT));
+  } catch {
+    /* non-browser */
+  }
+  return normalized;
+}
+
 /**
- * Prefill for New workspace: project defaults → last-used Coding values.
- * Settings → AI is not written into fields; Envoy/Pi inherit it at runtime when empty.
+ * Prefill for New workspace: project → Coding defaults → system.
+ * Empty model/provider for Envoy/Pi means EnvoyMesh AI at runtime.
  */
 export function resolveCodingWorkspacePrefill(opts: {
   project?: CodingProject | null;
-  lastUsed?: Partial<CodingWorkspacePrefill> | null;
+  defaults?: CodingDefaults | null;
 }): CodingWorkspacePrefill {
   const p = opts.project;
-  const last = opts.lastUsed;
+  const d = opts.defaults ?? loadCodingDefaults();
   const harness =
     (p?.defaultHarness && isCodingHarnessId(p.defaultHarness)
       ? p.defaultHarness
       : undefined) ||
-    (last?.harness && isCodingHarnessId(last.harness) ? last.harness : undefined) ||
-    "envoy-harness";
+    (d.harness && isCodingHarnessId(d.harness) ? d.harness : undefined) ||
+    SYSTEM_CODING_DEFAULTS.harness;
   return {
     harness,
     model:
       normalizeCodingModelSpec(p?.defaultModel) ||
-      normalizeCodingModelSpec(last?.model) ||
+      normalizeCodingModelSpec(d.model) ||
       "",
     providerKind:
       normalizeCodingProviderKind(p?.defaultProviderKind) ||
-      normalizeCodingProviderKind(last?.providerKind) ||
+      normalizeCodingProviderKind(d.providerKind) ||
       "",
     endpoint:
       normalizeCodingModelSpec(p?.defaultEndpoint) ||
-      normalizeCodingModelSpec(last?.endpoint) ||
+      normalizeCodingModelSpec(d.endpoint) ||
       "",
     apiKey:
       normalizeCodingModelSpec(p?.defaultApiKey) ||
-      normalizeCodingModelSpec(last?.apiKey) ||
+      normalizeCodingModelSpec(d.apiKey) ||
       "",
   };
 }

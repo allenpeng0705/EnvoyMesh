@@ -57,7 +57,11 @@ export abstract class OneShotCliBackend implements ExtAgentBackend {
   abstract readonly kind: ExtAgentSidecarKind;
   abstract readonly label: string;
 
-  protected abstract buildArgs(text: string, sessionKey: string): string[];
+  protected abstract buildArgs(
+    text: string,
+    sessionKey: string,
+    opts?: import("./types.js").ExtAgentAskOpts,
+  ): string[];
   /**
    * Extract the assistant text from the CLI's stdout. Throw an Error
    * to surface a non-zero exit or an unparseable response. The base
@@ -99,7 +103,7 @@ export abstract class OneShotCliBackend implements ExtAgentBackend {
   async ask(
     text: string,
     sessionKey: string,
-    _opts?: import("./types.js").ExtAgentAskOpts,
+    opts?: import("./types.js").ExtAgentAskOpts,
   ): Promise<string> {
     if (!text.trim()) return "";
     if (!sessionKey) {
@@ -115,12 +119,19 @@ export abstract class OneShotCliBackend implements ExtAgentBackend {
         installHint: this.installHint,
       });
     }
-    const args = [...this.defaultArgs, ...this.buildArgs(text, sessionKey)];
+    const args = [
+      ...this.defaultArgs,
+      ...this.buildArgs(text, sessionKey, opts),
+    ];
     const resolvedCmd = resolveExtAgentBinary(this.command) ?? this.command;
-    const cwd = getExtAgentProjectPathCwd(this.kind);
+    const cwd =
+      opts?.cwd?.trim() || getExtAgentProjectPathCwd(this.kind);
+    const env = opts?.env
+      ? augmentPathForExtAgentBins({ ...this.env, ...opts.env })
+      : this.env;
     return new Promise<string>((resolve, reject) => {
       const proc = spawn(resolvedCmd, args, {
-        env: this.env,
+        env,
         stdio: ["ignore", "pipe", "pipe"],
         ...(cwd ? { cwd } : {}),
       });

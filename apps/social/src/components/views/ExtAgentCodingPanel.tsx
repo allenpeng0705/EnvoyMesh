@@ -1,5 +1,5 @@
 /**
- * Coding Tier B panel — Ext Agent ask in Coding chrome.
+ * Coding Tier B harness panel — isolated from Ext Agent product.
  * Streaming harnesses (codex / claudecode) reuse `eh:timeline` under
  * `__ext__:${sessionId}`; one-shot backends stay sync ask.
  */
@@ -17,7 +17,10 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useEhTimeline } from "../../hooks/useEhTimeline.js";
 import type { ExtProbeStatus } from "../../lib/coding-status-label.js";
-import { maybeAutoTitleCodingExtSession } from "../../lib/coding-sessions.js";
+import {
+  getCodingExtSession,
+  maybeAutoTitleCodingExtSession,
+} from "../../lib/coding-sessions.js";
 import { ExtAgentInstallGuideCard } from "../ExtAgentInstallGuideCard.js";
 import { ExtAgentSwitcherInstallDialog } from "../ExtAgentSwitcherInstallDialog.js";
 
@@ -27,13 +30,16 @@ const STREAMING_EXT_HARNESSES = new Set<CodingHarnessId>([
   "claudecode",
 ]);
 
-export type ExtAgentCodingPanelProps = {
+export type CodingHarnessPanelProps = {
   harness: CodingHarnessId;
   cwd: string;
   sessionId: string;
   /** Coding workspace header / sidebar status (busy + probe). */
   onStatusChange?: (status: ExtProbeStatus | null) => void;
 };
+
+/** @deprecated Use CodingHarnessPanelProps */
+export type ExtAgentCodingPanelProps = CodingHarnessPanelProps;
 
 type LocalMsg = {
   id: string;
@@ -42,12 +48,12 @@ type LocalMsg = {
   streaming?: boolean;
 };
 
-export function ExtAgentCodingPanel({
+export function CodingHarnessPanel({
   harness,
   cwd,
   sessionId,
   onStatusChange,
-}: ExtAgentCodingPanelProps) {
+}: CodingHarnessPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
   const agentId = codingHarnessToExtAgentId(harness) ?? harness;
@@ -82,18 +88,8 @@ export function ExtAgentCodingPanel({
   useEffect(() => {
     setMessages([]);
     setLocalError(null);
-    void (async () => {
-      try {
-        await nodeService.setExtAgentProjectPath?.({
-          agentId,
-          path: cwd,
-        });
-      } catch {
-        // non-fatal — ask still works without cwd for some agents
-      }
-      await refreshProbe();
-    })();
-  }, [agentId, cwd, nodeService, refreshProbe, sessionId]);
+    void refreshProbe();
+  }, [agentId, cwd, refreshProbe, sessionId]);
 
   const streamingAssistant = useMemo((): LocalMsg | null => {
     if (!canStream || !busy) return null;
@@ -168,10 +164,24 @@ export function ExtAgentCodingPanel({
     maybeAutoTitleCodingExtSession(sessionId, text);
     setBusy(true);
     try {
-      const reply = await nodeService.askExtAgent({
-        agentId,
+      const session = getCodingExtSession(sessionId);
+      if (!nodeService.askCodingHarness) {
+        throw new Error(
+          "askCodingHarness is not available on this home node — update EnvoyMesh.",
+        );
+      }
+      const reply = await nodeService.askCodingHarness({
+        codingSessionId: sessionId,
+        harness,
         prompt: text,
-        ...(canStream ? { streamSessionId: sessionId } : {}),
+        cwd: session?.cwd || cwd,
+        runtime: {
+          ...(session?.model ? { model: session.model } : {}),
+          ...(session?.providerKind
+            ? { providerKind: session.providerKind }
+            : {}),
+          ...(session?.endpoint ? { endpoint: session.endpoint } : {}),
+        },
       });
       setMessages((prev) => [
         ...prev,
@@ -346,3 +356,6 @@ export function ExtAgentCodingPanel({
     </div>
   );
 }
+
+/** @deprecated Prefer CodingHarnessPanel */
+export const ExtAgentCodingPanel = CodingHarnessPanel;

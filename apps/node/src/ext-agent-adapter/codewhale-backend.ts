@@ -50,9 +50,16 @@ export class CodeWhaleBackend extends OneShotCliBackend {
     this.extraArgs = opts.extraArgs ?? [];
   }
 
-  protected buildArgs(text: string, _sessionKey: string): string[] {
+  protected buildArgs(
+    text: string,
+    _sessionKey: string,
+    opts?: import("./types.js").ExtAgentAskOpts,
+  ): string[] {
     // `-p` / `--prompt` = one-shot print mode (docs/MODES.md).
-    return ["-p", text, ...this.extraArgs];
+    const args = ["-p", text, ...this.extraArgs];
+    const model = opts?.model?.trim();
+    if (model) args.push("--model", model);
+    return args;
   }
 
   protected parseOutput(

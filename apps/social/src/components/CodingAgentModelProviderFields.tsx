@@ -37,12 +37,20 @@ export type CodingAgentModelProviderFieldsProps = {
   harnessProbe?: Partial<
     Record<CodingHarnessId, "ready" | "install" | "unknown" | "checking">
   >;
-  /** Scope hint for copy: project defaults vs this workspace. */
-  scope?: "project" | "workspace";
+  /** Scope hint for copy: coding defaults vs project vs this workspace. */
+  scope?: "defaults" | "project" | "workspace";
   /**
-   * Current Settings → AI model label for Envoy / Pi defaults
-   * (e.g. `openai:gpt-4o`). Shown when provider is Agent default.
+   * What empty Envoy/Pi model/provider means in this form.
+   * - coding-defaults: inherit Coding defaults (project / new workspace)
+   * - envoymesh-ai: inherit EnvoyMesh AI (Coding defaults page)
    */
+  fallbackKind?: "coding-defaults" | "envoymesh-ai";
+  /**
+   * Model label for empty-state placeholder
+   * (Coding defaults model, or EnvoyMesh AI model).
+   */
+  fallbackModelHint?: string;
+  /** @deprecated Use fallbackModelHint. */
   settingsAiModelHint?: string;
 };
 
@@ -77,6 +85,8 @@ export function CodingAgentModelProviderFields({
   enabledHarnesses = CODING_ALL_HARNESSES,
   harnessProbe = {},
   scope = "workspace",
+  fallbackKind,
+  fallbackModelHint = "",
   settingsAiModelHint = "",
 }: CodingAgentModelProviderFieldsProps) {
   const t = useT();
@@ -87,8 +97,15 @@ export function CodingAgentModelProviderFields({
   const datalistId = `coding-model-suggestions-${scope}`;
   const isEhOrPi =
     value.harness === "envoy-harness" || value.harness === "pi";
-  const usesSettingsAiDefault = isEhOrPi && !value.providerKind;
-  const settingsHint = settingsAiModelHint.trim();
+  const inheritFallback = isEhOrPi && !value.providerKind;
+  const resolvedFallbackKind =
+    fallbackKind ??
+    (scope === "defaults" ? "envoymesh-ai" : "coding-defaults");
+  const hint = (fallbackModelHint || settingsAiModelHint).trim();
+  const useCodingDefaultsFallback =
+    inheritFallback && resolvedFallbackKind === "coding-defaults";
+  const useEnvoymeshAiFallback =
+    inheritFallback && resolvedFallbackKind === "envoymesh-ai";
 
   useEffect(() => {
     let cancelled = false;
@@ -208,7 +225,11 @@ export function CodingAgentModelProviderFields({
           <select
             value={value.harness}
             disabled={locked}
-            data-testid="coding-project-settings-harness"
+            data-testid={
+              scope === "defaults"
+                ? "coding-defaults-settings-harness"
+                : "coding-project-settings-harness"
+            }
             onChange={(e) =>
               patch({ harness: e.target.value as CodingHarnessId })
             }
@@ -232,23 +253,36 @@ export function CodingAgentModelProviderFields({
           placeholder={
             catalogLoading
               ? t("codingView.modelLoading", "Loading models…")
-              : usesSettingsAiDefault
-                ? settingsHint
+              : useCodingDefaultsFallback
+                ? hint
                   ? t(
-                      "codingView.modelPlaceholderSettingsAi",
-                      "Empty = Settings → AI ({model})",
-                      { model: settingsHint },
+                      "codingView.modelPlaceholderCodingDefaults",
+                      "Empty = Coding defaults ({model})",
+                      { model: hint },
                     )
                   : t(
-                      "codingView.modelPlaceholderSettingsAiEmpty",
-                      "Empty = Settings → AI",
+                      "codingView.modelPlaceholderCodingDefaultsEmpty",
+                      "Empty = Coding defaults",
                     )
-                : t("codingView.modelPlaceholder", "e.g. gpt-4o or claude-sonnet…")
+                : useEnvoymeshAiFallback
+                  ? hint
+                    ? t(
+                        "codingView.modelPlaceholderEnvoymeshAi",
+                        "Empty = EnvoyMesh AI ({model})",
+                        { model: hint },
+                      )
+                    : t(
+                        "codingView.modelPlaceholderEnvoymeshAiEmpty",
+                        "Empty = EnvoyMesh AI",
+                      )
+                  : t("codingView.modelPlaceholder", "e.g. gpt-4o or claude-sonnet…")
           }
           data-testid={
-            scope === "project"
-              ? "coding-project-settings-model"
-              : "coding-new-workspace-model"
+            scope === "defaults"
+              ? "coding-defaults-settings-model"
+              : scope === "project"
+                ? "coding-project-settings-model"
+                : "coding-new-workspace-model"
           }
           onChange={(e) => patch({ model: e.target.value })}
         />
@@ -258,20 +292,30 @@ export function CodingAgentModelProviderFields({
           ))}
         </datalist>
         <p className="coding-job-modal__hint">
-          {usesSettingsAiDefault
+          {useCodingDefaultsFallback
             ? t(
-                "codingView.modelHintSettingsAi",
-                "Envoy and Pi use Settings → AI by default. Set a model here only to override.",
+                "codingView.modelHintCodingDefaults",
+                "Envoy and Pi use Coding defaults when empty. Set a model here only to override.",
               )
-            : scope === "project"
+            : useEnvoymeshAiFallback
               ? t(
-                  "codingView.projectDefaultModelHint",
-                  "Used when creating a new workspace. The workspace can override it.",
+                  "codingView.modelHintEnvoymeshAi",
+                  "Envoy and Pi use EnvoyMesh AI when empty. Set a model here only to override.",
                 )
-              : t(
-                  "codingView.modelLockHint",
-                  "Locked for this workspace at start. Overrides the project default.",
-                )}
+              : scope === "defaults"
+                ? t(
+                    "codingView.defaultsModelHint",
+                    "Applied when a project has no model override.",
+                  )
+                : scope === "project"
+                  ? t(
+                      "codingView.projectDefaultModelHint",
+                      "Used when creating a new workspace. The workspace can override it.",
+                    )
+                  : t(
+                      "codingView.modelLockHint",
+                      "Locked for this workspace at start. Overrides the project default.",
+                    )}
         </p>
       </label>
 
@@ -281,9 +325,11 @@ export function CodingAgentModelProviderFields({
           value={value.providerKind}
           disabled={locked}
           data-testid={
-            scope === "project"
-              ? "coding-project-settings-provider"
-              : "coding-new-workspace-provider"
+            scope === "defaults"
+              ? "coding-defaults-settings-provider"
+              : scope === "project"
+                ? "coding-project-settings-provider"
+                : "coding-new-workspace-provider"
           }
           onChange={(e) => {
             const next = e.target.value;
@@ -297,7 +343,9 @@ export function CodingAgentModelProviderFields({
         >
           <option value="">
             {isEhOrPi
-              ? t("codingView.providerSettingsAi", "Settings → AI (default)")
+              ? resolvedFallbackKind === "envoymesh-ai"
+                ? t("codingView.providerEnvoymeshAi", "EnvoyMesh AI (default)")
+                : t("codingView.providerCodingDefaults", "Coding defaults")
               : t("codingView.providerAgentDefault", "Agent default")}
           </option>
           <option value="openai-compatible">
@@ -308,15 +356,20 @@ export function CodingAgentModelProviderFields({
           </option>
         </select>
         <p className="coding-job-modal__hint">
-          {usesSettingsAiDefault
+          {useCodingDefaultsFallback
             ? t(
-                "codingView.providerKindHintSettingsAi",
-                "Leave on Settings → AI to reuse your EnvoyMesh model and keys. Pick OpenAI/Anthropic-compatible only for a custom endpoint and key.",
+                "codingView.providerKindHintCodingDefaults",
+                "Leave on Coding defaults to reuse your Coding default model and keys. Pick OpenAI/Anthropic-compatible only for a custom endpoint and key.",
               )
-            : t(
-                "codingView.providerKindHint",
-                "Optional custom endpoint and API key for this project or workspace.",
-              )}
+            : useEnvoymeshAiFallback
+              ? t(
+                  "codingView.providerKindHintEnvoymeshAi",
+                  "Leave on EnvoyMesh AI to reuse your EnvoyMesh model and keys. Pick OpenAI/Anthropic-compatible only for a custom endpoint and key.",
+                )
+              : t(
+                  "codingView.providerKindHint",
+                  "Optional custom endpoint and API key for this project or workspace.",
+                )}
         </p>
       </label>
 

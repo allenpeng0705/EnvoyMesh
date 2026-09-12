@@ -2941,6 +2941,32 @@ export interface NodeService {
   askExtAgent(params: AskExtAgentParams): Promise<string>;
 
   /**
+   * Coding Tier B ask — isolated from Ext Agent bridge state.
+   * Uses `coding:${sessionId}` as the backend session key and home-node
+   * coding-runtime-store for cwd / model / secrets.
+   */
+  askCodingHarness(
+    params: import("./coding-harness-runtime.js").AskCodingHarnessParams,
+  ): Promise<string>;
+
+  /**
+   * Persist Coding workspace runtime (cwd / model / optional API key) on
+   * the home node. Called once at workspace create.
+   */
+  setCodingHarnessRuntime(
+    params: import("./coding-harness-runtime.js").SetCodingHarnessRuntimeParams,
+  ): Promise<
+    import("./coding-harness-runtime.js").SetCodingHarnessRuntimeResult
+  >;
+
+  /** Drop Coding workspace runtime when the workspace is removed. */
+  clearCodingHarnessRuntime(
+    params: import("./coding-harness-runtime.js").ClearCodingHarnessRuntimeParams,
+  ): Promise<
+    import("./coding-harness-runtime.js").ClearCodingHarnessRuntimeResult
+  >;
+
+  /**
    * Slash-command catalog for Ext Agent chat autocomplete (per active agent).
    * HomeClaw returns an empty command list with a limitation note.
    */

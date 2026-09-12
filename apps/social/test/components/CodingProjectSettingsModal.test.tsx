@@ -82,6 +82,36 @@ describe("CodingProjectSettingsModal", () => {
       defaultApiKey: "sk-test",
     });
   });
+
+  it("rename-only does not invent Envoy as default harness", () => {
+    const onSave = vi.fn();
+    renderWithI18n(
+      <CodingProjectSettingsModal
+        project={{
+          path: "/projects/app",
+          label: "app",
+          addedAt: "2020-01-01T00:00:00.000Z",
+        }}
+        onCancel={() => {}}
+        onSave={onSave}
+        onReveal={() => {}}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("coding-project-settings-name"), {
+      target: { value: "Renamed" },
+    });
+    fireEvent.click(screen.getByTestId("coding-project-settings-save"));
+
+    expect(onSave).toHaveBeenCalledWith({
+      label: "Renamed",
+      defaultModel: null,
+      defaultProviderKind: null,
+      defaultEndpoint: null,
+      defaultApiKey: null,
+    });
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("defaultHarness");
+  });
 });
 
 describe("CodingNewSessionSheet workspace override", () => {

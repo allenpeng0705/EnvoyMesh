@@ -22,15 +22,18 @@ export type CodingProjectSettingsModalProps = {
   onCancel: () => void;
   onSave: (patch: {
     label: string;
-    defaultHarness: CodingHarnessId;
+    /** Omitted when unset and user did not choose an agent (rename-only). */
+    defaultHarness?: CodingHarnessId;
     defaultModel: string | null;
     defaultProviderKind: CodingProviderKind | null;
     defaultEndpoint: string | null;
     defaultApiKey: string | null;
   }) => void;
   onReveal: () => void;
-  /** Current Settings → AI model for Envoy/Pi default hints. */
-  settingsAiModelHint?: string;
+  /** Opens the Coding defaults modal. */
+  onOpenCodingDefaults?: () => void;
+  /** Coding defaults model hint for empty Envoy/Pi fields. */
+  codingDefaultsModelHint?: string;
 };
 
 function projectToValue(project: CodingProject): CodingAgentModelProviderValue {
@@ -51,7 +54,8 @@ export function CodingProjectSettingsModal({
   onCancel,
   onSave,
   onReveal,
-  settingsAiModelHint = "",
+  onOpenCodingDefaults,
+  codingDefaultsModelHint = "",
 }: CodingProjectSettingsModalProps) {
   const t = useT();
   const [label, setLabel] = useState(project.label);
@@ -72,6 +76,18 @@ export function CodingProjectSettingsModal({
     agentModel.endpoint.trim() !== baseline.endpoint.trim() ||
     agentModel.apiKey.trim() !== baseline.apiKey.trim();
   const canSave = !busy && trimmedLabel.length > 0 && dirty;
+  /**
+   * UI shows Envoy when `defaultHarness` is unset. Don't write Envoy on a
+   * rename-only save; do write if the project already had a harness or the
+   * user touched agent/model/provider fields.
+   */
+  const shouldPersistHarness =
+    Boolean(project.defaultHarness) ||
+    agentModel.harness !== "envoy-harness" ||
+    agentModel.model.trim().length > 0 ||
+    Boolean(agentModel.providerKind) ||
+    agentModel.endpoint.trim().length > 0 ||
+    agentModel.apiKey.trim().length > 0;
 
   return (
     <ModalPortal>
@@ -108,7 +124,7 @@ export function CodingProjectSettingsModal({
           <p className="modal-desc coding-job-modal__desc">
             {t(
               "codingView.projectSettingsDesc",
-              "Defaults for new workspaces in this project. A workspace can override them when you create it.",
+              "Overrides for new workspaces in this project. Leave agent or model empty to use Coding defaults.",
             )}
           </p>
 
@@ -154,8 +170,24 @@ export function CodingProjectSettingsModal({
               onChange={setAgentModel}
               busy={busy}
               scope="project"
-              settingsAiModelHint={settingsAiModelHint}
+              fallbackKind="coding-defaults"
+              fallbackModelHint={codingDefaultsModelHint}
             />
+
+            {onOpenCodingDefaults ? (
+              <button
+                type="button"
+                className="coding-project-settings__defaults-link"
+                disabled={busy}
+                data-testid="coding-project-open-defaults"
+                onClick={onOpenCodingDefaults}
+              >
+                {t(
+                  "codingView.projectOpenCodingDefaults",
+                  "Edit Coding defaults…",
+                )}
+              </button>
+            ) : null}
 
             {error ? (
               <p className="modal-error" role="alert">
@@ -185,7 +217,9 @@ export function CodingProjectSettingsModal({
                 const apiKey = agentModel.apiKey.trim();
                 onSave({
                   label: trimmedLabel,
-                  defaultHarness: agentModel.harness,
+                  ...(shouldPersistHarness
+                    ? { defaultHarness: agentModel.harness }
+                    : {}),
                   defaultModel: model.length > 0 ? model : null,
                   defaultProviderKind: agentModel.providerKind || null,
                   defaultEndpoint: endpoint.length > 0 ? endpoint : null,

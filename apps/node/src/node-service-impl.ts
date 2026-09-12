@@ -1423,11 +1423,17 @@ import {
   LEGACY_EH_CHAT_ID,
   EH_CHAT_PLACEHOLDER_TITLE,
   CODING_REVIEW_REF_KIND,
+  codingHarnessSessionKey,
+  codingHarnessToExtAgentId,
   ehChatTitleFromUserPrompt,
   extTimelineChatId,
   formatCodingReviewInviteMessage,
+  isCodingTierBHarness,
   legacyEhEventToTimelineItems,
   normalizeEhChatModel,
+  parseAskCodingHarnessParams,
+  parseClearCodingHarnessRuntimeParams,
+  parseSetCodingHarnessRuntimeParams,
   resolveEhChatDisplayTitle,
   resolveEhChatHostCreds,
   resolveEhChatHostModel,
@@ -1454,6 +1460,10 @@ import {
   auditEhTurnStarted,
 } from "./eh-audit.js";
 import { CodingHeartbeatStore } from "./coding-heartbeat-store.js";
+import {
+  CodingRuntimeStore,
+  codingRuntimeToSpawnEnv,
+} from "./coding-runtime-store.js";
 import {
   auditCodingHeartbeatFailed,
   auditCodingHeartbeatFired,
@@ -1817,6 +1827,9 @@ class NodeServiceImpl implements NodeService {
   private readonly _codingHeartbeatStore = new CodingHeartbeatStore();
   private readonly _codingHeartbeatFiring = new Set<string>();
   private _codingHeartbeatReady: Promise<void> | null = null;
+  /** Coding Tier B runtime (cwd/model/creds) — isolated from Ext Agent. */
+  private readonly _codingRuntimeStore = new CodingRuntimeStore();
+  private _codingRuntimeReady: Promise<void> | null = null;
   /** Phase 68-C7 — Coding schedule ticker (shares ~60s interval with heartbeats). */
   private readonly _codingScheduleStore = new CodingScheduleStore();
   private readonly _codingScheduleFiring = new Set<string>();
@@ -2523,6 +2536,11 @@ class NodeServiceImpl implements NodeService {
         .init(profileDir)
         .catch((err) => {
           console.warn("[coding.schedule] store init failed:", err);
+        });
+      this._codingRuntimeReady = this._codingRuntimeStore
+        .init(profileDir)
+        .catch((err) => {
+          console.warn("[coding.runtime] store init failed:", err);
         });
     }
 
@@ -6524,6 +6542,136 @@ class NodeServiceImpl implements NodeService {
       );
     }
     return text;
+  }
+
+  private async _ensureCodingRuntimeStore(): Promise<void> {
+    if (this._codingRuntimeReady) {
+      await this._codingRuntimeReady;
+      return;
+    }
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("coding_runtime_store_not_ready");
+    }
+    this._codingRuntimeReady = this._codingRuntimeStore.init(this._profileDir);
+    await this._codingRuntimeReady;
+  }
+
+  /**
+   * Coding Tier B ask — isolated from Ext Agent bridge / session-model /
+   * project-path stores. Session key is `coding:${codingSessionId}`.
+   */
+  async askCodingHarness(
+    params: import("@envoymesh/api").AskCodingHarnessParams,
+  ): Promise<string> {
+    const parsed = parseAskCodingHarnessParams(params);
+    if (!(await this._callerMayUseCoding())) {
+      throw new Error("Coding is not available for this profile");
+    }
+    await this._ensureCodingRuntimeStore();
+    const agentId =
+      codingHarnessToExtAgentId(parsed.harness) ?? parsed.harness;
+    if (!isExtAgentSidecarKind(agentId) || !isCodingTierBHarness(parsed.harness)) {
+      throw new Error(`askCodingHarness: unsupported harness ${parsed.harness}`);
+    }
+    const stored = this._codingRuntimeStore.get(parsed.codingSessionId);
+    const cwd = parsed.cwd.trim() || stored?.cwd?.trim() || "";
+    if (!cwd) throw new Error("askCodingHarness: cwd required");
+    const model =
+      parsed.runtime?.model?.trim() || stored?.model?.trim() || undefined;
+    const providerKind =
+      parsed.runtime?.providerKind ?? stored?.providerKind;
+    const endpoint =
+      parsed.runtime?.endpoint?.trim() || stored?.endpoint?.trim() || undefined;
+    const env = codingRuntimeToSpawnEnv({
+      providerKind,
+      endpoint,
+      apiKey: stored?.apiKey,
+    });
+    const sessionKey = codingHarnessSessionKey(parsed.codingSessionId);
+    const streamSessionId = parsed.codingSessionId;
+    const chatId = extTimelineChatId(streamSessionId);
+    const assistantId = `turn:${streamSessionId}:assistant`;
+    let streamingText = "";
+    let assistantCreatedAt = "";
+    const emitAssistant = (text: string, streaming: boolean) => {
+      const now = new Date().toISOString();
+      if (!assistantCreatedAt) assistantCreatedAt = now;
+      this._emitEhTimelineUpdate({
+        type: "upsert",
+        item: {
+          id: assistantId,
+          chatId,
+          turnId: streamSessionId,
+          type: "message",
+          role: "assistant",
+          text,
+          streaming,
+          createdAt: assistantCreatedAt,
+          updatedAt: now,
+        },
+      });
+    };
+    const canStream = agentId === "codex" || agentId === "claudecode";
+    const text = await createBackend(agentId).ask(parsed.prompt, sessionKey, {
+      cwd,
+      ...(model ? { model } : {}),
+      ...(env ? { env } : {}),
+      ...(canStream
+        ? {
+            onDelta: (chunk: string) => {
+              if (!chunk) return;
+              streamingText += chunk;
+              emitAssistant(streamingText, true);
+            },
+          }
+        : {}),
+    });
+    const out = typeof text === "string" ? text.trim() : "";
+    if (!out) {
+      throw new Error(`${parsed.harness} returned an empty reply`);
+    }
+    if (canStream) emitAssistant(out, false);
+    return out;
+  }
+
+  async setCodingHarnessRuntime(
+    params: import("@envoymesh/api").SetCodingHarnessRuntimeParams,
+  ): Promise<import("@envoymesh/api").SetCodingHarnessRuntimeResult> {
+    const parsed = parseSetCodingHarnessRuntimeParams(params);
+    if (!(await this._callerMayUseCoding())) {
+      throw new Error("Coding is not available for this profile");
+    }
+    await this._ensureCodingRuntimeStore();
+    const rec = await this._codingRuntimeStore.set(parsed.codingSessionId, {
+      cwd: parsed.cwd,
+      ...(parsed.runtime?.model ? { model: parsed.runtime.model } : {}),
+      ...(parsed.runtime?.providerKind
+        ? { providerKind: parsed.runtime.providerKind }
+        : {}),
+      ...(parsed.runtime?.endpoint
+        ? { endpoint: parsed.runtime.endpoint }
+        : {}),
+      ...(typeof parsed.runtime?.apiKey === "string"
+        ? { apiKey: parsed.runtime.apiKey }
+        : {}),
+    });
+    return {
+      ok: true,
+      codingSessionId: parsed.codingSessionId,
+      hasApiKey: Boolean(rec.apiKey),
+    };
+  }
+
+  async clearCodingHarnessRuntime(
+    params: import("@envoymesh/api").ClearCodingHarnessRuntimeParams,
+  ): Promise<import("@envoymesh/api").ClearCodingHarnessRuntimeResult> {
+    const parsed = parseClearCodingHarnessRuntimeParams(params);
+    if (!(await this._callerMayUseCoding())) {
+      throw new Error("Coding is not available for this profile");
+    }
+    await this._ensureCodingRuntimeStore();
+    await this._codingRuntimeStore.clear(parsed.codingSessionId);
+    return { ok: true, codingSessionId: parsed.codingSessionId };
   }
 
   private _refreshAgentNetworkWorkerEngineCache(cfg: {

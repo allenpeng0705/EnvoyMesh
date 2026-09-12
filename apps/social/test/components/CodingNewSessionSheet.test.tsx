@@ -61,7 +61,7 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
     });
   });
 
-  it("shows Settings → AI as default for Envoy and Pi", () => {
+  it("shows Coding defaults as fallback for Envoy and Pi", () => {
     renderWithI18n(
       <CodingNewSessionSheet
         open
@@ -79,7 +79,7 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
           endpoint: "",
           apiKey: "",
         }}
-        settingsAiModelHint="openai:gpt-4o"
+        codingDefaultsModelHint="openai:gpt-4o"
         enabledHarnesses={["envoy-harness", "pi", "codex"]}
         onClose={() => {}}
         onConfirm={() => {}}
@@ -91,16 +91,16 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
       "coding-new-workspace-provider",
     ) as HTMLSelectElement;
     expect(provider.value).toBe("");
-    expect(provider.options[0]?.textContent).toMatch(/Settings → AI/i);
+    expect(provider.options[0]?.textContent).toMatch(/Coding defaults/i);
     expect(
-      screen.getByPlaceholderText(/Empty = Settings → AI \(openai:gpt-4o\)/i),
+      screen.getByPlaceholderText(/Empty = Coding defaults \(openai:gpt-4o\)/i),
     ).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("coding-harness-pi"));
     expect(
       (screen.getByTestId("coding-new-workspace-provider") as HTMLSelectElement)
         .options[0]?.textContent,
-    ).toMatch(/Settings → AI/i);
+    ).toMatch(/Coding defaults/i);
 
     fireEvent.click(screen.getByTestId("coding-harness-codex"));
     expect(

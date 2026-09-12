@@ -82,7 +82,11 @@ export class AiderBackend extends OneShotCliBackend {
     this.extraArgs = opts.extraArgs ?? [];
   }
 
-  protected buildArgs(text: string, _sessionKey: string): string[] {
+  protected buildArgs(
+    text: string,
+    _sessionKey: string,
+    _opts?: import("./types.js").ExtAgentAskOpts,
+  ): string[] {
     // Safety flag ordering: Aider is a CLI that uses last-occurrence
     // wins for mutually-exclusive flags. If a user passes
     // `extraArgs: ["--git"]` and the safety flags come first, aider

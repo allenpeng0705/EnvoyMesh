@@ -285,7 +285,7 @@ export class CodexBackend implements ExtAgentBackend {
     await this.ensureInitialized();
 
     // 3. Get or create a thread for this session.
-    const threadId = await this.getOrCreateThread(sessionKey);
+    const threadId = await this.getOrCreateThread(sessionKey, opts?.model);
 
     // 4. Register a completion promise BEFORE sending turn/start so we
     //    never miss a fast turn/completed notification.
@@ -409,10 +409,19 @@ export class CodexBackend implements ExtAgentBackend {
     await this.initPromise;
   }
 
-  private async getOrCreateThread(sessionKey: string): Promise<string> {
+  private async getOrCreateThread(
+    sessionKey: string,
+    model?: string,
+  ): Promise<string> {
     const cached = this.threadIds.get(sessionKey);
     if (cached) return cached;
-    const resp = await this.rpc<CodexThreadStartResponse>("thread/start", {});
+    const params: Record<string, unknown> = {};
+    const trimmed = model?.trim();
+    if (trimmed) params.model = trimmed;
+    const resp = await this.rpc<CodexThreadStartResponse>(
+      "thread/start",
+      params,
+    );
     const threadId = resp.thread?.id;
     if (!threadId) {
       throw new Error("codex getOrCreateThread(): thread/start returned no thread.id");

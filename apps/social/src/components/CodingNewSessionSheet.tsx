@@ -45,8 +45,8 @@ export type CodingNewSessionSheetProps = {
   onClose: () => void;
   onConfirm: (opts: CodingNewSessionConfirm) => void;
   onAddProject: () => void;
-  /** Current Settings → AI model for Envoy/Pi default hints. */
-  settingsAiModelHint?: string;
+  /** Current Coding defaults model for Envoy/Pi empty hints. */
+  codingDefaultsModelHint?: string;
 };
 
 export function CodingNewSessionSheet({
@@ -61,7 +61,7 @@ export function CodingNewSessionSheet({
   onClose,
   onConfirm,
   onAddProject,
-  settingsAiModelHint = "",
+  codingDefaultsModelHint = "",
 }: CodingNewSessionSheetProps) {
   const t = useT();
   const [projectPath, setProjectPath] = useState(initialProjectPath);
@@ -169,7 +169,6 @@ export function CodingNewSessionSheet({
                     codingPrefillToValue(
                       resolveCodingWorkspacePrefill({
                         project: nextProject,
-                        lastUsed: initialPrefill,
                       }),
                     ),
                   );
@@ -214,7 +213,8 @@ export function CodingNewSessionSheet({
             enabledHarnesses={enabledHarnesses}
             harnessProbe={harnessProbe}
             scope="workspace"
-            settingsAiModelHint={settingsAiModelHint}
+            fallbackKind="coding-defaults"
+            fallbackModelHint={codingDefaultsModelHint}
           />
 
           <p className="coding-project-modal__path-hint">

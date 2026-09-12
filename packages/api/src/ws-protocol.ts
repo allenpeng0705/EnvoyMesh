@@ -266,6 +266,9 @@ export type RpcMethods =
    | "restartOpenClaw"
    | "probeExtAgent"
    | "askExtAgent"
+   | "askCodingHarness"
+   | "setCodingHarnessRuntime"
+   | "clearCodingHarnessRuntime"
    | "getExtAgentCommandCatalog"
    | "setExtAgentSessionModel"
    | "getHomeFsInfo"
@@ -1695,6 +1698,15 @@ export interface AskExtAgentParams {
    */
   streamSessionId?: string;
 }
+
+/** Re-export Coding harness ask params (isolated from Ext Agent bridge). */
+export type {
+  AskCodingHarnessParams,
+  SetCodingHarnessRuntimeParams,
+  ClearCodingHarnessRuntimeParams,
+  SetCodingHarnessRuntimeResult,
+  ClearCodingHarnessRuntimeResult,
+} from "./coding-harness-runtime.js";
 
 export interface GetPairingPayloadParams {}
 

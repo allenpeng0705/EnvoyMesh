@@ -1,44 +1,24 @@
 /**
  * Create a Coding heartbeat for an existing workspace (Phase 68-C6).
  */
-import { useMemo, useState } from "react"
+import { useState } from "react";
 import {
   CODING_HEARTBEAT_CRON_PRESETS,
-  type CodingHeartbeatCronPreset,
   type CodingHeartbeatTarget,
   type CreateCodingHeartbeatInput,
-} from "@envoymesh/api"
-import { useT } from "../context/I18nContext.js"
-import { ModalPortal } from "./ModalPortal.js"
+} from "@envoymesh/api";
+import { useT } from "../context/I18nContext.js";
+import { CodingCronFields } from "./CodingCronFields.js";
+import { ModalPortal } from "./ModalPortal.js";
 
 export type CodingHeartbeatModalProps = {
-  workspaceTitle: string
-  target: CodingHeartbeatTarget
-  busy?: boolean
-  error?: string | null
-  onCancel: () => void
-  onSave: (input: CreateCodingHeartbeatInput) => void
-}
-
-const PRESET_KEYS: CodingHeartbeatCronPreset[] = ["5m", "15m", "1h", "daily"]
-
-function presetLabel(
-  t: (key: string, fallback: string) => string,
-  key: CodingHeartbeatCronPreset | "custom",
-): string {
-  switch (key) {
-    case "5m":
-      return t("codingView.heartbeatPreset.5m", "5 min")
-    case "15m":
-      return t("codingView.heartbeatPreset.15m", "15 min")
-    case "1h":
-      return t("codingView.heartbeatPreset.1h", "Hourly")
-    case "daily":
-      return t("codingView.heartbeatPreset.daily", "Daily")
-    case "custom":
-      return t("codingView.heartbeatPreset.custom", "Custom")
-  }
-}
+  workspaceTitle: string;
+  target: CodingHeartbeatTarget;
+  busy?: boolean;
+  error?: string | null;
+  onCancel: () => void;
+  onSave: (input: CreateCodingHeartbeatInput) => void;
+};
 
 export function CodingHeartbeatModal({
   workspaceTitle,
@@ -48,33 +28,28 @@ export function CodingHeartbeatModal({
   onCancel,
   onSave,
 }: CodingHeartbeatModalProps) {
-  const t = useT()
+  const t = useT();
   const [name, setName] = useState(
     () =>
       t("codingView.heartbeatDefaultName", "Heartbeat · {title}", {
         title: workspaceTitle,
       }),
-  )
-  const [preset, setPreset] = useState<CodingHeartbeatCronPreset | "custom">(
-    "15m",
-  )
-  const [customCron, setCustomCron] = useState("*/15 * * * *")
+  );
+  const [cron, setCron] = useState(CODING_HEARTBEAT_CRON_PRESETS["15m"]);
   const [prompt, setPrompt] = useState(
     () =>
       t(
         "codingView.heartbeatDefaultPrompt",
         "Check progress on this workspace and continue useful next steps.",
       ),
-  )
-  const [enabled, setEnabled] = useState(true)
-
-  const cron = useMemo(() => {
-    if (preset === "custom") return customCron.trim()
-    return CODING_HEARTBEAT_CRON_PRESETS[preset]
-  }, [preset, customCron])
+  );
+  const [enabled, setEnabled] = useState(true);
 
   const canSave =
-    !busy && name.trim().length > 0 && prompt.trim().length > 0 && cron.length > 0
+    !busy &&
+    name.trim().length > 0 &&
+    prompt.trim().length > 0 &&
+    cron.trim().length > 0;
 
   return (
     <ModalPortal>
@@ -83,7 +58,7 @@ export function CodingHeartbeatModal({
         role="presentation"
         data-testid="coding-heartbeat-modal"
         onMouseDown={(e) => {
-          if (e.target === e.currentTarget && !busy) onCancel()
+          if (e.target === e.currentTarget && !busy) onCancel();
         }}
       >
         <section
@@ -128,58 +103,13 @@ export function CodingHeartbeatModal({
               />
             </label>
 
-            <fieldset className="modal-field coding-job-modal__schedule" disabled={busy}>
-              <legend>{t("codingView.heartbeatSchedule", "How often")}</legend>
-              <div
-                className="coding-job-modal__presets"
-                role="group"
-                aria-label={t("codingView.heartbeatSchedule", "How often")}
-              >
-                {PRESET_KEYS.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`coding-job-modal__preset${
-                      preset === key ? " coding-job-modal__preset--active" : ""
-                    }`}
-                    data-testid={`coding-heartbeat-preset-${key}`}
-                    onClick={() => setPreset(key)}
-                  >
-                    {presetLabel(t, key)}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className={`coding-job-modal__preset${
-                    preset === "custom"
-                      ? " coding-job-modal__preset--active"
-                      : ""
-                  }`}
-                  data-testid="coding-heartbeat-preset-custom"
-                  onClick={() => setPreset("custom")}
-                >
-                  {presetLabel(t, "custom")}
-                </button>
-              </div>
-              {preset === "custom" ? (
-                <input
-                  type="text"
-                  className="coding-job-modal__cron-input"
-                  value={customCron}
-                  data-testid="coding-heartbeat-cron"
-                  placeholder="*/15 * * * *"
-                  spellCheck={false}
-                  onChange={(e) => setCustomCron(e.target.value)}
-                />
-              ) : (
-                <p
-                  className="coding-job-modal__cron-preview"
-                  data-testid="coding-heartbeat-cron-preview"
-                >
-                  {cron} · UTC
-                </p>
-              )}
-            </fieldset>
+            <CodingCronFields
+              testIdPrefix="coding-heartbeat"
+              legend={t("codingView.heartbeatSchedule", "How often")}
+              busy={busy}
+              value={cron}
+              onChange={setCron}
+            />
 
             <label className="modal-field">
               <span>{t("codingView.heartbeatPrompt", "Prompt")}</span>
@@ -225,14 +155,14 @@ export function CodingHeartbeatModal({
               disabled={!canSave}
               data-testid="coding-heartbeat-save"
               onClick={() => {
-                if (!canSave) return
+                if (!canSave) return;
                 onSave({
                   name: name.trim(),
-                  cron,
+                  cron: cron.trim(),
                   prompt: prompt.trim(),
                   target,
                   enabled,
-                })
+                });
               }}
             >
               {busy
@@ -243,5 +173,5 @@ export function CodingHeartbeatModal({
         </section>
       </div>
     </ModalPortal>
-  )
+  );
 }

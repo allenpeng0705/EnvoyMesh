@@ -389,10 +389,20 @@ export interface NodeServiceClient {
   probeExtAgent(
     params?: import("@envoymesh/api").ProbeExtAgentParams,
   ): Promise<import("@envoymesh/api").ExtAgentReachability>;
-  /** Sync ask for Coding Tier B / harness composer. */
+  /** Sync ask for Ext Agent product (contact chat / Team jobs). */
   askExtAgent(
     params: import("@envoymesh/api").AskExtAgentParams,
   ): Promise<string>;
+  /** Coding Tier B ask — isolated from Ext Agent bridge state. */
+  askCodingHarness(
+    params: import("@envoymesh/api").AskCodingHarnessParams,
+  ): Promise<string>;
+  setCodingHarnessRuntime(
+    params: import("@envoymesh/api").SetCodingHarnessRuntimeParams,
+  ): Promise<import("@envoymesh/api").SetCodingHarnessRuntimeResult>;
+  clearCodingHarnessRuntime(
+    params: import("@envoymesh/api").ClearCodingHarnessRuntimeParams,
+  ): Promise<import("@envoymesh/api").ClearCodingHarnessRuntimeResult>;
   /** Slash catalog for Ext Agent chat autocomplete. */
   getExtAgentCommandCatalog(
     params?: import("@envoymesh/api").GetExtAgentCommandCatalogParams,
@@ -1663,6 +1673,33 @@ function createWsNodeServiceClient(
         params as Record<string, unknown>,
         { timeoutMs: 300_000 },
       ) as Promise<string>;
+    },
+    async askCodingHarness(
+      params: import("@envoymesh/api").AskCodingHarnessParams,
+    ) {
+      return wsClient.rpc(
+        "askCodingHarness",
+        params as Record<string, unknown>,
+        { timeoutMs: 300_000 },
+      ) as Promise<string>;
+    },
+    async setCodingHarnessRuntime(
+      params: import("@envoymesh/api").SetCodingHarnessRuntimeParams,
+    ) {
+      return wsClient.rpc(
+        "setCodingHarnessRuntime",
+        params as Record<string, unknown>,
+        { timeoutMs: 10_000 },
+      ) as Promise<import("@envoymesh/api").SetCodingHarnessRuntimeResult>;
+    },
+    async clearCodingHarnessRuntime(
+      params: import("@envoymesh/api").ClearCodingHarnessRuntimeParams,
+    ) {
+      return wsClient.rpc(
+        "clearCodingHarnessRuntime",
+        params as Record<string, unknown>,
+        { timeoutMs: 10_000 },
+      ) as Promise<import("@envoymesh/api").ClearCodingHarnessRuntimeResult>;
     },
     async getExtAgentCommandCatalog(
       params?: import("@envoymesh/api").GetExtAgentCommandCatalogParams,

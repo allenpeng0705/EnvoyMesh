@@ -7,15 +7,13 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { ExtAgentCodingPanel } from "../../src/components/views/ExtAgentCodingPanel.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
-const askExtAgent = vi.fn();
+const askCodingHarness = vi.fn();
 const probeExtAgent = vi.fn();
-const setExtAgentProjectPath = vi.fn().mockResolvedValue({});
 const onHandlers = new Map<string, Set<(payload: unknown) => void>>();
 
 const mockNodeService = {
-  askExtAgent,
+  askCodingHarness,
   probeExtAgent,
-  setExtAgentProjectPath,
   isConnected: true,
   on(event: string, handler: (payload: unknown) => void) {
     let set = onHandlers.get(event);
@@ -38,22 +36,21 @@ function emitTimeline(update: unknown) {
   }
 }
 
-describe("ExtAgentCodingPanel streaming", () => {
+describe("CodingHarnessPanel (ExtAgentCodingPanel alias)", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
     onHandlers.clear();
-    setExtAgentProjectPath.mockResolvedValue({});
   });
 
-  it("passes streamSessionId for codex and shows streaming assistant from eh:timeline", async () => {
+  it("asks via askCodingHarness for codex and streams from eh:timeline", async () => {
     probeExtAgent.mockResolvedValue({
       reachable: true,
       installState: "installed",
       installGuide: { installed: true, steps: [] },
     });
     let resolveAsk!: (v: string) => void;
-    askExtAgent.mockImplementation(
+    askCodingHarness.mockImplementation(
       () =>
         new Promise<string>((resolve) => {
           resolveAsk = resolve;
@@ -61,12 +58,18 @@ describe("ExtAgentCodingPanel streaming", () => {
     );
 
     renderWithI18n(
-      <ExtAgentCodingPanel harness="codex" cwd="/tmp/proj" sessionId="sess-stream" />,
+      <ExtAgentCodingPanel
+        harness="codex"
+        cwd="/tmp/proj"
+        sessionId="sess-stream"
+      />,
     );
 
     await waitFor(() =>
       expect(
-        screen.getByTestId("ext-agent-coding-panel").getAttribute("data-streaming"),
+        screen
+          .getByTestId("ext-agent-coding-panel")
+          .getAttribute("data-streaming"),
       ).toBe("true"),
     );
 
@@ -76,10 +79,12 @@ describe("ExtAgentCodingPanel streaming", () => {
     fireEvent.click(screen.getByTestId("ext-agent-coding-send"));
 
     await waitFor(() =>
-      expect(askExtAgent).toHaveBeenCalledWith({
-        agentId: "codex",
+      expect(askCodingHarness).toHaveBeenCalledWith({
+        codingSessionId: "sess-stream",
+        harness: "codex",
         prompt: "hello",
-        streamSessionId: "sess-stream",
+        cwd: "/tmp/proj",
+        runtime: {},
       }),
     );
 
@@ -101,9 +106,9 @@ describe("ExtAgentCodingPanel streaming", () => {
 
     await waitFor(() => {
       const rows = screen.getAllByTestId("ext-agent-coding-msg-assistant");
-      expect(rows.some((el) => el.getAttribute("data-streaming") === "true")).toBe(
-        true,
-      );
+      expect(
+        rows.some((el) => el.getAttribute("data-streaming") === "true"),
+      ).toBe(true);
       expect(screen.getByText("Hel")).toBeTruthy();
     });
 
@@ -113,21 +118,27 @@ describe("ExtAgentCodingPanel streaming", () => {
     });
   });
 
-  it("keeps one-shot harnesses without streamSessionId", async () => {
+  it("asks cursor via askCodingHarness without Ext Agent bridge calls", async () => {
     probeExtAgent.mockResolvedValue({
       reachable: true,
       installState: "installed",
       installGuide: { installed: true, steps: [] },
     });
-    askExtAgent.mockResolvedValue("ok from cursor");
+    askCodingHarness.mockResolvedValue("ok from cursor");
 
     renderWithI18n(
-      <ExtAgentCodingPanel harness="cursor" cwd="/tmp/proj" sessionId="sess-oneshot" />,
+      <ExtAgentCodingPanel
+        harness="cursor"
+        cwd="/tmp/proj"
+        sessionId="sess-oneshot"
+      />,
     );
 
     await waitFor(() =>
       expect(
-        screen.getByTestId("ext-agent-coding-panel").getAttribute("data-streaming"),
+        screen
+          .getByTestId("ext-agent-coding-panel")
+          .getAttribute("data-streaming"),
       ).toBe("false"),
     );
 
@@ -137,9 +148,12 @@ describe("ExtAgentCodingPanel streaming", () => {
     fireEvent.click(screen.getByTestId("ext-agent-coding-send"));
 
     await waitFor(() =>
-      expect(askExtAgent).toHaveBeenCalledWith({
-        agentId: "cursor",
+      expect(askCodingHarness).toHaveBeenCalledWith({
+        codingSessionId: "sess-oneshot",
+        harness: "cursor",
         prompt: "ping",
+        cwd: "/tmp/proj",
+        runtime: {},
       }),
     );
   });

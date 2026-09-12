@@ -741,6 +741,24 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.askExtAgent(params);
   }
 
+  async askCodingHarness(
+    params: import("@envoymesh/api").AskCodingHarnessParams,
+  ) {
+    return this._ns.askCodingHarness(params);
+  }
+
+  async setCodingHarnessRuntime(
+    params: import("@envoymesh/api").SetCodingHarnessRuntimeParams,
+  ) {
+    return this._ns.setCodingHarnessRuntime(params);
+  }
+
+  async clearCodingHarnessRuntime(
+    params: import("@envoymesh/api").ClearCodingHarnessRuntimeParams,
+  ) {
+    return this._ns.clearCodingHarnessRuntime(params);
+  }
+
   async getExtAgentCommandCatalog(
     params?: import("@envoymesh/api").GetExtAgentCommandCatalogParams,
   ) {
