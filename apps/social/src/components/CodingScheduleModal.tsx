@@ -35,7 +35,10 @@ export function CodingScheduleModal({
   );
   const [cwd, setCwd] = useState(() => projects[0]?.path ?? "");
   const [harness, setHarness] = useState<CodingScheduleHarness>("envoy-harness");
-  const [cron, setCron] = useState(CODING_CRON_PRESETS["15m"]);
+  // Widened to `string` for the same reason as CodingHeartbeatModal: an `as const`
+  // preset map pinned the state to one literal, which `CodingCronFields`' setter
+  // (`(cron: string) => void`) cannot accept (TS2322).
+  const [cron, setCron] = useState<string>(CODING_CRON_PRESETS["15m"]);
   const [prompt, setPrompt] = useState(
     () =>
       t(

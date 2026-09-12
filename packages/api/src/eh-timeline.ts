@@ -143,7 +143,13 @@ export interface EhTimelineState {
 }
 
 export type EhTimelineUpdate =
-  | { type: "snapshot"; snapshot: EhTimelineSnapshot }
+  // Every variant carries the emitter's per-chat revision (`_emitEhTimelineUpdate`
+  // stamps `{ ...update, revision }`), so `snapshot` declares one too — it was
+  // the only variant without it, which made the emit site a type error and left
+  // the declared wire shape one property behind what actually goes out. The
+  // snapshot's own `snapshot.revision` is what `reduceEhTimeline` reads; the
+  // top-level one is for consumers that order updates generically.
+  | { type: "snapshot"; snapshot: EhTimelineSnapshot; revision?: number }
   | { type: "upsert"; item: EhTimelineItem; revision?: number }
   | { type: "remove"; chatId: string; id: string; revision?: number }
   | { type: "state"; state: EhAgentState; revision?: number };

@@ -1,22 +1,12 @@
-import type {
-  AgentCard,
-  AgentRuntime,
-  DeviceCertificate,
-  HumanProfilePayload,
-  CapabilityUnion,
-  VerifyMode,
-} from "@envoymesh/protocol";
-import type {
-  DeviceIdentity,
-  OwnerIdentity,
-} from "@envoymesh/identity";
+import type { AgentRuntime, HumanProfilePayload, CapabilityUnion, VerifyMode } from "@envoymesh/protocol";
+
 import type { DocumentAgentTurnResult } from "./document-agent-loop.js";
 import type { OwnerAgentTurnResult } from "./owner-agent-loop.js";
 import type { DocumentAcquisitionJob } from "./document-acquisition.js";
 import type { CapabilityProviderJob } from "./capability-provider.js";
 import type { SocialProxySession } from "./social-proxy-session.js";
-import type { OwnerDidPresentation, DidServiceEndpoint } from "./owner-did-presentation.js";
-import type { ResolveDidImportResult, ResolvedDidImport, ResolveDidExportResult } from "./did-import.js";
+
+import type { ResolveDidImportResult, ResolvedDidImport } from "./did-import.js";
 import type {
   CommerceReceiptRecord,
   ListCommerceReceiptsParams,
@@ -40,12 +30,8 @@ export type {
   DeactivateKbPluginParams,
   UpdateKbPluginConfigParams,
 } from "./kb-plugin.js";
-import type {
-  RagEmbeddingProbeResult,
-  RagIndexProgress,
-  RagIndexStatus,
-} from "./rag-index-status.js";
-import type { ChatModelProbeResult } from "./chat-model-probe.js";
+import type { RagIndexProgress } from "./rag-index-status.js";
+
 import type {
   ChainPlanParams,
   ChainPlanResult,
@@ -103,15 +89,7 @@ import type {
   ChainIterationProgressEvent,
 } from "./ws-protocol.js";
 import type { TransferStatus } from "./transfer-status.js";
-import type {
-  CompanyInviteRecord,
-  CreateCompanyInviteParams,
-  CreateCompanyInviteResult,
-  ListCompanyInvitesResult,
-  RevokeCompanyInviteResult,
-  RedeemCompanyInviteParams,
-  RedeemCompanyInviteResult,
-} from "./company-invite.js";
+import type { CreateCompanyInviteParams, CreateCompanyInviteResult, ListCompanyInvitesResult, RevokeCompanyInviteResult, RedeemCompanyInviteParams, RedeemCompanyInviteResult } from "./company-invite.js";
 import type {
   CreateFamilyProfileParams,
   CreateFamilyProfileResult,
@@ -275,12 +253,6 @@ import type {
 // Identity Types
 // ============================================
 
-export interface NodeProfile {
-  owner: OwnerIdentity;
-  device: DeviceIdentity;
-  deviceCertificate: DeviceCertificate;
-}
-
 // ============================================
 // Human Profile Types
 // ============================================
@@ -327,11 +299,6 @@ export interface UpsertProfileGalleryPhotoParams {
 export interface UpdateProfileGalleryPhotoVisibilityParams {
   vaultRelativePath: string;
   visibility: import("./profile-media.js").ProfileGalleryPhotoVisibility;
-}
-
-export interface AgentIdentityDocument {
-  content: string;
-  updatedAt: string;
 }
 
 // ============================================
@@ -433,23 +400,6 @@ export interface BondRecord {
 // Chat Types
 // ============================================
 
-export interface ChatAttachment {
-  id: string;
-  filename: string;
-  mimeType: string;
-  sizeBytes: number;
-  sensitivity: "public" | "friends" | "private";
-  /** Local vault-relative path — used to open or reveal the file in Library / chat. */
-  vaultRelativePath?: string;
-  /**
-   * v0.3 family-media SHA-256 content hash (hex). Present on descriptors whose
-   * bytes live in the home node's `family-media` area (upload response and
-   * message/event/history rows); mesh vault attachments leave it absent.
-   * Client-side dedupe aid only — each upload stores a fresh copy.
-   */
-  contentHash?: string;
-}
-
 export interface ChatMessage {
   messageId: string;
   inReplyTo?: string;
@@ -531,6 +481,124 @@ export {
   parseChatRoomThreadKey,
   isChatRoomThreadKey,
 } from "./chat-room-thread.js";
+
+import type {
+  CoreNodeService,
+  AgentIdentityDocument,
+  CapabilityTopicProviderHit,
+  ChatAttachment,
+  CircuitReservationStatus,
+  ConnectionStatus,
+  ConnectivityDiagnostics,
+  ConnectivityStageDSnapshot,
+  ConvertLibraryItemToMarkdownParams,
+  ConvertLibraryItemToMarkdownResult,
+  CreateNoteParams,
+  CreateNoteResult,
+  DeleteVaultItemParams,
+  DiscoverCapabilityTopicParams,
+  DiscoverCapabilityTopicResult,
+  DiscoverPublishedLibraryParams,
+  DiscoverPublishedLibraryPeerResult,
+  ExportLibraryItemToIpfsResult,
+  ExportNotesToLinkedObsidianParams,
+  ExportNotesToLinkedObsidianResult,
+  ExportNotesToMcpParams,
+  ExportNotesToMcpResult,
+  ImportExternalMcpKnowledgeParams,
+  ImportExternalMcpKnowledgeResult,
+  ImportLinkedObsidianNotesParams,
+  ImportLinkedObsidianNotesResult,
+  ImportToLibraryParams,
+  ImportToLibraryResult,
+  IpfsEngineStatus,
+  LibraryItem,
+  LibraryReadParams,
+  LibraryReadResult,
+  ListExternalMcpKnowledgeParams,
+  ListExternalMcpKnowledgeResult,
+  ListLibraryItemsParams,
+  LocalFileItem,
+  LocalFileSource,
+  MultiHopDiscoveryMatch,
+  MultiHopDiscoverySessionView,
+  NodeProfile,
+  PeerConnectionInfo,
+  PeerSearchResult,
+  PinLibraryItemExternalResult,
+  ProfileVisibility,
+  PublishedExternalRecord,
+  PublishedLibraryFileHit,
+  RequestMultiHopDiscoveryParams,
+  RequestMultiHopDiscoveryResult,
+  SaveExternalMcpSearchAsNoteParams,
+  SaveExternalMcpSearchAsNoteResult,
+  SearchQuery,
+  ShareOffer,
+  VerifyLibraryItemIpfsGatewayParams,
+  VerifyLibraryItemIpfsGatewayResult,
+  WanConnectivityAxis,
+  WanConnectivityAxisState,
+} from "./core-node-service.js";
+export type {
+  CoreNodeService,
+  AgentIdentityDocument,
+  CapabilityTopicProviderHit,
+  ChatAttachment,
+  CircuitReservationStatus,
+  ConnectionStatus,
+  ConnectivityDiagnostics,
+  ConnectivityStageDSnapshot,
+  ConvertLibraryItemToMarkdownParams,
+  ConvertLibraryItemToMarkdownResult,
+  CoreRpcMethods,
+  CreateNoteParams,
+  CreateNoteResult,
+  DeleteVaultItemParams,
+  DiscoverCapabilityTopicParams,
+  DiscoverCapabilityTopicResult,
+  DiscoverPublishedLibraryParams,
+  DiscoverPublishedLibraryPeerResult,
+  ExportLibraryItemToIpfsResult,
+  ExportNotesToLinkedObsidianParams,
+  ExportNotesToLinkedObsidianResult,
+  ExportNotesToMcpParams,
+  ExportNotesToMcpResult,
+  ImportExternalMcpKnowledgeParams,
+  ImportExternalMcpKnowledgeResult,
+  ImportLinkedObsidianNotesParams,
+  ImportLinkedObsidianNotesResult,
+  ImportToLibraryParams,
+  ImportToLibraryResult,
+  IpfsEngineStatus,
+  LibraryItem,
+  LibraryReadParams,
+  LibraryReadResult,
+  ListExternalMcpKnowledgeParams,
+  ListExternalMcpKnowledgeResult,
+  ListLibraryItemsParams,
+  LocalFileItem,
+  LocalFileSource,
+  MultiHopDiscoveryMatch,
+  MultiHopDiscoverySessionView,
+  NodeProfile,
+  PeerConnectionInfo,
+  PeerSearchResult,
+  PinLibraryItemExternalResult,
+  ProfileVisibility,
+  PublishedExternalRecord,
+  PublishedLibraryFileHit,
+  RequestMultiHopDiscoveryParams,
+  RequestMultiHopDiscoveryResult,
+  SaveExternalMcpSearchAsNoteParams,
+  SaveExternalMcpSearchAsNoteResult,
+  SearchQuery,
+  ShareOffer,
+  VerifyLibraryItemIpfsGatewayParams,
+  VerifyLibraryItemIpfsGatewayResult,
+  WanConnectivityAxis,
+  WanConnectivityAxisState,
+} from "./core-node-service.js";
 
 export interface ChatRoomMessageEvent {
   roomId: string;
@@ -702,63 +770,6 @@ export interface ListTaskJournalParams {
 // Search / Discovery Types
 // ============================================
 
-export type ProfileVisibility = "public" | "contacts" | "private";
-
-export interface PeerSearchResult {
-  nodeId: string;
-  ownerId: string;
-  displayName: string;
-  username?: string;
-  bio?: string;
-  interests: string[];
-  profileVisibility: ProfileVisibility;
-  /** Portable did:key when owner public key is known */
-  did?: string;
-  /** Where this hit came from (local bond, DHT topic, rendezvous, …) */
-  discoverySource?:
-    | "local"
-    | "dht-capability-topic"
-    | "dht-peer-routing"
-    | "rendezvous"
-    | "did-lookup"
-    | "relay-roster-topic"
-    | "relay-roster-peer"
-    | "discovery-seed"
-    | "mdns"
-    | "bootstrap";
-  trustLevel?: string;
-  signedRecordValid?: boolean;
-  /**
-   * From relay.lookup: true when the responding relay holds a live circuit
-   * reservation for this peer (hoppable). Absent when unknown / non-relay hit.
-   */
-  hasHopSlot?: boolean;
-  /**
-   * Nearby / mDNS pipeline status for People on this network.
-   * - pending: heard on LAN, profile probe in flight
-   * - resolved: Envoy profile identified (ownerId set)
-   * - unreachable: heard on LAN but profile probe failed (firewall / non-Envoy)
-   */
-  profileStatus?: "pending" | "resolved" | "unreachable";
-}
-
-export interface SearchQuery {
-  /** Bonded-contact DID or envoy:owner id lookup */
-  did?: string;
-  /** Direct peer ID lookup (e.g., "12D3KooWSHXmS7N94yFj1fqoH4anmbNXW6rZBcsGWrW95vEVjZ3Q") */
-  peerId?: string;
-  /** DHT topic-based discovery - peers advertising this topic will be found */
-  topic?: string;
-  /** Multiple DHT topics (merged, deduped) — used for geo + interest combined search */
-  topics?: string[];
-  /** Text search in display name/bio/interests (not used when peerId or topic is set) */
-  queryText?: string;
-  /** Username search - when query matches username pattern */
-  username?: string;
-  interests?: string[];
-  maxResults?: number;
-}
-
 export interface ReputationAttestationSummary {
   attestationId: string;
   anchorId: string;
@@ -785,80 +796,6 @@ export interface PeerReputationSummary {
 // ============================================
 // File Sharing Types
 // ============================================
-
-export interface ShareOffer {
-  shareId: string;
-  senderNodeId: string;
-  /** Owner id when known — routes post-transfer chat log to the bonded contact thread. */
-  senderOwnerId?: string;
-  senderDisplayName: string;
-  filename: string;
-  mimeType: string;
-  sizeBytes: number;
-  sensitivity: "public" | "friends" | "private";
-  preview?: string;
-  timestamp: string;
-  /**
-   * Sender vault-relative path for this file (push offers). Used with {@link NodeService.acceptShare}
-   * when remapping the local save path (must match the voucher’s `relativePath` on receive).
-   */
-  senderVaultRelativePath?: string;
-  /** Group chat: link completed transfer to an existing room message attachment. */
-  chatRoomId?: string;
-  chatMessageId?: string;
-  chatAttachmentId?: string;
-}
-
-/** Query for {@link NodeService.listLibraryItems} */
-export interface ListLibraryItemsParams {
-  /** Case-insensitive substring match on title or relative path */
-  query?: string;
-}
-
-/** One file in the local shared vault (all regular files listed; binary files have integrity hashes but no text chunks). */
-export interface LibraryItem {
-  documentId: string;
-  relativePath: string;
-  title: string;
-  extension: string;
-  byteLength: number;
-  contentHash: string;
-  updatedAt: string;
-  /** True when the document is included in the published discovery manifest (see `setLibraryItemPublished`). */
-  published: boolean;
-  /** Latest Kubo-aligned IPFS export for this document, when present. */
-  publishedExternal?: PublishedExternalRecord;
-  /** Phase 44C — plugin-enriched metadata entries (e.g. frontmatter tags, wiki-links). */
-  pluginMetadata?: KbPluginMetadataEntry[];
-}
-
-/** Vault or OpenClaw workspace — unified local file entry for Library UI and agent tools. */
-export type LocalFileSource = "vault" | "workspace" | "linked-obsidian" | "mcp-remote";
-
-export interface LocalFileItem {
-  source: LocalFileSource;
-  relativePath: string;
-  title: string;
-  extension: string;
-  byteLength: number;
-  updatedAt: string;
-  /** Present for vault files */
-  documentId?: string;
-  contentHash?: string;
-  published?: boolean;
-  publishedExternal?: PublishedExternalRecord;
-  /** MCP remote card id (when source is mcp-remote). */
-  externalId?: string;
-  /** Short preview text for mcp-remote browse rows (not persisted). */
-  snippetPreview?: string;
-  /**
-   * For linked-obsidian rows: ISO mtime of vault mirror `importedAt` when present.
-   * Used by Browse to show stale vs indexed.
-   */
-  mirrorImportedAt?: string;
-  /** True when live `updatedAt` is newer than {@link mirrorImportedAt}. */
-  syncStale?: boolean;
-}
 
 export interface ListAllLocalFilesParams {
   /** Case-insensitive substring match on title or relative path */
@@ -899,28 +836,6 @@ export interface OpenLocalFileParams {
   source: LocalFileSource;
   relativePath: string;
 }
-
-/** Persisted metadata from an explicit owner-approved IPFS export (canonical root CID). */
-export interface PublishedExternalRecord {
-  exportRevision: number;
-  exportedAt: string;
-  cid: string;
-  ipfsInteropRecipe: string;
-  kuboVersion: string;
-  contentHash: string;
-  /** Helia shadow export CID when engine runs in compare mode (H4). */
-  cidHelia?: string;
-  heliaVersion?: string;
-}
-
-export interface ExportLibraryItemToIpfsResult extends PublishedExternalRecord {
-  documentId: string;
-  relativePath: string;
-}
-
-export type PinLibraryItemExternalResult =
-  | { ok: true; cid: string; provider: import("./ipfs-pinning.js").IpfsPinningProvider; pinId?: string }
-  | { ok: false; error: string };
 
 /**
  * Address filter mode for outbound WAN join invites / contact codes.
@@ -973,215 +888,6 @@ export interface ApplyWanJoinInviteResult {
   bootstrapPeersAdded: number;
   bootstrapPresetsAdded: number;
   seedsPersisted: number;
-}
-
-/** Managed/bundled Kubo sidecar status (desktop). */
-export interface IpfsEngineStatus {
-  /** Primary export engine availability (Kubo or Helia depending on selection). */
-  available: boolean;
-  running: boolean;
-  managed: boolean;
-  kuboVersion?: string;
-  errorHint?: string;
-  /** In-process Helia engine (shadow mode / dual status). */
-  helia?: {
-    available: boolean;
-    heliaVersion?: string;
-    errorHint?: string;
-  };
-  /** Kubo sidecar / CLI when Helia is primary (secondary status). */
-  kubo?: {
-    available: boolean;
-    kuboVersion?: string;
-    errorHint?: string;
-  };
-}
-
-export interface VerifyLibraryItemIpfsGatewayParams {
-  documentId: string;
-  /** Optional gateway base URL; must be in `externalPublish.gatewayAllowlist`. */
-  gatewayUrl?: string;
-}
-
-export interface VerifyLibraryItemIpfsGatewayResult {
-  documentId: string;
-  relativePath: string;
-  cid: string;
-  gatewayUrl: string;
-  contentHashMatches: boolean;
-  fetchedBytes: number;
-  expectedContentHash: string;
-  fetchedContentHash: string;
-}
-
-/** Import a file into the local shared vault (desktop folder or mobile filesystem vault). */
-export interface ImportToLibraryParams {
-  /** Vault-relative path (e.g. `imports/photo.jpg`). */
-  relativePath: string;
-  /** Raw file bytes, base64-encoded. */
-  contentBase64: string;
-  mimeType?: string;
-}
-
-export interface ImportToLibraryResult {
-  documentId: string;
-  relativePath: string;
-  sizeBytes: number;
-  /**
-   * When an Office/PDF import is materialized to Markdown under `notes/imports/`,
-   * the companion note path (Phase 57 item-4).
-   */
-  markdownRelativePath?: string;
-}
-
-/**
- * Convert an existing vault Office/PDF (etc.) into a Markdown note under `notes/imports/`.
- * Original bytes are retained. Phase 57 item-4 / 57E.
- */
-export interface ConvertLibraryItemToMarkdownParams {
-  /** Vault document id **or** vault-relative path of the original. */
-  documentId?: string;
-  relativePath?: string;
-}
-
-export interface ConvertLibraryItemToMarkdownResult {
-  ok: boolean;
-  markdownRelativePath?: string;
-  documentId?: string;
-  reason?: string;
-}
-
-/**
- * Phase 57D — run MCP search and (when write-back is enabled) save attributed note under `notes/mcp/`.
- */
-export interface SaveExternalMcpSearchAsNoteParams {
-  query: string;
-  /** Optional note title override. */
-  title?: string;
-  sensitivity?: "public" | "friends" | "private";
-}
-
-export interface SaveExternalMcpSearchAsNoteResult {
-  ok: boolean;
-  relativePath?: string;
-  documentId?: string;
-  snippetCount?: number;
-  reason?: string;
-}
-
-/** List live MCP/Notion cards for Knowledge Browse (no write-back required). */
-export interface ListExternalMcpKnowledgeParams {
-  query?: string;
-  limit?: number;
-}
-
-export interface ListExternalMcpKnowledgeResult {
-  items: LocalFileItem[];
-  error?: string;
-}
-
-/** Copy linked Obsidian `.md` files into `notes/imports/obsidian/…`. */
-export interface ImportLinkedObsidianNotesParams {
-  /** Browse paths (`linked-obsidian/<label>/…`). Omit with `all: true`. */
-  paths?: string[];
-  /** Import every linked Obsidian markdown file. */
-  all?: boolean;
-  /**
-   * When true, rewrite mirrors even if source mtime ≤ mirror `importedAt`.
-   * Default false (incremental).
-   */
-  force?: boolean;
-}
-
-export interface ImportLinkedObsidianNotesResult {
-  ok: boolean;
-  imported: Array<{ from: string; to: string; documentId?: string }>;
-  skipped: number;
-  reason?: string;
-}
-
-/** Save selected MCP remote cards (or a fresh search) into `notes/mcp/`. */
-export interface ImportExternalMcpKnowledgeParams {
-  /** Prefer importing these mcp-remote browse paths / external ids. */
-  paths?: string[];
-  externalIds?: string[];
-  /** When set, run MCP search and import all hits (like saveExternalMcpSearchAsNote). */
-  query?: string;
-  title?: string;
-  sensitivity?: "public" | "friends" | "private";
-}
-
-export interface ImportExternalMcpKnowledgeResult {
-  ok: boolean;
-  imported: Array<{ relativePath: string; documentId?: string; title: string }>;
-  reason?: string;
-}
-
-/** Write vault notes into a linked Obsidian vault root (never deletes remote files). */
-export interface ExportNotesToLinkedObsidianParams {
-  relativePaths: string[];
-  /** Vault label from browse path (`linked-obsidian/<label>/…`). First root if omitted. */
-  targetRootLabel?: string;
-  /**
-   * Override knowledge-base `obsidianExportMode` for this call.
-   * Default: settings / `envoymesh-export`.
-   */
-  mode?: "envoymesh-export" | "mirror-source";
-}
-
-export interface ExportNotesToLinkedObsidianResult {
-  ok: boolean;
-  exported: Array<{ from: string; to: string }>;
-  reason?: string;
-}
-
-/** Push vault notes to MCP write tool (e.g. memex_write). */
-export interface ExportNotesToMcpParams {
-  relativePaths: string[];
-}
-
-export interface ExportNotesToMcpResult {
-  ok: boolean;
-  exported: Array<{ relativePath: string; externalId?: string }>;
-  reason?: string;
-}
-
-/**
- * Create a new markdown note in the vault `notes/` folder (Phase 44A2).
- *
- * If `subfolder` is omitted the note is placed directly under `notes/`.
- * If a note with the same relative path already exists it is overwritten.
- */
-export interface CreateNoteParams {
-  /** File basename (e.g. `my-note.md`). Must end with `.md`. */
-  filename: string;
-  /** Markdown content (plain text — not base64). */
-  content: string;
-  /** Optional subfolder under `notes/` (e.g. `projects`). */
-  subfolder?: string;
-  /** Sensitivity for the note — written to per-item overrides (Phase 44A1). */
-  sensitivity?: "public" | "friends" | "private";
-  /**
-   * When true, also publish the note as a public Blog post (Content → Blog).
-   * Default false. Knowledge mirror under `notes/imports/blog/` stays private until Published.
-   */
-  alsoPublishAsBlog?: boolean;
-}
-
-export interface CreateNoteResult {
-  documentId: string;
-  /** Vault-relative path (e.g. `notes/my-note.md`). */
-  relativePath: string;
-  sizeBytes: number;
-}
-
-/**
- * Delete a vault item by its vault-relative path (Phase 44A2).
- * The file is removed from the local vault directory.
- */
-export interface DeleteVaultItemParams {
-  /** Vault-relative path of the item to delete. */
-  relativePath: string;
 }
 
 /** Max raw bytes for a chat attachment send (25 MiB). */
@@ -1255,89 +961,7 @@ export interface ReadLibraryItemContentResult {
 
 // ----- Published library discovery (FS-D) -----
 
-export interface DiscoverPublishedLibraryParams {
-  /** Substring match on published title or vault path (evaluated by the responder). */
-  fileTitleQuery?: string;
-  /** Prefix match on base64url content hash (optional). */
-  contentHashPrefix?: string;
-  maxResultsPerPeer?: number;
-  /** Per-contact discovery reply timeout (default 15s). */
-  timeoutMsPerPeer?: number;
-  /**
-   * Wall-clock budget for the whole fan-out (default 25s).
-   * When reached, remaining contacts are skipped and partial results are returned
-   * so the Social WS RPC (often 30–60s) does not hard-fail.
-   */
-  overallTimeoutMs?: number;
-  /** When set, only these bonded peers are queried. */
-  targetOwnerIds?: string[];
-}
-
-export interface PublishedLibraryFileHit {
-  documentId: string;
-  title: string;
-  relativePath: string;
-  contentHash: string;
-  byteLength?: number;
-  /** Kubo root CID when the peer included it in discovery metadata. */
-  cid?: string;
-}
-
-export interface DiscoverPublishedLibraryPeerResult {
-  peerOwnerId: string;
-  displayName?: string;
-  libp2pPeerId: string;
-  bondLevel: BondLevel;
-  bondRank: number;
-  files: PublishedLibraryFileHit[];
-  latencyMs: number;
-  error?: string;
-}
-
 // Phase 45 — Web Content Browsing.
-
-export interface LibraryReadParams {
-  /** Owner ID of the serving node (the `envoy:owner:...` from the URL). */
-  targetOwnerId: string;
-  /** URL path (leading slash stripped, percent-decoded). */
-  path: string;
-  /** Optional byte range for large-file chunking. */
-  range?: { start: number; end: number };
-  /**
-   * Phase 45B — If-None-Match etag. When it matches, the server returns
-   * `status: "not_modified"` so the Browser can keep its cached body.
-   */
-  ifNoneMatch?: string;
-  /** Per-target timeout (default 30s). */
-  timeoutMs?: number;
-}
-
-export interface LibraryReadResult {
-  /** The serving node's owner ID. */
-  peerOwnerId: string;
-  /** libp2p peer ID we dialed. */
-  libp2pPeerId: string;
-  /** Wire status discriminator. */
-  status: "ok" | "not_found" | "forbidden" | "too_large" | "not_modified" | "error";
-  /** Body when status === "ok" (UTF-8 text or base64 binary). */
-  body?: string;
-  /** MIME type detected by the serving node. */
-  contentType?: string;
-  /** sha256 of the full resource (not just a range slice) — caller verifies. */
-  contentHash?: string;
-  /** Body byte length (for `ok`: this chunk; for `too_large`: full file size). */
-  byteLength?: number;
-  /** ETag (hash prefix) for cache revalidation. */
-  etag?: string;
-  /** Present when responding to a range request. */
-  range?: { start: number; end: number; total: number };
-  /** Alt path with public-tier content when forbidden. */
-  publicRedirection?: string;
-  /** Round-trip latency. */
-  latencyMs: number;
-  /** Set when the dial or reply failed (no peer error in `status`). */
-  error?: string;
-}
 
 /** Phase 45D — templates supported by in-app authoring. */
 export type PublishWebContentTemplate =
@@ -1609,40 +1233,6 @@ export interface SubmitAgentShareProposalParams {
 // Connection Status
 // ============================================
 
-export interface ConnectionStatus {
-  online: boolean;
-  peerId: string;
-  multiaddrs: string[];
-  connectedRelays: string[];
-  bondedPeers: number;
-  /** Last transport / routing failure (best-effort; cleared on successful `startNode()`). */
-  lastError?: string;
-  /** ISO timestamp for {@link lastError}. */
-  lastErrorAt?: string;
-  /** True when this node can spawn local PTY sessions (desktop home node). */
-  terminalsAvailable?: boolean;
-  /** Paired mobile → home remote capabilities (Slice 2). */
-  homeRemote?: import("./home-remote.js").HomeRemoteStatus;
-  /** All relay/bootstrap WebSocket URLs the home node is configured to use.
-   *  Mobile syncs these on every reconnect to keep fallback candidates current. */
-  bootstrapPeers?: string[];
-}
-
-/**
- * Connection info for a specific peer (direct P2P vs relay-mediated).
- */
-export interface PeerConnectionInfo {
-  connected: boolean;
-  direct: boolean;
-  /** If relay connection, the relay's peer ID */
-  relayPeerId?: string;
-  /**
-   * When connected, true if a chat stream probe succeeded within the freshness window (~45s).
-   * False means libp2p reports open but the path has not been verified recently.
-   */
-  pathVerified?: boolean;
-}
-
 /** Options for {@link NodeService.warmContactConnection}. */
 export interface WarmContactConnectionOptions {
   /** Close stale libp2p paths and force a fresh dial (use after send failure). Default false. */
@@ -1705,78 +1295,6 @@ export interface ChatDiagnostics {
   hints: string[];
 }
 
-export type WanConnectivityAxisState = "ok" | "degraded" | "fail" | "unknown" | "disabled";
-
-export interface WanConnectivityAxis {
-  state: WanConnectivityAxisState;
-  explanation: string;
-}
-
-export interface ConnectivityStageDSnapshot {
-  discoveryProfile: "lan-fast" | "wan-default" | "unknown";
-  bootstrapPeerCount: number;
-  discoveredPeerCount: number;
-  relayDiscoveryCount: number;
-  bootstrapProbeSuccessCount: number;
-  bootstrapProbeFailureCount: number;
-  reprobeOkCount: number;
-  reprobeFailCount: number;
-  warningCount: number;
-  badge: "ok" | "warn" | "starting" | "unknown";
-  badgeExplanation: string;
-}
-
-export interface ConnectivityDiagnostics {
-  checkedAt: string;
-  nodeOnline: boolean;
-  stageD: ConnectivityStageDSnapshot;
-  axes: {
-    bootstrapReachability: WanConnectivityAxis;
-    relayAvailability: WanConnectivityAxis;
-    holePunch: WanConnectivityAxis;
-    policyBlock: WanConnectivityAxis;
-    features: {
-      relay?: boolean;
-      dcutr?: boolean;
-      dht?: boolean;
-      quic?: boolean;
-    };
-  };
-  /**
-   * Live circuit-relay-v2 client reservation chip (inbound /p2p-circuit/
-   * reachability). Distinct from axes.relayAvailability (checkin/lookup).
-   */
-  circuitReservation?: CircuitReservationStatus;
-  quicEnabled: boolean;
-  hints: string[];
-  /** Operator steps for live multi-machine sign-off (Phase 15B). */
-  signOffChecklist: string[];
-}
-
-/**
- * Thin circuit-relay reservation status for Settings / Discover soft-gates.
- * Prefer {@link NodeService.getCircuitReservationStatus} over polling full
- * {@link getConnectivityDiagnostics} every few seconds.
- */
-export interface CircuitReservationStatus {
-  state: "off" | "pending" | "reserved" | "failed";
-  live: boolean;
-  everReserved: boolean;
-  relayPeerIds: string[];
-  /** Preferred relays that currently hold a live slot (subset of relayPeerIds). */
-  liveRelayPeerIds?: string[];
-  lastError?: string;
-  lastReservedAt?: string;
-  /**
-   * Consecutive failed re-warm cycles (resets to 0 on success). When sustained
-   * (>4), the UI shows a "Relay unreachable" warning so operators know WAN
-   * discovery and cross-NAT reachability are degraded. See
-   * `docs/connectivity-internals-and-design.md` Part VIII (M2).
-   */
-  failureStreak?: number;
-  checkedAt: string;
-}
-
 export interface MorningReportEntry {
   ownerId: string;
   peerId?: string;
@@ -1792,72 +1310,6 @@ export interface MorningReportEntry {
     peerCount: number;
     cityLabel: string;
   };
-}
-
-export interface DiscoverCapabilityTopicParams {
-  topic: string;
-  maxResults?: number;
-  /** When true, send policy-gated discovery.request to bonded providers only. */
-  followUpDiscovery?: boolean;
-  requestedCapabilities?: string[];
-  /** Story D: max hops for follow-up discovery.request (default 2). */
-  maxHops?: number;
-}
-
-export interface RequestMultiHopDiscoveryParams {
-  requestedCapabilities?: string[];
-  requestedTagHashes?: string[];
-  fileTitleQuery?: string;
-  maxHops?: number;
-  maxBonds?: number;
-}
-
-export interface MultiHopDiscoveryMatch {
-  ownerId: string;
-  peerId: string;
-  hopDistance: number;
-  matchedCapabilities: string[];
-  matchedTagHashes: string[];
-  /** Direct bond used for hop-1 query, or referral for hop-2+. */
-  viaOwnerId?: string;
-  viaDisplayName?: string;
-  referralOwnerId?: string;
-  trustPath?: string;
-}
-
-export interface RequestMultiHopDiscoveryResult {
-  matches: MultiHopDiscoveryMatch[];
-  bondsQueried: number;
-  correlationId: string;
-  pendingForwardApprovals: number;
-  aggregatedMatchCount: number;
-}
-
-export interface MultiHopDiscoverySessionView {
-  correlationId: string;
-  createdAt: string;
-  updatedAt: string;
-  bondsQueried: number;
-  pendingForwardApprovals: number;
-  awaitingHop2ViaBonds?: string[];
-  matches: MultiHopDiscoveryMatch[];
-}
-
-export interface CapabilityTopicProviderHit {
-  peerId: string;
-  multiaddrs: string[];
-  ownerId?: string;
-  displayName?: string;
-  trustLevel?: string;
-  signedRecordValid?: boolean;
-  followUpMatchCount?: number;
-  followUpError?: string;
-  discoverySource: "dht-capability-topic";
-}
-
-export interface DiscoverCapabilityTopicResult {
-  topic: string;
-  providers: CapabilityTopicProviderHit[];
 }
 
 // ============================================
@@ -2032,37 +1484,8 @@ export interface NodeServiceEvents {
   "chain:observed": import("./ws-protocol.js").ChainObservedStatus;
 }
 
-export interface NodeService {
+export interface NodeService extends CoreNodeService {
   // ----- Identity -----
-
-  /**
-   * Get current node's identity and profile
-   */
-  getProfile(): NodeProfile;
-
-  /**
-   * Portable W3C did:key presentation for the owner (read-only; envoy:owner id remains canonical).
-   */
-  getOwnerDidPresentation(): OwnerDidPresentation;
-
-  /**
-   * Resolve external `did:key` or JSON DID document to envoy owner id + PEM (no WAN gateway).
-   */
-  resolveDidImport(input: string): Promise<ResolveDidImportResult>;
-
-  /**
-   * Export the owner's DID document as portable JSON (with optional service
-   * endpoints). The returned string is suitable for sharing, file export,
-   * or handoff to another tool.
-   */
-  exportDidDocument(input?: { services?: DidServiceEndpoint[] }): string;
-
-  /**
-   * Resolve an envelope-wrapped DID export (output of exportDidDocument).
-   * Validates the envelope, the DID/key/owner-id consistency, and the
-   * service endpoints.
-   */
-  resolveDidExport(input: string): Promise<ResolveDidExportResult>;
 
   /**
    * Store a contact owner public key for bonded DID search lookup.
@@ -2110,16 +1533,6 @@ export interface NodeService {
 
   /** Re-sync local profile to bonds and request fresh profiles from each bond (e.g. after mesh online). */
   refreshBondPeerProfiles(): Promise<{ requested: number; failed: number }>;
-
-  /**
-   * Get owner-editable agent operating instructions (`agent-identity.md` in profile dir).
-   */
-  getAgentIdentity(): Promise<AgentIdentityDocument>;
-
-  /**
-   * Save agent operating instructions.
-   */
-  updateAgentIdentity(content: string): Promise<AgentIdentityDocument>;
 
   // ----- Bond Management -----
 
@@ -2375,93 +1788,9 @@ export interface NodeService {
   // ----- Search / Discovery -----
 
   /**
-   * Search for peers by interests or text
-   */
-  searchPeers(query: SearchQuery): Promise<PeerSearchResult[]>;
-
-  /**
-   * Snapshot of People-on-this-network cards from recent mDNS/profile probes.
-   * Used to hydrate Discover when the UI missed live `peer:discovered` events.
-   */
-  getNearbyDiscoveredPeers(): Promise<PeerSearchResult[]>;
-
-  /**
-   * Re-probe LAN / connected mesh peers so Discover can show contacts
-   * immediately (bypasses the normal nearby-probe cooldown).
-   */
-  refreshNearbyDiscovery(): Promise<{
-    peered: number;
-    resolved: number;
-    unreachable: number;
-  }>;
-
-  /**
-   * Run DHT capability discovery on demand (used when lazy mode skips periodic find).
-   */
-  runCapabilityDiscovery(params?: { find?: boolean }): Promise<void>;
-
-  /**
-   * Query DHT capability topics and optionally follow up with policy-gated discovery.request.
-   */
-  discoverCapabilityTopic(params: DiscoverCapabilityTopicParams): Promise<DiscoverCapabilityTopicResult>;
-
-  /**
    * Ranked discovery digest (morning report) from trust store + discovery events.
    */
   getMorningReport(params?: { limit?: number }): Promise<MorningReportEntry[]>;
-
-  /** Story D (US-MH1): query direct bonds with hop-limited discovery.request. */
-  requestMultiHopDiscovery(params: RequestMultiHopDiscoveryParams): Promise<RequestMultiHopDiscoveryResult>;
-
-  /** Fetch aggregated hop-1/2 matches for a multi-hop session. */
-  getMultiHopDiscoverySession(correlationId: string): Promise<MultiHopDiscoverySessionView | undefined>;
-
-  /** Merge async hop-2 discovery.response into an active multi-hop session (originator only). */
-  ingestInboundMultiHopDiscoveryResponse(params: {
-    correlationId: string;
-    responderOwnerId: string;
-    matches: Array<{
-      ownerId: string;
-      peerId: string;
-      hopDistance?: number;
-      matchedCapabilities: string[];
-      matchedTagHashes: string[];
-    }>;
-    forwardPendingAck?: boolean;
-  }): Promise<void>;
-
-  /** Push yjs CRDT delta to paired owner devices (sync.state). */
-  sendSyncStateUpdate(params: import("./sync-state.js").SendSyncStateUpdateParams): Promise<import("./sync-state.js").SendSyncStateUpdateResult>;
-
-  /**
-   * WAN connectivity axis diagnostics (bootstrap / relay / punch / policy).
-   */
-  getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
-
-  /**
-   * Thin circuit-relay reservation chip (live/pending/failed). Prefer this
-   * for UI soft-gates that poll every few seconds — avoids re-reading audit
-   * tails and full WAN axis diagnostics.
-   */
-  getCircuitReservationStatus(): Promise<CircuitReservationStatus>;
-
-  /**
-   * Returns the full list of bootstrap peer addresses for DHT discovery and circuit relay.
-   * Called by EnvoyGo after pairing to sync bootstrap peers for future reconnections.
-   */
-  getBootstrapPeers(): Promise<{ bootstrapPeers: string[] }>;
-
-  /**
-   * Advertise a topic on the DHT so other peers can discover you
-   * @param topic The topic string to advertise (e.g., "music", "tech")
-   */
-  advertiseTopic(topic: string): Promise<void>;
-
-  /**
-   * Stop advertising a topic on the DHT
-   * @param topic The topic string to stop advertising
-   */
-  stopAdvertiseTopic(topic: string): Promise<void>;
 
   // ----- Capability Manifest -----
 
@@ -2478,185 +1807,6 @@ export interface NodeService {
   updateCapabilityManifest(params: UpdateCapabilityManifestParams): Promise<CapabilityManifest>;
 
   // ----- File Sharing -----
-
-  /**
-   * Pending inbound file share offers (preview message id = {@link ShareOffer.shareId}).
-   */
-  listPendingShareOffers(): Promise<ShareOffer[]>;
-
-  /**
-   * Offer a file to a peer
-   */
-  shareFile(
-    targetOwnerId: string,
-    file: {
-      path: string;
-      sensitivity: ChatAttachment["sensitivity"];
-      deliveryChannel?: "inbox" | "chat" | "agent";
-    },
-  ): Promise<void>;
-
-  /**
-   * Pull a published library file from a bonded peer (`fileOrigin: responder`).
-   */
-  requestShareFromLibrary(
-    targetOwnerId: string,
-    file: {
-      relativePath: string;
-      sensitivity: ChatAttachment["sensitivity"];
-      correlationId?: string;
-    },
-  ): Promise<{ shareRequestMessageId: string }>;
-
-  /**
-   * Accept incoming file share
-   */
-  acceptShare(shareId: string, savePath: string): Promise<void>;
-
-  /**
-   * Decline incoming file share
-   */
-  declineShare(shareId: string): Promise<void>;
-
-  /**
-   * List documents in the local shared vault (same files used for vault RAG indexing).
-   */
-  listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]>;
-
-  /**
-   * Mark a vault document as published for metadata-only `discovery.request` matches (no file bytes).
-   */
-  setLibraryItemPublished(documentId: string, published: boolean): Promise<void>;
-
-  /**
-   * Export a vault document to IPFS via Kubo `ipfs add` (interop recipe v1).
-   * Requires `externalPublish.allowIpfs` in node config. Desktop only.
-   */
-  exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult>;
-
-  /**
-   * Pin an already-exported library CID via an external provider (Pinata JWT env).
-   * Requires `externalPublish.allowIpfs` and `externalPublish.pinningEnabled`.
-   */
-  pinLibraryItemExternal(documentId: string): Promise<PinLibraryItemExternalResult>;
-
-  /** Kubo sidecar / managed daemon status (desktop IPFS export). */
-  getIpfsEngineStatus(): Promise<IpfsEngineStatus>;
-
-  /** Vector RAG vault indexing status (incremental reindex progress). */
-  getRagIndexStatus(): Promise<RagIndexStatus>;
-
-  /**
-   * Force rebuild vault (+ chat backfill) vector indexes for the current embedding config.
-   * Use after changing embedding model/provider, or when the index looks stale.
-   */
-  reindexRagKnowledge(params?: { force?: boolean }): Promise<RagIndexStatus>;
-
-  /**
-   * Probe the effective embedding provider with a single short embed call.
-   * Confirms Knowledge → Setup embedding settings without rebuilding the index.
-   */
-  testRagEmbedding(): Promise<RagEmbeddingProbeResult>;
-
-  /**
-   * Probe the effective chat model provider with a short static completion.
-   * Confirms Settings → AI model endpoint/key without opening a chat thread.
-   */
-  testChatModel(): Promise<ChatModelProbeResult>;
-
-  /**
-   * Phase 57D — MCP search → attributed Markdown note under `notes/mcp/`.
-   * Requires `aiSettings.knowledgeBase.mcpWriteBackEnabled` and `externalProvider: "mcp"`.
-   */
-  saveExternalMcpSearchAsNote(
-    params: SaveExternalMcpSearchAsNoteParams,
-  ): Promise<SaveExternalMcpSearchAsNoteResult>;
-
-  /** List live MCP/Notion knowledge cards for Browse (soft-fail). */
-  listExternalMcpKnowledge(
-    params?: ListExternalMcpKnowledgeParams,
-  ): Promise<ListExternalMcpKnowledgeResult>;
-
-  /** Import linked Obsidian notes into `notes/imports/obsidian/`. */
-  importLinkedObsidianNotes(
-    params: ImportLinkedObsidianNotesParams,
-  ): Promise<ImportLinkedObsidianNotesResult>;
-
-  /**
-   * Import MCP remote cards / search hits into `notes/mcp/`.
-   * Browse import does not require `mcpWriteBackEnabled` (Settings toggle still gates the legacy save button).
-   */
-  importExternalMcpKnowledge(
-    params: ImportExternalMcpKnowledgeParams,
-  ): Promise<ImportExternalMcpKnowledgeResult>;
-
-  /** Export vault Markdown notes into a linked Obsidian vault. */
-  exportNotesToLinkedObsidian(
-    params: ExportNotesToLinkedObsidianParams,
-  ): Promise<ExportNotesToLinkedObsidianResult>;
-
-  /** Export vault Markdown notes via MCP write tool when available. */
-  exportNotesToMcp(params: ExportNotesToMcpParams): Promise<ExportNotesToMcpResult>;
-
-  /**
-   * Fetch exported content from an allowlisted IPFS gateway and verify bytes match vault contentHash.
-   * Requires `externalPublish.allowIpfs` and a non-empty gateway allowlist (desktop Kubo or mobile Helia).
-   */
-  verifyLibraryItemIpfsGateway(
-    params: VerifyLibraryItemIpfsGatewayParams,
-  ): Promise<VerifyLibraryItemIpfsGatewayResult>;
-
-  /**
-   * Write bytes into the local shared vault at a relative path (import from file picker).
-   * Office/PDF imports also materialize GFM under `notes/imports/` when extract succeeds.
-   */
-  importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
-
-  /**
-   * Materialize anydoc/legacy extract of an existing vault document into `notes/imports/`.
-   * Originals are retained (Phase 57 item-4 / 57E).
-   */
-  convertLibraryItemToMarkdown(
-    params: ConvertLibraryItemToMarkdownParams,
-  ): Promise<ConvertLibraryItemToMarkdownResult>;
-
-  /**
-   * Create or overwrite a markdown note in the vault `notes/` folder (Phase 44A2).
-   */
-  createNote(params: CreateNoteParams): Promise<CreateNoteResult>;
-
-  /**
-   * Delete a vault item by its vault-relative path (Phase 44A2).
-   */
-  deleteVaultItem(params: DeleteVaultItemParams): Promise<void>;
-
-  /** Resolve a vault-relative path to an absolute path on this device (path safety enforced). */
-  resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }>;
-
-  /** Open a vault file with the OS default application. Desktop node only. */
-  openLibraryItem(relativePath: string): Promise<void>;
-
-  /** Reveal a vault file in Finder / Explorer / file manager. Desktop node only. */
-  revealLibraryItemInFileManager(relativePath: string): Promise<void>;
-
-  /**
-   * Query bonded contacts for published library metadata (`libraryMatches` in `discovery.response`).
-   * Peers are queried in trust order (direct first). Requires an online mesh route to each peer.
-   */
-  discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]>;
-
-  /**
-   * Phase 45 — Fetch raw content by URL path from a bonded contact's
-   * published web directory. Pull-based analog of `discoverPublishedLibrary`:
-   * discovery returns *what* a node has; `libraryRead` returns the *bytes*.
-   *
-   * The serving node enforces per-item visibility via the Bonds Engine.
-   * A stranger (non-bonded) reader gets `status: "forbidden"` or
-   * `status: "not_found"` depending on the item's visibility flag.
-   *
-   * Design: docs/web-content-browsing-design.md §4.4.
-   */
-  libraryRead(params: LibraryReadParams): Promise<LibraryReadResult>;
 
   /**
    * Phase 45D — Author and publish a web-content item under `web/`, upsert
@@ -2746,14 +1896,6 @@ export interface NodeService {
    * Persists and emits `share:agent-proposed`.
    */
   submitAgentShareProposal(params: SubmitAgentShareProposalParams): Promise<AgentShareProposal>;
-
-  /**
-   * Active file transfers (negotiating or transferring). Completed transfers remain queryable by correlation id.
-   */
-  listActiveTransfers(): Promise<TransferStatus[]>;
-
-  /** Lookup transfer status by correlation id from share / data-transfer flows. */
-  getTransferStatus(correlationId: string): Promise<TransferStatus | undefined>;
 
   // ----- Node Configuration -----
 
@@ -3735,107 +2877,7 @@ export interface NodeService {
   /** List signed device revocation records for this owner. */
   listDeviceRevocations(): Promise<ListDeviceRevocationsResult>;
 
-  // ----- Terminals (Phase 30) -----
-
-  listTerminalSessions(): Promise<import("./terminal.js").TerminalSessionSummary[]>;
-  createTerminalSession(params?: import("./terminal.js").CreateTerminalSessionParams): Promise<import("./terminal.js").TerminalSessionSummary>;
-  closeTerminalSession(params: import("./terminal.js").CloseTerminalSessionParams): Promise<void>;
-  terminalExec(params: { sessionId: string; command: string }): Promise<{ output: string }>;
-  renameTerminalSession(params: import("./terminal.js").RenameTerminalSessionParams): Promise<import("./terminal.js").TerminalSessionSummary>;
-  terminalAttach(params: import("./terminal.js").TerminalAttachParams): Promise<import("./terminal.js").TerminalAttachResult>;
-  terminalRunFromNaturalLanguage(
-    params: import("./terminal-agent.js").TerminalRunFromNaturalLanguageParams,
-  ): Promise<import("./terminal-agent.js").TerminalCommandProposal>;
-  terminalExecuteProposal(params: import("./terminal-agent.js").TerminalExecuteProposalParams): Promise<void>;
-  terminalSetAssistModelOverride(
-    params: import("./terminal-agent.js").TerminalSetAssistModelOverrideParams,
-  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
-  terminalSetInlineSuggestEnabled(
-    params: import("./terminal-agent.js").TerminalSetInlineSuggestParams,
-  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
-  terminalGetAssistState(sessionId: string): Promise<import("./terminal-agent.js").TerminalAssistState>;
-  terminalExplainScrollback(
-    params: import("./terminal-agent.js").TerminalExplainScrollbackParams,
-  ): Promise<import("./terminal-agent.js").TerminalExplainScrollbackResult>;
-  terminalSuggestCommand(
-    params: import("./terminal-agent.js").TerminalSuggestCommandParams,
-  ): Promise<import("./terminal-agent.js").TerminalSuggestCommandResult>;
-  terminalObserveStep(
-    params: import("./terminal-agent.js").TerminalObserveStepParams,
-  ): Promise<import("./terminal-agent.js").TerminalObserveStepResult>;
-  terminalOpenClawPlan(
-    params: import("./terminal-agent.js").TerminalOpenClawPlanParams,
-  ): Promise<import("./terminal-agent.js").TerminalOpenClawPlanResult>;
-  terminalRunPlanStep(
-    params: import("./terminal-agent.js").TerminalRunPlanStepParams,
-  ): Promise<import("./terminal-agent.js").TerminalCommandProposal>;
-  terminalEnablePrepareMode(
-    params: import("./terminal-agent.js").TerminalEnablePrepareModeParams,
-  ): Promise<import("./terminal-agent.js").TerminalEnablePrepareModeResult>;
-  terminalWatchStep(
-    params: import("./terminal-agent.js").TerminalWatchStepParams,
-  ): Promise<import("./terminal-agent.js").TerminalWatchStepResult>;
-  terminalPinContextSession(
-    params: import("./terminal-agent.js").TerminalPinContextSessionParams,
-  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
-  terminalDetectFailure(
-    params: import("./terminal-agent.js").TerminalDetectFailureParams,
-  ): Promise<import("./terminal-agent.js").TerminalFailureDetection>;
-  terminalSuggestFixFromFailure(
-    params: import("./terminal-agent.js").TerminalSuggestFixParams,
-  ): Promise<import("./terminal-agent.js").TerminalCommandProposal>;
-  terminalStartGoalLoop(
-    params: import("./terminal-agent.js").TerminalStartGoalLoopParams,
-  ): Promise<import("./terminal-agent.js").TerminalGoalLoopStepResult>;
-  terminalAdvanceGoalLoop(
-    params: import("./terminal-agent.js").TerminalAdvanceGoalLoopParams,
-  ): Promise<import("./terminal-agent.js").TerminalGoalLoopStepResult>;
-  terminalCancelGoalLoop(
-    params: import("./terminal-agent.js").TerminalCancelGoalLoopParams,
-  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
-  terminalClearResumeGoal(sessionId: string): Promise<import("./terminal-agent.js").TerminalAssistState>;
-  terminalSendContextToAssistant(
-    params: import("./terminal-agent.js").TerminalSendContextToAssistantParams,
-  ): Promise<import("./terminal-agent.js").TerminalSendContextToAssistantResult>;
-  terminalUpdatePlanProgress(
-    params: import("./terminal-agent.js").TerminalUpdatePlanProgressParams,
-  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
-  terminalGetScrollbackPreview(
-    params: import("./terminal-agent.js").TerminalGetScrollbackPreviewParams,
-  ): Promise<import("./terminal-agent.js").TerminalGetScrollbackPreviewResult>;
-  terminalResumeGoalLoop(
-    params: import("./terminal-agent.js").TerminalResumeGoalLoopParams,
-  ): Promise<import("./terminal-agent.js").TerminalGoalLoopStepResult>;
-  terminalEnableExecPane(
-    params: import("./terminal-agent.js").TerminalEnableExecPaneParams,
-  ): Promise<import("./terminal-agent.js").TerminalEnableExecPaneResult>;
-  terminalSetBackgroundWatch(
-    params: import("./terminal-agent.js").TerminalSetBackgroundWatchParams,
-  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
-  terminalClearBackgroundWatch(
-    params: import("./terminal-agent.js").TerminalClearBackgroundWatchParams,
-  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
-  openInHerdr(params?: import("./terminal.js").OpenInHerdrParams): Promise<import("./terminal.js").OpenInHerdrResult>;
-  terminalGetHerdrExportHint(
-    params: import("./terminal.js").TerminalHerdrExportHintParams,
-  ): Promise<import("./terminal.js").TerminalHerdrExportHintResult>;
-  homeTerminalWsOpen(params: import("./home-remote.js").HomeTerminalWsOpenParams): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
-  homeTerminalWsSend(params: import("./home-remote.js").HomeTerminalWsSendParams): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
-  homeTerminalWsClose(params?: import("./home-remote.js").HomeTerminalWsCloseParams): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
-
   // ----- Connection Status -----
-
-  /**
-   * Get current connection status
-   */
-  getConnectionStatus(): ConnectionStatus;
-
-  /**
-   * Get connection info for a specific peer (direct P2P vs relay-mediated).
-   * Use this to show connection type indicator in UI.
-   * @param peerOwnerId The owner's peer ID (e.g., envoy:owner:...)
-   */
-  getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo>;
 
   /**
    * Pre-dial a bonded contact so relay/P2P paths are warm before chat or file share.
@@ -3925,29 +2967,6 @@ export interface NodeService {
   listCapabilityProviderJobs(activeOnly?: boolean): Promise<CapabilityProviderJob[]>;
   cancelCapabilityProviderJob(jobId: string): Promise<void>;
   runCapabilityProviderWorker(): Promise<number>;
-
-  // ----- Activity Tracking -----
-
-  /**
-   * Record owner activity (call when owner sends any message via WebSocket).
-   * Used for online/offline detection.
-   */
-  recordOwnerActivity(): void;
-
-  /**
-   * Check if the owner is currently online based on:
-   * - Manual mode: returns the manual isOnline setting
-   * - Automatic mode: returns true if activity within timeout (5 min)
-   */
-  isOwnerOnline(): Promise<boolean>;
-
-  /**
-   * Wipe all local user data: profile, config, published library,
-   * intent history, continuity sessions, audit log, task journal,
-   * peer directory. The caller is expected to confirm with the user
-   * before invoking — this is destructive and cannot be undone.
-   */
-  clearAllUserData(): Promise<void>;
 
   // ----- Phase 38 — Voice/Video Calls -----
 
@@ -4181,32 +3200,6 @@ export interface NodeService {
   /** Phase 43H — delete a saved chain recipe. */
   chainDeleteRecipe(params: ChainDeleteRecipeParams): Promise<ChainDeleteRecipeResult>;
 
-  // ----- Phase 44C — Knowledge Base Plugins -----
-
-  /**
-   * List registered KB plugins. Optionally filter to active only.
-   */
-  listKbPlugins(params?: ListKbPluginsParams): Promise<KbPluginInfo[]>;
-
-  /**
-   * Activate a registered KB plugin (calls plugin.activate(), merges config).
-   */
-  activateKbPlugin(params: ActivateKbPluginParams): Promise<{ ok: boolean; reason?: string }>;
-
-  /**
-   * Deactivate an active KB plugin (calls plugin.deactivate()).
-   */
-  deactivateKbPlugin(params: DeactivateKbPluginParams): Promise<{ ok: boolean; reason?: string }>;
-
-  /**
-   * Read a plugin's persisted config.
-   */
-  getKbPluginConfig(pluginId: string): Promise<Record<string, unknown>>;
-
-  /**
-   * Merge partial config into a plugin's persisted config.
-   */
-  updateKbPluginConfig(params: UpdateKbPluginConfigParams): Promise<{ ok: boolean; reason?: string }>;
 }
 
 // --------------------------------------------------------------------------

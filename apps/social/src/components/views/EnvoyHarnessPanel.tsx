@@ -436,7 +436,11 @@ export function EnvoyHarnessPanel({
       chatId && !(sinceRevision > 0)
         ? nodeServiceRef.current.openEnvoyHarnessChat(chatId)
         : nodeServiceRef.current.getEnvoyHarnessChatHistory(
-            chatId,
+            // `chatId ?? undefined`: the false branch is reached when chatId is
+            // absent *or* when a revision exists, so it is not narrowed here.
+            // Behaviour is unchanged — the node resolves `chatId ?? null` either
+            // way (`node-service-impl.ts` `_resolveEhChat(chatId ?? null)`).
+            chatId ?? undefined,
             sinceRevision > 0 ? sinceRevision : undefined,
           )
     void loadHistory

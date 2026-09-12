@@ -35,7 +35,10 @@ export function CodingHeartbeatModal({
         title: workspaceTitle,
       }),
   );
-  const [cron, setCron] = useState(CODING_HEARTBEAT_CRON_PRESETS["15m"]);
+  // Widened to `string`: the preset map is `as const`, so inference pinned this
+  // to the single literal "*/15 * * * *" and `setCron` was not assignable to
+  // `CodingCronFields`' `(cron: string) => void` (TS2322).
+  const [cron, setCron] = useState<string>(CODING_HEARTBEAT_CRON_PRESETS["15m"]);
   const [prompt, setPrompt] = useState(
     () =>
       t(

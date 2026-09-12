@@ -41,6 +41,9 @@ export type { RelayJoinDecision, RelayJoinRateLimiter } from "./community-relay-
 export * from "./relay-roster.js";
 export * from "./group-chat-delivery.js";
 export * from "./node-service.js";
+// The reusable half of the RPC contract, exported directly as well as through
+// `node-service.js` (plan §10 E9 dual-export window).
+export * from "./core-node-service.js";
 /** Phase 34: re-export the typed `Artifact` discriminated union so the Social UI can render task.results. */
 export type {
   Artifact,

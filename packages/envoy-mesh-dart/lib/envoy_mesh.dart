@@ -10,16 +10,23 @@
 /// because none of them is exported here.
 ///
 /// Verified by `scripts/check-module-boundary.mjs` (rule 5) against the manifest
-/// `scripts/module-boundary.json`: these 13 modules are classified `reusable`,
-/// and no `reusable` module may depend on a `product-bound` one.
+/// `scripts/module-boundary.json`: **every module exported below is classified
+/// `reusable`**, and no `reusable` module may depend on a `product-bound` one.
+/// The count is deliberately not written here — it was 13 in an earlier draft
+/// while the list had already grown to 15, which is the drift a rule can catch
+/// and a sentence cannot.
 ///
 /// ## What this library is not
 ///
 /// Product/social types — `SocialBackend`, `PhoneSocialBackend`,
-/// `PhoneSocialStore`, `PhonePersona`, `BondContact`, `MeshPeerHit`,
+/// `PhoneSocialStore`, `PhonePersona`, `BondContact`,
 /// `CrossPersonaSuggestion` — now live in `envoy_mesh_social.dart`. If a symbol
 /// is unresolved after upgrading, add
 /// `import 'package:envoy_mesh/envoy_mesh_social.dart';`.
+///
+/// `MeshPeerHit` is *not* in that list: it is a reusable discovery type that was
+/// split out of `models.dart` (see `src/mesh_peer_hit.dart`), it is exported by
+/// **this** library, and `envoy_mesh_social.dart` no longer re-exports it.
 ///
 /// Design and rationale: `docs/envoymesh-refactoring-plan.md` §2.3, §3, §5.
 library;

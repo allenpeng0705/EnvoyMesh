@@ -41,6 +41,14 @@ jobs:
       - name: Seeded-violation tests (each rule can actually fail)
         run: node --test scripts/test/module-boundary.test.mjs
 
+      # E9 (§10): the reusable half of the RPC contract is GENERATED, so it must
+      # match the interface it was generated from. A hand edit to
+      # `core-node-service.ts`, a member moved back into `node-service.ts`, or a
+      # changed section disposition all fail here rather than silently widening
+      # the core surface.
+      - name: Core surface is current (E9)
+        run: node scripts/generate-core-surface.mjs --check
+
       # Informational: the declared surface of every `reusable` module (its
       # exported symbol names, plan Step 4). Regenerated rather than gated, so
       # it is available as an artifact for review without blocking anyone.

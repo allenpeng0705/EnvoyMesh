@@ -1670,7 +1670,10 @@ function createWsNodeServiceClient(
     async askExtAgent(params: import("@envoymesh/api").AskExtAgentParams) {
       return wsClient.rpc(
         "askExtAgent",
-        params as Record<string, unknown>,
+        // `AskExtAgentParams` is an interface with no index signature, so the
+        // single cast is rejected (TS2352) — the same two-step cast the profile
+        // methods above use. The runtime payload is unchanged.
+        params as unknown as Record<string, unknown>,
         { timeoutMs: 300_000 },
       ) as Promise<string>;
     },

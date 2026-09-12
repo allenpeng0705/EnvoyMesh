@@ -29,6 +29,7 @@
 
 import type { DeviceProfile, DeviceRevocationReason, DeviceRevocationRecord, FriendMatchingPreferencesPayload, ChainIterationWire } from "@envoymesh/protocol";
 import type { AgentVisibilityConfig, A2aChatNotificationMode } from "./agent-visibility.js";
+import type { CoreRpcMethods } from "./core-node-service.js";
 import type { ExtAgentDefinition } from "./ext-agent.js";
 export type { ExtAgentDefinition, ExtAgentReachability, ExtAgentCommandCatalog, ExtAgentCommandDescriptor, GetExtAgentCommandCatalogParams, SetExtAgentSessionModelParams, SetExtAgentSessionModelResult } from "./ext-agent.js";
 export { defaultExtAgentStartHint } from "./ext-agent.js";
@@ -83,7 +84,7 @@ export const WS_LOOPBACK_URL = `ws://127.0.0.1:${WS_PORT}${WS_PATH}`;
 // RPC Methods
 // ============================================
 
-export type RpcMethods =
+export type ProductRpcMethods =
   // Identity
   | "getProfile"
   | "getOwnerDidPresentation"
@@ -536,6 +537,17 @@ export type RpcMethods =
   | "deactivateKbPlugin"
   | "getKbPluginConfig"
   | "updateKbPluginConfig";
+
+/**
+ * The full wire method union.
+ *
+ * It **contains** `CoreRpcMethods` — the reusable subset in
+ * `./core-node-service.js` (plan §10 E9) — rather than replacing it, so the
+ * split is additive for every existing consumer: an `RpcMethods` switch keeps
+ * every case it had, while a reusable consumer can type itself against the core
+ * subset without importing the product method names.
+ */
+export type RpcMethods = CoreRpcMethods | ProductRpcMethods;
 
 // ============================================
 // Node Configuration Types

@@ -7413,7 +7413,12 @@ class NodeServiceImpl implements NodeService {
         try {
           await this.setExtAgentProjectPath({
             agentId,
-            path: row.cwd,
+            // `projectPath`, not `path`: the parameter is declared
+            // `SetExtAgentProjectPathParams { projectPath?: string | null }`, so
+            // the extra `path` key was ignored at runtime and this call never set
+            // the agent's project directory — it silently succeeded via the
+            // `catch` below. Typed as TS2353 until this was fixed.
+            projectPath: row.cwd,
           });
         } catch {
           // non-fatal — ask may still work with prior cwd

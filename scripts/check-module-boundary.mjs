@@ -7,13 +7,15 @@
  * | # | Rule        | Fails when |
  * |---|-------------|------------|
  * | 1 | Direction   | a `reusable` module imports a `product-bound` module |
+ * | 2 | Entry points| a consumer imports a `reusable` module by deep path, or a package's declared subpath surface is not exported |
  * | 3 | Completeness| a module is missing from the manifest, or appears twice |
  * | 4 | Concept     | a `reusable` module names a product concept |
+ * | 5 | Dart surface| a library the manifest calls `reusable` exports a `product-bound` module |
  *
- * Rules 2 (declared entry points / no deep-path imports) and 5 (the Dart
- * reusable surface exports no social symbol) arrive with Steps 2–3 of the
- * plan, once the entry points are declared. They are deliberately **not**
- * stubbed as passing checks — an unimplemented rule must not look green.
+ * All five are implemented. A rule that is not implemented is never stubbed as
+ * a passing check — an unimplemented rule must not look green — so if a rule is
+ * ever added to §4.3 before it is coded, it must fail loudly rather than be
+ * listed here as enforced.
  *
  * **Scope.** The module universe scanned by `classify-modules.mjs`. Files
  * excluded there (documented in the manifest's `declaredInputs.excluded`) are

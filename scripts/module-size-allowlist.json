@@ -33,5 +33,10 @@
   "apps/node/src/node-service-transfer-inbound.ts",
   "apps/node/src/chain-verify-loop.ts",
   "apps/node/src/node-service-setup-sponsor-friend.ts",
-  "apps/node/src/agent-runtime-envoy/runtime.ts"
+  "apps/node/src/agent-runtime-envoy/runtime.ts",
+  "packages/api/src/core-node-service.ts",
+  "packages/api/src/chat-room-service.ts",
+  "packages/api/src/ext-agent.ts",
+  "packages/api/src/ws-protocol.ts",
+  "packages/api/src/node-service.ts"
 ]
