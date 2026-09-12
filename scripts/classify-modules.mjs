@@ -75,12 +75,40 @@ export const CONCEPT_PATTERN =
  * `@envoymesh/api` is deliberately excluded: it currently exports the whole
  * product surface (E9), so it is not a core package today.
  */
+/**
+ * The declared core set: importing one of these packages does **not** taint a
+ * module (condition 3). The list is a decision, and now a *checked* one — rule 6
+ * of `check-module-boundary.mjs` fails when a package whose modules are **all**
+ * `reusable` is missing from it, because importing such a package taints for no
+ * reason.
+ *
+ * That gap was real and it blocked V4: `@envoymesh/node-core` had 4 reusable
+ * modules out of 4 and was not listed, so every harness module importing it came
+ * out `product-bound` (7 of 24 reusable). The seven packages below were added on
+ * 2026-09-12 after measuring that they have no `product-bound` module at all:
+ * harness went 7 → 20 reusable, the repo 438 → 463.
+ *
+ * `local-store` is listed by *decision*, not by that rule: 3 of its 38 modules
+ * are `product-bound` (one of them, `family-profile-store.ts`, names a product
+ * concept and is re-exported by its barrel). Demoting it is not free — measured,
+ * it would take the repo from 438 to 419 reusable modules — so it stays, and the
+ * inconsistency is recorded rather than hidden. Splitting the product stores out
+ * of that barrel is the clean fix.
+ */
 export const CORE_PACKAGES = [
   "@envoymesh/protocol",
   "@envoymesh/identity",
   "@envoymesh/network",
   "@envoymesh/vault",
   "@envoymesh/local-store",
+  // Every module reusable — measured 2026-09-12 (see the note above).
+  "@envoymesh/node-core",
+  "@envoymesh/host-connect",
+  "@envoymesh/agent-adapter",
+  "@envoymesh/bonds",
+  "@envoymesh/ipfs-helia",
+  "@envoymesh/mobile-identity",
+  "@envoymesh/openclaw-runtime",
 ];
 
 /**

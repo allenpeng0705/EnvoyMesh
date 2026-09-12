@@ -6,8 +6,9 @@ name: ci-module-boundary
 # dependency, dedicated workflow so a boundary failure is unambiguous in the PR
 # checks list rather than buried inside a general test run.
 #
-# All five rules are enforced: 1 (direction), 2 (declared entry points),
-# 3 (completeness), 4 (concept naming), 5 (Dart reusable surface).
+# All six rules are enforced: 1 (direction), 2 (declared entry points),
+# 3 (completeness), 4 (concept naming), 5 (Dart reusable surface),
+# 6 (a fully-reusable package is declared core).
 # Plus the reuse test (§4.4 / Step 5) as a second job.
 
 on:
@@ -35,7 +36,7 @@ jobs:
       - name: Manifest is current
         run: node scripts/classify-modules.mjs --check
 
-      - name: Boundary rules 1, 2, 3, 4, 5
+      - name: Boundary rules 1, 2, 3, 4, 5, 6
         run: node scripts/check-module-boundary.mjs
 
       - name: Seeded-violation tests (each rule can actually fail)

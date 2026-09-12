@@ -11,6 +11,7 @@
  * | completeness | 3 | a file exists on disk but is absent from the manifest |
  * | duplicate | 3 | a module appears in the manifest twice |
  * | concept | 4 | a `reusable` module names a product concept |
+ * | core-set | 6 | a package whose modules are all `reusable` is missing from `corePackages` |
  * | clean | — | **positive control**: a correct fixture must pass |
  *
  * The positive control matters as much as the violations: without it, a checker
@@ -41,7 +42,7 @@ const CONCEPT_PATTERN = "\\b(OWNER_FAMILY_PROFILE_ID|familyProfile|isOwnerProfil
  * Build a fixture tree and run the checker against it.
  * @returns {{code: number, stdout: string, stderr: string}}
  */
-async function runChecker({ files = {}, dartLib = null, pkgs = null, reusable, productBound }) {
+async function runChecker({ files = {}, pkgFiles = {}, dartLib = null, pkgs = null, corePackages = [], reusable, productBound }) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "module-boundary-"));
   const dir_ = dir;
   const srcDir = path.join(dir, "apps", "node", "src");
@@ -66,6 +67,15 @@ async function runChecker({ files = {}, dartLib = null, pkgs = null, reusable, p
     }
   }
 
+  // `pkgFiles: { 'cleanpkg/src/only.ts': '…' }` builds `packages/<...>` sources,
+  // so rule 6 (the declared core set) can be exercised — it judges a package by
+  // the classification of the modules inside it.
+  for (const [rel, content] of Object.entries(pkgFiles)) {
+    const full = path.join(dir_, "packages", rel);
+    await fs.mkdir(path.dirname(full), { recursive: true });
+    await fs.writeFile(full, content, "utf8");
+  }
+
   // `dartLib: { 'envoy_mesh.dart': ..., 'src/core.dart': ... }` builds
   // `packages/<pkg>/lib/...` so rule 5 (the Dart library surface) can be seeded.
   if (dartLib) {
@@ -81,7 +91,7 @@ async function runChecker({ files = {}, dartLib = null, pkgs = null, reusable, p
     JSON.stringify(
       {
         version: 1,
-        declaredInputs: { conceptPattern: CONCEPT_PATTERN, corePackages: [], excluded: {} },
+        declaredInputs: { conceptPattern: CONCEPT_PATTERN, corePackages, excluded: {} },
         reusable,
         productBound,
       },
@@ -342,4 +352,48 @@ test("positive control: a correct fixture passes", async () => {
 test("the real repository passes the implemented rules", async () => {
   const { stdout } = await execFileAsync(process.execPath, [CHECKER], { cwd: repoRoot });
   assert.match(stdout, /module-boundary OK/);
+});
+
+test("rule 6: a fully-reusable package that is not declared core fails", async () => {
+  const res = await runChecker({
+    pkgFiles: { "cleanpkg/src/only.ts": `export const a = 1;\n` },
+    pkgs: { cleanpkg: { exports: { ".": "./dist/index.js" } } },
+    reusable: [{ path: "packages/cleanpkg/src/only.ts", tags: [] }],
+    productBound: [],
+    corePackages: [], // present but empty — rule 6 is only judged when declared
+  });
+
+  assert.equal(res.code, 1, "rule 6 must fail when a fully-reusable package is undeclared");
+  assert.match(res.stderr, /core-set/);
+  assert.match(res.stderr, /@envoymesh\/cleanpkg/);
+});
+
+test("rule 6 positive control: the same package declared core passes", async () => {
+  const res = await runChecker({
+    pkgFiles: { "cleanpkg/src/only.ts": `export const a = 1;\n` },
+    pkgs: { cleanpkg: { exports: { ".": "./dist/index.js" } } },
+    reusable: [{ path: "packages/cleanpkg/src/only.ts", tags: [] }],
+    productBound: [],
+    corePackages: ["@envoymesh/cleanpkg"],
+  });
+
+  assert.equal(res.code, 0, `declaring the package must satisfy rule 6\n${res.stderr}`);
+});
+
+test("rule 6 warns (does not fail) when a declared core package has product-bound modules", async () => {
+  // `@envoymesh/local-store` is in exactly this state in the real repo: declared
+  // core, 3 product-bound modules inside. The warning is what keeps it visible.
+  const res = await runChecker({
+    pkgFiles: {
+      "mixedpkg/src/clean.ts": `export const a = 1;\n`,
+      "mixedpkg/src/familyProfile.ts": `export const b = 2;\n`,
+    },
+    pkgs: { mixedpkg: { exports: { ".": "./dist/index.js" } } },
+    reusable: [{ path: "packages/mixedpkg/src/clean.ts", tags: [] }],
+    productBound: [{ path: "packages/mixedpkg/src/familyProfile.ts", tags: [] }],
+    corePackages: ["@envoymesh/mixedpkg"],
+  });
+
+  assert.equal(res.code, 0, "the inverse direction is a warning, not a violation");
+  assert.match(res.stdout, /warn.*mixedpkg.*1 product-bound/);
 });

@@ -11,8 +11,9 @@
  * | 3 | Completeness| a module is missing from the manifest, or appears twice |
  * | 4 | Concept     | a `reusable` module names a product concept |
  * | 5 | Dart surface| a library the manifest calls `reusable` exports a `product-bound` module |
+ * | 6 | Core set    | a package whose modules are all `reusable` is missing from `declaredInputs.corePackages` (or the manifest declares one that still contains product-bound modules — warned, not failed) |
  *
- * All five are implemented. A rule that is not implemented is never stubbed as
+ * All six are implemented. A rule that is not implemented is never stubbed as
  * a passing check — an unimplemented rule must not look green — so if a rule is
  * ever added to §4.3 before it is coded, it must fail loudly rather than be
  * listed here as enforced.
@@ -361,13 +362,69 @@ for (const rel of await consumerSources()) {
   }
 }
 
+// --- rule 6: a fully-reusable package must be declared core --------------------
+//
+// Condition 3 of the three-condition test (`classify-modules.mjs`) seeds a module
+// `product-bound` the moment it imports a non-core `@envoymesh` package — so a
+// package whose **every** module is `reusable` taints its importers for no
+// reason at all. That is not hypothetical: `@envoymesh/node-core` had 4 reusable
+// modules out of 4 and was not declared, so every harness module importing it
+// came out `product-bound` (7 of 24 reusable). Declaring the seven qualifying
+// packages took harness to 20 and the repo from 438 to 463 reusable modules.
+//
+// The inverse is a **warning**, not a violation: `local-store` is declared core
+// while 3 of its modules are `product-bound` (one names a product concept). That
+// is a deliberate decision — demoting it would cost 19 reusable modules — so it
+// is surfaced rather than hidden, and the clean fix (splitting the product stores
+// out of its barrel) is a plan item.
+const corePackages = new Set(manifest.declaredInputs?.corePackages ?? []);
+const warnings = [];
+if (manifest.declaredInputs?.corePackages) {
+  const ownerOf = (rel) => /^(packages\/[^/]+)\//.exec(rel)?.[1] ?? null;
+  const perPackage = new Map();
+  for (const e of pkgEntries2) {
+    if (!e.isDirectory()) continue;
+    try {
+      const pj = JSON.parse(await fs.readFile(path.join(root, "packages", e.name, "package.json"), "utf8"));
+      if (typeof pj.name !== "string" || !pj.name.startsWith("@envoymesh/")) continue;
+      perPackage.set(`packages/${e.name}`, { name: pj.name, reusable: 0, productBound: [] });
+    } catch {
+      /* not a package */
+    }
+  }
+  for (const r of reusable) {
+    const owner = ownerOf(r.path);
+    if (owner && perPackage.has(owner)) perPackage.get(owner).reusable++;
+  }
+  for (const r of productBound) {
+    const owner = ownerOf(r.path);
+    if (owner && perPackage.has(owner)) perPackage.get(owner).productBound.push(r.path);
+  }
+  for (const [dir, info] of [...perPackage].sort()) {
+    if (info.reusable === 0) continue;
+    if (info.productBound.length === 0 && !corePackages.has(info.name)) {
+      add(
+        "core-set",
+        dir,
+        `all ${info.reusable} of its modules are \`reusable\`, but \`${info.name}\` is not in \`declaredInputs.corePackages\` — importing it taints its consumers for no reason (rule 6)`,
+      );
+    } else if (info.productBound.length > 0 && corePackages.has(info.name)) {
+      warnings.push(
+        `${info.name} is declared core but has ${info.productBound.length} product-bound module(s): ` +
+          info.productBound.map((p) => p.split("/").pop()).join(", "),
+      );
+    }
+  }
+}
+
 // --- report -----------------------------------------------------------------
 
 if (violations.length === 0) {
   console.log(
-    `module-boundary OK — rules 1, 2, 3, 4, 5 pass over ${onDisk.size} modules ` +
+    `module-boundary OK — rules 1, 2, 3, 4, 5, 6 pass over ${onDisk.size} modules ` +
       `(${reusable.length} reusable, ${productBound.length} product-bound)`,
   );
+  for (const w of warnings) console.log(`  [warn] ${w}`);
   process.exit(0);
 }
 
