@@ -8,6 +8,7 @@
 
 import dgram from "node:dgram";
 import { Buffer } from "node:buffer";
+import { randomFillSync } from "node:crypto";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ export const DEFAULT_STUN_SERVERS: StunServer[] = [
 /** Build a STUN binding request message. */
 function buildBindingRequest(): Buffer {
   const transactionId = Buffer.alloc(12);
-  require("node:crypto").randomFillSync(transactionId);
+  randomFillSync(transactionId);
 
   const msg = Buffer.alloc(20);
   // Message type (big-endian)

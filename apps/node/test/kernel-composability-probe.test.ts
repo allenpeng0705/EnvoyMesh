@@ -329,14 +329,17 @@ describe("kernel composability probe (§6.2)", () => {
     //   * `ensureDefaultWebSite` / `listFeedPosts` need an *owner identity*
     //     (the `NodeProfile` input, also deliberately absent here) and say so
     //     with a domain error rather than an availability error — correct.
-    //   * `listOpenClawExtensionPlugins` fails to require `./bundled-paths.js`.
-    //     That is a **pre-existing defect unrelated to composability**, which
-    //     this probe surfaced. Allow-listed so it is visible, not silently
-    //     accepted; remove the entry when the module is added.
+    // The `listOpenClawExtensionPlugins: Cannot find module './bundled-paths.js'`
+    // entry that used to live here is **gone because the defect is fixed**: the
+    // caller used a bare `require("./bundled-paths.js")` inside a
+    // `"type": "module"` package, which is a runtime `ReferenceError` — the call
+    // could never have worked in the shipped build. It is now a static import
+    // (`node-service-impl.ts`), and the probe reports the call as served. The
+    // allow-list said "remove the entry when the module is added"; removing it is
+    // the point, and `esm-no-bare-require.test.ts` keeps the class of bug out.
     const KNOWN_OTHER = [
       /ensureDefaultWebSite: .*owner identity required/,
       /listFeedPosts: .*owner identity not ready/,
-      /listOpenClawExtensionPlugins: Cannot find module '\.\/bundled-paths\.js'/,
     ];
     const unexpected = other.filter((o) => !KNOWN_OTHER.some((re) => re.test(o)));
     expect(

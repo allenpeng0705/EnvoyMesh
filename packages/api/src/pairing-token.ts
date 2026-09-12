@@ -190,18 +190,52 @@ async function decodeToObjectAsync(token: string): Promise<Record<string, unknow
   return parseJsonObject(json);
 }
 
+/**
+ * Synchronous gzip inflate for the Node path.
+ *
+ * This replaced `require("pako")`, which was **always broken in the shipped
+ * build**: this package is `"type": "module"`, so `require` is not defined, the
+ * `ReferenceError` was swallowed by the `catch` below, and a *valid* token came
+ * back as "not valid gzip-compressed data". It hid because vitest provides a
+ * CJS-interop `require`, so the tests passed while `dist/` threw — and `pako`
+ * was not a declared dependency of this package either (it resolved by
+ * hoisting).
+ *
+ * Node's own `zlib` does the job with no runtime dependency, reached through
+ * `process.getBuiltinModule` (Node ≥ 22.3) so a browser bundle never statically
+ * references `node:zlib`. The environment check happens **before** the caller's
+ * `try`, so its error is not rewritten into "corrupt token".
+ *
+ * `decodePairingTokenAsync()` remains the portable path — it uses the native
+ * `DecompressionStream` and works in browsers and Node alike.
+ */
+function gunzipSyncNode(data: Uint8Array): Uint8Array {
+  const getBuiltin = (process as unknown as {
+    getBuiltinModule?: (id: string) => unknown;
+  })?.getBuiltinModule;
+  if (typeof getBuiltin !== "function") {
+    throw new Error(
+      "Synchronous pairing-token decode requires Node.js ≥ 22.3; use decodePairingTokenAsync() instead",
+    );
+  }
+  const zlib = getBuiltin("node:zlib") as typeof import("node:zlib");
+  return new Uint8Array(zlib.gunzipSync(data));
+}
+
 function decodeToObjectSync(token: string): Record<string, unknown> {
   if (!token || !token.trim()) {
     throw new Error("Pairing token is empty");
   }
 
+  // Resolved before the parse attempt: "this environment has no sync inflate" is
+  // not the same failure as "this token is corrupt", and conflating them is
+  // exactly what hid the original bug.
+  const gunzip = (data: Uint8Array) => gunzipSyncNode(data);
+
   let json: string;
   try {
     const compressed = base64urlDecode(token.trim());
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pako = require("pako") as any;
-    const decompressed = pako.ungzip(compressed);
+    const decompressed = gunzip(compressed);
     json = new TextDecoder("utf-8").decode(decompressed);
   } catch {
     throw new Error("Pairing token is not valid gzip-compressed data");

@@ -1,3 +1,4 @@
+import { resolveBundledOpenClawDir } from "./bundled-paths.js";
 import type {
   AiSettings,
   BondRecord,
@@ -9469,7 +9470,6 @@ class NodeServiceImpl implements NodeService {
    *  In Tauri bundles this uses TAURI_RESOURCE_DIR; in dev mode it walks up
    *  from the node cwd to find packages/openclaw. */
   _resolveOpenClawDir(): string | null {
-    const { resolveBundledOpenClawDir } = require("./bundled-paths.js") as typeof import("./bundled-paths.js");
     // The function needs nodeCwd for monorepo dev resolution, but in Tauri
     // bundles it only uses TAURI_RESOURCE_DIR. Use profileDir as a safe cwd.
     return resolveBundledOpenClawDir(this._profileDir);

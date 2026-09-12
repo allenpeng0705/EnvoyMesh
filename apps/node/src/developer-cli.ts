@@ -2,8 +2,9 @@ import {
   analyzeConnectivityStageD,
   analyzeWanConnectivityAxes,
   buildMorningReportDigest,
-  createLocalTaskStore,
+  buildRelayManagerSnapshot,
   createLocalPeerDirectoryStore,
+  createLocalTaskStore,
   createLocalTrustStore,
   loadOrCreateNodeProfile,
   measureStorageGate,
@@ -927,16 +928,15 @@ async function showRelayStatus(args: DeveloperCliArgs): Promise<DeveloperCliResu
       // local-store's `buildRelayManagerSnapshot` reads
       // the profile + audit log and returns the typed
       // `RelayManagerSnapshot`. The bridge formats it
-      // (text + JSON). The wrapper here bridges the
-      // two: the host builds, the bridge formats.
-      // (Lazy-imported to avoid a circular dep at module
-      // top — `developer-cli.ts` already imports from
-      // `@envoymesh/local-store`, but `buildRelayManagerSnapshot`
-      // is in the same barrel and the type-cast below
-      // would be cleaner with the explicit import. The
-      // dynamic import keeps the refactor atomic.)
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { buildRelayManagerSnapshot } = require("@envoymesh/local-store") as typeof import("@envoymesh/local-store");
+      // (text + JSON). The wrapper here bridges the two:
+      // the host builds, the bridge formats.
+      //
+      // Imported statically (it used to be a `require`). The
+      // original "avoid a circular dep" note was already moot —
+      // this file imports `@envoymesh/local-store` at the top —
+      // and a bare `require` in a `"type": "module"` package is a
+      // runtime `ReferenceError`, so the relay snapshot path could
+      // never have run in the shipped build.
       return buildRelayManagerSnapshot({
         profile: profile as Parameters<typeof buildRelayManagerSnapshot>[0]["profile"],
         auditEvents: auditEvents as unknown as Parameters<typeof buildRelayManagerSnapshot>[0]["auditEvents"],

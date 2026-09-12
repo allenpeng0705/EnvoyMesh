@@ -9,7 +9,7 @@
  * Priority: npm > PATH binary > bundled binary > source build > fallback
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -315,7 +315,10 @@ export class OpenClawRuntime {
 export function isOpenClawInstalled(expectedPath?: string): boolean {
   if (expectedPath && existsSync(expectedPath)) return true;
   try {
-    const { spawnSync } = require("node:child_process");
+    // Static import: this package is `"type": "module"`, so the `require` that
+    // used to be here threw `ReferenceError` and the `catch` turned it into
+    // `false` — i.e. `isOpenClawInstalled()` always reported "not installed",
+    // including in the shipped build.
     const result = spawnSync("openclaw", ["--version"], { timeout: 2000, stdio: "ignore" });
     return result.status === 0;
   } catch {
