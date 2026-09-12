@@ -6,13 +6,24 @@
  *
  * ## What it is
  *
- * The RPC surface a product that is *not* EnvoyMesh social may depend on:
- * 8 declared sections / 100 methods
+ * The surface a product that is *not* EnvoyMesh social may depend on:
+ * **8 declared sections**, **100 members**, plus the
+ * **55 type declarations** their signatures need
  * (35 members inside those sections are declared product in the
- * generator's residual list), plus the
- * 55 type declaration(s) those signatures need. The full
- * `NodeService` **extends** `CoreNodeService` and the full `RpcMethods`
- * contains `CoreRpcMethods`, so every existing consumer is unaffected — the
+ * generator's residual list, each with a reason).
+ *
+ * The two halves are deliberately different sizes:
+ *
+ *   * **`CoreNodeService`** — all 100 members: the *type* surface a
+ *     reusable consumer may program against, including methods the host calls
+ *     in-process rather than over the wire (8: `exportDidDocument`, `resolveDidExport`, `requestMultiHopDiscovery`, `ingestInboundMultiHopDiscoveryResponse`, …).
+ *   * **`CoreRpcMethods`** — 92 names: the *wire* surface, intersected with the
+ *     real `ProductRpcMethods` union in `ws-protocol.ts`, so
+ *     `RpcMethods = CoreRpcMethods | ProductRpcMethods` cannot advertise a
+ *     method that no client can call.
+ *
+ * The full `NodeService` **extends** `CoreNodeService` and `RpcMethods`
+ * **contains** `CoreRpcMethods`, so every existing consumer is unaffected — the
  * split is additive in their direction (plan §10 E9 (a)).
  *
  * ## Why the membership looks declared rather than derived
@@ -701,8 +712,6 @@ export type CoreRpcMethods =
   | "getProfile"
   | "getOwnerDidPresentation"
   | "resolveDidImport"
-  | "exportDidDocument"
-  | "resolveDidExport"
   | "getAgentIdentity"
   | "updateAgentIdentity"
   // Search / Discovery
@@ -711,9 +720,7 @@ export type CoreRpcMethods =
   | "refreshNearbyDiscovery"
   | "runCapabilityDiscovery"
   | "discoverCapabilityTopic"
-  | "requestMultiHopDiscovery"
   | "getMultiHopDiscoverySession"
-  | "ingestInboundMultiHopDiscoveryResponse"
   | "sendSyncStateUpdate"
   | "getConnectivityDiagnostics"
   | "getCircuitReservationStatus"
@@ -723,7 +730,6 @@ export type CoreRpcMethods =
   // File Sharing
   | "listPendingShareOffers"
   | "shareFile"
-  | "requestShareFromLibrary"
   | "acceptShare"
   | "declineShare"
   | "listLibraryItems"
@@ -795,10 +801,6 @@ export type CoreRpcMethods =
   // Connection Status
   | "getConnectionStatus"
   | "getPeerConnectionInfo"
-  // Activity Tracking
-  | "recordOwnerActivity"
-  | "isOwnerOnline"
-  | "clearAllUserData"
   // Phase 44C — Knowledge Base Plugins
   | "listKbPlugins"
   | "activateKbPlugin"

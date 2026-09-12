@@ -59,9 +59,17 @@ const API_SRC = path.join(repoRoot, "packages/api/src");
 const MANIFEST = path.join(here, "module-boundary.json");
 const NODE_SERVICE_FILE = path.join(API_SRC, "node-service.ts");
 const coreFileArg = process.argv.indexOf("--core-file");
+if (coreFileArg !== -1 && (process.argv[coreFileArg + 1] ?? "").startsWith("--")) {
+  console.error("[fail] --core-file needs a path");
+  process.exit(1);
+}
+if (coreFileArg !== -1 && !process.argv[coreFileArg + 1]) {
+  console.error("[fail] --core-file needs a path");
+  process.exit(1);
+}
 const CORE_FILE = coreFileArg === -1
   ? path.join(API_SRC, "core-node-service.ts")
-  : path.resolve(process.argv[coreFileArg + 1] ?? "");
+  : path.resolve(process.argv[coreFileArg + 1]);
 const CORE_INTERFACE = "CoreNodeService";
 const FULL_INTERFACE = "NodeService";
 
@@ -303,6 +311,23 @@ async function parseInterface(absFile, interfaceName) {
     members.push({ text, name: nameMatch ? nameMatch[1] : null, startIdx: start + 1 + first, endIdx: start + 1 + last, section: sectionOf(abs) });
   }
 
+  const dupes = [];
+  const seen = new Map();
+  for (const m of members) {
+    if (!m.name) continue;
+    const key = `${m.section}\u0000${m.name}`;
+    if (seen.has(key)) dupes.push(`${m.section} :: ${m.name} (lines ${seen.get(key)} and ${m.startIdx + 1})`);
+    else seen.set(key, m.startIdx + 1);
+  }
+  if (dupes.length) {
+    // The generator keys members by name, so a duplicate (overloads, or the same
+    // helper declared twice) would be dropped without a word. Fail instead.
+    console.error("[fail] duplicate member names inside a section:");
+    for (const d of dupes) console.error(`  - ${d}`);
+    console.error("  the generator keys members by name; a duplicate cannot be represented.");
+    process.exit(1);
+  }
+
   for (const m of members) {
     let s = sections.find((x) => x.name === m.section);
     if (!s) {
@@ -475,7 +500,37 @@ const coreMembersOf = (name) =>
   }
 }
 
-const coreSectionNames = Object.keys(SECTIONS).filter((n) => SECTIONS[n].disposition === "core");
+// ── the wire surface, which is narrower than the type surface ───────────────
+//
+// `CoreNodeService` is a *type* surface: every member a reusable consumer may
+// program against, including methods the host calls in-process
+// (`recordOwnerActivity`, `clearAllUserData`, `exportDidDocument`, …).
+// `CoreRpcMethods` is the *wire* surface: only names that were already real RPC
+// methods. Conflating the two would widen the JSON-RPC contract with names no
+// client can call — which `RpcMethods = CoreRpcMethods | ProductRpcMethods`
+// would then advertise as valid.
+function unionLiterals(text, typeName) {
+  const start = text.indexOf(`export type ${typeName} =`);
+  if (start === -1) return null;
+  const end = text.indexOf("\n\n", start);
+  return [...text.slice(start, end === -1 ? undefined : end).matchAll(/^ {2}\| "([^"]+)"/gm)].map((m) => m[1]);
+}
+const wsProtocolFile = path.join(API_SRC, "ws-protocol.ts");
+const exposedList = unionLiterals(await read(wsProtocolFile), "ProductRpcMethods");
+if (!exposedList) {
+  console.error(`[fail] ${rel(wsProtocolFile)}: no \`export type ProductRpcMethods =\` union to intersect with`);
+  process.exit(1);
+}
+const exposedMethods = new Set(exposedList);
+
+const coreSectionList = Object.keys(SECTIONS).filter((n) => SECTIONS[n].disposition === "core");
+// Both surfaces, computed once: the type surface (all members) and the wire
+// surface (members that are real RPC methods). See the note above `unionLiterals`.
+const coreWireNames = (section) => coreMembersOf(section).map((m) => m.name).filter((n) => exposedMethods.has(n));
+const coreMemberNames = coreSectionList.flatMap((n) => coreMembersOf(n).map((m) => m.name));
+const coreMembersNotExposed = coreMemberNames.filter((n) => !exposedMethods.has(n));
+const coreWireTotal = coreSectionList.reduce((n, sec) => n + coreWireNames(sec).length, 0);
+const coreSectionNames = coreSectionList;
 const coreTypeNames = new Set();
 {
   const queue = new Set();
@@ -557,6 +612,13 @@ if (flag("--json")) {
     coreMembers: Object.keys(SECTIONS)
       .filter((n) => SECTIONS[n].disposition === "core")
       .flatMap((n) => coreMembersOf(n).map((m) => m.name)),
+    coreWireMembers: Object.keys(SECTIONS)
+      .filter((n) => SECTIONS[n].disposition === "core")
+      .flatMap((n) => coreWireNames(n)),
+    coreMembersNotExposed: Object.keys(SECTIONS)
+      .filter((n) => SECTIONS[n].disposition === "core")
+      .flatMap((n) => coreMembersOf(n).map((m) => m.name))
+      .filter((n) => !exposedMethods.has(n)),
     excludedMembers: [...PRODUCT_MEMBERS.keys()],
     sections: evidence.map((e) => ({ section: e.section, disposition: e.disposition, members: e.members, excluded: e.excluded })),
   };
@@ -586,8 +648,7 @@ if (flag("--where")) {
 // file), not the parse order — the parse order changes once sections live in two
 // files, and a generated file that reorders itself on every run is unreadable in
 // review.
-const coreSections = Object.keys(SECTIONS).filter((n) => SECTIONS[n].disposition === "core");
-const coreMemberNames = coreSections.flatMap((n) => coreMembersOf(n).map((m) => m.name));
+const coreSections = coreSectionList;
 
 // imports needed by core members, grouped by specifier, mirroring node-service.ts
 // Where each name comes from. Both interface files contribute, and the split's
@@ -683,13 +744,24 @@ const header = `/**
  *
  * ## What it is
  *
- * The RPC surface a product that is *not* EnvoyMesh social may depend on:
- * ${coreSections.length} declared sections / ${coreMemberNames.length} methods
+ * The surface a product that is *not* EnvoyMesh social may depend on:
+ * **${coreSections.length} declared sections**, **${coreMemberNames.length} members**, plus the
+ * **${coreTypeNames.size} type declarations** their signatures need
  * (${PRODUCT_MEMBERS.size} members inside those sections are declared product in the
- * generator's residual list), plus the
- * ${coreTypeNames.size} type declaration(s) those signatures need. The full
- * \`NodeService\` **extends** \`CoreNodeService\` and the full \`RpcMethods\`
- * contains \`CoreRpcMethods\`, so every existing consumer is unaffected — the
+ * generator's residual list, each with a reason).
+ *
+ * The two halves are deliberately different sizes:
+ *
+ *   * **\`CoreNodeService\`** — all ${coreMemberNames.length} members: the *type* surface a
+ *     reusable consumer may program against, including methods the host calls
+ *     in-process rather than over the wire (${coreMembersNotExposed.length}: ${coreMembersNotExposed.slice(0, 4).map((n) => `\`${n}\``).join(", ")}${coreMembersNotExposed.length > 4 ? ", …" : ""}).
+ *   * **\`CoreRpcMethods\`** — ${coreWireTotal} names: the *wire* surface, intersected with the
+ *     real \`ProductRpcMethods\` union in \`ws-protocol.ts\`, so
+ *     \`RpcMethods = CoreRpcMethods | ProductRpcMethods\` cannot advertise a
+ *     method that no client can call.
+ *
+ * The full \`NodeService\` **extends** \`CoreNodeService\` and \`RpcMethods\`
+ * **contains** \`CoreRpcMethods\`, so every existing consumer is unaffected — the
  * split is additive in their direction (plan §10 E9 (a)).
  *
  * ## Why the membership looks declared rather than derived
@@ -720,10 +792,10 @@ for (const name of [...coreTypeNames].sort((a, b) => allLocalTypes.get(a).order 
 
 const unionLines = [];
 for (const name of coreSections) {
+  const wire = coreWireNames(name);
+  if (!wire.length) continue; // every member in this section is in-process only
   unionLines.push(`  // ${name}`);
-  for (const member of coreMembersOf(name)) {
-    if (member.name) unionLines.push(`  | "${member.name}"`);
-  }
+  for (const n of wire) unionLines.push(`  | "${n}"`);
 }
 
 const interfaceLines = [];
