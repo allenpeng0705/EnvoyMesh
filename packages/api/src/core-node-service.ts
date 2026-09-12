@@ -30,9 +30,10 @@
  *
  * E9 asked for membership "generated from the Axis-1 manifest". Measured, the
  * manifest's module-shaped `conceptPattern` cannot decide it: applied to
- * signatures it calls 362 of 435 methods clean — `sendCallInvite`,
- * `listChatHistory` and every commerce method included — while the entire
- * Voice/Video Calls section is signal-clean yet plainly product.
+ * signatures it calls **359 of 441** members clean —
+ * `sendCallInvite`, `listChatHistory` and every commerce method included —
+ * while whole sections (Voice/Video Calls, Push Notifications) are signal-clean
+ * yet plainly product. This figure is computed on every run, not quoted.
  *
  * So the signals **veto** and a declared section disposition decides
  * (`SECTIONS` in the generator, 21 entries, reviewable as a diff — the same

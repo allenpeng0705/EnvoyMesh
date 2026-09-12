@@ -591,6 +591,19 @@ for (const name of sectionOrder) {
   evidence.push({ section: name, disposition: d, members: members.length, excluded, clean, failures });
 }
 
+// The figures the generated header quotes are measured here, not remembered: a
+// number frozen into a generated file goes stale the moment the interface moves,
+// and the whole point of the paragraph is that the signals are insufficient.
+let signalClean = 0;
+let signalTotal = 0;
+for (const map of membersBySection.values()) {
+  for (const m of map.values()) {
+    if (!m.name) continue;
+    signalTotal++;
+    if (!(await screen(m.text, new Set()))) signalClean++;
+  }
+}
+
 if (flag("--evidence")) {
   console.log(`sections: ${sectionOrder.length}`);
   console.log("section".padEnd(56) + "declared".padStart(11) + "members".padStart(9) + "excl".padStart(6) + "clean".padStart(7));
@@ -768,9 +781,10 @@ const header = `/**
  *
  * E9 asked for membership "generated from the Axis-1 manifest". Measured, the
  * manifest's module-shaped \`conceptPattern\` cannot decide it: applied to
- * signatures it calls 362 of 435 methods clean — \`sendCallInvite\`,
- * \`listChatHistory\` and every commerce method included — while the entire
- * Voice/Video Calls section is signal-clean yet plainly product.
+ * signatures it calls **${signalClean} of ${signalTotal}** members clean —
+ * \`sendCallInvite\`, \`listChatHistory\` and every commerce method included —
+ * while whole sections (Voice/Video Calls, Push Notifications) are signal-clean
+ * yet plainly product. This figure is computed on every run, not quoted.
  *
  * So the signals **veto** and a declared section disposition decides
  * (\`SECTIONS\` in the generator, 21 entries, reviewable as a diff — the same

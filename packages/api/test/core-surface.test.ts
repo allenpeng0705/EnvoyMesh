@@ -46,6 +46,8 @@ const evidence = () => {
     coreSections: string[];
     totalMembers: number;
     coreMembers: string[];
+    coreWireMembers: string[];
+    coreMembersNotExposed: string[];
     excludedMembers: string[];
     sections: { section: string; disposition: string; members: number; excluded: number }[];
   };
@@ -53,6 +55,7 @@ const evidence = () => {
 
 const coreText = readFileSync(CORE_FILE, "utf8");
 const nodeServiceText = readFileSync(NODE_SERVICE_FILE, "utf8");
+const productText = readFileSync(path.join(repoRoot, "packages/api/src/ws-protocol.ts"), "utf8");
 const unionNames = (text: string, typeName: string) => {
   const start = text.indexOf(`export type ${typeName} =`);
   const end = text.indexOf("\n\n", start);
@@ -121,11 +124,36 @@ describe("E9 core surface", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("every core wire method is a real RPC method", () => {
+    // The bug this pins: `RpcMethods = CoreRpcMethods | ProductRpcMethods` means a
+    // name in `CoreRpcMethods` that is not in `ProductRpcMethods` *widens* the
+    // wire contract — it advertises a method no client can call. Eight core
+    // members are in-process only (`recordOwnerActivity`, `clearAllUserData`, …),
+    // so the generator intersects the two surfaces instead of conflating them.
+    const e = evidence();
+    const product = new Set(unionNames(productText, "ProductRpcMethods"));
+    const notReal = e.coreWireMembers.filter((n) => !product.has(n));
+    expect(notReal).toEqual([]);
+  });
+
+  it("the type surface and the wire surface are different, and say so", () => {
+    const e = evidence();
+    const union = unionNames(coreText, "CoreRpcMethods");
+    // The generated union is the wire surface, not every member.
+    expect(new Set(e.coreWireMembers)).toEqual(new Set(union));
+    expect(e.coreMembersNotExposed.length).toBeGreaterThan(0);
+    for (const n of e.coreMembersNotExposed) {
+      expect(union).not.toContain(n);
+      expect(e.coreMembers).toContain(n); // still part of CoreNodeService
+    }
+    expect(e.coreWireMembers.length + e.coreMembersNotExposed.length).toBe(e.coreMembers.length);
+  });
+
   it("the core surface is a proper subset of the full one", () => {
     const e = evidence();
     const core = unionNames(coreText, "CoreRpcMethods");
     expect(core.length).toBeGreaterThan(0);
-    expect(core.length).toBe(e.coreMembers.length);
+    expect(core.length).toBe(e.coreWireMembers.length);
     // The full surface is the core union plus the product union; if every member
     // were core, E9 would have changed nothing.
     expect(core.length).toBeLessThan(e.totalMembers);
