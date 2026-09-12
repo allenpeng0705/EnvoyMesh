@@ -21,6 +21,7 @@
  * | {@link ExtAgentCommandDescriptor}, {@link ExtAgentCommandIntercept} | `node-core/mmx-media-slash` (slash descriptors) |
  * | {@link EXT_AGENTS_WITH_PROJECT_PATH}, {@link extAgentUsesProjectPath} | `node-core/home-fs` (which agents take a cwd) |
  * | {@link PreviewHomeFsFileParams}, {@link PreviewHomeFsFileResult}, {@link HomeFsPreviewKind} | `node-core/home-fs` (the folder-preview payloads) |
+ * | {@link ExtAgentDefinition} | `harness/project-path-store` (which agent a stored cwd belongs to) |
  *
  * `protocol` is the right home rather than a new package: it already carries the
  * repo's dep-free domain contracts (`market.ts`, `agent-network.ts`,
@@ -98,4 +99,29 @@ export interface PreviewHomeFsFileResult {
   /** Human-readable error when kind is error/unsupported. */
   error?: string;
   byteLength?: number;
+}
+
+/**
+ * A configured external agent — the persisted shape the home node stores in
+ * `bridge-config.json`, as the harness layer and the settings UI both see it.
+ *
+ * Moved here from `@envoymesh/api` for the same reason as the symbols above:
+ * `harness/project-path-store.ts` needs this *one type*, and importing it from
+ * `api` classified that store — and through it nine other harness modules —
+ * `product-bound`. Nothing about the type is product-specific; it is an agent
+ * id, a name, an adapter, a URL and an optional project folder.
+ */
+export interface ExtAgentDefinition {
+  id: string;
+  name: string;
+  adapter: string;
+  url: string;
+  enabled: boolean;
+  /**
+   * Absolute project folder on the home node (cwd for coding agents /
+   * Hermes / OpenHuman when EnvoyMesh spawns them).
+   * Used by Codex / Claude Code / Cursor / Aider / MiniMax / Hermes / OpenHuman;
+   * ignored by Pi and HomeClaw.
+   */
+  projectPath?: string;
 }

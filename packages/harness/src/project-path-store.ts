@@ -2,8 +2,12 @@
  * In-memory Ext Agent project paths (hydrated from bridge-config extAgents).
  * Backends resolve cwd via {@link getExtAgentProjectPathCwd}.
  */
-import { extAgentUsesProjectPath } from "@envoymesh/api";
-import type { ExtAgentDefinition } from "@envoymesh/api";
+// From `@envoymesh/protocol`, not `@envoymesh/api`: the contract moved there so a
+// reusable package can use it. Importing these two symbols from `api`
+// classified this store — and, through it, nine other harness modules —
+// `product-bound` under E9's third condition.
+import { extAgentUsesProjectPath } from "@envoymesh/protocol";
+import type { ExtAgentDefinition } from "@envoymesh/protocol";
 import { resolveHomeFsDirectory } from "@envoymesh/node-core";
 
 const paths = new Map<string, string>();

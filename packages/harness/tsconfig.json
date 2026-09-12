@@ -8,6 +8,7 @@
   "include": ["src/**/*.ts", "src/**/*.d.ts"],
   "references": [
     { "path": "../api" },
-    { "path": "../node-core" }
+    { "path": "../node-core" },
+    { "path": "../protocol" }
   ]
 }

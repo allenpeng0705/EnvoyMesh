@@ -25,7 +25,11 @@
  * dependency on `@openai/codex` — the binary itself is the daemon.
  */
 
-import { ENVOYMESH_VERSION } from "@envoymesh/api";
+// The constant is declared in `@envoymesh/protocol` (and re-exported by
+// `@envoymesh/api` for its own consumers): importing it from `api` classified
+// this backend `product-bound`, which then tainted `backends.ts` and, through
+// it, `manager.ts` and three supervised backends.
+import { ENVOYMESH_VERSION } from "@envoymesh/protocol";
 import {
   DaemonSupervisor,
 } from "./daemon-supervisor.js";

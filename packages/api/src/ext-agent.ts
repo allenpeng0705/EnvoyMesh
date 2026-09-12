@@ -5,13 +5,14 @@
 
 // Re-exported from `@envoymesh/protocol` so `@envoymesh/api`'s public surface is
 // unchanged (see the note at each declaration site below).
-import type { ExtAgentCommandDescriptor } from "@envoymesh/protocol";
+import type { ExtAgentCommandDescriptor, ExtAgentDefinition } from "@envoymesh/protocol";
 // The other four moved types are re-exported below but not used in this file,
 // so they are deliberately absent from the import above (an unused `import type`
 // survives no lint here and only invites the question of whether it is needed).
 export type {
   ExtAgentCommandIntercept,
   ExtAgentCommandDescriptor,
+  ExtAgentDefinition,
   HomeFsPreviewKind,
   PreviewHomeFsFileParams,
   PreviewHomeFsFileResult,
@@ -20,21 +21,6 @@ export {
   EXT_AGENTS_WITH_PROJECT_PATH,
   extAgentUsesProjectPath,
 } from "@envoymesh/protocol";
-
-export interface ExtAgentDefinition {
-  id: string;
-  name: string;
-  adapter: string;
-  url: string;
-  enabled: boolean;
-  /**
-   * Absolute project folder on the home node (cwd for coding agents /
-   * Hermes / OpenHuman when EnvoyMesh spawns them).
-   * Used by Codex / Claude Code / Cursor / Aider / MiniMax / Hermes / OpenHuman;
-   * ignored by Pi and HomeClaw.
-   */
-  projectPath?: string;
-}
 
 /** Built-in presets shipped with EnvoyMesh. */
 export const DEFAULT_EXT_AGENTS: ExtAgentDefinition[] = [

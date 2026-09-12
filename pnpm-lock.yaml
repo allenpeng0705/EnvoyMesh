@@ -311,6 +311,9 @@ importers:
       '@envoymesh/node-core':
         specifier: 0.5.0
         version: link:../node-core
+      '@envoymesh/protocol':
+        specifier: link:../protocol
+        version: link:../protocol
 
   packages/host-connect:
     dependencies:

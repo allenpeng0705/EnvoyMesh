@@ -4550,3 +4550,6 @@ export type {
 // lives here rather than in `@envoymesh/api` so `@envoymesh/node-core` can use
 // it without becoming product-bound — see `ext-agent-contract.ts`.
 export * from "./ext-agent-contract.js";
+// The repo version constant lives with the other core contracts so reusable
+// packages can read it without importing `@envoymesh/api` (see `version.js`).
+export * from "./version.js";
