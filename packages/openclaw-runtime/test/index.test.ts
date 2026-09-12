@@ -8,10 +8,22 @@ import { ENVOY_TOOL_CATALOG, buildOpenClawSystemPrompt, buildAgentConfig } from 
 // =========================================================================
 // OpenClawRuntime — lifecycle
 // =========================================================================
+// =========================================================================
+// NOTE (2026-08): these two `isReady()` expectations used to assert `false`,
+// which is the **legacy stdio** contract — `this.ready && this.process !== null`
+// — not the current one. They passed anyway, for two months, because this file
+// imports `../src/index.js` and a **committed compiled `src/index.js`** sat next
+// to the source: Vite resolved the artifact, not `index.ts`. The stale output
+// was deleted (it is exactly what `scripts/check-workspace-wiring.mjs` R5 now
+// forbids), and the assertions below were corrected to the behaviour the source
+// actually documents in `isReady()`: bridge mode is HTTP-based, so there is no
+// child process to be ready, and `ask()` is a compatibility shell that always
+// throws — real OpenClaw traffic goes through the bridge.
+// =========================================================================
 describe("OpenClawRuntime", () => {
   it("creates a runtime instance", () => {
     const runtime = new OpenClawRuntime();
-    expect(runtime.isReady()).toBe(false);
+    expect(runtime.isReady()).toBe(true);
   });
 
   it("start returns false when OpenClaw not found", async () => {
@@ -21,10 +33,11 @@ describe("OpenClawRuntime", () => {
     });
     const started = await runtime.start();
     expect(started).toBe(false);
-    expect(runtime.isReady()).toBe(false);
+    // Readiness does not depend on the child process in bridge mode.
+    expect(runtime.isReady()).toBe(true);
   });
 
-  it("ask throws when runtime is not ready", async () => {
+  it("ask throws — the direct-HTTP path is a bridge-fallback shell", async () => {
     const runtime = new OpenClawRuntime();
     await expect(runtime.ask("hello")).rejects.toThrow("not available");
   });

@@ -18,7 +18,7 @@ describe("service-ports", () => {
   });
 
   async function loadPorts() {
-    return import("../src/service-ports.js");
+    return import("@envoymesh/node-core");
   }
 
   it("uses default ports when no env is set", async () => {

@@ -4,7 +4,7 @@ import {
   commonExtAgentBinDirs,
   condaExtAgentBinDirs,
   resolveExtAgentBinary,
-} from "../src/ext-agent-adapter/resolve-ext-agent-binary.js";
+} from "@envoymesh/harness";
 
 describe("resolveExtAgentBinary", () => {
   it("finds binaries under ~/.npm-global/bin even when PATH omits it", () => {

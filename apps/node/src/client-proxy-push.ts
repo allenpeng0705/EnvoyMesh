@@ -1,12 +1,25 @@
 import type { NodeServiceImpl } from "./node-service-impl.js";
-import {
-  stampConfigCallerForSession,
-  type RpcCallerContext,
-} from "./rpc-caller-context.js";
+import type { HostSession } from "@envoymesh/host-connect";
+import type { RpcCallerContext } from "./rpc-caller-context.js";
+import { createSocialSessionDelivery } from "./social-session-delivery.js";
 
 /**
  * Forward home-node push events to a single thin-client proxy stream.
- * Mirrors the profile-scoped routing in `ws-server.ts` (one session per stream).
+ *
+ * ## Two transports, one policy
+ *
+ * This path used to hand-roll the per-caller rules: it stamped
+ * `home:config-updated` itself and pushed **`bridge:status` through unmasked** (it
+ * sat in the `broadcastEvents` list below). The WebSocket host masks that
+ * advertisement per session — a family profile without `extAgentEnabled` must
+ * never see `enabled: true`, or EnvoyGo re-shows the Ext Agent chat row — and the
+ * client-proxy is the transport EnvoyGo actually uses for its DHT-direct and
+ * circuit-relay candidates, which the relay dials as
+ * `/envoymesh/client-proxy/0.1.0`.
+ *
+ * So the same `transformForSession` policy object the host takes is used here,
+ * against a session synthesised from this stream's caller. One implementation of
+ * "what may this caller see", applied on both transports.
  */
 export function wireClientProxyPushEvents(
   nodeService: NodeServiceImpl,
@@ -16,6 +29,25 @@ export function wireClientProxyPushEvents(
   const unsubs: Array<() => void> = [];
   const push = (event: string, data: unknown) => {
     void emitEvent(event, data);
+  };
+
+  // The caller, as the host's port sees a session. `scopeKey` carries the profile
+  // id the mask/stamp rules key on; the two transports therefore agree by
+  // construction rather than by two copies of the same condition.
+  const session: HostSession<RpcCallerContext> = {
+    scopeKey: caller.profileId,
+    ownerId: caller.ownerId,
+    isOwnerScope: caller.isOwnerProfile,
+    deviceId: caller.deviceId,
+    caller,
+  };
+  const delivery = createSocialSessionDelivery((s) =>
+    nodeService.mayFamilyProfileUseExtAgent(s.scopeKey, s.isOwnerScope),
+  );
+  const pushTransformed = async (event: string, data: unknown) => {
+    // Fail closed: `createSocialSessionDelivery` answers with the *restricted*
+    // payload when its gate throws, so a store or node failure cannot leak.
+    push(event, await delivery(event, data, session));
   };
 
   if (caller.isOwnerProfile) {
@@ -58,15 +90,13 @@ export function wireClientProxyPushEvents(
   }));
 
   unsubs.push(nodeService.on("home:config-updated", (data) => {
-    const payload = data as unknown as { config?: Record<string, unknown> };
-    const rawConfig = payload?.config;
-    if (rawConfig) {
-      push("home:config-updated", {
-        config: stampConfigCallerForSession({ ...rawConfig }, caller),
-      });
-      return;
-    }
-    push("home:config-updated", data);
+    void pushTransformed("home:config-updated", data);
+  }));
+
+  // Per caller: a capability advertisement whose `enabled` flag is masked for
+  // profiles that have not been granted it (the gap this file used to have).
+  unsubs.push(nodeService.on("bridge:status", (data) => {
+    void pushTransformed("bridge:status", data);
   }));
 
   const broadcastEvents = [
@@ -75,7 +105,6 @@ export function wireClientProxyPushEvents(
     "chat:delivery-failed",
     "bond:established",
     "bond:revoked",
-    "bridge:status",
     "agent:activity",
     "feed:notify",
     "content:engage",

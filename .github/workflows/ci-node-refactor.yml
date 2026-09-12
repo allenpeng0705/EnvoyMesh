@@ -7,6 +7,10 @@ on:
       - "packages/**"
       - "package.json"
       - "package-lock.json"
+      # `scripts/**`: this job runs `scripts/inventory-node-stores.mjs --check`,
+      # whose grouping table lives in that script — without this filter, editing
+      # the table would not re-run the gate that validates it.
+      - "scripts/**"
       - ".github/workflows/ci-node-refactor.yml"
   workflow_dispatch:
 
@@ -28,6 +32,12 @@ jobs:
       - name: Build node package
         run: npm run node:build
 
+      # The behavioural half of the module-boundary work. The static half
+      # (rules 1, 2, 3, 4, 5) lives in `ci-module-boundary.yml`, mirroring how
+      # `ci-module-size.yml` owns the line-count rule.
+      #
+      # Per docs/envoymesh-refactoring-plan.md E5 this suite is EXTENDED rather
+      # than duplicated: it already existed for exactly this purpose.
       - name: Refactoring regression suite
         run: |
           npx vitest run \
@@ -44,3 +54,20 @@ jobs:
             apps/node/test/node-service-handlers-share-preview.test.ts \
             apps/node/test/node-service-wire-mesh-events.test.ts \
             apps/node/test/chat-attachment-auto-accept.test.ts
+
+      # §6.2 kernel composability probe — asserts the kernel constructs and
+      # serves RPCs with no human profile store and no NodeProfile, and that the
+      # set of profile-coupled RPCs stays at the two that are *about* the human
+      # profile. A growing set is new coupling and fails here.
+      - name: Kernel composability probe (§6.2)
+        run: npx vitest run apps/node/test/kernel-composability-probe.test.ts --testTimeout=180000
+
+      # The probe measures *behavioural* coupling; this measures the *inventory*.
+      # §8.9's kernel split needs to know which stores a host actually needs, and
+      # the answer cannot come from reachability (every accessor lives in
+      # `node-service-impl.ts`, which is product-bound, so it classifies all of
+      # them identically — plan §8.8 Step 6c). The gate is completeness: a new
+      # store must be grouped kernel/product/undecided, and a group for a store
+      # that no longer exists must be removed.
+      - name: Node store inventory is complete (§8.9 brief)
+        run: node scripts/inventory-node-stores.mjs --check

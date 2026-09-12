@@ -73,3 +73,31 @@ describe("createFamilyProfileStore", () => {
     }
   })
 })
+
+describe("a write whose directory was removed is not an unhandled rejection", () => {
+  it("resolves instead of rejecting when the parent directory is gone", async () => {
+    // The failure this guards: the atomic rename loses its `.tmp` file to a
+    // directory removal that happened between the write and the rename (a wiped
+    // profile dir, or a test's teardown finishing first). That rejection used to
+    // surface as an *unhandled* rejection in full-suite runs — Node's default
+    // `--unhandled-rejections=throw` can kill the process — because some callers
+    // are fire-and-forget.
+    const dir = await mkdtemp(join(tmpdir(), "family-store-gone-"))
+    const store = createFamilyProfileStore(dir)
+    await store.ensureOwnerProfile({ name: "Owner" })
+
+    const rejected: unknown[] = []
+    const onUnhandled = (reason: unknown) => rejected.push(reason)
+    process.on("unhandledRejection", onUnhandled)
+    try {
+      await rm(dir, { recursive: true, force: true })
+      // Fire-and-forget on purpose: this is the shape that produced the
+      // unhandled rejection.
+      void store.update({ id: OWNER_FAMILY_PROFILE_ID, name: "Renamed" })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(rejected).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled)
+    }
+  });
+});

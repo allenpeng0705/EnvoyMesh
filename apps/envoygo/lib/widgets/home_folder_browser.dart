@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
-import '../services/node_service_client.dart';
+import '../services/product/node_service_client.dart';
 
 /// Browse and select a folder on the paired home node (owner-only RPCs).
 ///

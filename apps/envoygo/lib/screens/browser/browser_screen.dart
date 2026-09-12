@@ -13,11 +13,11 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart'
     show contactProvider, nodeServiceProvider;
 import '../../providers/node_provider.dart' show nodeProvider;
-import '../../services/content_hash.dart';
-import '../../services/envoy_url.dart';
-import '../../services/library_read_cache.dart';
-import '../../services/library_read_fetch.dart';
-import '../../services/visitor_placeholder.dart';
+import '../../services/product/content_hash.dart';
+import '../../services/product/envoy_url.dart';
+import '../../services/product/library_read_cache.dart';
+import '../../services/product/library_read_fetch.dart';
+import '../../services/product/visitor_placeholder.dart';
 
 /// Matches bare `envoy://…` URLs and markdown `[label](envoy://…)` links.
 final _envoyLinkRe = RegExp(

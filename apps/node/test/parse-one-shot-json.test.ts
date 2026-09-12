@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractContentBlocks,
   extractOneShotAssistantText,
-} from "../src/ext-agent-adapter/parse-one-shot-json.js";
+} from "@envoymesh/harness";
 
 describe("extractOneShotAssistantText", () => {
   describe("Cursor preference (flat-first)", () => {

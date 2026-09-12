@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../navigation/owner_tabs.dart';
+import '../../providers/call_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/content_engage_provider.dart';
 import '../../providers/feed_notify_provider.dart';

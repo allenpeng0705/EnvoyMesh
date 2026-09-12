@@ -3,10 +3,15 @@
  *
  * Desktop Social connects without a session token and is treated as the
  * owner profile. EnvoyGo sessions carry `profileId` from SessionTokenRecord.
+ *
+ * This module is the *policy* half: it names EnvoyMesh's caller concepts (owner
+ * profile, family profile, session token) and decides what each may do. The
+ * scoped slot it stores them in is the product-neutral mechanism in
+ * `@envoymesh/host-connect`'s `caller-context.ts`.
  */
 
-import { AsyncLocalStorage } from "node:async_hooks"
 import { OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api"
+import { createCallerContextStore } from "@envoymesh/host-connect"
 
 export interface RpcCallerContext {
   /** Home owner mesh id (envoy:owner:…). */
@@ -23,15 +28,15 @@ export interface RpcCallerContext {
   deviceId?: string
 }
 
-const storage = new AsyncLocalStorage<RpcCallerContext>()
+const rpcCallerStore = createCallerContextStore<RpcCallerContext>()
 
 /** Run an RPC (or batch of work) under a caller context. */
 export function runWithRpcCaller<T>(caller: RpcCallerContext, fn: () => Promise<T>): Promise<T> {
-  return storage.run(caller, fn)
+  return rpcCallerStore.run(caller, fn)
 }
 
 export function getRpcCaller(): RpcCallerContext | undefined {
-  return storage.getStore()
+  return rpcCallerStore.get()
 }
 
 /** Local unrestricted clients (Social UI) act as the owner profile. */

@@ -10,7 +10,7 @@ import '../models/contact.dart';
 import '../models/web_content.dart';
 import '../providers/contact_provider.dart' show contactProvider, nodeServiceProvider;
 import '../providers/node_provider.dart';
-import '../services/library_read_cache.dart';
+import '../services/product/library_read_cache.dart';
 
 /// WeChat Moments–style stars + comments for Feed/Blog (parity with Social).
 class ContentEngagementBar extends ConsumerStatefulWidget {

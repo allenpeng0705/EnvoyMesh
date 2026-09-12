@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
-import '../../services/node_service_client.dart';
+import '../../services/product/node_service_client.dart';
 import 'eh_split_diff.dart';
 
 typedef EhReviewNotify = void Function(String message, {bool error});

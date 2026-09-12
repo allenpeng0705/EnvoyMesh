@@ -4526,3 +4526,27 @@ export type {
   CreateMarketSearchPayloadInput,
   CreateMarketSearchResultPayloadInput,
 } from "./market.js";
+
+// ============================================
+// JSON-RPC wire types
+// ============================================
+
+// The envelope shared by the node host and its clients. Declared in their own
+// module so a transport can import them without depending on `@envoymesh/api`
+// (E9); `@envoymesh/api/ws-protocol` re-exports them for back-compat.
+export type {
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcError,
+  JsonRpcEvent,
+} from "./json-rpc-wire.js";
+
+// ============================================
+// Ext-agent contract
+// ============================================
+
+// The slice of the ext-agent contract that a shared core needs (command
+// descriptors, the project-path rule, and the home-fs preview payloads). It
+// lives here rather than in `@envoymesh/api` so `@envoymesh/node-core` can use
+// it without becoming product-bound — see `ext-agent-contract.ts`.
+export * from "./ext-agent-contract.js";

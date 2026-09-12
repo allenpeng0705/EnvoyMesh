@@ -66,7 +66,7 @@ export function resolveEnvoyLocalEmbedModelId(
   return DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID;
 }
 
-/** Canonical bases — match `apps/node/src/service-ports.ts` (before offset). */
+/** Canonical bases — match `packages/node-core/src/service-ports.ts` (before offset). */
 export const ENVOY_LOCAL_CHAT_PORT_BASE = 18790;
 export const ENVOY_LOCAL_EMBED_PORT_BASE = 18791;
 

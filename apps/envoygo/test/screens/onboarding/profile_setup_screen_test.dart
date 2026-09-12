@@ -1,4 +1,5 @@
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'package:envoygo/l10n/app_localizations.dart';
 import 'package:envoygo/providers/social_context_provider.dart';
 import 'package:envoygo/screens/onboarding/profile_setup_screen.dart';

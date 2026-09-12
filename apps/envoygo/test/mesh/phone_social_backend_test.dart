@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

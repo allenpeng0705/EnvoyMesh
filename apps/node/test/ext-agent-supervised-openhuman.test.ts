@@ -19,13 +19,13 @@ import { EventEmitter } from "node:events";
 import {
   OpenHumanSupervisedBackend,
   createOpenHumanSupervisedBackend,
-  _test,
-} from "../src/ext-agent-adapter/supervised-openhuman-backend.js";
+  _openHumanTest,
+} from "@envoymesh/harness";
 import {
   InstallMissingError,
-} from "../src/ext-agent-adapter/daemon-supervisor.js";
-import type { ExtAgentBackend } from "../src/ext-agent-adapter/types.js";
-import type { DaemonSupervisor } from "../src/ext-agent-adapter/daemon-supervisor.js";
+} from "@envoymesh/harness";
+import type { ExtAgentBackend } from "@envoymesh/harness";
+import type { DaemonSupervisor } from "@envoymesh/harness";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -297,7 +297,7 @@ describe("OpenHumanSupervisedBackend (Phase 55E) — healthcheck probe", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("{}", { status: 200 }));
-    const ok = await _test.healthcheckOpenHuman(new AbortController().signal);
+    const ok = await _openHumanTest.healthcheckOpenHuman(new AbortController().signal);
     expect(ok).toBe(true);
     fetchSpy.mockRestore();
   });
@@ -306,7 +306,7 @@ describe("OpenHumanSupervisedBackend (Phase 55E) — healthcheck probe", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("{}", { status: 500 }));
-    const ok = await _test.healthcheckOpenHuman(new AbortController().signal);
+    const ok = await _openHumanTest.healthcheckOpenHuman(new AbortController().signal);
     expect(ok).toBe(false);
     fetchSpy.mockRestore();
   });
@@ -315,7 +315,7 @@ describe("OpenHumanSupervisedBackend (Phase 55E) — healthcheck probe", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockRejectedValue(new Error("ECONNREFUSED"));
-    const ok = await _test.healthcheckOpenHuman(new AbortController().signal);
+    const ok = await _openHumanTest.healthcheckOpenHuman(new AbortController().signal);
     expect(ok).toBe(false);
     fetchSpy.mockRestore();
   });

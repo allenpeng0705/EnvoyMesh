@@ -9,7 +9,7 @@ import '../../chain_step_control.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chain_active.dart';
 import '../../providers/node_provider.dart';
-import '../../services/node_service_client.dart';
+import '../../services/product/node_service_client.dart';
 import '../../utils/chain_localization.dart';
 
 class ActiveChainDetailScreen extends ConsumerStatefulWidget {

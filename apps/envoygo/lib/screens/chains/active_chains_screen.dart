@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chain_active.dart';
 import '../../providers/node_provider.dart';
-import '../../services/node_service_client.dart';
+import '../../services/product/node_service_client.dart';
 import 'active_chain_detail_screen.dart';
 import 'start_chain_screen.dart';
 

@@ -1,4 +1,4 @@
-import 'package:envoygo/services/visitor_placeholder.dart';
+import 'package:envoygo/services/product/visitor_placeholder.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -12,7 +12,7 @@ import '../../providers/locale_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../services/feature_flags.dart';
 import '../../services/locale_preferences.dart';
-import '../../services/push_preferences.dart';
+import '../../services/product/push_preferences.dart';
 import '../../utils/localized_labels.dart';
 import '../../widgets/ai_engine_section.dart';
 import '../../widgets/connection_indicator.dart';

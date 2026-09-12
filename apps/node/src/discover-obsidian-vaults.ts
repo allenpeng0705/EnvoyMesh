@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { resolveHomeFsDirectory } from "./home-fs.js";
+import { resolveHomeFsDirectory } from "@envoymesh/node-core";
 
 export interface DiscoverObsidianVaultsResult {
   paths: string[];

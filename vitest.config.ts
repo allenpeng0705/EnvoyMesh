@@ -43,6 +43,12 @@ export default defineConfig({
       "@envoymesh/rag/embedding-resolver": resolve(rootDir, "packages/rag/src/embedding-resolver.ts"),
       "@envoymesh/rag": resolve(rootDir, "packages/rag/src/index.ts"),
       "@envoymesh/kb-obsidian": resolve(rootDir, "packages/kb-obsidian/src/index.ts"),
+      "@envoymesh/node-core": resolve(rootDir, "packages/node-core/src/index.ts"),
+      "@envoymesh/host-connect": resolve(rootDir, "packages/host-connect/src/index.ts"),
+      "@envoymesh/openclaw-runtime": resolve(rootDir, "packages/openclaw-runtime/src/index.ts"),
+      // Subpath exports must precede the package root alias (prefix match).
+      "@envoymesh/harness/pi-runtime": resolve(rootDir, "packages/harness/src/pi-runtime.ts"),
+      "@envoymesh/harness": resolve(rootDir, "packages/harness/src/index.ts"),
       "@envoymesh/envoy-harness": resolve(
         rootDir,
         "../envoy-harness/packages/envoy-harness/src/index.ts",

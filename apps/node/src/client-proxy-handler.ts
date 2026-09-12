@@ -7,7 +7,7 @@ import {
   rpcHomeTerminalWsOpen,
   rpcHomeTerminalWsSend,
 } from "./home-terminal-ws.js";
-import { TERMINAL_WS_PORT } from "./service-ports.js";
+import { TERMINAL_WS_PORT } from "@envoymesh/node-core";
 import {
   anonymousPairingCaller,
   localOwnerCaller,
@@ -16,7 +16,7 @@ import {
   type RpcCallerContext,
 } from "./rpc-caller-context.js";
 import { wireClientProxyPushEvents } from "./client-proxy-push.js";
-import { rpcErrorCode } from "./rpc-error-code.js";
+import { rpcErrorCode } from "@envoymesh/host-connect";
 
 /**
  * Device-scoped registry of live client-proxy (relay) streams, so revocation

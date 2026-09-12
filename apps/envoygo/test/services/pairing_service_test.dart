@@ -1,4 +1,4 @@
-import 'package:envoygo/services/pairing_service.dart';
+import 'package:envoygo/services/product/pairing_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

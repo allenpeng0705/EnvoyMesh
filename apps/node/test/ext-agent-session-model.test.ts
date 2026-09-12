@@ -2,14 +2,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   parseOpenAiModelsResponse,
   _resetExtAgentModelListCacheForTests,
-} from "../src/ext-agent-adapter/model-list.js";
+} from "@envoymesh/harness";
 import {
   getExtAgentSessionModel,
   setExtAgentSessionModel,
   supportsExtAgentSessionModel,
   _resetExtAgentSessionModelsForTests,
-} from "../src/ext-agent-adapter/session-model-store.js";
-import { buildExtAgentCommandCatalog } from "../src/ext-agent-adapter/command-catalog.js";
+} from "@envoymesh/harness";
+import { buildExtAgentCommandCatalog } from "@envoymesh/harness";
 
 afterEach(() => {
   _resetExtAgentModelListCacheForTests();

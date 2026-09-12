@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
+import 'connection/phone_mesh_runtime.dart';
 import 'knowledge/knowledge_nav.dart';
 import 'l10n/app_localizations.dart';
 import 'models/chat_thread.dart';
@@ -11,14 +12,14 @@ import 'navigation/owner_tabs.dart';
 import 'providers/chat_provider.dart';
 import 'providers/content_engage_provider.dart';
 import 'providers/locale_provider.dart';
+import 'providers/home_product_sync.dart';
 import 'providers/node_provider.dart';
 import 'services/feature_flags.dart';
-import 'providers/social_context_provider.dart';
 import 'screens/browser/browser_screen.dart';
 import 'screens/chat/chat_detail_screen.dart';
 import 'screens/inbox/inbox_screen.dart';
 import 'services/locale_preferences.dart';
-import 'services/push_notification_service.dart';
+import 'services/product/push_notification_service.dart';
 import 'utils/localized_labels.dart';
 
 void main() async {
@@ -72,6 +73,11 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Install the product-plane hooks for the home connection (Workstream A5
+    // dependency inversion). The connection layer must not import the product
+    // layer, so the product layer registers itself here — before
+    // loadPairedNodes() can auto-connect and dispatch connection hooks.
+    ref.read(homeProductSyncProvider);
     // Load paired nodes on app start.
     Future.microtask(() async {
       try {

@@ -1,4 +1,5 @@
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'package:envoygo/mesh/phone_social_local_db.dart';
 import 'package:envoygo/storage/local_database.dart';
 import 'package:flutter_test/flutter_test.dart';

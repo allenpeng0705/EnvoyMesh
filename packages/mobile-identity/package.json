@@ -11,5 +11,8 @@
     "@envoymesh/protocol": "0.5.0",
     "@noble/curves": "^1.9.0",
     "@noble/hashes": "^1.8.0"
+  },
+  "devDependencies": {
+    "@envoymesh/identity": "0.5.0"
   }
 }

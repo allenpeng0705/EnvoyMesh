@@ -9,7 +9,7 @@ import {
   DEFAULT_BRIDGE_CONFIG,
   normalizeBridgeExtAgents,
 } from "./config.js";
-import { resolveHomeFsDirectory } from "../home-fs.js";
+import { resolveHomeFsDirectory } from "@envoymesh/node-core";
 
 export interface ExtAgentSettingsPatch {
   activeExtAgentId?: string;

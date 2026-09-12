@@ -4,7 +4,7 @@
 // handleNotificationTap + onIncomingCall stream (the post-CallKit-removal
 // flow for incoming-call pushes).
 
-import 'package:envoygo/services/push_notification_service.dart';
+import 'package:envoygo/services/product/push_notification_service.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 

@@ -7,10 +7,10 @@ import '../../models/web_content.dart';
 import '../../providers/contact_provider.dart'
     show contactProvider, nodeServiceProvider;
 import '../../providers/node_provider.dart';
-import '../../services/envoy_url.dart';
-import '../../services/parse_public_blog_index.dart';
-import '../../services/peer_blog_limits.dart';
-import '../../services/web_content_markdown.dart';
+import '../../services/product/envoy_url.dart';
+import '../../services/product/parse_public_blog_index.dart';
+import '../../services/product/peer_blog_limits.dart';
+import '../../services/product/web_content_markdown.dart';
 import '../../utils/moments_time.dart';
 import '../../widgets/content_engagement_bar.dart';
 import '../../widgets/feed_media_grid.dart';

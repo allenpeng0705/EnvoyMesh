@@ -138,9 +138,9 @@ describe("ensurePiTerminalSession", () => {
     } as unknown as TerminalManager;
 
     vi.resetModules();
-    vi.doMock("../src/pi-runtime.js", async () => {
-      const actual = await vi.importActual<typeof import("../src/pi-runtime.js")>(
-        "../src/pi-runtime.js",
+    vi.doMock("@envoymesh/harness/pi-runtime", async () => {
+      const actual = await vi.importActual<typeof import("@envoymesh/harness/pi-runtime")>(
+        "@envoymesh/harness/pi-runtime",
       );
       return {
         ...actual,
@@ -168,7 +168,7 @@ describe("ensurePiTerminalSession", () => {
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.code).toBe("no_sidecar");
     expect(create).not.toHaveBeenCalled();
-    vi.doUnmock("../src/pi-runtime.js");
+    vi.doUnmock("@envoymesh/harness/pi-runtime");
     vi.resetModules();
   });
 
@@ -183,9 +183,9 @@ describe("ensurePiTerminalSession", () => {
     } as unknown as TerminalManager;
 
     vi.resetModules();
-    vi.doMock("../src/pi-runtime.js", async () => {
-      const actual = await vi.importActual<typeof import("../src/pi-runtime.js")>(
-        "../src/pi-runtime.js",
+    vi.doMock("@envoymesh/harness/pi-runtime", async () => {
+      const actual = await vi.importActual<typeof import("@envoymesh/harness/pi-runtime")>(
+        "@envoymesh/harness/pi-runtime",
       );
       return {
         ...actual,
@@ -214,7 +214,7 @@ describe("ensurePiTerminalSession", () => {
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.code).toBe("no_tools");
     expect(create).not.toHaveBeenCalled();
-    vi.doUnmock("../src/pi-runtime.js");
+    vi.doUnmock("@envoymesh/harness/pi-runtime");
     vi.resetModules();
   });
 
@@ -240,9 +240,9 @@ describe("ensurePiTerminalSession", () => {
     } as unknown as TerminalManager;
 
     vi.resetModules();
-    vi.doMock("../src/pi-runtime.js", async () => {
-      const actual = await vi.importActual<typeof import("../src/pi-runtime.js")>(
-        "../src/pi-runtime.js",
+    vi.doMock("@envoymesh/harness/pi-runtime", async () => {
+      const actual = await vi.importActual<typeof import("@envoymesh/harness/pi-runtime")>(
+        "@envoymesh/harness/pi-runtime",
       );
       return {
         ...actual,
@@ -268,7 +268,7 @@ describe("ensurePiTerminalSession", () => {
     // buildPiSpawnConfig null → no_model before close; re-order expectation:
     // with mock mode, spawn config fails before close. Use a real provider map.
     expect(out.ok).toBe(false);
-    vi.doUnmock("../src/pi-runtime.js");
+    vi.doUnmock("@envoymesh/harness/pi-runtime");
     vi.resetModules();
   });
 
@@ -295,9 +295,9 @@ describe("ensurePiTerminalSession", () => {
     } as unknown as TerminalManager;
 
     vi.resetModules();
-    vi.doMock("../src/pi-runtime.js", async () => {
-      const actual = await vi.importActual<typeof import("../src/pi-runtime.js")>(
-        "../src/pi-runtime.js",
+    vi.doMock("@envoymesh/harness/pi-runtime", async () => {
+      const actual = await vi.importActual<typeof import("@envoymesh/harness/pi-runtime")>(
+        "@envoymesh/harness/pi-runtime",
       );
       return {
         ...actual,
@@ -344,7 +344,7 @@ describe("ensurePiTerminalSession", () => {
     expect(close).toHaveBeenCalledWith({ sessionId: "pi-old" });
     expect(out.ok).toBe(true);
     expect(create).toHaveBeenCalled();
-    vi.doUnmock("../src/pi-runtime.js");
+    vi.doUnmock("@envoymesh/harness/pi-runtime");
     vi.resetModules();
   });
   it("returns pi_limit_reached when already at max distinct projects", async () => {
@@ -369,9 +369,9 @@ describe("ensurePiTerminalSession", () => {
     } as unknown as TerminalManager;
 
     vi.resetModules();
-    vi.doMock("../src/pi-runtime.js", async () => {
-      const actual = await vi.importActual<typeof import("../src/pi-runtime.js")>(
-        "../src/pi-runtime.js",
+    vi.doMock("@envoymesh/harness/pi-runtime", async () => {
+      const actual = await vi.importActual<typeof import("@envoymesh/harness/pi-runtime")>(
+        "@envoymesh/harness/pi-runtime",
       );
       return {
         ...actual,
@@ -407,7 +407,7 @@ describe("ensurePiTerminalSession", () => {
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.code).toBe("pi_limit_reached");
     expect(create).not.toHaveBeenCalled();
-    vi.doUnmock("../src/pi-runtime.js");
+    vi.doUnmock("@envoymesh/harness/pi-runtime");
     vi.resetModules();
   });
 });

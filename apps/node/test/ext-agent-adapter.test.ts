@@ -12,7 +12,7 @@ import {
   EXT_AGENT_SIDECAR_KINDS,
   createBackend,
   setPiExtAgentAsk,
-} from "../src/ext-agent-adapter/index.js";
+} from "@envoymesh/harness";
 
 describe("ext-agent-adapter backends", () => {
   it("parses OpenAI-style Hermes content", () => {
@@ -656,7 +656,7 @@ describe("ext-agent HTTP sidecar", () => {
   it("createPiBackend uses registered ask", async () => {
     setPiExtAgentAsk(async (text) => `echo:${text}`);
     try {
-      const { createPiBackend } = await import("../src/ext-agent-adapter/index.js");
+      const { createPiBackend } = await import("@envoymesh/harness");
       const backend = createPiBackend();
       expect(backend.kind).toBe("pi");
       expect(await backend.ask("hi", "sess")).toBe("echo:hi");

@@ -1,4 +1,4 @@
-import 'package:envoygo/services/envoy_url.dart';
+import 'package:envoygo/services/product/envoy_url.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

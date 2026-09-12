@@ -22,7 +22,12 @@
       "@envoymesh/ipfs-helia/browser": ["./packages/ipfs-helia/src/browser.ts"],
       "@envoymesh/mobile-identity": ["./packages/mobile-identity/src/index.ts"],
       "@envoymesh/rag": ["./packages/rag/src/index.ts"],
-    "@envoymesh/kb-obsidian": ["./packages/kb-obsidian/src/index.ts"]
+    "@envoymesh/kb-obsidian": ["./packages/kb-obsidian/src/index.ts"],
+    "@envoymesh/node-core": ["./packages/node-core/src/index.ts"],
+    "@envoymesh/host-connect": ["./packages/host-connect/src/index.ts"],
+    "@envoymesh/openclaw-runtime": ["./packages/openclaw-runtime/src/index.ts"],
+    "@envoymesh/harness/pi-runtime": ["./packages/harness/src/pi-runtime.ts"],
+    "@envoymesh/harness": ["./packages/harness/src/index.ts"]
     },
     "strict": true,
     "declaration": true,

@@ -8,7 +8,7 @@ import {
   mmxOutputDir,
   plannedOutputPath,
 } from "../src/mmx-media.js";
-import { buildMmxMediaSlashCommands } from "../src/mmx-media-slash.js";
+import { buildMmxMediaSlashCommands } from "@envoymesh/node-core";
 
 describe("mmx-media", () => {
   it("writes under profileDir/mmx-output", () => {

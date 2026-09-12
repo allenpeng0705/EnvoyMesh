@@ -1,5 +1,5 @@
 import 'package:envoygo/knowledge/local_file_display.dart';
-import 'package:envoygo/services/chat_voice_note.dart';
+import 'package:envoygo/services/product/chat_voice_note.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

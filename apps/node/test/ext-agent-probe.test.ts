@@ -4,7 +4,7 @@ import {
   probeExtAgentReachability,
   classifyExtAgentInstallState,
   defaultBinaryOnPath,
-} from "../src/ext-agent-adapter/probe.js"
+} from "@envoymesh/harness"
 
 describe("extAgentStatusUrlFromMessageUrl", () => {
   it("maps /message to /status", () => {
@@ -20,7 +20,7 @@ describe("probeExtAgentReachability", () => {
   })
 
   it("marks Pi as built-in and reachable when ask is wired and sidecar is discoverable", async () => {
-    const { setPiExtAgentAsk } = await import("../src/ext-agent-adapter/backends.js")
+    const { setPiExtAgentAsk } = await import("@envoymesh/harness")
     setPiExtAgentAsk(async () => "ok")
     const r = await probeExtAgentReachability({
       agentId: "pi",
@@ -37,8 +37,8 @@ describe("probeExtAgentReachability", () => {
   })
 
   it("marks Pi unreachable when ask is wired but no sidecar CLI exists", async () => {
-    const { setPiExtAgentAsk } = await import("../src/ext-agent-adapter/backends.js")
-    const piRuntime = await import("../src/pi-runtime.js")
+    const { setPiExtAgentAsk } = await import("@envoymesh/harness")
+    const piRuntime = await import("@envoymesh/harness/pi-runtime")
     const spy = vi.spyOn(piRuntime, "discoverPiCli").mockReturnValue(null)
     setPiExtAgentAsk(async () => "ok")
     const r = await probeExtAgentReachability({
@@ -83,7 +83,7 @@ describe("probeExtAgentReachability", () => {
   })
 
   it("Pi is always installState: 'installed' (built-in, no installGuide)", async () => {
-    const { setPiExtAgentAsk } = await import("../src/ext-agent-adapter/backends.js")
+    const { setPiExtAgentAsk } = await import("@envoymesh/harness")
     setPiExtAgentAsk(async () => "ok")
     const r = await probeExtAgentReachability({
       agentId: "pi",

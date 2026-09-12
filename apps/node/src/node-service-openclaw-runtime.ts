@@ -34,7 +34,7 @@ import {
   loadBridgeConfigSkillApiKeys,
   loadBridgeConfigWebSearchEnabled,
 } from "./node-service-clawhub.js";
-import { BRIDGE_HTTP_PORT, OPENCLAW_GATEWAY_PORT, openClawGatewayWebhookUrl } from "./service-ports.js";
+import { BRIDGE_HTTP_PORT, OPENCLAW_GATEWAY_PORT, openClawGatewayWebhookUrl } from "@envoymesh/node-core";
 import { buildEnvoyMeshRetrievedContext } from "./openclaw-turn-context.js";
 import {
   buildOpenClawGatewayAgentSection,

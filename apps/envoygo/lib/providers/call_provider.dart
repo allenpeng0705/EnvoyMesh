@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../connection/node_connection_provider.dart';
 import '../models/call_event.dart';
 import '../services/audio_session_helper.dart';
-import '../services/node_service_client.dart';
+import '../services/product/node_service_client.dart';
+import '../services/product/push_notification_service.dart';
 import '../webrtc_call_transport.dart';
 
 /// Call state for Phase 38 voice calls in EnvoyGo.
@@ -760,3 +763,74 @@ class CallProvider extends ChangeNotifier {
     super.dispose();
   }
 }
+
+// --------------------------------------------------------------------------
+// Phase 38 — Voice/Video Call Provider
+// --------------------------------------------------------------------------
+
+final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
+  // Rebuild only when the paired home identity changes (pair / unpair /
+  // switch node) — NOT on every connectionState flap. Transient disconnects
+  // (background pause, brief offline) must not dispose WebRTC mid-call.
+  final nodeId = ref.watch(nodeProvider.select((s) => s.activeNode?.id));
+  if (nodeId == null) {
+    return CallProvider.noop();
+  }
+
+  final initialClient = ref.read(nodeProvider.notifier).client;
+  final provider = initialClient != null
+      ? CallProvider(NodeServiceClient(initialClient))
+      : CallProvider.noop();
+
+  void tryBind() {
+    final client = ref.read(nodeProvider.notifier).client;
+    if (client == null) return;
+    provider.bind(NodeServiceClient(client));
+  }
+
+  tryBind();
+
+  ref.onDispose(() => provider.dispose());
+
+  // Phase 31I (post-CallKit-removal) — incoming-call pushes surface
+  // to the CallProvider via the alert push service's onIncomingCall
+  // stream. The home node dispatches a standard APNs alert push with
+  // `aps.content-available: 1` (no PushKit / no VoIP push), which
+  // wakes the app in the background. The iOS AppDelegate then routes
+  // the payload to Dart via the `envoygo/alert_push` MethodChannel.
+  //
+  //   onIncomingCall → CallProvider.onIncomingCallFromPush
+  //                    (the call:incoming payload the push woke)
+  //
+  // Note: no system CallKit UI anymore — the in-app call screen has
+  // its own accept/decline buttons. The user taps "Accept" in the
+  // Flutter UI to drive the WebRTC answer flow.
+  final push = PushNotificationService();
+  push.initialize();
+  void applyIncoming(Map<String, dynamic> payload) {
+    provider.onIncomingCallFromPush(
+      callId: payload['callId'] as String? ?? '',
+      callerOwnerId: payload['callerOwnerId'] as String? ?? '',
+      callerName: payload['callerName'] as String?,
+    );
+  }
+
+  // Replay a cold-start call that arrived before this provider subscribed.
+  final pendingIncoming = push.consumePendingIncomingCall();
+  if (pendingIncoming != null) {
+    applyIncoming(pendingIncoming);
+  }
+  final incomingSub = push.onIncomingCall.listen(applyIncoming);
+  ref.listen(nodeProvider.select((s) => s.connectionState),
+    (_, next) {
+      if (next == NodeConnectionState.connected) {
+        tryBind();
+      }
+      // On disconnect: keep this CallProvider (and any active transport).
+  });
+
+  ref.onDispose(() {
+    incomingSub.cancel();
+  });
+  return provider;
+});

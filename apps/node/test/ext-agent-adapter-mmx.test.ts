@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MmxBackend, createMmxBackend } from "../src/ext-agent-adapter/mmx-backend.js";
-import { InstallMissingError } from "../src/ext-agent-adapter/daemon-supervisor.js";
+import { MmxBackend, createMmxBackend } from "@envoymesh/harness";
+import { InstallMissingError } from "@envoymesh/harness";
 
 // ---------------------------------------------------------------------------
 // Fake "mmx" scripts

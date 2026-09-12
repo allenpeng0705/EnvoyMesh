@@ -1,6 +1,7 @@
 /// Shared Social backend surface for home thin-client adapters and phone mesh.
 library;
 
+import 'mesh_peer_hit.dart';
 import 'models.dart';
 
 /// Context id for the phone-local persona (SQLite `node_id` namespace).

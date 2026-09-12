@@ -20,7 +20,7 @@ import {
   PiRuntime,
   resolveMiniMaxPiProvider,
   withPiToolPath,
-} from "../src/pi-runtime.js"
+} from "@envoymesh/harness/pi-runtime"
 import type { ModelProviderConfig, PiModelOverride } from "@envoymesh/api"
 import { existsSync, readFileSync } from "node:fs"
 import { delimiter, join } from "node:path"

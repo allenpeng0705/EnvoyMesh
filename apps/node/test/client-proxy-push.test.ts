@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { wireClientProxyPushEvents } from "../src/client-proxy-push.js";
 
 describe("wireClientProxyPushEvents", () => {
-  it("forwards home:config-updated with stamped caller profile", () => {
+  it("forwards home:config-updated with stamped caller profile", async () => {
+    // Asynchronous now, because the per-caller policy is the shared
+    // `transformForSession` object (its capability branch awaits a store read).
+    // The push is still fire-and-forget; only the microtask it lands on changed.
     const emitted: Array<{ event: string; data: unknown }> = [];
     const nodeService = {
       on: vi.fn((_event: string, handler: (data: unknown) => void) => {
@@ -26,6 +29,7 @@ describe("wireClientProxyPushEvents", () => {
       },
     );
 
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(emitted).toHaveLength(1);
     expect(emitted[0]?.event).toBe("home:config-updated");
     const config = (emitted[0]?.data as { config?: Record<string, unknown> })?.config;
@@ -34,6 +38,59 @@ describe("wireClientProxyPushEvents", () => {
     expect(config?.aiBots).toEqual([]);
 
     unwire();
+  });
+
+  it("masks bridge:status for a profile that has not been granted the Ext Agent", async () => {
+    // The gap this file had: `bridge:status` was in `broadcastEvents`, so the
+    // client-proxy transport — the one EnvoyGo uses for its DHT and circuit-relay
+    // candidates — delivered `enabled: true` to a family profile the WebSocket
+    // host would have masked. Same policy object, so the two cannot disagree.
+    const emitted: Array<{ event: string; data: unknown }> = [];
+    const nodeService = {
+      on: vi.fn((event: string, handler: (data: unknown) => void) => {
+        if (event === "bridge:status") handler({ enabled: true, detail: "ok" });
+        return () => {};
+      }),
+      mayFamilyProfileUseExtAgent: vi.fn(async (profileId: string) => profileId === "dad"),
+    } as unknown as import("../src/node-service-impl.js").NodeServiceImpl;
+
+    const run = async (profileId: string, isOwnerProfile: boolean) => {
+      emitted.length = 0;
+      wireClientProxyPushEvents(nodeService, { profileId, isOwnerProfile }, (event, data) => {
+        emitted.push({ event, data });
+      })();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return (emitted.find((e) => e.event === "bridge:status")?.data ?? null) as {
+        enabled?: boolean;
+      } | null;
+    };
+
+    expect((await run("mom", false))?.enabled).toBe(false); // not granted → masked
+    expect((await run("dad", false))?.enabled).toBe(true); // granted
+    expect((await run("owner", true))?.enabled).toBe(true); // owner
+    // The gate is asked per caller, not globally.
+    expect(nodeService.mayFamilyProfileUseExtAgent).toHaveBeenCalled();
+  });
+
+  it("masks bridge:status when the gate throws (fail closed)", async () => {
+    const emitted: Array<{ event: string; data: unknown }> = [];
+    const nodeService = {
+      on: vi.fn((event: string, handler: (data: unknown) => void) => {
+        if (event === "bridge:status") handler({ enabled: true });
+        return () => {};
+      }),
+      mayFamilyProfileUseExtAgent: vi.fn(async () => {
+        throw new Error("family store unavailable");
+      }),
+    } as unknown as import("../src/node-service-impl.js").NodeServiceImpl;
+
+    wireClientProxyPushEvents(nodeService, { profileId: "mom", isOwnerProfile: false }, (event, data) => {
+      emitted.push({ event, data });
+    })();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect((emitted.find((e) => e.event === "bridge:status")?.data as { enabled?: boolean })?.enabled)
+      .toBe(false);
   });
 
   it("forwards terminal:session-updated only for owner callers", () => {

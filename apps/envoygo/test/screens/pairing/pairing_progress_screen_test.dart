@@ -25,7 +25,7 @@
 //        so the confirm screen can react appropriately
 //
 //   2. New `NodeNotifier.cancelPairing()`
-//      (apps/envoygo/lib/providers/node_provider.dart):
+//      (apps/envoygo/lib/connection/node_connection_provider.dart):
 //      - Idempotent, only acts when state is `connecting`
 //      - Disposes the in-flight transport so the pending RPC throws
 //      - Resets state to `disconnected`
@@ -84,7 +84,11 @@ String _envoygoAppRoot() {
 
 const _progressRel = 'lib/screens/pairing/pairing_progress_screen.dart';
 const _confirmRel = 'lib/screens/pairing/pairing_confirm_screen.dart';
-const _nodeProviderRel = 'lib/providers/node_provider.dart';
+// Workstream A5: the connection lifecycle provider moved to the connection
+// layer (`lib/connection/node_connection_provider.dart`); `providers/
+// node_provider.dart` is now a re-export shim, so the source-level guard reads
+// the file that actually declares [NodeNotifier].
+const _nodeProviderRel = 'lib/connection/node_connection_provider.dart';
 const _homeRemoteClientRel =
     '../../packages/envoy-thin-client-dart/lib/services/home_remote_client.dart';
 

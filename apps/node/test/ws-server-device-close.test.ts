@@ -11,7 +11,7 @@
  * device — and never by a *different* concurrent RPC on the same socket.
  */
 import { describe, expect, it, vi } from "vitest";
-import { WsServer } from "../src/ws-server.js";
+import { WsServer } from "@envoymesh/host-connect";
 
 interface TestSocket {
   close: ReturnType<typeof vi.fn>;

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../l10n/app_localizations.dart';
 import '../../constants/envoy_links.dart';
-import '../../services/pairing_service.dart';
+import '../../services/product/pairing_service.dart';
 import '../../utils/open_external_url.dart';
 import 'pairing_confirm_screen.dart';
 

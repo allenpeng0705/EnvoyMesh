@@ -6,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/contact_provider.dart' show nodeServiceProvider;
 import '../providers/node_provider.dart';
-import '../services/library_read_cache.dart';
-import '../services/vault_content_fetch.dart';
+import '../services/product/library_read_cache.dart';
+import '../services/product/vault_content_fetch.dart';
 
 /// Circle avatar for self (vault thumbnail) or a peer (`getPeerProfile`).
 class ProfileAvatar extends ConsumerStatefulWidget {

@@ -13,9 +13,9 @@ import '../../providers/node_provider.dart';
 import '../../providers/social_context_provider.dart'
     show phoneSocialBackendProvider, socialContextProvider;
 import '../../services/feature_flags.dart';
-import '../../services/library_read_cache.dart';
-import '../../services/node_service_client.dart';
-import '../../services/vault_content_fetch.dart';
+import '../../services/product/library_read_cache.dart';
+import '../../services/product/node_service_client.dart';
+import '../../services/product/vault_content_fetch.dart';
 
 /// Display name for the phone persona.
 ///

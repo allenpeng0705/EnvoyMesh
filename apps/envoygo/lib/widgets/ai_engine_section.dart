@@ -21,7 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/node_provider.dart';
-import '../services/node_service_client.dart';
+import '../services/product/node_service_client.dart';
 
 /// Computed mode mirroring `AiEngineMode` in `@envoymesh/api`.
 enum AiEngineMode { both, openclawOnly, extOnly, off }

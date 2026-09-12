@@ -4,8 +4,9 @@ library;
 import 'dart:async';
 
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 
-import '../services/node_service_client.dart';
+import '../services/product/node_service_client.dart';
 import 'social_model_adapters.dart';
 
 class HomeSocialBackend implements SocialBackend {

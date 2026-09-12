@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:envoygo/models/library_read.dart';
-import 'package:envoygo/services/library_read_cache.dart';
-import 'package:envoygo/services/library_read_fetch.dart';
+import 'package:envoygo/services/product/library_read_cache.dart';
+import 'package:envoygo/services/product/library_read_fetch.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

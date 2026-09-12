@@ -1,4 +1,5 @@
 import 'package:envoy_mesh/envoy_mesh.dart' show peerDialable;
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 
 /// Result row from home-node `searchPeers` (mesh discovery).
 class PeerSearchResult {

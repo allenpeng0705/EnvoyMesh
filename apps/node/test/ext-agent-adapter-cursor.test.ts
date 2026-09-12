@@ -15,8 +15,8 @@ import { join } from "node:path";
 import {
   CursorAgentBackend,
   createCursorAgentBackend,
-} from "../src/ext-agent-adapter/cursor-agent-backend.js";
-import { InstallMissingError } from "../src/ext-agent-adapter/daemon-supervisor.js";
+} from "@envoymesh/harness";
+import { InstallMissingError } from "@envoymesh/harness";
 
 // ---------------------------------------------------------------------------
 // Fake "cursor-agent" scripts

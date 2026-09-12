@@ -18,13 +18,13 @@ import { join } from "node:path";
 import {
   DaemonSupervisor,
   InstallMissingError,
-  _test,
+  _supervisorTest,
   type DaemonSupervisorOptions,
   type SupervisorCrashInfo,
   type SupervisorInstallMissingInfo,
   type SupervisorStopInfo,
   type SupervisorStuckInfo,
-} from "../src/ext-agent-adapter/daemon-supervisor.js";
+} from "@envoymesh/harness";
 
 const nodeBin = process.execPath;
 
@@ -1038,12 +1038,12 @@ describe("InstallMissingError", () => {
 
 describe("_test.runHealthcheckOnce", () => {
   it("returns true on success", async () => {
-    expect(await _test.runHealthcheckOnce(async () => true, 1_000)).toBe(true);
+    expect(await _supervisorTest.runHealthcheckOnce(async () => true, 1_000)).toBe(true);
   });
 
   it("returns false on throw", async () => {
     expect(
-      await _test.runHealthcheckOnce(
+      await _supervisorTest.runHealthcheckOnce(
         async () => {
           throw new Error("boom");
         },
@@ -1054,7 +1054,7 @@ describe("_test.runHealthcheckOnce", () => {
 
   it("returns false on timeout (signal aborts)", async () => {
     let aborted = false;
-    const result = await _test.runHealthcheckOnce(
+    const result = await _supervisorTest.runHealthcheckOnce(
       async (signal) =>
         new Promise<boolean>((_, reject) => {
           signal.addEventListener("abort", () => {

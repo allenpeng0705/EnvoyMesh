@@ -5,7 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 const _screenPath = 'lib/screens/chains/active_chain_detail_screen.dart';
 const _modelPath = 'lib/models/chain_active.dart';
-const _clientPath = 'lib/services/node_service_client.dart';
+// Workstream A4: the chain RPC wrappers moved out of `NodeServiceClient` into
+// the `ChainRpcs` mixin, which `NodeServiceClient` applies.
+const _chainRpcsPath = 'lib/services/product/rpc_bindings/chain_rpcs.dart';
 const _l10nPath = 'lib/utils/chain_localization.dart';
 
 String _readSrc(String path) => File(path).readAsStringSync();
@@ -35,7 +37,7 @@ void main() {
     });
 
     test('NodeServiceClient exposes chainResolveSpeculation and chainSetDefaults', () {
-      final src = _readSrc(_clientPath);
+      final src = _readSrc(_chainRpcsPath);
       expect(src, contains('Future<Map<String, dynamic>> chainResolveSpeculation'));
       expect(src, contains('attemptId'));
       expect(src, contains('chainSetDefaults'));

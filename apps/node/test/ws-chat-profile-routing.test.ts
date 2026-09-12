@@ -2,7 +2,7 @@
  * Phase 51 — profile-scoped chat:message WS routing.
  */
 import { describe, expect, it } from "vitest";
-import { resolveChatMessageTargetProfiles } from "../src/ws-server.js";
+import { resolveChatMessageTargetProfiles } from "../src/social-ws-policy.js";
 
 describe("resolveChatMessageTargetProfiles", () => {
   it("routes family DM to both members", () => {

@@ -53,7 +53,16 @@ describe("NodeServiceImpl getPairingPayload", () => {
   });
 
   afterEach(async () => {
-    await rm(profileDir, { recursive: true, force: true });
+    // `ENOTEMPTY` on macOS/Windows: a store write in flight recreates a file
+    // inside the directory while `rm` walks it, so the removal races the write.
+    // Without retries that surfaced as an intermittent failure unrelated to the
+    // test's subject (and, in `family-profile-store`, as an unhandled rejection).
+    await rm(profileDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 25,
+    });
   });
 
   it("auto-discovers relay WS URL and encodes target+token in wsUrl", async () => {

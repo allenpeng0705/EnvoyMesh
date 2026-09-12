@@ -1,6 +1,6 @@
 import "./ensure-node-version.js";
 import "./dom-event-polyfill.js";
-import { ensureProcessPathHasExtAgentBins } from "./ext-agent-adapter/resolve-ext-agent-binary.js";
+import { ensureProcessPathHasExtAgentBins } from "@envoymesh/harness";
 // Tauri / non-login shells often omit ~/.npm-global/bin — Ext Agent CLIs
 // (codex, claude, …) live there after `npm i -g`. Augment before any probe.
 ensureProcessPathHasExtAgentBins();
@@ -200,7 +200,20 @@ import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
 import { createNodeService, NodeServiceImpl } from "./node-service-impl.js";
 import { createNodeConfigStore } from "./node-config-store.js";
-import { WsServer } from "./ws-server.js";
+import { WsServer } from "@envoymesh/host-connect";
+import { createHostNodeService } from "./host-node-adapter.js";
+import { isSerializedWsRpcMethod } from "./ws-rpc-concurrency.js";
+import {
+  createSocialSessionDelivery,
+  nodeMayUseExtAgent,
+} from "./social-session-delivery.js";
+import { createSocialSocketMethods } from "./social-socket-methods.js";
+import { localOwnerCaller, runWithRpcCaller, type RpcCallerContext } from "./rpc-caller-context.js";
+import { routeRpcMethod } from "./json-rpc-router.js";
+import {
+  SOCIAL_EVENT_DISPOSITIONS,
+  createSocialSessionIdentityResolver,
+} from "./social-ws-policy.js";
 import { TerminalManager } from "./terminal-manager.js";
 import { TerminalAgentAssist } from "./terminal-agent-assist.js";
 import { TerminalWsServer } from "./terminal-ws-server.js";
@@ -215,7 +228,7 @@ import {
   socialWsLoopbackUrl,
   devServicePortsConfigured,
   effectiveBridgeListenPort,
-} from "./service-ports.js";
+} from "@envoymesh/node-core";
 import { createBridge } from "./bridge/index.js";
 import {
   createA2ATaskBridge,
@@ -228,7 +241,7 @@ import type { BridgeConfig } from "./bridge/config.js";
 import { BridgeConfigSchema, resolveAssistantAgentUrl, applyActiveExtAgent, bridgeConfigToStatusFields, DEFAULT_BRIDGE_CONFIG } from "./bridge/config.js";
 import { loadBridgeConfigFromProfile } from "./bridge/bridge-config-store.js";
 import { createCoalescedRunner } from "./bridge/coalesced-runner.js";
-import { syncExtAgentSidecar, stopExtAgentSidecar, setPiExtAgentAsk } from "./ext-agent-adapter/index.js";
+import { syncExtAgentSidecar, stopExtAgentSidecar, setPiExtAgentAsk } from "@envoymesh/harness";
 import {
   ExternalAgentGateway,
   createExternalAgentSession,
@@ -446,7 +459,7 @@ function logRuntimeConfigCaches(source: string): void {
 }
 
 // Start Social WS before bridge/vault/libp2p so the UI can connect immediately.
-let wsServerForEvents: WsServer | null = null;
+let wsServerForEvents: WsServer<RpcCallerContext> | null = null;
 const approvalQueue = new ApprovalQueue();
 const nodeService = createNodeService(
   undefined,
@@ -479,7 +492,7 @@ const triggerStore = new TriggerStore();
 const digestGenerator = new DigestGenerator(
   createDefaultDigestConfig(join(args.profileDir, "digests")),
 );
-const wsServer = new WsServer(SOCIAL_WS_PORT, "/ws", {
+const wsServer = new WsServer<RpcCallerContext>(SOCIAL_WS_PORT, "/ws", {
   onConnectionChange: (connectedCount) => {
     if (connectedCount > 0) {
       modeController.markOwnerConnected();
@@ -488,7 +501,40 @@ const wsServer = new WsServer(SOCIAL_WS_PORT, "/ws", {
     }
   },
 });
-wsServer.start(nodeService);
+// H2 — the product supplies session identity. The host resolves a token
+// through this port and never inspects the family-profile model itself, which
+// is what removed the four casts from `ws-server.ts` (§6.1 H2).
+// Enabling change 3 of the host extraction: the transport declares the five
+// members it needs (`host-node-adapter.ts` → `HostNodeService`) instead of
+// taking the product's whole 436-method `NodeService`, and it imports no product
+// package at all.
+wsServer.start(createHostNodeService(nodeService), {
+  sessionIdentity: createSocialSessionIdentityResolver(nodeService),
+  // The composition root supplies the product's routing policy. The host merges
+  // it with its own vocabulary; it never imports this module itself (§6.1 H1).
+  eventDispositions: SOCIAL_EVENT_DISPOSITIONS,
+  // Enabling change 1 of the host extraction: the host imports neither the
+  // 1,778-line router nor the caller-context mechanism. Both live here, at the
+  // composition root, so the product's authorisation policy stays out of the
+  // transport's dependency graph.
+  dispatch: (method, params, session) =>
+    runWithRpcCaller(session ? session.caller : localOwnerCaller(""), () =>
+      routeRpcMethod(nodeService, method, params),
+    ),
+  // What one session may receive when it differs from the raw payload. The
+  // product's rules (stamp the config, mask the capability advertisement) live
+  // in this module, not in the transport.
+  transformForSession: createSocialSessionDelivery((session) =>
+    nodeMayUseExtAgent(nodeService, session),
+  ),
+  // Product methods that proxy a second socket (OpenClaw core, terminal PTY).
+  socketMethods: createSocialSocketMethods(nodeService),
+  // Methods a client may call before authenticating.
+  preAuthMethods: ["pairThinClient", "previewFamilyInvite"],
+  // Which methods must run one at a time on a connection. The predicate, not a
+  // list: the host must not learn 31 product method names (H5).
+  shouldSerializeMethod: isSerializedWsRpcMethod,
+});
 // CLI / headless home nodes: sibling /health probe kills a wedged process
 // (Tauri has its own guardian; set ENVOYMESH_LIVENESS_WATCHDOG=0 to disable).
 // Under the watchdog, also exit on sustained event-loop lag so launchd/systemd

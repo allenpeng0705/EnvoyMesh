@@ -15,4 +15,4 @@ jobs:
           node-version: 22
 
       - name: Module-size lint (Codex LOC rule)
-        run: node scripts/check-module-size.mjs apps/node/src
+        run: node scripts/check-module-size.mjs apps/node/src packages/host-connect/src packages/harness/src

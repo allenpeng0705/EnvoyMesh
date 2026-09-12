@@ -9,8 +9,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../knowledge/knowledge_nav.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
-import '../../services/envoy_url.dart';
-import '../../services/library_read_cache.dart';
+import '../../services/product/envoy_url.dart';
+import '../../services/product/library_read_cache.dart';
 import '../../widgets/connection_indicator.dart';
 import '../chat/chat_detail_screen.dart';
 

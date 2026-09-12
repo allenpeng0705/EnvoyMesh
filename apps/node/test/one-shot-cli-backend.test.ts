@@ -17,8 +17,8 @@ import { join } from "node:path";
 import {
   OneShotCliBackend,
   type OneShotCliBackendOptions,
-} from "../src/ext-agent-adapter/one-shot-cli-backend.js";
-import { InstallMissingError } from "../src/ext-agent-adapter/daemon-supervisor.js";
+} from "@envoymesh/harness";
+import { InstallMissingError } from "@envoymesh/harness";
 
 // ---------------------------------------------------------------------------
 // Test subclass

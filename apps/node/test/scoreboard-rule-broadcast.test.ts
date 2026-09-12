@@ -142,7 +142,15 @@ describe("startScoreboardRuleBroadcaster", () => {
     });
 
     // Immediate broadcast + at least one interval tick.
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    //
+    // Waits for the *condition* with a deadline rather than for a fixed 60 ms:
+    // the interval is 20 ms, so a loaded machine (a full-suite run, a parallel
+    // install) can miss the window and fail a test whose subject is unrelated to
+    // timing. The deadline still fails a broadcaster that never ticks.
+    const deadline = Date.now() + 2_000;
+    while (send.mock.calls.length < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
     expect(send.mock.calls.length).toBeGreaterThanOrEqual(2);
     const payload = send.mock.calls[0]?.[1] as { payload?: { ruleVersion?: number } };
     expect(payload.payload?.ruleVersion).toBe(3);

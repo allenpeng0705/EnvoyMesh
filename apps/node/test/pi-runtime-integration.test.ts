@@ -18,7 +18,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { existsSync, rmSync } from "node:fs"
 import { join } from "node:path"
-import { PiRuntime, discoverPiCli, buildPiSpawnConfig } from "../src/pi-runtime.js"
+import { PiRuntime, discoverPiCli, buildPiSpawnConfig } from "@envoymesh/harness/pi-runtime"
 
 const RUN_PI_TESTS = process.env.RUN_PI_TESTS === "1"
 const describePi = RUN_PI_TESTS ? describe : describe.skip

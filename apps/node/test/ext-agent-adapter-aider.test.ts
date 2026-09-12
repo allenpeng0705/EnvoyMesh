@@ -18,8 +18,8 @@ import { join } from "node:path";
 import {
   AiderBackend,
   createAiderBackend,
-} from "../src/ext-agent-adapter/aider-backend.js";
-import { InstallMissingError } from "../src/ext-agent-adapter/daemon-supervisor.js";
+} from "@envoymesh/harness";
+import { InstallMissingError } from "@envoymesh/harness";
 
 // ---------------------------------------------------------------------------
 // Fake "aider" scripts

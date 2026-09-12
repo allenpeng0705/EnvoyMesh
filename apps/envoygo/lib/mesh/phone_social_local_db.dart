@@ -3,6 +3,7 @@
 library;
 
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 
 import '../storage/local_database.dart';
 

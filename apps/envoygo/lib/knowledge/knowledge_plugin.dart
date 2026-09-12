@@ -5,7 +5,7 @@
 
 import 'package:flutter/widgets.dart';
 
-import '../services/node_service_client.dart';
+import '../services/product/node_service_client.dart';
 
 typedef KnowledgeBasePatch = Map<String, dynamic>;
 

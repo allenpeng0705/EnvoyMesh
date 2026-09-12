@@ -4,7 +4,7 @@ library;
 import 'capability_topic_cid.dart';
 import 'discovery_topics.dart';
 import 'lan_owner_id.dart';
-import 'models.dart';
+import 'mesh_peer_hit.dart';
 import 'relay_envelope_factory.dart';
 
 /// Host surface needed by [PhoneDiscoveryRuntime] (implemented in EnvoyGo).

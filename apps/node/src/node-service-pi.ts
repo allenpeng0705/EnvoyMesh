@@ -13,7 +13,7 @@
  */
 
 import { randomUUID } from "node:crypto"
-import { PiRuntime, discoverPiCli, buildPiSpawnConfig } from "./pi-runtime.js"
+import { PiRuntime, discoverPiCli, buildPiSpawnConfig } from "@envoymesh/harness/pi-runtime"
 import { piRequestToProposal, auditPiTool } from "./pi-tool-bridge.js"
 import { resolve } from "node:path"
 import type { LocalTaskStore } from "@envoymesh/local-store"

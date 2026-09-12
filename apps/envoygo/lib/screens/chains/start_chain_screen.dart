@@ -15,7 +15,7 @@ import '../../chain_goal_attachments.dart';
 import '../../ext_agent/agent_attachments.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/node_provider.dart';
-import '../../services/node_service_client.dart';
+import '../../services/product/node_service_client.dart';
 import '../../utils/chain_localization.dart';
 
 class _ComposerAttachment {

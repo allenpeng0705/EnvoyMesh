@@ -4,7 +4,7 @@ import '../../ext_agent/ext_agent_presets.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
-import '../../services/node_service_client.dart';
+import '../../services/product/node_service_client.dart';
 import '../../utils/open_external_url.dart';
 import '../../widgets/home_folder_browser.dart';
 

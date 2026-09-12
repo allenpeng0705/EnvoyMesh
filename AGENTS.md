@@ -57,7 +57,12 @@ EnvoyMesh/
 │   ├── models/        # Model router: provider selection, semantic firewall, LiteLLM adapter
 │   ├── local-store/   # On-disk persistence: JSONL audit/journal, trust store, peer directory
 │   ├── mobile-identity/# Browser-safe pure-JS Ed25519 (noble-curves) — Social web build alias
-│   └── api/           # Shared TypeScript interfaces (NodeService, types)
+│   ├── api/           # Shared TypeScript interfaces (NodeService, types)
+│   ├── node-core/     # Ports, home-fs and shared slash descriptors — used by node + harness
+│   ├── harness/       # Ext-agent adapters + Pi runtime (extracted from apps/node)
+│   └── host-connect/  # ★ Reusable host/connect layer: the JSON-RPC WebSocket host,
+│                      #   its ports (`WsServerOptions`), the scoped-caller mechanism
+│                      #   and the wire error-code catalog. Depends on protocol + ws ONLY
 ├── docs/              # User stories, scenarios, security model, implementation plan
 ├── tsconfig.base.json # Shared TS configuration
 ├── tsconfig.json      # Project references (builds all packages & apps)
@@ -72,12 +77,16 @@ protocol  (Zod schemas, no deps beyond zod)
    ├── identity      (node:crypto Ed25519 — desktop)
    ├── mobile-identity (@noble/curves — browser-safe identity; Social web build alias)
    ├── vault         (desktop file vault)
-   ├── models        (protocol deps only)
+   ├── models        (depends on api, protocol)
    ├── bonds         (protocol deps only)
    └── api           (shared TypeScript interfaces)
 local-store       (depends on bonds, identity, protocol)
 network           (depends on protocol + libp2p ecosystem)
-apps/node         (depends on everything desktop)
+node-core         (depends on protocol, vault — off the product-bound list since the
+                   ext-agent contract moved to protocol/src/ext-agent-contract.ts)
+harness           (depends on api, node-core)
+host-connect      (depends on protocol + ws — NO product package; a product implements its ports)
+apps/node         (depends on everything desktop + host-connect)
 apps/social       (React SPA — desktop Social UI)
 apps/envoygo      (★ PRODUCT mobile — Flutter thin client → home JSON-RPC)
 ```
@@ -346,6 +355,33 @@ Each package follows:
 - `test/<module>.test.ts` — tests
 - `package.json` with `"type": "module"`, `"main"`, `"types"`, `"exports"` fields per the existing pattern
 - `tsconfig.json` referencing the base config
+
+**Adding a package means declaring it in seven places**, and missing one does not
+produce a clear error — it produces `TS6059`/`TS6307` on unrelated files, a
+package that only resolves by workspace hoisting, source resolution that silently
+falls back to built output, or a package one package manager cannot see at all.
+`node scripts/check-workspace-wiring.mjs` (`ci-workspace-wiring.yml`) enforces
+every one of them (rules R1–R6):
+
+1. root `package.json` → `workspaces`
+2. the package's own `package.json` (`name`, `exports`, `dependencies`)
+3. **each consumer's** `package.json` → `dependencies` (a `src` import must not be a `devDependency`)
+4. **each consumer's** `tsconfig.json` → `references` (skip only for `noEmit` projects)
+5. root `tsconfig.json` → `references`, and `tsconfig.base.json` → `paths`
+6. `vitest.config.ts` → alias (tests otherwise resolve built output)
+7. **`pnpm-workspace.yaml` → `packages`** (pnpm 10 ignores the root `package.json` field, so its list is a second source of truth — and the two must agree)
+
+**Both lock files matter too.** The repo carries `package-lock.json` (npm, what CI
+uses) *and* `yarn.lock`, and a root `pnpm-lock.yaml` that only `packages/openclaw`
+consumes (`pnpm install --frozen-lockfile` in CI runs inside that directory). When
+package.json changes, refresh the locks deliberately: `npm install
+--package-lock-only` updates npm's lock **and rewrites `yarn.lock`**, while the
+root `pnpm-lock.yaml` is not touched by it.
+
+**Keep build output out of `src/`.** `tsc` emitting beside the sources is not a
+style issue: committed `src/*.js` shadows the real source in tests (Vite resolves
+the `.js` first), and emitted `*.d.ts` were once counted as modules by the
+boundary classifier. Rule **R5** in the same script fails on it.
 
 ### Zod-driven design
 

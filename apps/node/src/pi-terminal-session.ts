@@ -29,7 +29,7 @@ import {
   materializePiSpawnEnv,
   requirePiToolsForGui,
   resolvePiNodeRuntime,
-} from "./pi-runtime.js"
+} from "@envoymesh/harness/pi-runtime"
 
 /** Deps supplied by NodeServiceImpl. */
 export interface PiTerminalSessionDeps {

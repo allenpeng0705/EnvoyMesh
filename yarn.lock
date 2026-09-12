@@ -462,6 +462,21 @@
     "@envoymesh/envoy-sandbox-win" "file:../envoy-sandbox-win"
     node-pty "^1.0.0"
 
+"@envoymesh/harness@0.5.0", "@envoymesh/harness@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/harness":
+  version "0.5.0"
+  resolved "file:packages/harness"
+  dependencies:
+    "@anthropic-ai/claude-agent-sdk" "^0.3.156"
+    "@envoymesh/api" "0.5.0"
+    "@envoymesh/node-core" "0.5.0"
+
+"@envoymesh/host-connect@0.5.0", "@envoymesh/host-connect@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/host-connect":
+  version "0.5.0"
+  resolved "file:packages/host-connect"
+  dependencies:
+    "@envoymesh/protocol" "0.5.0"
+    ws "^8.20.0"
+
 "@envoymesh/identity@0.5.0", "@envoymesh/identity@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/identity":
   version "0.5.0"
   resolved "file:packages/identity"
@@ -535,6 +550,15 @@
     uint8arraylist "^2.4.9"
     uint8arrays "^5.1.0"
 
+"@envoymesh/node-core@0.5.0", "@envoymesh/node-core@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/node-core":
+  version "0.5.0"
+  resolved "file:packages/node-core"
+  dependencies:
+    "@envoymesh/protocol" "0.5.0"
+    "@envoymesh/vault" "0.5.0"
+    mammoth "^1.12.0"
+    xlsx "^0.18.5"
+
 "@envoymesh/node@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/node":
   version "0.5.0"
   resolved "file:apps/node"
@@ -547,12 +571,15 @@
     "@envoymesh/envoy-harness-adapter" "file:../../../envoy-harness/packages/envoy-harness-adapter"
     "@envoymesh/envoy-harness-client" "file:../../../envoy-harness/packages/envoy-harness-client"
     "@envoymesh/envoy-harness-peer" "file:../../../envoy-harness/packages/envoy-harness-peer"
+    "@envoymesh/harness" "0.5.0"
+    "@envoymesh/host-connect" "0.5.0"
     "@envoymesh/identity" "0.5.0"
     "@envoymesh/ipfs-helia" "0.5.0"
     "@envoymesh/kb-obsidian" "0.5.0"
     "@envoymesh/local-store" "0.5.0"
     "@envoymesh/models" "0.5.0"
     "@envoymesh/network" "0.5.0"
+    "@envoymesh/node-core" "0.5.0"
     "@envoymesh/openclaw-runtime" "0.5.0"
     "@envoymesh/protocol" "0.5.0"
     "@envoymesh/rag" "0.5.0"
@@ -589,6 +616,7 @@
     "@envoymesh/api" "0.5.0"
     "@envoymesh/identity" "0.5.0"
     "@envoymesh/network" "0.5.0"
+    "@envoymesh/protocol" "0.5.0"
     "@libp2p/utils" "^7.0.0"
     ws "^8.20.0"
 
@@ -599,6 +627,7 @@
     "@envoymesh/api" "0.5.0"
     "@envoymesh/envoy-harness-client" "file:../../../envoy-harness/packages/envoy-harness-client"
     "@envoymesh/envoy-harness-ehui" "file:../../../envoy-harness/packages/envoy-harness-ehui"
+    "@envoymesh/protocol" "0.5.0"
     "@envoymesh/rag" "0.5.0"
     "@tauri-apps/plugin-process" "^2.3.1"
     "@tauri-apps/plugin-updater" "^2.10.1"

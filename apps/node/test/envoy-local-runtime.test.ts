@@ -15,7 +15,7 @@ import {
   ENVOY_LOCAL_MIN_MODEL_BYTES,
 } from "../src/envoy-local-manifest.js";
 import { downloadFile, verifyGgufFile } from "../src/envoy-local-download.js";
-import { ENVOY_LOCAL_PORT, envoyLocalOpenAiBaseUrl } from "../src/service-ports.js";
+import { ENVOY_LOCAL_PORT, envoyLocalOpenAiBaseUrl } from "@envoymesh/node-core";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const mod = await importOriginal<typeof import("node:child_process")>();

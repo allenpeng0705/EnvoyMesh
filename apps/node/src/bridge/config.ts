@@ -5,7 +5,7 @@ import {
   mergeExtAgentPresets,
   resolveActiveExtAgent,
 } from "@envoymesh/api";
-import { openClawGatewayWebhookUrl } from "../service-ports.js";
+import { openClawGatewayWebhookUrl } from "@envoymesh/node-core";
 
 export const ExtAgentDefinitionSchema = z.object({
   id: z.string().min(1),

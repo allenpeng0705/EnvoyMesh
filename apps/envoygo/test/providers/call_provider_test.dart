@@ -30,7 +30,7 @@ import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:envoygo/models/call_event.dart';
 import 'package:envoygo/providers/call_provider.dart';
 import 'package:envoygo/services/audio_session_helper.dart';
-import 'package:envoygo/services/node_service_client.dart';
+import 'package:envoygo/services/product/node_service_client.dart';
 import 'package:envoygo/webrtc_call_transport.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

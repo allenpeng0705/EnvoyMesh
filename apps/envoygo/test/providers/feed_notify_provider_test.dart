@@ -1,6 +1,6 @@
 import 'package:envoygo/models/feed_notification.dart';
 import 'package:envoygo/providers/feed_notify_provider.dart';
-import 'package:envoygo/services/node_service_client.dart';
+import 'package:envoygo/services/product/node_service_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:envoygo/providers/contact_provider.dart'

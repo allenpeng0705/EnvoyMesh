@@ -25,13 +25,13 @@ import { EventEmitter } from "node:events";
 import {
   HermesSupervisedBackend,
   createHermesSupervisedBackend,
-  _test,
-} from "../src/ext-agent-adapter/supervised-hermes-backend.js";
+  _hermesTest,
+} from "@envoymesh/harness";
 import {
   InstallMissingError,
-} from "../src/ext-agent-adapter/daemon-supervisor.js";
-import type { ExtAgentBackend } from "../src/ext-agent-adapter/types.js";
-import type { DaemonSupervisor } from "../src/ext-agent-adapter/daemon-supervisor.js";
+} from "@envoymesh/harness";
+import type { ExtAgentBackend } from "@envoymesh/harness";
+import type { DaemonSupervisor } from "@envoymesh/harness";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -305,7 +305,7 @@ describe("HermesSupervisedBackend (Phase 55E) — healthcheck probe", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("{}", { status: 200 }));
-    const ok = await _test.healthcheckHermes(new AbortController().signal);
+    const ok = await _hermesTest.healthcheckHermes(new AbortController().signal);
     expect(ok).toBe(true);
     fetchSpy.mockRestore();
   });
@@ -314,7 +314,7 @@ describe("HermesSupervisedBackend (Phase 55E) — healthcheck probe", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("{}", { status: 503 }));
-    const ok = await _test.healthcheckHermes(new AbortController().signal);
+    const ok = await _hermesTest.healthcheckHermes(new AbortController().signal);
     expect(ok).toBe(false);
     fetchSpy.mockRestore();
   });
@@ -323,7 +323,7 @@ describe("HermesSupervisedBackend (Phase 55E) — healthcheck probe", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockRejectedValue(new Error("ECONNREFUSED"));
-    const ok = await _test.healthcheckHermes(new AbortController().signal);
+    const ok = await _hermesTest.healthcheckHermes(new AbortController().signal);
     expect(ok).toBe(false);
     fetchSpy.mockRestore();
   });

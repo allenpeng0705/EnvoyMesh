@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../connection/phone_mesh_runtime.dart';
 import '../../l10n/app_localizations.dart';
 import '../../mesh/social_model_adapters.dart';
 import '../../models/peer_search_result.dart';
@@ -12,11 +14,11 @@ import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../providers/social_context_provider.dart';
 import '../../services/feature_flags.dart';
-import '../../services/discover_contact_code.dart';
-import '../../services/envoy_url.dart';
-import '../../services/node_service_client.dart';
-import '../../services/parse_public_blog_index.dart';
-import '../../services/people_session_cache.dart';
+import '../../services/product/discover_contact_code.dart';
+import '../../services/product/envoy_url.dart';
+import '../../services/product/node_service_client.dart';
+import '../../services/product/parse_public_blog_index.dart';
+import '../../services/product/people_session_cache.dart';
 import '../../widgets/cross_persona_suggestions_section.dart';
 import '../browser/browser_screen.dart';
 import '../profile/profile_screen.dart';

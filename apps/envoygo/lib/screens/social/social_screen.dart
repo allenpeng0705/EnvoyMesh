@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../connection/phone_mesh_runtime.dart';
 import '../../knowledge/knowledge_nav.dart';
 import '../../l10n/app_localizations.dart';
 import '../../navigation/owner_tabs.dart';
@@ -10,7 +11,6 @@ import '../../providers/content_engage_provider.dart';
 import '../../providers/feed_notify_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../services/feature_flags.dart';
-import '../../providers/social_context_provider.dart';
 import '../../widgets/connection_indicator.dart';
 import '../../widgets/phone_mesh_indicator.dart';
 import '../../widgets/pair_required_panel.dart';

@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:dart_libp2p/dart_libp2p.dart';
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'dart:developer' as developer;
 
 import 'libp2p_node.dart';

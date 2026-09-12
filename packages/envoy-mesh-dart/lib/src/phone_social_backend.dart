@@ -12,6 +12,7 @@ import 'envoy_envelope.dart';
 import 'lan_owner_id.dart';
 import 'mesh_envelope_transport.dart';
 import 'mesh_protocols.dart';
+import 'mesh_peer_hit.dart';
 import 'models.dart';
 import 'phone_discovery_runtime.dart';
 import 'phone_identity_store.dart';

@@ -1,6 +1,6 @@
 import WebSocket, { RawData } from "ws";
 
-import { TERMINAL_WS_PORT } from "./service-ports.js";
+import { TERMINAL_WS_PORT } from "@envoymesh/node-core";
 
 const DEFAULT_TERMINAL_WS_PORT = TERMINAL_WS_PORT;
 

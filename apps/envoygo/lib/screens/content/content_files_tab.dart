@@ -12,9 +12,9 @@ import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../knowledge/knowledge_hub_actions.dart';
 import '../../knowledge/knowledge_nav.dart';
-import '../../services/chat_voice_note.dart';
-import '../../services/library_read_cache.dart';
-import '../../services/vault_content_fetch.dart';
+import '../../services/product/chat_voice_note.dart';
+import '../../services/product/library_read_cache.dart';
+import '../../services/product/vault_content_fetch.dart';
 import 'note_editor_screen.dart';
 
 /// My Files — list / import / preview / share home vault files via thin client.

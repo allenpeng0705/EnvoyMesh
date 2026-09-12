@@ -9,8 +9,8 @@ import {
   augmentPathForExtAgentBins,
   isExtAgentBinaryAvailable,
   resolveExtAgentBinary,
-} from "./ext-agent-adapter/resolve-ext-agent-binary.js";
-import { HOME_FS_PREVIEW_MAX_BYTES } from "./home-fs.js";
+} from "@envoymesh/harness";
+import { HOME_FS_PREVIEW_MAX_BYTES } from "@envoymesh/node-core";
 
 export const MMX_INSTALL_HINT =
   "Install MMX-CLI: `npm install -g mmx-cli` (or `npx skills add MiniMax-AI/cli -y -g`). Then run `mmx auth login --api-key sk-xxxx`.";

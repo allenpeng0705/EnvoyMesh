@@ -430,7 +430,7 @@ $criticalDeps = @(
     # Deep transitive deps (proves fixpoint loop ran)
     "main-event", "@libp2p/interface",
     # Workspace packages (proves dynamic discovery ran)
-    "@envoymesh/kb-obsidian", "@envoymesh/openclaw-runtime",
+    "@envoymesh/kb-obsidian", "@envoymesh/openclaw-runtime", "@envoymesh/host-connect",
     # Nested-dep hoist: declared by tough-cookie which lives inside
     # request/node_modules/. Proves the loop scans nested packages.
     "psl"
@@ -511,7 +511,7 @@ const mods = [
   "@envoymesh/bonds", "@envoymesh/network", "@envoymesh/vault",
   "@envoymesh/local-store", "@envoymesh/models", "@envoymesh/rag",
   "@envoymesh/ipfs-helia", "@envoymesh/openclaw-runtime",
-  "@envoymesh/kb-obsidian",$harnessProbeMods
+  "@envoymesh/kb-obsidian", "@envoymesh/host-connect",$harnessProbeMods
 ];
 let failed = 0;
 for (const m of mods) {

@@ -2,6 +2,7 @@
 library;
 
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 
 import '../models/chat_message.dart';
 import '../models/contact.dart';

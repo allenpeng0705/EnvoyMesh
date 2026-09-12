@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
-import '../../services/node_service_client.dart';
+import '../../services/product/node_service_client.dart';
 
 /// EH command rail + permission/question docks above an Envoy Harness TUI session.
 class EnvoyHarnessTerminalChrome extends ConsumerStatefulWidget {

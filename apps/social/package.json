@@ -12,6 +12,7 @@
     "@envoymesh/api": "0.5.0",
     "@envoymesh/envoy-harness-client": "file:../../../envoy-harness/packages/envoy-harness-client",
     "@envoymesh/envoy-harness-ehui": "file:../../../envoy-harness/packages/envoy-harness-ehui",
+    "@envoymesh/protocol": "0.5.0",
     "@envoymesh/rag": "0.5.0",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",

@@ -1,4 +1,5 @@
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'package:envoygo/mesh/social_model_adapters.dart';
 import 'package:envoygo/providers/chat_provider.dart';
 import 'package:flutter_test/flutter_test.dart';

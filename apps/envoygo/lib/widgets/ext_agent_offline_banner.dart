@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../ext_agent/ext_agent_presets.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/contact_provider.dart' show nodeServiceProvider;
-import '../services/node_service_client.dart';
+import '../services/product/node_service_client.dart';
 
 /// Banner when the active non-built-in Ext Agent is unreachable.
 class ExtAgentOfflineBanner extends ConsumerStatefulWidget {

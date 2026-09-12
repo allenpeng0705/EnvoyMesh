@@ -418,7 +418,7 @@ if LIBVIPS_PKG="$LIBVIPS_PKG" node -e "
 fi
 
 missing=""
-for dep in zod ws yaml sharp main-event "@libp2p/interface" "@envoymesh/kb-obsidian" "@envoymesh/openclaw-runtime" psl "${SHARP_PLATFORM_DEPS[@]}"; do
+for dep in zod ws yaml sharp main-event "@libp2p/interface" "@envoymesh/kb-obsidian" "@envoymesh/openclaw-runtime" "@envoymesh/host-connect" psl "${SHARP_PLATFORM_DEPS[@]}"; do
   if [ ! -d "$DEST/node_modules/$dep" ]; then
     missing="$missing $dep"
   fi
@@ -494,7 +494,7 @@ const mods = [
   "@envoymesh/bonds", "@envoymesh/network", "@envoymesh/vault",
   "@envoymesh/local-store", "@envoymesh/models", "@envoymesh/rag",
   "@envoymesh/ipfs-helia", "@envoymesh/openclaw-runtime",
-  "@envoymesh/kb-obsidian",${HARNESS_PROBE_MODS}
+  "@envoymesh/kb-obsidian", "@envoymesh/host-connect",${HARNESS_PROBE_MODS}
 ];
 let failed = 0;
 for (const m of mods) {

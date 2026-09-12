@@ -6,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../providers/contact_provider.dart';
-import '../services/envoy_url.dart';
-import '../services/library_read_cache.dart';
+import '../services/product/envoy_url.dart';
+import '../services/product/library_read_cache.dart';
 
 const maxFeedPostImages = 9;
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../ext_agent/agent_attachments.dart';
@@ -9,7 +10,7 @@ import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/chat_thread.dart';
 import '../models/contact.dart';
-import '../services/node_service_client.dart';
+import '../services/product/node_service_client.dart';
 import '../storage/local_database.dart';
 import '../utils/group_delivery.dart';
 import '../utils/localized_labels.dart';

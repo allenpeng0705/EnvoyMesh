@@ -11,7 +11,7 @@ import 'dart:convert';
 import 'package:envoy_thin_client/services/home_remote_client.dart';
 import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:envoygo/coding/coding_heartbeat.dart';
-import 'package:envoygo/services/node_service_client.dart';
+import 'package:envoygo/services/product/node_service_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Controllable mock WebSocket — same pattern as

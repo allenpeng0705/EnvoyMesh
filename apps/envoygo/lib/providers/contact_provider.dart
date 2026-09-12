@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../mesh/social_model_adapters.dart';
 import '../models/contact.dart';
-import '../services/node_service_client.dart';
+import '../services/product/node_service_client.dart';
 import '../storage/local_database.dart';
 import 'node_provider.dart';
 import 'social_context_provider.dart';

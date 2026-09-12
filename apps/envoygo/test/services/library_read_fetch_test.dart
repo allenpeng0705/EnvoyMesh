@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:envoygo/models/library_read.dart';
-import 'package:envoygo/services/content_hash.dart';
-import 'package:envoygo/services/library_read_fetch.dart';
+import 'package:envoygo/services/product/content_hash.dart';
+import 'package:envoygo/services/product/library_read_fetch.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -1,4 +1,4 @@
-import 'package:envoygo/services/discover_contact_code.dart';
+import 'package:envoygo/services/product/discover_contact_code.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

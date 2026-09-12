@@ -1,4 +1,5 @@
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'package:test/test.dart';
 
 class _FakeHost implements PhoneDiscoveryHost {

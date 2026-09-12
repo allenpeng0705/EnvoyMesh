@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../ai/model_provider_presets.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
-import '../../services/node_service_client.dart';
+import '../../services/product/node_service_client.dart';
 import 'envoy_local_settings_screen.dart';
 
 /// AI Model settings — cloud provider presets (EnvoyGo).

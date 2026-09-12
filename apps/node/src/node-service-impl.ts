@@ -236,6 +236,10 @@ import type {
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
 } from "@envoymesh/api";
+import {
+  createUnavailableHumanProfileStore,
+  tryLoadHumanProfile,
+} from "./human-profile-availability.js";
 
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
@@ -632,9 +636,9 @@ import {
   shouldRebindAgentBridge,
 } from "./bridge/bridge-config-store.js";
 import { bridgeConfigToStatusFields } from "./bridge/config.js";
-import { probeExtAgentReachability } from "./ext-agent-adapter/probe.js";
-import { buildExtAgentCommandCatalog } from "./ext-agent-adapter/command-catalog.js";
-import { getCachedClaudeCodeSlashCommands } from "./ext-agent-adapter/claudecode-backend.js";
+import { probeExtAgentReachability } from "@envoymesh/harness";
+import { buildExtAgentCommandCatalog } from "@envoymesh/harness";
+import { getCachedClaudeCodeSlashCommands } from "@envoymesh/harness";
 import { buildEnvoyAiCommandCatalog } from "./envoy-ai-command-catalog.js";
 import {
   defaultClaudeCodeModel,
@@ -643,22 +647,22 @@ import {
   listHermesModels,
   listOpenHumanModels,
   openHumanTransport,
-} from "./ext-agent-adapter/backends.js";
+} from "@envoymesh/harness";
 import {
   getExtAgentSessionModel,
   setExtAgentSessionModel as writeExtAgentSessionModel,
   supportsExtAgentSessionModel,
-} from "./ext-agent-adapter/session-model-store.js";
+} from "@envoymesh/harness";
 import {
   getExtAgentProjectPathCwd,
   syncExtAgentProjectPathsFromAgents,
-} from "./ext-agent-adapter/project-path-store.js";
+} from "@envoymesh/harness";
 import {
   getHomeFsInfo as readHomeFsInfo,
   listHomeFsEntries as readHomeFsEntries,
   previewHomeFsFile as readHomeFsPreview,
   resolveHomeFsDirectory,
-} from "./home-fs.js";
+} from "@envoymesh/node-core";
 import { discoverObsidianVaults as scanObsidianVaults } from "./discover-obsidian-vaults.js";
 import {
   isDesktopAppId,
@@ -669,8 +673,8 @@ import { saveEnvoyUpload } from "./envoy-uploads.js";
 import { buildAgentAttachmentContext } from "./agent-attachment-context.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
-import { createBackend } from "./ext-agent-adapter/backends.js";
-import { isExtAgentSidecarKind } from "./ext-agent-adapter/types.js";
+import { createBackend } from "@envoymesh/harness";
+import { isExtAgentSidecarKind } from "@envoymesh/harness";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import { OPENCLAW_SKILLS, PI_SKILLS, type AgentAdapter } from "@envoymesh/agent-adapter";
 import {
@@ -682,7 +686,7 @@ import {
   coerceAgentNetworkWorkerEngine,
   type AgentNetworkWorkerEngine,
 } from "./agent-network-worker-engine.js";
-import { effectiveBridgeListenPort } from "./service-ports.js";
+import { effectiveBridgeListenPort } from "@envoymesh/node-core";
 
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
 import { createMcpConsumerManager } from "./mcp-client-adapter.js";
@@ -2439,7 +2443,13 @@ class NodeServiceImpl implements NodeService {
     mesh: EnvoyMesh | undefined,
     trustStore: LocalTrustStore,
     peerDirectoryStore: LocalPeerDirectoryStore,
-    humanProfileStore: HumanProfileStore,
+    /**
+     * Human-profile store. Omit it to construct the kernel **without social
+     * inputs** (§6.2 composability probe): profile-backed code paths then fail
+     * with a typed `HumanProfileUnavailableError` naming the operation, rather
+     * than crashing — which makes the remaining coupling measurable.
+     */
+    humanProfileStore: HumanProfileStore = createUnavailableHumanProfileStore(),
     profileDir: string | undefined,
     profile?: NodeProfile,
     vaultDir?: string,
@@ -2998,6 +3008,23 @@ class NodeServiceImpl implements NodeService {
 
   private _identityContext(): IdentityContext {
     return buildIdentityContext(this);
+  }
+
+  /**
+   * Human profile for **identity/authoring fallbacks** — never throws merely
+   * because the node was started without a human profile store (§6.2 probe).
+   *
+   * Every caller of this uses the shape
+   * `this._profile?.owner?.ownerId || human?.ownerId` with an explicit
+   * missing-ownerId branch, so a node without a profile has everything it
+   * needs. `getHumanProfile()` itself still throws — a node with no profile
+   * store genuinely cannot answer "what is the human profile".
+   */
+  private async _humanProfileOrUndefined(): Promise<HumanProfile | undefined> {
+    return tryLoadHumanProfile(
+      this._humanProfileStore,
+      "human profile read",
+    ) as Promise<HumanProfile | undefined>;
   }
 
   getProfile(): NodeProfile {
@@ -11288,7 +11315,7 @@ class NodeServiceImpl implements NodeService {
       try {
         const ownerId =
           this._profile?.owner?.ownerId?.trim() ||
-          (await this.getHumanProfile())?.ownerId?.trim();
+          (await this._humanProfileOrUndefined())?.ownerId?.trim();
         await syncBlogPostsToKnowledgeViaRuntime(this._fileShareContext(), ownerId);
       } catch (err) {
         console.warn(
@@ -11969,7 +11996,7 @@ class NodeServiceImpl implements NodeService {
     }
     const ownerId =
       this._profile?.owner?.ownerId?.trim() ||
-      (await this.getHumanProfile())?.ownerId?.trim();
+      (await this._humanProfileOrUndefined())?.ownerId?.trim();
     if (!ownerId) {
       throw new Error("publishWebContentEntry: owner identity required");
     }
@@ -12016,7 +12043,7 @@ class NodeServiceImpl implements NodeService {
     if (this._profileDir === "/tmp/unknown") {
       throw new Error("ensureDefaultWebSite: node profile not initialized");
     }
-    const human = await this.getHumanProfile();
+    const human = await this._humanProfileOrUndefined();
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
     if (!ownerId) {
@@ -12037,7 +12064,7 @@ class NodeServiceImpl implements NodeService {
 
   async listWebContentSections(): Promise<import("@envoymesh/api").WebContentSectionSummary[]> {
     if (this._profileDir === "/tmp/unknown") return [];
-    const human = await this.getHumanProfile();
+    const human = await this._humanProfileOrUndefined();
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
     if (!ownerId) return [];
@@ -12046,7 +12073,7 @@ class NodeServiceImpl implements NodeService {
 
   async listFeedPosts(): Promise<import("@envoymesh/api").FeedPostSummary[]> {
     if (this._profileDir === "/tmp/unknown") return [];
-    const human = await this.getHumanProfile();
+    const human = await this._humanProfileOrUndefined();
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
     if (!ownerId) {
@@ -12061,7 +12088,7 @@ class NodeServiceImpl implements NodeService {
     if (this._profileDir === "/tmp/unknown") {
       return { items: [], hasMore: false };
     }
-    const human = await this.getHumanProfile();
+    const human = await this._humanProfileOrUndefined();
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
     if (!ownerId) {
@@ -12088,7 +12115,7 @@ class NodeServiceImpl implements NodeService {
 
   async listBlogPosts(): Promise<import("@envoymesh/api").BlogPostSummary[]> {
     if (this._profileDir === "/tmp/unknown") return [];
-    const human = await this.getHumanProfile();
+    const human = await this._humanProfileOrUndefined();
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
     if (!ownerId) return [];
@@ -12101,7 +12128,7 @@ class NodeServiceImpl implements NodeService {
     if (this._profileDir === "/tmp/unknown") {
       throw new Error("deleteWebContentEntry: node profile not initialized");
     }
-    const human = await this.getHumanProfile();
+    const human = await this._humanProfileOrUndefined();
     const ownerId =
       params.ownerId?.trim() ||
       this._profile?.owner?.ownerId?.trim() ||
@@ -15865,8 +15892,13 @@ class NodeServiceImpl implements NodeService {
 
   private async _ensureFamilyOwnerMigrated(): Promise<void> {
     if (this._familyOwnerMigrated || !this._familyProfileStore) return;
+    // The fallback chain below already tolerates a *missing* profile, so a node
+    // started without a human profile store must not fail here. This single call
+    // site is a precondition of 18 RPCs (§6.2 probe), and 8 of them — IPFS, RAG,
+    // node config, agent-network — have no social meaning at all.
     const displayName =
-      (await this._humanProfileStore.loadHumanProfile())?.displayName?.trim() ||
+      (await tryLoadHumanProfile(this._humanProfileStore, "family owner migration"))
+        ?.displayName?.trim() ||
       this._profile?.owner.ownerId?.replace(/^envoy:owner:/, "").slice(0, 12) ||
       "Owner";
     await this._familyProfileStore.ensureOwnerProfile({ name: displayName });
@@ -16778,7 +16810,7 @@ class NodeServiceImpl implements NodeService {
     let profileContext = params.profileContext;
     if (params.surface === "bio" && !profileContext) {
       try {
-        const human = await this.getHumanProfile();
+        const human = await this._humanProfileOrUndefined();
         if (human) {
           profileContext = {
             displayName: human.displayName,

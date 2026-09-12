@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto"
+import { existsSync } from "node:fs"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
@@ -126,13 +127,32 @@ async function readFileShape(path: string): Promise<FamilyProfilesFile> {
   }
 }
 
+/**
+ * Write the file atomically, treating "the store is gone" as success.
+ *
+ * The atomic rename can lose its `.tmp` file to a *directory* removal that
+ * happened between the write and the rename — a profile directory being deleted
+ * (shutdown, a wipe, or a test's teardown) while a write is in flight. The old
+ * behaviour rejected with `ENOENT`, and because some callers are
+ * fire-and-forget that surfaced as an **unhandled rejection** in full-suite runs
+ * (Node's default `--unhandled-rejections=throw` can terminate the process).
+ *
+ * The guard is deliberately narrow: the write is dropped *only* when the parent
+ * directory no longer exists, i.e. when there is nothing left to persist. Any
+ * other rename failure still throws, so a genuine anomaly is not hidden.
+ */
 async function writeFileShape(path: string, file: FamilyProfilesFile): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const tmp = `${path}.tmp.${Date.now()}.${randomUUID().slice(0, 8)}`
   const content = `${JSON.stringify(file, null, 2)}\n`
   JSON.parse(content)
   await writeFile(tmp, content, { mode: 0o600 })
-  await rename(tmp, path)
+  try {
+    await rename(tmp, path)
+  } catch (error) {
+    if (isMissingFileError(error) && !existsSync(dirname(path))) return
+    throw error
+  }
 }
 
 function allocateId(existing: FamilyProfileRecord[], preferred: string): string {

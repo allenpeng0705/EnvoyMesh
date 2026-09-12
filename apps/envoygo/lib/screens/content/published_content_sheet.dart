@@ -5,7 +5,7 @@ import '../../knowledge/knowledge_nav.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/web_content.dart';
 import '../../navigation/owner_tabs.dart';
-import '../../services/envoy_url.dart';
+import '../../services/product/envoy_url.dart';
 import '../browser/browser_screen.dart';
 
 /// Bottom sheet: Profile / Feed / Blog / Photo (+ custom sections when listing own site).

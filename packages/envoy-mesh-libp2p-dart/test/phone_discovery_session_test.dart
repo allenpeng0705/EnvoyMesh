@@ -1,4 +1,5 @@
 import 'package:envoy_mesh_libp2p/envoy_mesh_libp2p.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'package:test/test.dart';
 
 void main() {

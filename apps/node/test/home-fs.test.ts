@@ -9,12 +9,12 @@ import {
   resolveHomeFsDirectory,
   resolveHomeFsFile,
   HOME_FS_PREVIEW_MAX_BYTES,
-} from "../src/home-fs.js";
+} from "@envoymesh/node-core";
 import {
   getExtAgentProjectPathCwd,
   setExtAgentProjectPathInStore,
   syncExtAgentProjectPathsFromAgents,
-} from "../src/ext-agent-adapter/project-path-store.js";
+} from "@envoymesh/harness";
 import { extAgentUsesProjectPath } from "@envoymesh/api";
 import { isOwnerOnlyRpcMethod } from "../src/json-rpc-router.js";
 import { requireOwnerProfile, runWithRpcCaller } from "../src/rpc-caller-context.js";

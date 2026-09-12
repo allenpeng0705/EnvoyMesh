@@ -58,27 +58,15 @@ export type {
 // Message Types
 // ============================================
 
-export type JsonRpcRequest = {
-  id: string;
-  method: string;
-  params?: Record<string, unknown>;
-};
-
-export type JsonRpcResponse = {
-  id: string;
-  result?: unknown;
-  error?: JsonRpcError;
-};
-
-export type JsonRpcError = {
-  code: string;
-  message: string;
-};
-
-export type JsonRpcEvent = {
-  event: string;
-  data: unknown;
-};
+// The JSON-RPC envelope now lives in `@envoymesh/protocol` (see
+// `json-rpc-wire.ts` for why), and is re-exported here so every existing
+// importer of `@envoymesh/api` is unchanged.
+export type {
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcError,
+  JsonRpcEvent,
+} from "@envoymesh/protocol";
 
 // ============================================
 // Protocol Constants

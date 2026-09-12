@@ -22,9 +22,9 @@ import {
 import {
   ClaudeCodeBackend,
   createClaudeCodeBackend,
-  _test,
-} from "../src/ext-agent-adapter/claudecode-backend.js";
-import { createBackend } from "../src/ext-agent-adapter/backends.js";
+  _claudeCodeTest,
+} from "@envoymesh/harness";
+import { createBackend } from "@envoymesh/harness";
 import type { Options, Query, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 // ---------------------------------------------------------------------------
@@ -160,7 +160,7 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   savedApiKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
-  _test._resetCachedClaudeCodeSlashCommandsForTests();
+  _claudeCodeTest._resetCachedClaudeCodeSlashCommandsForTests();
 });
 
 afterEach(() => {
@@ -169,7 +169,7 @@ afterEach(() => {
   } else {
     process.env.ANTHROPIC_API_KEY = savedApiKey;
   }
-  _test._resetCachedClaudeCodeSlashCommandsForTests();
+  _claudeCodeTest._resetCachedClaudeCodeSlashCommandsForTests();
 });
 
 // ---------------------------------------------------------------------------
@@ -252,7 +252,7 @@ describe("claudecode-backend (55C) — ask()", () => {
       requestTimeoutMs: 2_000,
     });
     await backend.ask("hi", "owner-A");
-    expect(_test.getCachedClaudeCodeSlashCommands()).toEqual([
+    expect(_claudeCodeTest.getCachedClaudeCodeSlashCommands()).toEqual([
       "compact",
       "review",
       "model",
@@ -433,7 +433,7 @@ describe("claudecode-backend (55C) — SDK import", () => {
     // so the lazy import should always succeed in this test environment.
     // This guards against an accidental `optionalDependency` move that
     // would silently break the backend.
-    const sdk = await _test.loadSdk();
+    const sdk = await _claudeCodeTest.loadSdk();
     expect(sdk).toBeTypeOf("object");
     expect(typeof sdk.query).toBe("function");
   });
@@ -446,7 +446,7 @@ describe("claudecode-backend (55C) — SDK import", () => {
   // SDK path.
   it("does NOT call loadSdk() when queryFn override is supplied", async () => {
     // Spy on the lazy loader — if it's called, the test fails.
-    const loaderSpy = vi.spyOn(_test, "loadSdk");
+    const loaderSpy = vi.spyOn(_claudeCodeTest, "loadSdk");
     const queryFn = () => makeFakeQuery([]) as unknown as Query;
     const backend = new ClaudeCodeBackend({
       queryFn,
@@ -468,7 +468,7 @@ describe("claudecode-backend (55C) — abort error detection", () => {
   it("_test.isAbortError recognizes both name='AbortError' and constructor.name='AbortError'", () => {
     const namedError = new Error("aborted");
     namedError.name = "AbortError";
-    expect(_test.isAbortError(namedError)).toBe(true);
+    expect(_claudeCodeTest.isAbortError(namedError)).toBe(true);
 
     // Class named literally "AbortError" — the SDK's compiled class
     // is named this way (mangled by tsc, but the source name is
@@ -476,10 +476,10 @@ describe("claudecode-backend (55C) — abort error detection", () => {
     // SDK to keep this test hermetic.
     class AbortError extends Error {}
     const byCtor = new AbortError("aborted");
-    expect(_test.isAbortError(byCtor)).toBe(true);
+    expect(_claudeCodeTest.isAbortError(byCtor)).toBe(true);
 
-    expect(_test.isAbortError(new Error("not an abort"))).toBe(false);
-    expect(_test.isAbortError("string")).toBe(false);
-    expect(_test.isAbortError(null)).toBe(false);
+    expect(_claudeCodeTest.isAbortError(new Error("not an abort"))).toBe(false);
+    expect(_claudeCodeTest.isAbortError("string")).toBe(false);
+    expect(_claudeCodeTest.isAbortError(null)).toBe(false);
   });
 });

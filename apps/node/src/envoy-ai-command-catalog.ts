@@ -7,7 +7,7 @@ import type { ExtAgentCommandCatalog, ExtAgentCommandDescriptor } from "@envoyme
 import {
   mergeMmxMediaLimitations,
   mergeMmxMediaSlashCommands,
-} from "./mmx-media-slash.js";
+} from "@envoymesh/node-core";
 
 export const ENVOY_AI_COMMAND_CATALOG_VERSION = "3";
 

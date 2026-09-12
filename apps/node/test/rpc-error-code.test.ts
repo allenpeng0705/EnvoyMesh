@@ -3,7 +3,7 @@
  * (thin-client-protocol error catalog → stable `error.code`).
  */
 import { describe, expect, it } from "vitest"
-import { rpcErrorCode } from "../src/rpc-error-code.js"
+import { rpcErrorCode } from "@envoymesh/host-connect"
 
 describe("rpcErrorCode", () => {
   it("maps askHomeModel catalog-token errors to their tokens", () => {

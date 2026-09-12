@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../ai/pi_native_providers.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
-import '../../services/node_service_client.dart';
+import '../../services/product/node_service_client.dart';
 
 /// Coding agents settings — Pi (Terminal / Ext Agent) + Envoy Harness
 /// (coding chat + Terminal). Mirrors Social Settings AI tab.

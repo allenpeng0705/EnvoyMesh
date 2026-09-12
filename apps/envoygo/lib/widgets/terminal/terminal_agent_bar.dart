@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
-import '../../services/node_service_client.dart';
+import '../../services/product/node_service_client.dart';
 import '../../terminal/terminal_slash_commands.dart';
 import '../chat/slash_command_suggest.dart';
 

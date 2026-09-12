@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { effectiveBridgeListenPort } from "../src/service-ports.js"
+import { effectiveBridgeListenPort } from "@envoymesh/node-core"
 
 describe("effectiveBridgeListenPort", () => {
   const prevBridge = process.env.ENVOYMESH_BRIDGE_PORT

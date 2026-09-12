@@ -4,8 +4,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:envoygo/services/library_read_cache.dart';
-import 'package:envoygo/services/vault_content_fetch.dart';
+import 'package:envoygo/services/product/library_read_cache.dart';
+import 'package:envoygo/services/product/vault_content_fetch.dart';
 
 void main() {
   group('fetchVaultContent', () {

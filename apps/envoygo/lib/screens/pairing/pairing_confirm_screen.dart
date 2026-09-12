@@ -7,8 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
+import '../../providers/home_product_sync.dart';
 import '../../providers/node_provider.dart';
-import '../../services/pairing_service.dart';
+import '../../services/product/pairing_service.dart';
 import 'pairing_progress_screen.dart';
 
 /// Confirmation screen shown after scanning a pairing / family-invite QR.
@@ -126,9 +127,11 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
     });
     try {
       final candidates = _resolveCandidates();
-      final profiles = await ref
-          .read(nodeProvider.notifier)
-          .previewFamilyInviteProfiles(widget.data, candidates);
+      final profiles = await previewFamilyInviteProfiles(
+        ref.read(nodeProvider.notifier),
+        widget.data,
+        candidates,
+      );
       if (!mounted) return;
       setState(() {
         _existingProfiles = profiles;

@@ -24,8 +24,8 @@ import {
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CodexBackend, createCodexBackend } from "../src/ext-agent-adapter/codex-backend.js";
-import { InstallMissingError } from "../src/ext-agent-adapter/daemon-supervisor.js";
+import { CodexBackend, createCodexBackend } from "@envoymesh/harness";
+import { InstallMissingError } from "@envoymesh/harness";
 
 // ---------------------------------------------------------------------------
 // Fake "codex app-server" scripts
@@ -560,7 +560,7 @@ describe("codex-backend (55B) — install-missing event handling", () => {
 describe("codex-backend (55B) — integration with createBackend()", () => {
   it("createBackend('codex') returns a CodexBackend (the manager path)", async () => {
     const { createBackend } = await import(
-      "../src/ext-agent-adapter/backends.js"
+      "@envoymesh/harness"
     );
     const b = createBackend("codex");
     expect(b.kind).toBe("codex");

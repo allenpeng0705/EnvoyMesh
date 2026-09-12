@@ -1,4 +1,5 @@
 import 'package:envoy_mesh/envoy_mesh.dart' show phoneLocalContextId;
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 
 import '../../services/feature_flags.dart';
 import 'package:flutter/material.dart';

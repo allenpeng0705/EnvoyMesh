@@ -7,6 +7,12 @@ on:
       - "apps/node/test/**"
       - "packages/api/**"
       - "packages/protocol/**"
+      - "packages/node-core/**"
+      # The size lint in this job now scans these two, so a change there must
+      # re-run it.
+      - "packages/host-connect/**"
+      - "packages/harness/**"
+      - "scripts/**"
       - ".github/workflows/ci-node-hermetic.yml"
   workflow_dispatch:
 
@@ -25,7 +31,7 @@ jobs:
         run: npm install
 
       - name: Module-size lint (Codex LOC rule)
-        run: node scripts/check-module-size.mjs apps/node/src
+        run: node scripts/check-module-size.mjs apps/node/src packages/host-connect/src packages/harness/src
 
       # The hermetic lane: deterministic, no-network unit tests
       # covering the envoy-harness integration surface. The full

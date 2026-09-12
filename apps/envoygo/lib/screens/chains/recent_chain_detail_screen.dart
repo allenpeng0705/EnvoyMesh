@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chain_report.dart';
 import '../../providers/node_provider.dart';
-import '../../services/node_service_client.dart';
+import '../../services/product/node_service_client.dart';
 
 class RecentChainDetailScreen extends ConsumerStatefulWidget {
   final String chainId;

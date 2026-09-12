@@ -56,7 +56,7 @@ import { listListeningPidsOnPort } from "./openclaw-gateway-port.js";
 import {
   ENVOY_LOCAL_EMBED_PORT,
   envoyLocalEmbedOpenAiBaseUrl,
-} from "./service-ports.js";
+} from "@envoymesh/node-core";
 
 export interface EnvoyLocalEmbedRuntimeDeps {
   getProfileDir: () => string;

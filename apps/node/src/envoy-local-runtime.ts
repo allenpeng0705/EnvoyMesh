@@ -73,7 +73,7 @@ import {
   detectEnvoyLocalPlatform,
   type EnvoyLocalPlatform,
 } from "./envoy-local-platform.js";
-import { ENVOY_LOCAL_PORT, envoyLocalOpenAiBaseUrl } from "./service-ports.js";
+import { ENVOY_LOCAL_PORT, envoyLocalOpenAiBaseUrl } from "@envoymesh/node-core";
 
 export interface EnvoyLocalRuntimeDeps {
   getProfileDir: () => string;

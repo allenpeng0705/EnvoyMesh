@@ -1,10 +1,11 @@
 import 'package:envoy_mesh/envoy_mesh.dart';
+import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'package:envoy_thin_client/services/home_remote_client.dart';
 import 'package:envoygo/mesh/home_social_backend.dart';
 import 'package:envoygo/models/chat_message.dart';
 import 'package:envoygo/models/contact.dart';
 import 'package:envoygo/models/peer_search_result.dart';
-import 'package:envoygo/services/node_service_client.dart';
+import 'package:envoygo/services/product/node_service_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _StubClient extends NodeServiceClient {

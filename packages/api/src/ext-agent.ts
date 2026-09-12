@@ -2,6 +2,25 @@
  * External agent bridge definitions (HomeClaw, Hermes, OpenHuman, …).
  * Persisted in the home node's `bridge-config.json`.
  */
+
+// Re-exported from `@envoymesh/protocol` so `@envoymesh/api`'s public surface is
+// unchanged (see the note at each declaration site below).
+import type { ExtAgentCommandDescriptor } from "@envoymesh/protocol";
+// The other four moved types are re-exported below but not used in this file,
+// so they are deliberately absent from the import above (an unused `import type`
+// survives no lint here and only invites the question of whether it is needed).
+export type {
+  ExtAgentCommandIntercept,
+  ExtAgentCommandDescriptor,
+  HomeFsPreviewKind,
+  PreviewHomeFsFileParams,
+  PreviewHomeFsFileResult,
+} from "@envoymesh/protocol";
+export {
+  EXT_AGENTS_WITH_PROJECT_PATH,
+  extAgentUsesProjectPath,
+} from "@envoymesh/protocol";
+
 export interface ExtAgentDefinition {
   id: string;
   name: string;
@@ -175,25 +194,14 @@ export interface ExtAgentReachability {
   installGuide?: ExtAgentInstallGuide;
 }
 
-/**
- * How Ext Agent chat should handle a slash command.
- * - `envoy` — handled by EnvoyMesh UI/node (never sent as chat text)
- * - `forward` — sent as plain text to `backend.ask()` (agent may honor it)
- * - `hybrid` — Envoy may apply local side effects and/or forward
- */
-export type ExtAgentCommandIntercept = "envoy" | "forward" | "hybrid";
-
-/** One slash command shown in Ext Agent chat autocomplete. */
-export interface ExtAgentCommandDescriptor {
-  /** Full slash token including leading `/`, e.g. `/model`. */
-  slash: string;
-  /** Short human summary for the suggestion row. */
-  summary: string;
-  /** Optional args hint, e.g. `"<name> | list"`. */
-  argsHint?: string;
-  intercept: ExtAgentCommandIntercept;
-  source: "static" | "dynamic";
-}
+// ─── moved to `@envoymesh/protocol` ─────────────────────────────────────────
+// The shared slice of the ext-agent contract now lives in
+// `@envoymesh/protocol` (`ext-agent-contract.ts`) and is re-exported at the
+// top of this file: `@envoymesh/node-core` needs it, and importing it from
+// `@envoymesh/api` classified node-core `product-bound` (E9), which made the
+// whole package unusable from any reusable module. No importer changed —
+// `@envoymesh/api` still exports every name below.
+// ────────────────────────────────────────────────────────────────────────────
 
 /**
  * Per-agent slash catalog for Ext Agent chat (Social / EnvoyGo).
@@ -321,36 +329,14 @@ export interface SetExtAgentProjectPathParams {
   projectPath?: string | null;
 }
 
-export interface PreviewHomeFsFileParams {
-  /** Absolute file path on the home node. */
-  path: string;
-}
-
-export type HomeFsPreviewKind =
-  | "image"
-  | "pdf"
-  | "html"
-  | "markdown"
-  | "text"
-  | "office"
-  | "unsupported"
-  | "error";
-
-export interface PreviewHomeFsFileResult {
-  path: string;
-  title: string;
-  kind: HomeFsPreviewKind;
-  mediaType?: string;
-  /** Sanitized HTML document fragment/body for WebView. */
-  html?: string;
-  /** Plain text when html is not used. */
-  text?: string;
-  /** Base64 payload for binary previews (image/pdf). */
-  contentBase64?: string;
-  /** Human-readable error when kind is error/unsupported. */
-  error?: string;
-  byteLength?: number;
-}
+// ─── moved to `@envoymesh/protocol` ─────────────────────────────────────────
+// The shared slice of the ext-agent contract now lives in
+// `@envoymesh/protocol` (`ext-agent-contract.ts`) and is re-exported at the
+// top of this file: `@envoymesh/node-core` needs it, and importing it from
+// `@envoymesh/api` classified node-core `product-bound` (E9), which made the
+// whole package unusable from any reusable module. No importer changed —
+// `@envoymesh/api` still exports every name below.
+// ────────────────────────────────────────────────────────────────────────────
 
 /** MiniMax MMX-CLI media kinds for Envoy-intercepted slash commands. */
 export type MmxMediaKind =
@@ -431,22 +417,14 @@ export interface BuildAgentAttachmentContextResult {
 }
 
 /** Agents that honor {@link ExtAgentDefinition.projectPath} as cwd. */
-export const EXT_AGENTS_WITH_PROJECT_PATH = [
-  "codex",
-  "claudecode",
-  "cursor",
-  "aider",
-  "mmx",
-  "opencode",
-  "codewhale",
-  "hermes",
-  "openhuman",
-] as const;
-
-export function extAgentUsesProjectPath(agentId: string | undefined | null): boolean {
-  const id = agentId?.trim().toLowerCase() ?? "";
-  return (EXT_AGENTS_WITH_PROJECT_PATH as readonly string[]).includes(id);
-}
+// ─── moved to `@envoymesh/protocol` ─────────────────────────────────────────
+// The shared slice of the ext-agent contract now lives in
+// `@envoymesh/protocol` (`ext-agent-contract.ts`) and is re-exported at the
+// top of this file: `@envoymesh/node-core` needs it, and importing it from
+// `@envoymesh/api` classified node-core `product-bound` (E9), which made the
+// whole package unusable from any reusable module. No importer changed —
+// `@envoymesh/api` still exports every name below.
+// ────────────────────────────────────────────────────────────────────────────
 
 /**
  * Whether the Ext Agent's binary is installed on the current machine.

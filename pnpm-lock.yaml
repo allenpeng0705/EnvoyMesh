@@ -5,7 +5,10 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@envoymesh/envoy-harness': link:../envoy-harness/packages/envoy-harness
+  '@envoymesh/envoy-harness': file:../envoy-harness/packages/envoy-harness
+  '@envoymesh/protocol': link:packages/protocol
+  '@envoymesh/identity': link:packages/identity
+  '@envoymesh/agent-adapter': link:packages/agent-adapter
 
 importers:
 
@@ -57,55 +60,64 @@ importers:
         specifier: ^0.3.156
         version: 0.3.237(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3)
       '@envoymesh/agent-adapter':
-        specifier: 0.2.2
+        specifier: link:../../packages/agent-adapter
         version: link:../../packages/agent-adapter
       '@envoymesh/api':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/api
       '@envoymesh/bonds':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/bonds
       '@envoymesh/envoy-harness':
-        specifier: link:../../../envoy-harness/packages/envoy-harness
-        version: link:../../../envoy-harness/packages/envoy-harness
+        specifier: file:../../../envoy-harness/packages/envoy-harness
+        version: file:../envoy-harness/packages/envoy-harness
       '@envoymesh/envoy-harness-adapter':
         specifier: file:../../../envoy-harness/packages/envoy-harness-adapter
         version: file:../envoy-harness/packages/envoy-harness-adapter
       '@envoymesh/envoy-harness-client':
-        specifier: link:../../../envoy-harness/packages/envoy-harness-client
-        version: link:../../../envoy-harness/packages/envoy-harness-client
+        specifier: file:../../../envoy-harness/packages/envoy-harness-client
+        version: file:../envoy-harness/packages/envoy-harness-client
       '@envoymesh/envoy-harness-peer':
-        specifier: link:../../../envoy-harness/packages/envoy-harness-peer
-        version: link:../../../envoy-harness/packages/envoy-harness-peer
+        specifier: file:../../../envoy-harness/packages/envoy-harness-peer
+        version: file:../envoy-harness/packages/envoy-harness-peer
+      '@envoymesh/harness':
+        specifier: 0.5.0
+        version: link:../../packages/harness
+      '@envoymesh/host-connect':
+        specifier: 0.5.0
+        version: link:../../packages/host-connect
       '@envoymesh/identity':
-        specifier: 0.2.2
+        specifier: link:../../packages/identity
         version: link:../../packages/identity
       '@envoymesh/ipfs-helia':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/ipfs-helia
       '@envoymesh/kb-obsidian':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/kb-obsidian
       '@envoymesh/local-store':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/local-store
       '@envoymesh/models':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/models
       '@envoymesh/network':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/network
+      '@envoymesh/node-core':
+        specifier: 0.5.0
+        version: link:../../packages/node-core
       '@envoymesh/openclaw-runtime':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/openclaw-runtime
       '@envoymesh/protocol':
-        specifier: 0.2.2
+        specifier: link:../../packages/protocol
         version: link:../../packages/protocol
       '@envoymesh/rag':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/rag
       '@envoymesh/vault':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/vault
       '@libp2p/utils':
         specifier: ^7.0.0
@@ -141,12 +153,18 @@ importers:
 
   apps/relay:
     dependencies:
+      '@envoymesh/api':
+        specifier: 0.5.0
+        version: link:../../packages/api
       '@envoymesh/identity':
-        specifier: 0.2.2
+        specifier: link:../../packages/identity
         version: link:../../packages/identity
       '@envoymesh/network':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/network
+      '@envoymesh/protocol':
+        specifier: link:../../packages/protocol
+        version: link:../../packages/protocol
       '@libp2p/utils':
         specifier: ^7.0.0
         version: 7.3.2
@@ -164,10 +182,19 @@ importers:
   apps/social:
     dependencies:
       '@envoymesh/api':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/api
+      '@envoymesh/envoy-harness-client':
+        specifier: file:../../../envoy-harness/packages/envoy-harness-client
+        version: file:../envoy-harness/packages/envoy-harness-client
+      '@envoymesh/envoy-harness-ehui':
+        specifier: file:../../../envoy-harness/packages/envoy-harness-ehui
+        version: file:../envoy-harness/packages/envoy-harness-ehui(react@19.2.8)
+      '@envoymesh/protocol':
+        specifier: link:../../packages/protocol
+        version: link:../../packages/protocol
       '@envoymesh/rag':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../../packages/rag
       '@tauri-apps/plugin-process':
         specifier: ^2.3.1
@@ -249,16 +276,16 @@ importers:
   packages/agent-adapter:
     dependencies:
       '@envoymesh/protocol':
-        specifier: 0.2.2
+        specifier: link:../protocol
         version: link:../protocol
 
   packages/api:
     dependencies:
       '@envoymesh/identity':
-        specifier: 0.2.2
+        specifier: link:../identity
         version: link:../identity
       '@envoymesh/protocol':
-        specifier: 0.2.2
+        specifier: link:../protocol
         version: link:../protocol
       '@noble/hashes':
         specifier: ^1.8.0
@@ -270,13 +297,38 @@ importers:
   packages/bonds:
     dependencies:
       '@envoymesh/protocol':
-        specifier: 0.2.2
+        specifier: link:../protocol
         version: link:../protocol
+
+  packages/harness:
+    dependencies:
+      '@anthropic-ai/claude-agent-sdk':
+        specifier: ^0.3.156
+        version: 0.3.237(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3)
+      '@envoymesh/api':
+        specifier: 0.5.0
+        version: link:../api
+      '@envoymesh/node-core':
+        specifier: 0.5.0
+        version: link:../node-core
+
+  packages/host-connect:
+    dependencies:
+      '@envoymesh/protocol':
+        specifier: link:../protocol
+        version: link:../protocol
+      ws:
+        specifier: ^8.20.0
+        version: 8.21.3
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   packages/identity:
     dependencies:
       '@envoymesh/protocol':
-        specifier: 0.2.2
+        specifier: link:../protocol
         version: link:../protocol
 
   packages/ipfs-helia:
@@ -294,25 +346,25 @@ importers:
   packages/kb-obsidian:
     dependencies:
       '@envoymesh/api':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../api
 
   packages/local-store:
     dependencies:
       '@envoymesh/bonds':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../bonds
       '@envoymesh/identity':
-        specifier: 0.2.2
+        specifier: link:../identity
         version: link:../identity
       '@envoymesh/protocol':
-        specifier: 0.2.2
+        specifier: link:../protocol
         version: link:../protocol
 
   packages/mobile-identity:
     dependencies:
       '@envoymesh/protocol':
-        specifier: 0.2.2
+        specifier: link:../protocol
         version: link:../protocol
       '@noble/curves':
         specifier: ^1.9.0
@@ -320,14 +372,18 @@ importers:
       '@noble/hashes':
         specifier: ^1.8.0
         version: 1.8.0
+    devDependencies:
+      '@envoymesh/identity':
+        specifier: link:../identity
+        version: link:../identity
 
   packages/models:
     dependencies:
       '@envoymesh/api':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../api
       '@envoymesh/protocol':
-        specifier: 0.2.2
+        specifier: link:../protocol
         version: link:../protocol
       zod:
         specifier: ^4.3.6
@@ -345,7 +401,7 @@ importers:
         specifier: ^8.0.0
         version: 8.0.1
       '@envoymesh/protocol':
-        specifier: 0.2.2
+        specifier: link:../protocol
         version: link:../protocol
       '@libp2p/autonat':
         specifier: ^3.0.18
@@ -409,11 +465,26 @@ importers:
         version: 5.1.1
     devDependencies:
       '@envoymesh/bonds':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../bonds
       '@envoymesh/identity':
-        specifier: 0.2.2
+        specifier: link:../identity
         version: link:../identity
+
+  packages/node-core:
+    dependencies:
+      '@envoymesh/protocol':
+        specifier: link:../protocol
+        version: link:../protocol
+      '@envoymesh/vault':
+        specifier: 0.5.0
+        version: link:../vault
+      mammoth:
+        specifier: ^1.12.0
+        version: 1.12.1
+      xlsx:
+        specifier: ^0.18.5
+        version: 0.18.5
 
   packages/openclaw-runtime: {}
 
@@ -422,11 +493,15 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.4.3
+    devDependencies:
+      '@envoymesh/identity':
+        specifier: link:../identity
+        version: link:../identity
 
   packages/rag:
     dependencies:
       '@envoymesh/api':
-        specifier: 0.2.2
+        specifier: 0.5.0
         version: link:../api
       hnswlib-node:
         specifier: ^3.0.0
@@ -761,6 +836,22 @@ packages:
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
 
+  '@deepseek-ai/node-addon-landlock-run-linux-arm64@0.1.1':
+    resolution: {integrity: sha512-lYY2RbcPW4rGRM5hVJbrXlvLqyBxeJBjBqvt+QTHTU+GtfUVVjTODKa4e3CRwMQoCEpOjoARdQBHbN7HvE72WQ==}
+    engines: {node: '>=20'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@deepseek-ai/node-addon-landlock-run-linux-x64@0.1.1':
+    resolution: {integrity: sha512-OHAzPW2Coe/iYobAJAAA8CeVrBoKV4BnNHsgwvXwOfishxkUVSWSvdyxrZPiwYRXutpIGVrSo9zV3WOQy2euBA==}
+    engines: {node: '>=20'}
+    cpu: [x64]
+    os: [linux]
+
+  '@deepseek-ai/node-addon-landlock-run@0.1.1':
+    resolution: {integrity: sha512-aHGhlQJEutfobKM/4K59SERbT7RmQdD2oMKzD8Bne/Ps7TeT8AweCN+dpdfuxQhMNbFcJMymrgPnID0WYQ30Tw==}
+    engines: {node: '>=20'}
+
   '@dnsquery/dns-packet@6.1.1':
     resolution: {integrity: sha512-WXTuFvL3G+74SchFAtz3FgIYVOe196ycvGsMgvSH/8Goptb1qpIQtIuM4SOK9G9lhMWYpHxnXyy544ZhluFOew==}
     engines: {node: '>=6'}
@@ -777,6 +868,40 @@ packages:
   '@envoymesh/envoy-harness-adapter@file:../envoy-harness/packages/envoy-harness-adapter':
     resolution: {directory: ../envoy-harness/packages/envoy-harness-adapter, type: directory}
     engines: {node: '>=22.19'}
+
+  '@envoymesh/envoy-harness-client@file:../envoy-harness/packages/envoy-harness-client':
+    resolution: {directory: ../envoy-harness/packages/envoy-harness-client, type: directory}
+    engines: {node: '>=22.19'}
+
+  '@envoymesh/envoy-harness-ehui@file:../envoy-harness/packages/envoy-harness-ehui':
+    resolution: {directory: ../envoy-harness/packages/envoy-harness-ehui, type: directory}
+    engines: {node: '>=22.19'}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+
+  '@envoymesh/envoy-harness-peer@file:../envoy-harness/packages/envoy-harness-peer':
+    resolution: {directory: ../envoy-harness/packages/envoy-harness-peer, type: directory}
+    engines: {node: '>=22.19'}
+    hasBin: true
+
+  '@envoymesh/envoy-harness-tui@file:../envoy-harness/packages/envoy-harness-tui':
+    resolution: {directory: ../envoy-harness/packages/envoy-harness-tui, type: directory}
+    engines: {node: '>=22.19'}
+    hasBin: true
+
+  '@envoymesh/envoy-harness@file:../envoy-harness/packages/envoy-harness':
+    resolution: {directory: ../envoy-harness/packages/envoy-harness, type: directory}
+    engines: {node: '>=22.19'}
+    hasBin: true
+
+  '@envoymesh/envoy-process@file:../envoy-harness/packages/envoy-process':
+    resolution: {directory: ../envoy-harness/packages/envoy-process, type: directory}
+    engines: {node: '>=22.19'}
+
+  '@envoymesh/envoy-sandbox-win@file:../envoy-harness/packages/envoy-sandbox-win':
+    resolution: {directory: ../envoy-harness/packages/envoy-sandbox-win, type: directory}
+    engines: {node: '>=22.19'}
+    hasBin: true
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -4353,6 +4478,10 @@ packages:
   simple-get@4.0.1:
     resolution: {integrity: sha512-brv7p5WgH0jmQJr1ZDDfKDOSeWWg+OVypG99A/5vYGPqJ6pxiaHLy8nxtFjBA7oMa01ebA9gfh1uMCFqOuXxvA==}
 
+  smol-toml@1.8.0:
+    resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
+    engines: {node: '>= 18'}
+
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
@@ -4962,6 +5091,9 @@ packages:
     peerDependencies:
       zod: ^3.25.28 || ^4
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
@@ -5286,6 +5418,18 @@ snapshots:
 
   '@csstools/css-tokenizer@4.0.0': {}
 
+  '@deepseek-ai/node-addon-landlock-run-linux-arm64@0.1.1':
+    optional: true
+
+  '@deepseek-ai/node-addon-landlock-run-linux-x64@0.1.1':
+    optional: true
+
+  '@deepseek-ai/node-addon-landlock-run@0.1.1':
+    optionalDependencies:
+      '@deepseek-ai/node-addon-landlock-run-linux-arm64': 0.1.1
+      '@deepseek-ai/node-addon-landlock-run-linux-x64': 0.1.1
+    optional: true
+
   '@dnsquery/dns-packet@6.1.1':
     dependencies:
       '@leichtgewicht/ip-codec': 2.0.5
@@ -5309,11 +5453,56 @@ snapshots:
 
   '@envoymesh/envoy-harness-adapter@file:../envoy-harness/packages/envoy-harness-adapter':
     dependencies:
-      '@envoymesh/agent-adapter': link:../../../EnvoyMesh/packages/agent-adapter
-      '@envoymesh/envoy-harness': link:../envoy-harness/packages/envoy-harness
-      '@envoymesh/envoy-harness-peer': link:../envoy-harness-peer
-      '@envoymesh/identity': link:../../../EnvoyMesh/packages/identity
-      '@envoymesh/protocol': link:../../../EnvoyMesh/packages/protocol
+      '@envoymesh/agent-adapter': link:packages/agent-adapter
+      '@envoymesh/envoy-harness': file:../envoy-harness/packages/envoy-harness
+      '@envoymesh/envoy-harness-peer': file:../envoy-harness/packages/envoy-harness-peer
+      '@envoymesh/identity': link:packages/identity
+      '@envoymesh/protocol': link:packages/protocol
+      zod: 3.25.76
+
+  '@envoymesh/envoy-harness-client@file:../envoy-harness/packages/envoy-harness-client':
+    dependencies:
+      '@envoymesh/envoy-harness': file:../envoy-harness/packages/envoy-harness
+
+  '@envoymesh/envoy-harness-ehui@file:../envoy-harness/packages/envoy-harness-ehui(react@19.2.8)':
+    dependencies:
+      '@envoymesh/envoy-harness-client': file:../envoy-harness/packages/envoy-harness-client
+      react: 19.2.8
+
+  '@envoymesh/envoy-harness-peer@file:../envoy-harness/packages/envoy-harness-peer':
+    dependencies:
+      '@envoymesh/agent-adapter': link:packages/agent-adapter
+      '@envoymesh/envoy-harness': file:../envoy-harness/packages/envoy-harness
+      '@envoymesh/envoy-harness-tui': file:../envoy-harness/packages/envoy-harness-tui
+      '@envoymesh/protocol': link:packages/protocol
+      zod: 3.25.76
+
+  '@envoymesh/envoy-harness-tui@file:../envoy-harness/packages/envoy-harness-tui':
+    dependencies:
+      '@envoymesh/envoy-harness': file:../envoy-harness/packages/envoy-harness
+      '@envoymesh/envoy-harness-client': file:../envoy-harness/packages/envoy-harness-client
+      '@envoymesh/envoy-harness-peer': file:../envoy-harness/packages/envoy-harness-peer
+
+  '@envoymesh/envoy-harness@file:../envoy-harness/packages/envoy-harness':
+    dependencies:
+      '@envoymesh/envoy-process': file:../envoy-harness/packages/envoy-process
+      smol-toml: 1.8.0
+      yaml: 2.9.0
+      zod: 3.25.76
+    optionalDependencies:
+      '@deepseek-ai/node-addon-landlock-run': 0.1.1
+      '@envoymesh/envoy-harness-peer': file:../envoy-harness/packages/envoy-harness-peer
+      '@envoymesh/envoy-harness-tui': file:../envoy-harness/packages/envoy-harness-tui
+      '@envoymesh/envoy-sandbox-win': file:../envoy-harness/packages/envoy-sandbox-win
+      node-pty: 1.1.0
+
+  '@envoymesh/envoy-process@file:../envoy-harness/packages/envoy-process': {}
+
+  '@envoymesh/envoy-sandbox-win@file:../envoy-harness/packages/envoy-sandbox-win':
+    dependencies:
+      '@envoymesh/envoy-harness': file:../envoy-harness/packages/envoy-harness
+      '@envoymesh/envoy-process': file:../envoy-harness/packages/envoy-process
+    optional: true
 
   '@esbuild/aix-ppc64@0.25.12':
     optional: true
@@ -9480,6 +9669,8 @@ snapshots:
       once: 1.4.0
       simple-concat: 1.0.1
 
+  smol-toml@1.8.0: {}
+
   source-map-js@1.2.1: {}
 
   source-map-support@0.5.21:
@@ -9995,5 +10186,7 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@4.4.3):
     dependencies:
       zod: 4.4.3
+
+  zod@3.25.76: {}
 
   zod@4.4.3: {}

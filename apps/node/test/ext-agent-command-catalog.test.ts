@@ -3,7 +3,7 @@ import {
   buildExtAgentCommandCatalog,
   formatExtAgentCommandHelp,
   mergeExtAgentCommandDescriptors,
-} from "../src/ext-agent-adapter/command-catalog.js";
+} from "@envoymesh/harness";
 
 describe("ext-agent command catalog", () => {
   it("excludes HomeClaw TUI verbs but still merges MiniMax media slash", () => {

@@ -19,6 +19,9 @@
     { "path": "../../packages/rag" },
     { "path": "../../packages/kb-obsidian" },
     { "path": "../../packages/ipfs-helia" },
+    { "path": "../../packages/node-core" },
+    { "path": "../../packages/harness" },
+    { "path": "../../packages/host-connect" },
     { "path": "../../packages/openclaw-runtime" }
   ]
 }
