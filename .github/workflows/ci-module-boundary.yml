@@ -1,0 +1,86 @@
+name: ci-module-boundary
+
+# The enforcement half of the module boundary (docs/envoymesh-refactoring-plan.md §4.3).
+#
+# Sibling to `ci-module-size.yml` — same shape: a custom node script, no new
+# dependency, dedicated workflow so a boundary failure is unambiguous in the PR
+# checks list rather than buried inside a general test run.
+#
+# All five rules are enforced: 1 (direction), 2 (declared entry points),
+# 3 (completeness), 4 (concept naming), 5 (Dart reusable surface).
+# Plus the reuse test (§4.4 / Step 5) as a second job.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  module-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The manifest must describe the tree in THIS PR. A new file with no
+      # manifest entry fails here — the adopted "classify in the same PR"
+      # contract (plan §4.3), which keeps the repo from ever being left in a
+      # state where the manifest is knowingly stale.
+      # The gate compares the COMMITTED manifest against the tree: a new or
+      # moved file must be classified in the same PR. It deliberately does not
+      # compare the declared-surface artifact (below), which changes on every
+      # export edit — gating it would fail unrelated PRs.
+      - name: Manifest is current
+        run: node scripts/classify-modules.mjs --check
+
+      - name: Boundary rules 1, 2, 3, 4, 5
+        run: node scripts/check-module-boundary.mjs
+
+      - name: Seeded-violation tests (each rule can actually fail)
+        run: node --test scripts/test/module-boundary.test.mjs
+
+      # Informational: the declared surface of every `reusable` module (its
+      # exported symbol names, plan Step 4). Regenerated rather than gated, so
+      # it is available as an artifact for review without blocking anyone.
+      - name: Declared surface (informational, not gated)
+        run: node scripts/classify-modules.mjs --surface-out module-surface.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: module-surface
+          path: module-surface.json
+          if-no-files-found: warn
+
+  # The reuse test — plan §4.4 / Step 5.
+  #
+  # A real consumer package (`packages/envoy-reuse-fixture`) built ONLY from
+  # `reusable` modules: it imports `envoy_mesh.dart`, `envoy_thin_client.dart`
+  # and `envoy_mesh_libp2p.dart`, and never the social libraries. It must
+  # compile and its tests must pass — that is the encapsulation claim, asserted
+  # rather than described.
+  #
+  # Lives in this workflow rather than `ci-flutter.yml` because it is the
+  # encapsulation proof, not an EnvoyGo test.
+  reuse-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.0'
+          channel: stable
+
+      - name: Resolve the fixture
+        working-directory: packages/envoy-reuse-fixture
+        run: dart pub get
+
+      - name: Fixture analyzes clean
+        working-directory: packages/envoy-reuse-fixture
+        run: dart analyze --fatal-infos
+
+      - name: The reusable surface is sufficient on its own
+        working-directory: packages/envoy-reuse-fixture
+        run: dart test

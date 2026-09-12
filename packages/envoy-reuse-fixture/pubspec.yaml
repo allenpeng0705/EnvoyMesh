@@ -1,0 +1,30 @@
+name: envoy_reuse_fixture
+description: >-
+  The reuse test (docs/envoymesh-refactoring-plan.md §4.4, Step 5): a consumer
+  built ONLY from EnvoyMesh's `reusable` modules. If this package compiles and
+  its tests pass, the encapsulation claim is true — a product can be built on
+  EnvoyMesh without reaching a social concept.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  envoy_mesh:
+    path: ../envoy-mesh-dart
+  envoy_thin_client:
+    path: ../envoy-thin-client-dart
+  envoy_mesh_libp2p:
+    path: ../envoy-mesh-libp2p-dart
+
+# `dart_libp2p` pins `mdns_dart ^2.0.1` → 2.2.1, which fails to compile on
+# Dart 3.13+. Dart honours `dependency_overrides` only from the root package,
+# so every pub root that resolves envoy_mesh_libp2p must repeat this
+# (see packages/envoy-mesh-libp2p-dart/pubspec.yaml and apps/envoygo/pubspec.yaml).
+dependency_overrides:
+  mdns_dart: 2.2.2
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^4.0.0

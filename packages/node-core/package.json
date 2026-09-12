@@ -1,0 +1,22 @@
+{
+  "name": "@envoymesh/node-core",
+  "version": "0.5.0",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@envoymesh/protocol": "0.5.0",
+    "@envoymesh/vault": "0.5.0",
+    "mammoth": "^1.12.0",
+    "xlsx": "^0.18.5"
+  }
+}

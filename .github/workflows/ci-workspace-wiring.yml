@@ -1,0 +1,42 @@
+name: ci-workspace-wiring
+
+# The wiring half of "a package is declared everywhere it must be".
+#
+# Adding `@envoymesh/host-connect` needed edits in six files, and missing any of
+# them produced a *different* symptom rather than a clear error: TS6059/TS6307 on
+# every file the consumer imported (missing tsconfig reference), a package that
+# only resolves because of workspace hoisting (missing package.json dependency),
+# a package `tsc -b` never builds (missing root reference), or source-level
+# resolution that silently degrades to built output (missing tsconfig.base path /
+# vitest alias). Each of those was hit at least once during the refactor.
+#
+# Sibling to `ci-module-boundary.yml` and `ci-module-size.yml` — same shape: a
+# custom node script with no new dependency, in its own workflow so a wiring
+# failure is unambiguous in the PR checks list.
+#
+# The seeded tests come along because they are the proof each rule can fail; they
+# also cover `check-module-size.mjs`'s dead-allowlist rule (a path-keyed
+# exception is silently void after a file move) and the shared source-file
+# predicate that decides what counts as a module.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  workspace-wiring:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # R1 declared dependencies, R2/R3 project references, R4 resolution
+      # entries, R5 no build output inside a src tree.
+      - name: Workspace wiring rules
+        run: node scripts/check-workspace-wiring.mjs
+
+      - name: Seeded-violation tests (each rule can actually fail)
+        run: node --test scripts/test/gates.test.mjs

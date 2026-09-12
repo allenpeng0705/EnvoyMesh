@@ -1,0 +1,83 @@
+# CODEOWNERS — who reviews what.
+#
+# ## Why this file exists
+#
+# `docs/envoymesh-refactoring-plan.md` §2.4 found that `apps/node/src` had "no
+# declared boundary, no declared owner, and no declared public surface". The
+# boundary and the surface are now declared and enforced (the manifest and
+# `scripts/check-module-boundary.mjs`). **Ownership was the remaining gap** —
+# recorded as decision **E10**, which could not be closed by a guess: an
+# invented owner map is worse than none, because it looks authoritative.
+#
+# ## What this is
+#
+# A deliberately minimal starting point, derived from facts rather than
+# preference:
+#
+#   * the repository remote is `github.com/allenpeng0705/EnvoyMesh`, so the
+#     owning handle is `@allenpeng0705`;
+#   * 1,244 commits are by that author, with no competing maintainer.
+#
+# One owner for everything is honest and immediately useful (GitHub will request
+# that reviewer). It is **not** a claim about how the code should be divided.
+#
+# ## The areas a future split would use
+#
+# Recorded now so the split is cheap when a trigger fires (see the decision
+# below). These are the areas the refactoring plan already distinguishes:
+#
+#   /packages/protocol/     protocol schemas — the reusable leaf everything fans in through
+#   /packages/identity/     keys, device certificates, mandates
+#   /packages/network/      libp2p wrapper: transports, mDNS, DHT, circuit relay
+#   /packages/api/          the RPC contract (see E9 — splitting into CoreNodeService)
+#   /apps/node/src/         the node runtime — 483 modules in the manifest, the largest surface
+#   /packages/host-connect/ the reusable host/connect layer
+#   /packages/node-core/    the shared core (ports, home-fs, slash descriptors)
+#   /packages/harness/      ext-agent adapters + Pi runtime
+#   /apps/social/           the desktop Social product
+#   /apps/envoygo/          the mobile product
+#   /apps/relay/            the relay binary — stays lean by design
+#   /packages/envoy-*-dart/ the reusable Dart SDKs (reusable/social library split, 42 modules)
+#   /scripts/               the boundary checks themselves
+#   /.github/workflows/     CI
+#
+# When splitting, keep `scripts/` and `.github/workflows/` owned deliberately:
+# those files *enforce* the boundary, so a change there deserves the same review
+# weight as a change to the boundary itself.
+
+# ## Decision — E10, Option 1: **defer the per-area split** (2026-09-12)
+#
+# This file stays a single catch-all on purpose, and that is now a recorded
+# decision rather than an unfinished item.
+#
+# **Why not per-area lines today.** There is one human committer (1,244 commits,
+# `@allenpeng0705`). Twelve area lines would all name the same reviewer: the shape
+# of an ownership map without its content, which reads as authoritative and says
+# nothing. Deferring costs nothing operationally — GitHub requests that reviewer
+# either way.
+#
+# **What reopens it** (any one of these):
+#
+#   1. **A second maintainer owns a subsystem** — the split only means something
+#      once the names differ.
+#   2. **One subsystem's change rate justifies a dedicated reviewer** — measure it
+#      (`git log --name-only --since=3.months`), do not go by feel.
+#   3. **A second product ships from this tree** (EnvoyCoder / EnvoyAgent) — the
+#      reusable/product split already implies areas, and the product-bound side
+#      becomes a natural review boundary.
+#
+# **What to do first when a trigger fires:** build the area map (Option 2 in
+# `docs/envoymesh-refactoring-plan.md` §8.8 — an `areas` table in
+# `scripts/classify-modules.mjs`, gated by the same completeness rule as the
+# classification), then **generate** these lines from it. Do not hand-write them:
+# a hand-kept copy drifts the moment a directory moves, which is the same lesson
+# as the module-size allowlist and the six-places package list.
+#
+# Three sub-decisions to settle at that point: (a) granularity — top-level
+# directory versus subsystem; (b) owners as GitHub **teams** (needs the repo to
+# live in an organisation) versus individuals; (c) whether `scripts/` and
+# `.github/workflows/` get their **own** owner, since those files *enforce* the
+# boundary and a change there deserves boundary-level review weight.
+
+# Catch-all — see the decision above before replacing it (E10, Option 1).
+*       @allenpeng0705
