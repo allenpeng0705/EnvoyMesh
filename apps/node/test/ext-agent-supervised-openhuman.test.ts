@@ -109,7 +109,9 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
     const reply = await backend.ask("hi", "sess-1");
     expect(reply).toBe("openhuman-reply:hi");
     expect(sup.start).toHaveBeenCalledTimes(1);
-    expect(innerAsk).toHaveBeenCalledWith("hi", "sess-1");
+    // `opts` is the interface's third parameter and this wrapper forwards it,
+    // so the inner call carries an explicit `undefined` when the caller passes none.
+    expect(innerAsk).toHaveBeenCalledWith("hi", "sess-1", undefined);
   });
 
   it("ask() skips supervisor.start() when inner.probe() is already healthy (probe-first)", async () => {
@@ -125,7 +127,9 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
     expect(reply).toBe("openhuman-reply:hi");
     expect(sup.start).toHaveBeenCalledTimes(0);
     expect(backend.isEverHealthy()).toBe(true);
-    expect(innerAsk).toHaveBeenCalledWith("hi", "sess-1");
+    // `opts` is the interface's third parameter and this wrapper forwards it,
+    // so the inner call carries an explicit `undefined` when the caller passes none.
+    expect(innerAsk).toHaveBeenCalledWith("hi", "sess-1", undefined);
   });
 
   it("ask() clears a cached spawn error when the HTTP core becomes healthy", async () => {
@@ -148,6 +152,31 @@ describe("OpenHumanSupervisedBackend (Phase 55E)", () => {
     const reply = await backend.ask("hi-again", "sess-1");
     expect(reply).toBe("ok");
     expect(backend.didLastStartFail()).toBe(false);
+  });
+
+  // Same property as the Hermes suite: `ask(text, sessionKey, opts?)` must
+  // forward `opts` through the supervisor wrapper on both paths. The assertions
+  // above expected a two-argument call, which had been failing since the third
+  // parameter was added, and they passed no `opts` at all.
+  it("forwards ask() opts to the inner backend", async () => {
+    const seen: Array<[string, string, unknown]> = [];
+    const innerAsk = vi.fn(async (text: string, sessionKey: string, opts?: unknown) => {
+      seen.push([text, sessionKey, opts]);
+      return `openhuman-reply:${text}`;
+    });
+    const sup = new FakeSupervisor();
+    const backend = new OpenHumanSupervisedBackend({
+      inner: makeInner(innerAsk, true),
+      supervisor: sup as unknown as DaemonSupervisor,
+    });
+
+    const opts = { cwd: "/tmp/project", model: "sonnet" };
+    await backend.ask("hi", "sess-1", opts);
+    expect(seen).toEqual([["hi", "sess-1", opts]]);
+
+    const bare = new OpenHumanSupervisedBackend({ inner: makeInner(innerAsk, true) });
+    await bare.ask("again", "sess-2", opts);
+    expect(seen[1]).toEqual(["again", "sess-2", opts]);
   });
 
   it("ask() does NOT re-call supervisor.start() when already healthy", async () => {

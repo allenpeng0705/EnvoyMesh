@@ -122,7 +122,9 @@ describe("HermesSupervisedBackend (Phase 55E)", () => {
     const reply = await backend.ask("hello", "sess-1");
     expect(reply).toBe("reply:hello");
     expect(sup.start).toHaveBeenCalledTimes(1);
-    expect(innerAsk).toHaveBeenCalledWith("hello", "sess-1");
+    // `opts` is the interface's third parameter and this wrapper forwards it,
+    // so the inner call carries an explicit `undefined` when the caller passes none.
+    expect(innerAsk).toHaveBeenCalledWith("hello", "sess-1", undefined);
   });
 
   it("ask() skips supervisor.start() when inner.probe() is already healthy (probe-first)", async () => {
@@ -138,7 +140,38 @@ describe("HermesSupervisedBackend (Phase 55E)", () => {
     expect(reply).toBe("reply:hello");
     expect(sup.start).toHaveBeenCalledTimes(0);
     expect(backend.isEverHealthy()).toBe(true);
-    expect(innerAsk).toHaveBeenCalledWith("hello", "sess-1");
+    // `opts` is the interface's third parameter and this wrapper forwards it,
+    // so the inner call carries an explicit `undefined` when the caller passes none.
+    expect(innerAsk).toHaveBeenCalledWith("hello", "sess-1", undefined);
+  });
+
+  // The wrapper takes `ask(text, sessionKey, opts?)` and must forward `opts` to
+  // the inner backend on *both* paths (supervisor wired / not). The two tests
+  // above asserted a two-argument call and had been failing since the third
+  // parameter was added — and because they never passed `opts`, a regression
+  // that dropped it whenever a supervisor was wired would have gone unnoticed.
+  // This pins the property that actually matters: per-ask `cwd` / `model` /
+  // `onDelta` reach the inner backend.
+  it("forwards ask() opts to the inner backend", async () => {
+    const seen: Array<[string, string, unknown]> = [];
+    const innerAsk = vi.fn(async (text: string, sessionKey: string, opts?: unknown) => {
+      seen.push([text, sessionKey, opts]);
+      return `reply:${text}`;
+    });
+    const sup = new FakeSupervisor();
+    const backend = new HermesSupervisedBackend({
+      inner: makeInner(innerAsk, true),
+      supervisor: sup as unknown as DaemonSupervisor,
+    });
+
+    const opts = { cwd: "/tmp/project", model: "sonnet" };
+    await backend.ask("hello", "sess-1", opts);
+    expect(seen).toEqual([["hello", "sess-1", opts]]);
+
+    // And with no supervisor wired, the pass-through path forwards them too.
+    const bare = new HermesSupervisedBackend({ inner: makeInner(innerAsk, true) });
+    await bare.ask("again", "sess-2", opts);
+    expect(seen[1]).toEqual(["again", "sess-2", opts]);
   });
 
   it("ask() does NOT re-call supervisor.start() when already healthy", async () => {

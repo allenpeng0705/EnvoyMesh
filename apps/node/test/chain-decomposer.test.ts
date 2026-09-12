@@ -5,10 +5,12 @@
  * the tests cover:
  *   - empty goal → ok=false / empty_goal (no LLM call)
  *   - no providers → ok=false / no_provider (constructor returns early)
- *   - valid JSON array → ok=true / N subtasks with depth ≤ 3
+ *   - valid JSON array → ok=true / N subtasks with depth ≤ the mandate budget
  *   - JSON wrapped in prose → salvage via `extractJson`
  *   - non-JSON garbage → ok=false / parse_failed
- *   - depth clamping (depth > 3 → clamped to 3; depth < 1 → clamped to 1)
+ *   - depth clamping to the **mandate budget** (Phase 65A: default 2,
+ *     `allowDepth3` → 3, `allowDepth4` → 4, hard cap `CHAIN_MAX_DEPTH`; depth < 1
+ *     → 1)
  *   - missing fields → sensible defaults ("task.execute" capability, fallback objective)
  *
  * We never hit a real LLM here — the test uses a stub `ModelProvider` whose
@@ -25,6 +27,7 @@ import {
 } from "@envoymesh/models";
 
 import { buildDecomposePrompt, createLlmDecomposer, extractJson } from "../src/chain-decomposer.js";
+import { CHAIN_MAX_DEPTH } from "@envoymesh/protocol";
 
 function makeProvider(respond: (req: ModelRequest) => ModelResponse): ModelProvider {
   return {
@@ -99,7 +102,13 @@ describe("createLlmDecomposer — successful parse", () => {
     expect(subtaskIds.size).toBe(2);
   });
 
-  it("clamps depth > 3 to 3 and depth < 1 to 1", async () => {
+  // Phase 65A moved the clamp target: it is no longer the protocol constant
+  // (`CHAIN_MAX_DEPTH` = 4) or a fixed 3, but the **mandate budget** —
+  // `resolveAllowedChainDepth` gives default 2, `allowDepth3` → 3, `allowDepth4`
+  // → 4. This test asserted `99 → 3` unconditionally, which was the pre-65A rule
+  // and had been failing ever since; it now covers all three budgets, which is
+  // strictly more than the old expectation.
+  it("clamps depth to the mandate budget, and depth < 1 to 1", async () => {
     const provider = makeProvider(() =>
       respondWith(
         JSON.stringify([
@@ -109,13 +118,45 @@ describe("createLlmDecomposer — successful parse", () => {
         ]),
       ),
     );
-    const decomposer = createLlmDecomposer({ providers: [provider] });
-    const r = await decomposer("x");
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.steps[0].depth).toBe(3);
-    expect(r.steps[1].depth).toBe(1);
-    expect(r.steps[2].depth).toBe(2);
+
+    // No flags: the default orchestrator → worker budget is 2.
+    const byDefault = await createLlmDecomposer({ providers: [provider] })("x");
+    expect(byDefault.ok).toBe(true);
+    if (!byDefault.ok) return;
+    expect(byDefault.steps[0].depth).toBe(2);
+    expect(byDefault.steps[1].depth).toBe(1);
+    expect(byDefault.steps[2].depth).toBe(2);
+
+    // `allowDepth3` raises the ceiling to 3.
+    const depth3 = await createLlmDecomposer({
+      providers: [provider],
+      chainContext: { chainId: "c1", chainMandateId: "m1", allowDepth3: true },
+    })("x");
+    expect(depth3.ok).toBe(true);
+    if (!depth3.ok) return;
+    expect(depth3.steps[0].depth).toBe(3);
+    expect(depth3.steps[1].depth).toBe(1);
+
+    // `allowDepth4` reaches the protocol hard cap.
+    const depth4 = await createLlmDecomposer({
+      providers: [provider],
+      chainContext: { chainId: "c2", chainMandateId: "m2", allowDepth4: true },
+    })("x");
+    expect(depth4.ok).toBe(true);
+    if (!depth4.ok) return;
+    expect(depth4.steps[0].depth).toBe(4);
+
+    // The per-call flags are the same budget, resolved the same way.
+    const perCall = await createLlmDecomposer({ providers: [provider] })("x", { allowDepth3: true });
+    expect(perCall.ok).toBe(true);
+    if (!perCall.ok) return;
+    expect(perCall.steps[0].depth).toBe(3);
+
+    // But never above the protocol hard cap, even if both flags are set.
+    const capped = await createLlmDecomposer({ providers: [provider] })("x", { allowDepth4: true });
+    expect(capped.ok).toBe(true);
+    if (!capped.ok) return;
+    expect(capped.steps[0].depth).toBeLessThanOrEqual(CHAIN_MAX_DEPTH);
   });
 
   it("caps the array at 5 subtasks", async () => {
