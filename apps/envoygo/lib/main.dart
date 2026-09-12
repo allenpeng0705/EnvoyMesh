@@ -181,12 +181,12 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         ));
         break;
       case 'pi_proposal':
-        // Pi lives under the Terminal tab.
+        // Pi lives under the Coding tab (Phase 68).
         if (!isOwner) {
-          ref.read(chatProvider.notifier).selectTab(OwnerTabs.social);
+          ref.read(chatProvider.notifier).selectTab(OwnerTabs.chats);
           break;
         }
-        ref.read(chatProvider.notifier).selectTab(OwnerTabs.terminal);
+        ref.read(chatProvider.notifier).selectTab(OwnerTabs.coding);
         break;
       default:
         // Chat thread (direct, room, or Ext Agent).

@@ -14,6 +14,7 @@ import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView, type SettingsTabId } from "./components/views/SettingsView.js";
 import { SocialView, type SocialTab } from "./components/views/SocialView.js";
 import { TerminalView } from "./components/views/TerminalView.js";
+import { CodingView } from "./components/views/CodingView.js";
 import { KnowledgeView, type KnowledgeHubPanel } from "./components/views/KnowledgeView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
 import { ChainsView } from "./components/views/ChainsView.js";
@@ -40,6 +41,7 @@ import {
 } from "./lib/content-knowledge-nav.js";
 import { OPEN_ENVOY_AI_EVENT } from "./lib/open-envoy-ai-nav.js";
 import { OPEN_TERMINAL_EVENT } from "./lib/open-terminal-nav.js";
+import { OPEN_CODING_EVENT, openCoding } from "./lib/open-coding-nav.js";
 import {
   OPEN_CHAT_PEER_EVENT,
   type OpenChatPeerDetail,
@@ -59,6 +61,7 @@ import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 /** Primary top views + legacy aliases remapped by navigateTo. */
 export type ViewName =
   | "social"
+  | "coding"
   | "terminal"
   | "knowledge"
   | "chains"
@@ -486,6 +489,7 @@ export function App() {
   // AIChatPanel mounted during inflight turns when Social is visible.
   const oldAssistantVisible = currentView === "assistant";
   const terminalVisible = currentView === "terminal" || currentView === "pi";
+  const codingVisible = currentView === "coding";
   const keepAssistantMounted =
     oldAssistantVisible ||
     (envoyAiInflight &&
@@ -499,6 +503,12 @@ export function App() {
     if (terminalVisible) setTerminalEverOpened(true);
   }, [terminalVisible]);
   const keepTerminalMounted = terminalEverOpened;
+
+  const [codingEverOpened, setCodingEverOpened] = useState(false);
+  useEffect(() => {
+    if (codingVisible) setCodingEverOpened(true);
+  }, [codingVisible]);
+  const keepCodingMounted = codingEverOpened;
 
   // Navigation handler. Legacy aliases map onto the new IA.
   const navigateTo = (view: ViewName) => {
@@ -545,11 +555,28 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const goTerminal = (_ev: Event) => {
+    const goTerminal = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ startPi?: boolean; startNew?: boolean }>).detail;
+      if (detail?.startPi) {
+        // openTerminal() already redirects; keep App robust if event is dispatched raw.
+        openCoding({
+          harness: "pi",
+          startNew: detail.startNew !== false,
+        });
+        return;
+      }
       setCurrentView("terminal");
     };
     window.addEventListener(OPEN_TERMINAL_EVENT, goTerminal);
     return () => window.removeEventListener(OPEN_TERMINAL_EVENT, goTerminal);
+  }, []);
+
+  useEffect(() => {
+    const goCoding = (_ev: Event) => {
+      setCurrentView("coding");
+    };
+    window.addEventListener(OPEN_CODING_EVENT, goCoding);
+    return () => window.removeEventListener(OPEN_CODING_EVENT, goCoding);
   }, []);
 
   useEffect(() => {
@@ -733,8 +760,6 @@ export function App() {
                   onOpenDiscover: () => {
                     setSocialTab("discover");
                   },
-                  onOpenPi: () => setCurrentView("terminal"),
-                  onOpenEnvoyHarness: () => setSocialTab("chats"),
                   onOpenActivity: () => {
                     setSettingsTab("app");
                     navigateTo("settings");
@@ -768,6 +793,23 @@ export function App() {
                       setSocialTab("discover");
                     }}
                     onOpenSettingsAi={() => {
+                      setSettingsTab("ai");
+                      navigateTo("settings");
+                    }}
+                  />
+                </SwipeBack>
+              </div>
+            )}
+            {keepCodingMounted && (
+              <div
+                className="main-view-slot"
+                hidden={!codingVisible}
+                aria-hidden={!codingVisible}
+              >
+                <SwipeBack onSwipeBack={() => navigateTo("social")}>
+                  <CodingView
+                    active={codingVisible}
+                    onOpenCodingSettings={() => {
                       setSettingsTab("ai");
                       navigateTo("settings");
                     }}

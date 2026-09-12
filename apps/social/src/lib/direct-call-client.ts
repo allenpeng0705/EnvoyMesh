@@ -737,6 +737,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.probeExtAgent(params);
   }
 
+  async askExtAgent(params: import("@envoymesh/api").AskExtAgentParams) {
+    return this._ns.askExtAgent(params);
+  }
+
   async getExtAgentCommandCatalog(
     params?: import("@envoymesh/api").GetExtAgentCommandCatalogParams,
   ) {
@@ -936,8 +940,8 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.updateEnvoyLocalEngine();
   }
 
-  async sendToPi(text: string) {
-    return this._ns.sendToPi(text);
+  async sendToPi(text: string, opts?: { sessionId?: string }) {
+    return this._ns.sendToPi(text, opts);
   }
 
   async getEnvoyHarnessStatus() {
@@ -970,16 +974,79 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.setEnvoyHarnessAutoRunPolicy(policy);
   }
 
-  async getEnvoyHarnessChatHistory(chatId?: string) {
-    return this._ns.getEnvoyHarnessChatHistory(chatId);
+  async getEnvoyHarnessChatHistory(chatId?: string, sinceRevision?: number) {
+    return this._ns.getEnvoyHarnessChatHistory(chatId, sinceRevision);
   }
 
   async listEnvoyHarnessChats() {
     return this._ns.listEnvoyHarnessChats();
   }
 
-  async createEnvoyHarnessChat(opts: { cwd: string; title?: string }) {
+  async createEnvoyHarnessChat(opts: {
+    cwd: string;
+    title?: string;
+    forceNew?: boolean;
+    model?: string;
+    endpoint?: string;
+    apiKey?: string;
+  }) {
     return this._ns.createEnvoyHarnessChat(opts);
+  }
+
+  async createCodingReviewInvite(opts: {
+    chatId: string;
+    peerOwnerId: string;
+    turnId?: string;
+  }) {
+    return this._ns.createCodingReviewInvite(opts);
+  }
+
+  async listCodingHeartbeats() {
+    return this._ns.listCodingHeartbeats();
+  }
+
+  async createCodingHeartbeat(
+    input: import("@envoymesh/api").CreateCodingHeartbeatInput,
+  ) {
+    return this._ns.createCodingHeartbeat(input);
+  }
+
+  async updateCodingHeartbeat(
+    input: import("@envoymesh/api").UpdateCodingHeartbeatInput,
+  ) {
+    return this._ns.updateCodingHeartbeat(input);
+  }
+
+  async deleteCodingHeartbeat(id: string) {
+    return this._ns.deleteCodingHeartbeat(id);
+  }
+
+  async runCodingHeartbeatNow(id: string) {
+    return this._ns.runCodingHeartbeatNow(id);
+  }
+
+  async listCodingSchedules() {
+    return this._ns.listCodingSchedules();
+  }
+
+  async createCodingSchedule(
+    input: import("@envoymesh/api").CreateCodingScheduleInput,
+  ) {
+    return this._ns.createCodingSchedule(input);
+  }
+
+  async updateCodingSchedule(
+    input: import("@envoymesh/api").UpdateCodingScheduleInput,
+  ) {
+    return this._ns.updateCodingSchedule(input);
+  }
+
+  async deleteCodingSchedule(id: string) {
+    return this._ns.deleteCodingSchedule(id);
+  }
+
+  async runCodingScheduleNow(id: string) {
+    return this._ns.runCodingScheduleNow(id);
   }
 
   async openEnvoyHarnessChat(chatId: string) {

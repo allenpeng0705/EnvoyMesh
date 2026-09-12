@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../coding/coding_review_ref.dart';
 import '../ext_agent/agent_attachments.dart';
 import '../l10n/app_localizations.dart';
 import '../models/chat_message.dart';
@@ -23,12 +24,21 @@ class ChatBubble extends StatelessWidget {
   final Future<String?> Function(ChatAttachment attachment)?
       onLoadFamilyAttachment;
 
+  /// Local home owner id — used to hint when a coding-review invite must be
+  /// opened on the owner's home node.
+  final String? localOwnerId;
+
+  /// Phase 68-C2 — open a coding-review invite in read-only EH mode.
+  final void Function(CodingReviewRef ref)? onOpenCodingReview;
+
   const ChatBubble({
     super.key,
     required this.message,
     required this.isOutbound,
     this.onLoadAudio,
     this.onLoadFamilyAttachment,
+    this.localOwnerId,
+    this.onOpenCodingReview,
   });
 
   /// Agent home-path attaches (absolute / envoy-uploads) — never voice-note UI.
@@ -60,7 +70,14 @@ class ChatBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context);
-    final displayText = localizeMessageBody(l10n, message.text);
+    final localized = localizeMessageBody(l10n, message.text);
+    final reviewRef = parseCodingReviewRef(localized);
+    final displayText = reviewRef != null
+        ? humanTextWithoutCodingReviewMarker(localized)
+        : localized;
+    final localOwner = localOwnerId?.trim() ?? '';
+    final sameHome =
+        reviewRef == null || localOwner.isEmpty || reviewRef.ownerId == localOwner;
     final audioAtt = _hasAudio
         ? message.attachments!.firstWhere((a) => a.isAudio)
         : null;
@@ -182,6 +199,27 @@ class ChatBubble extends StatelessWidget {
                   displayText,
                   style: TextStyle(color: colorScheme.onSurface),
                 ),
+              if (reviewRef != null) ...[
+                const SizedBox(height: 8),
+                if (!sameHome)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      l10n.codingInviteReviewOpenOnOwnerHome,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                FilledButton.tonal(
+                  key: const Key('chat-coding-review-open'),
+                  onPressed: onOpenCodingReview == null
+                      ? null
+                      : () => onOpenCodingReview!(reviewRef),
+                  child: Text(l10n.codingOpenReview),
+                ),
+              ],
               if (familyImageAtt != null && onLoadFamilyAttachment != null) ...[
                 const SizedBox(height: 6),
                 _FamilyAttachmentImage(

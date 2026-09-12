@@ -156,13 +156,24 @@ const CODING_DENIED_MSG =
   "Coding assistants are disabled for this family profile. Ask the home-node owner to enable them in Settings → Family."
 
 /** RPCs gated by per-profile `codingEnabled` (owner opt-in for family). */
-const CODING_GATED_RPC = new Set<string>([
+export const CODING_GATED_RPC = new Set<string>([
   "askEnvoyHarness",
   "startEnvoyHarnessTurn",
   "getEnvoyHarnessTurnStatus",
   "getEnvoyHarnessChatHistory",
   // listEnvoyHarnessChats: soft-deny in impl (returns []) — not hard-gated.
   "createEnvoyHarnessChat",
+  "createCodingReviewInvite",
+  "listCodingHeartbeats",
+  "createCodingHeartbeat",
+  "updateCodingHeartbeat",
+  "deleteCodingHeartbeat",
+  "runCodingHeartbeatNow",
+  "listCodingSchedules",
+  "createCodingSchedule",
+  "updateCodingSchedule",
+  "deleteCodingSchedule",
+  "runCodingScheduleNow",
   "openEnvoyHarnessChat",
   "removeEnvoyHarnessChat",
   "deleteEnvoyHarnessChatTurn",
@@ -177,6 +188,7 @@ const CODING_GATED_RPC = new Set<string>([
   "resumeEnvoyHarnessSession",
   "getEnvoyHarnessStatus",
   "setEnvoyHarnessProjectPath",
+  "setEnvoyHarnessAutoRunPolicy",
   "listEnvoyHarnessPeers",
   "invokeEnvoyHarnessEhui",
   "cancelEnvoyHarnessTurn",
@@ -928,6 +940,15 @@ export async function routeRpcMethod(
       return ns.probeExtAgent({
         agentId: params.agentId as string | undefined,
       });
+    case "askExtAgent":
+      return ns.askExtAgent({
+        prompt: String(params.prompt ?? ""),
+        agentId: params.agentId as string | undefined,
+        streamSessionId:
+          typeof params.streamSessionId === "string"
+            ? params.streamSessionId
+            : undefined,
+      });
     case "getExtAgentCommandCatalog":
       return ns.getExtAgentCommandCatalog({
         agentId: params.agentId as string | undefined,
@@ -1485,7 +1506,11 @@ export async function routeRpcMethod(
     case "sendToOpenClaw":
       return ns.sendToOpenClaw(String(params.text ?? ""));
     case "sendToPi":
-      return ns.sendToPi(String(params.text ?? ""));
+      return ns.sendToPi(String(params.text ?? ""), {
+        ...(typeof params.sessionId === "string"
+          ? { sessionId: params.sessionId }
+          : {}),
+      });
     case "getEnvoyHarnessStatus":
       return ns.getEnvoyHarnessStatus();
     case "askEnvoyHarness":
@@ -1516,6 +1541,7 @@ export async function routeRpcMethod(
     case "getEnvoyHarnessChatHistory":
       return ns.getEnvoyHarnessChatHistory(
         typeof params.chatId === "string" ? params.chatId : undefined,
+        typeof params.sinceRevision === "number" ? params.sinceRevision : undefined,
       );
     case "listEnvoyHarnessChats":
       return ns.listEnvoyHarnessChats();
@@ -1523,7 +1549,45 @@ export async function routeRpcMethod(
       return ns.createEnvoyHarnessChat({
         cwd: String(params.cwd ?? ""),
         title: typeof params.title === "string" ? params.title : undefined,
+        forceNew: params.forceNew === true,
+        model: typeof params.model === "string" ? params.model : undefined,
+        endpoint: typeof params.endpoint === "string" ? params.endpoint : undefined,
+        apiKey: typeof params.apiKey === "string" ? params.apiKey : undefined,
       });
+    case "createCodingReviewInvite":
+      return ns.createCodingReviewInvite({
+        chatId: String(params.chatId ?? ""),
+        peerOwnerId: String(params.peerOwnerId ?? ""),
+        ...(typeof params.turnId === "string" ? { turnId: params.turnId } : {}),
+      });
+    case "listCodingHeartbeats":
+      return ns.listCodingHeartbeats();
+    case "createCodingHeartbeat":
+      return ns.createCodingHeartbeat(
+        params as unknown as import("@envoymesh/api").CreateCodingHeartbeatInput,
+      );
+    case "updateCodingHeartbeat":
+      return ns.updateCodingHeartbeat(
+        params as unknown as import("@envoymesh/api").UpdateCodingHeartbeatInput,
+      );
+    case "deleteCodingHeartbeat":
+      return ns.deleteCodingHeartbeat(String(params.id ?? ""));
+    case "runCodingHeartbeatNow":
+      return ns.runCodingHeartbeatNow(String(params.id ?? ""));
+    case "listCodingSchedules":
+      return ns.listCodingSchedules();
+    case "createCodingSchedule":
+      return ns.createCodingSchedule(
+        params as unknown as import("@envoymesh/api").CreateCodingScheduleInput,
+      );
+    case "updateCodingSchedule":
+      return ns.updateCodingSchedule(
+        params as unknown as import("@envoymesh/api").UpdateCodingScheduleInput,
+      );
+    case "deleteCodingSchedule":
+      return ns.deleteCodingSchedule(String(params.id ?? ""));
+    case "runCodingScheduleNow":
+      return ns.runCodingScheduleNow(String(params.id ?? ""));
     case "openEnvoyHarnessChat":
       return ns.openEnvoyHarnessChat(String(params.chatId ?? ""));
     case "removeEnvoyHarnessChat":
@@ -1594,6 +1658,13 @@ export async function routeRpcMethod(
           typeof params.projectPath === "string" ? params.projectPath : undefined,
         sessionId: typeof params.sessionId === "string" ? params.sessionId : undefined,
         forceRestart: Boolean(params.forceRestart),
+        ...(params.modelOverride &&
+        typeof params.modelOverride === "object"
+          ? {
+              modelOverride:
+                params.modelOverride as import("@envoymesh/api").PiModelOverride,
+            }
+          : {}),
       });
     case "ensureEnvoyTerminalSession":
       return ns.ensureEnvoyTerminalSession({

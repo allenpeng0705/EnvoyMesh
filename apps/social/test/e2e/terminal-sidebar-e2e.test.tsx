@@ -77,6 +77,46 @@ describe("E2E Terminal sidebar", () => {
     renderSidebar();
     expect(await screen.findByText("Build")).toBeDefined();
     expect(screen.getByText("1 / 8 running")).toBeDefined();
+    expect(screen.getByTestId("terminals-open-coding")).toBeDefined();
+  });
+
+  it("hides Pi and Envoy Harness sessions from the shell list", async () => {
+    sessions = [
+      {
+        sessionId: "s-shell",
+        title: "Shell",
+        cwd: "/tmp",
+        shell: "/bin/bash",
+        state: "running",
+        createdAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+      },
+      {
+        sessionId: "s-pi",
+        title: "Pi project",
+        cwd: "/tmp/pi",
+        shell: "/bin/bash",
+        state: "running",
+        role: "pi",
+        createdAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+      },
+      {
+        sessionId: "s-eh",
+        title: "Envoy TUI",
+        cwd: "/tmp/eh",
+        shell: "/bin/bash",
+        state: "running",
+        role: "envoy-harness",
+        createdAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+      },
+    ];
+    renderSidebar();
+    expect(await screen.findByText("Shell")).toBeDefined();
+    expect(screen.queryByText("Pi project")).toBeNull();
+    expect(screen.queryByText("Envoy TUI")).toBeNull();
+    expect(screen.getByText("1 / 8 running")).toBeDefined();
   });
 
   it("shows Focus EnvoyAI when approvals are pending", async () => {

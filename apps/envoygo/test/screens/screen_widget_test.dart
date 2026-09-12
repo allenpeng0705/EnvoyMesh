@@ -1,25 +1,35 @@
 import 'package:envoy_thin_client/models/stored_node.dart';
 import 'package:envoy_thin_client/services/home_remote_client.dart';
+import 'package:envoygo/coding/coding_review_ref.dart';
 import 'package:envoygo/l10n/app_localizations.dart';
 import 'package:envoygo/models/chat_message.dart';
 import 'package:envoygo/models/chat_thread.dart';
 import 'package:envoygo/models/contact.dart';
 import 'package:envoygo/models/content_engage_notification.dart';
+import 'package:envoygo/models/terminal_session.dart';
+import 'package:envoygo/navigation/owner_tabs.dart';
 import 'package:envoygo/providers/chat_provider.dart';
 import 'package:envoygo/providers/contact_provider.dart';
 import 'package:envoygo/providers/content_engage_provider.dart';
 import 'package:envoygo/providers/node_provider.dart';
+import 'package:envoygo/providers/terminal_provider.dart';
 import 'package:envoygo/screens/chat/chat_list_screen.dart';
+import 'package:envoygo/screens/coding/coding_home_screen.dart';
+import 'package:envoygo/screens/coding/ext_agent_coding_screen.dart';
+import 'package:envoygo/screens/coding/pi_coding_chat_screen.dart';
 import 'package:envoygo/screens/contacts/contacts_screen.dart';
 import 'package:envoygo/screens/me/me_screen.dart';
+import 'package:envoygo/services/coding_ext_sessions.dart';
 import 'package:envoygo/services/node_service_client.dart';
 import 'package:envoygo/services/pairing_service.dart';
 import 'package:envoygo/storage/local_database.dart';
 import 'package:envoygo/storage/secure_storage.dart';
+import 'package:envoygo/widgets/chat_bubble.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Widget _app(Widget home, {List<Override> overrides = const []}) {
   return ProviderScope(
@@ -43,8 +53,11 @@ StoredNode _testNode() => StoredNode(
 );
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
+
   group('HomeScreen tabs', () {
-    testWidgets('owner nav labels are Social Terminal Knowledge Me', (
+    testWidgets('owner nav labels are Social Coding Knowledge Terminal Me', (
       tester,
     ) async {
       // Full HomeScreen pulls CallProvider.noop → HomeRemoteClient ping timer;
@@ -63,12 +76,16 @@ void main() {
                       label: l10n.navSocial,
                     ),
                     NavigationDestination(
-                      icon: const Icon(Icons.terminal_outlined),
-                      label: l10n.navTerminal,
+                      icon: const Icon(Icons.code_outlined),
+                      label: l10n.navCoding,
                     ),
                     NavigationDestination(
                       icon: const Icon(Icons.menu_book_outlined),
                       label: l10n.navKnowledge,
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.terminal_outlined),
+                      label: l10n.navTerminal,
                     ),
                     NavigationDestination(
                       icon: const Icon(Icons.person_outline),
@@ -84,8 +101,9 @@ void main() {
       await tester.pump();
 
       expect(find.text('Social'), findsOneWidget);
-      expect(find.text('Terminal'), findsOneWidget);
+      expect(find.text('Coding'), findsOneWidget);
       expect(find.text('Knowledge'), findsOneWidget);
+      expect(find.text('Terminal'), findsOneWidget);
       expect(find.text('Me'), findsOneWidget);
     });
 
@@ -105,7 +123,9 @@ void main() {
                       ref
                           .read(contentEngageProvider.notifier)
                           .dismiss(surface: 'all');
-                      ref.read(chatProvider.notifier).selectTab(0);
+                      ref
+                          .read(chatProvider.notifier)
+                          .selectTab(HomeTabId.social);
                     }
                   },
                   destinations: const [
@@ -114,8 +134,8 @@ void main() {
                       label: 'Social',
                     ),
                     NavigationDestination(
-                      icon: Icon(Icons.terminal_outlined),
-                      label: 'Terminal',
+                      icon: Icon(Icons.code_outlined),
+                      label: 'Coding',
                     ),
                   ],
                 ),
@@ -124,7 +144,7 @@ void main() {
           ),
           overrides: [
             chatProvider.overrideWith(
-              (ref) => _SelectableChatNotifier(selectedTab: 1),
+              (ref) => _SelectableChatNotifier(selectedTabId: HomeTabId.coding),
             ),
             contentEngageProvider.overrideWith((ref) {
               return _SeededEngageNotifier(ref, [
@@ -152,13 +172,171 @@ void main() {
     });
   });
 
-  group('ChatListScreen', () {
-    testWidgets('shows coding entry when no saved threads', (tester) async {
-      await tester.pumpWidget(_app(const Scaffold(body: ChatListScreen())));
+  group('CodingHomeScreen', () {
+    testWidgets('shows empty state and FAB when owner may use coding', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          const CodingHomeScreen(),
+          overrides: [
+            nodeProvider.overrideWith(
+              (ref) => _FakeNodeNotifier(_testNode()),
+            ),
+            chatProvider.overrideWith(
+              (ref) => _FakeChatNotifier(const []),
+            ),
+            terminalProvider.overrideWith(
+              (ref) => _FakeTerminalNotifier(),
+            ),
+          ],
+        ),
+      );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
       expect(find.text('Coding'), findsOneWidget);
-      expect(find.text('Pi'), findsOneWidget);
+      expect(find.text('No workspaces yet'), findsOneWidget);
+      expect(find.byType(FloatingActionButton), findsOneWidget);
+    });
+
+    testWidgets('lists EH workspace rows from chat threads', (tester) async {
+      await tester.pumpWidget(
+        _app(
+          const CodingHomeScreen(),
+          overrides: [
+            nodeProvider.overrideWith(
+              (ref) => _FakeNodeNotifier(_testNode()),
+            ),
+            chatProvider.overrideWith(
+              (ref) => _FakeChatNotifier([
+                _createThread(
+                  'node1:eh:chat-1',
+                  ChatThreadType.envoyHarness,
+                  'fix-login',
+                ),
+              ]),
+            ),
+            terminalProvider.overrideWith(
+              (ref) => _FakeTerminalNotifier(),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('fix-login'), findsOneWidget);
+      expect(find.text('No workspaces yet'), findsNothing);
+    });
+
+    testWidgets('lists Pi workspace rows and opens Pi stream screen', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          const CodingHomeScreen(),
+          overrides: [
+            nodeProvider.overrideWith(
+              (ref) => _FakeNodeNotifier(_testNode()),
+            ),
+            chatProvider.overrideWith(
+              (ref) => _FakeChatNotifier(const []),
+            ),
+            terminalProvider.overrideWith(
+              (ref) => _FakeTerminalNotifier([
+                const TerminalSession(
+                  id: 'pi-sess-1',
+                  name: 'Pi · app',
+                  cwd: '/projects/app',
+                  role: 'pi',
+                ),
+              ]),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('Pi · app'), findsOneWidget);
+      expect(find.text('No workspaces yet'), findsNothing);
+
+      await tester.tap(find.text('Pi · app'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PiCodingChatScreen), findsOneWidget);
+      expect(find.text('Pi — your local coding agent'), findsOneWidget);
+    });
+
+    testWidgets('lists Tier B Ext Agent rows and opens ExtAgentCodingScreen', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        kCodingExtSessionsKey: '''
+[
+  {
+    "id": "ext:codex:test-1",
+    "harness": "codex",
+    "cwd": "/projects/app",
+    "title": "Codex",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "lastUsedAt": "2026-01-02T00:00:00.000Z"
+  }
+]
+''',
+      });
+
+      await tester.pumpWidget(
+        _app(
+          const CodingHomeScreen(),
+          overrides: [
+            nodeProvider.overrideWith(
+              (ref) => _FakeNodeNotifier(_testNode()),
+            ),
+            chatProvider.overrideWith(
+              (ref) => _FakeChatNotifier(const []),
+            ),
+            terminalProvider.overrideWith(
+              (ref) => _FakeTerminalNotifier(),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('Codex'), findsWidgets);
+      expect(find.text('No workspaces yet'), findsNothing);
+
+      await tester.tap(find.text('Codex').first);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ExtAgentCodingScreen), findsOneWidget);
+      expect(
+        find.textContaining('Ask Codex about this project'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('ChatListScreen', () {
+    testWidgets('shows empty chats without Coding section', (tester) async {
+      await tester.pumpWidget(
+        _app(
+          const Scaffold(body: ChatListScreen()),
+          overrides: [
+            nodeProvider.overrideWith(
+              (ref) => _FakeNodeNotifier(_testNode()),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      // Coding (EH / Pi) lives under the Coding tab (Phase 68-C1b.3).
+      expect(find.text('Coding'), findsNothing);
+      expect(find.text('Pi'), findsNothing);
       expect(find.byType(FloatingActionButton), findsOneWidget);
     });
 
@@ -174,6 +352,9 @@ void main() {
         _app(
           const Scaffold(body: ChatListScreen()),
           overrides: [
+            nodeProvider.overrideWith(
+              (ref) => _FakeNodeNotifier(_testNode()),
+            ),
             chatProvider.overrideWith((ref) => _FakeChatNotifier(testThreads)),
           ],
         ),
@@ -214,6 +395,9 @@ void main() {
         _app(
           const Scaffold(body: ContactsScreen()),
           overrides: [
+            nodeProvider.overrideWith(
+              (ref) => _FakeNodeNotifier(_testNode()),
+            ),
             contactProvider.overrideWith(
               (ref) => _FakeContactNotifier(testContacts),
             ),
@@ -271,6 +455,47 @@ void main() {
       expect(find.text('Browser'), findsWidgets);
     });
   });
+
+  group('ChatBubble coding-review CTA', () {
+    testWidgets('shows Open review and hides machine marker', (tester) async {
+      CodingReviewRef? opened;
+      final invite = formatCodingReviewInviteMessage(
+        const CodingReviewRef(
+          ownerId: 'envoy:owner:test',
+          chatId: 'chat-review-1',
+          title: 'Fix login',
+        ),
+      );
+      await tester.pumpWidget(
+        _app(
+          Scaffold(
+            body: ChatBubble(
+              message: ChatMessage(
+                id: 'm1',
+                threadId: 't1',
+                text: invite,
+                isOutbound: false,
+                createdAt: DateTime.now().toUtc().toIso8601String(),
+              ),
+              isOutbound: false,
+              localOwnerId: 'envoy:owner:test',
+              onOpenCodingReview: (ref) => opened = ref,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('envoymesh-coding-review'), findsNothing);
+      expect(find.text('Open review'), findsOneWidget);
+      expect(find.textContaining("I've invited you to review"), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('chat-coding-review-open')));
+      await tester.pump();
+      expect(opened?.chatId, 'chat-review-1');
+      expect(opened?.title, 'Fix login');
+    });
+  });
 }
 
 // -- Test Helpers --
@@ -288,8 +513,9 @@ ChatThread _createThread(String id, ChatThreadType type, String name) {
 }
 
 class _SelectableChatNotifier extends ChatNotifier {
-  _SelectableChatNotifier({int selectedTab = 0}) : super(_FakeRef()) {
-    state = ChatState(selectedTab: selectedTab);
+  _SelectableChatNotifier({String selectedTabId = HomeTabId.social})
+      : super(_FakeRef()) {
+    state = ChatState(selectedTabId: selectedTabId);
   }
 
   @override
@@ -305,6 +531,7 @@ class _SelectableChatNotifier extends ChatNotifier {
     String targetOwnerId,
     String text, {
     List<Map<String, dynamic>>? attachments,
+    String? activeThreadId,
   }) async {}
   @override
   Future<void> sendAgentMessage(
@@ -320,6 +547,8 @@ class _SelectableChatNotifier extends ChatNotifier {
   @override
   Future<void> syncTerminals() async {}
   @override
+  Future<void> syncEhChats() async {}
+  @override
   Future<void> loadHistory(
     String threadId, {
     String? contactOwnerId,
@@ -332,8 +561,8 @@ class _SelectableChatNotifier extends ChatNotifier {
   @override
   Future<void> inviteToRoom(String roomId, String ownerId) async {}
   @override
-  void selectTab(int index) {
-    state = state.copyWith(selectedTab: index);
+  void selectTab(String tabId) {
+    state = state.copyWith(selectedTabId: tabId);
   }
 
   @override
@@ -366,6 +595,7 @@ class _FakeChatNotifier extends ChatNotifier {
     String targetOwnerId,
     String text, {
     List<Map<String, dynamic>>? attachments,
+    String? activeThreadId,
   }) async {}
   @override
   Future<void> sendAgentMessage(
@@ -381,6 +611,8 @@ class _FakeChatNotifier extends ChatNotifier {
   @override
   Future<void> syncTerminals() async {}
   @override
+  Future<void> syncEhChats() async {}
+  @override
   Future<void> loadHistory(
     String threadId, {
     String? contactOwnerId,
@@ -393,14 +625,26 @@ class _FakeChatNotifier extends ChatNotifier {
   @override
   Future<void> inviteToRoom(String roomId, String ownerId) async {}
   @override
-  void selectTab(int index) {}
+  void selectTab(String tabId) {}
   @override
   Future<void> syncThreads() async {}
 }
 
+class _FakeTerminalNotifier extends TerminalNotifier {
+  _FakeTerminalNotifier([List<TerminalSession> sessions = const []])
+      : super(_FakeRef()) {
+    if (sessions.isNotEmpty) {
+      state = TerminalState(sessions: sessions);
+    }
+  }
+
+  @override
+  Future<void> loadSessions() async {}
+}
+
 class _FakeContactNotifier extends ContactNotifier {
   _FakeContactNotifier(List<Contact> bonds) : super(_FakeRef()) {
-    state = ContactState(bonds: bonds);
+    state = ContactState(homeBonds: bonds);
   }
   @override
   Future<void> syncBonds() async {}

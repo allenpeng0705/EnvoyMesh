@@ -20,7 +20,9 @@ export type ExtAgentSidecarKind =
   | "claudecode"
   | "cursor"
   | "aider"
-  | "mmx";
+  | "mmx"
+  | "opencode"
+  | "codewhale";
 
 export const EXT_AGENT_SIDECAR_KINDS: readonly ExtAgentSidecarKind[] = [
   "pi",
@@ -31,6 +33,8 @@ export const EXT_AGENT_SIDECAR_KINDS: readonly ExtAgentSidecarKind[] = [
   "cursor",
   "aider",
   "mmx",
+  "opencode",
+  "codewhale",
 ];
 
 export function isExtAgentSidecarKind(id: string | undefined): id is ExtAgentSidecarKind {
@@ -45,11 +49,16 @@ export interface ExtAgentInboundMessage {
   messageId?: string;
 }
 
+/** Optional ask options — streaming backends call `onDelta` per token chunk. */
+export type ExtAgentAskOpts = {
+  onDelta?: (chunk: string) => void;
+};
+
 export interface ExtAgentBackend {
   readonly kind: ExtAgentSidecarKind;
   /** Human-readable label for logs /status. */
   readonly label: string;
-  ask(text: string, sessionKey: string): Promise<string>;
+  ask(text: string, sessionKey: string, opts?: ExtAgentAskOpts): Promise<string>;
   /** Optional readiness probe (non-fatal if it fails — ask will surface errors). */
   probe?(): Promise<boolean>;
 }

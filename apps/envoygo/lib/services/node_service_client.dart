@@ -2,14 +2,15 @@ import 'dart:async';
 
 import 'package:envoy_thin_client/services/home_remote_client.dart';
 
+import '../coding/coding_heartbeat.dart';
 import '../models/chain_active.dart';
 import '../models/chain_report.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/contact.dart';
 import '../models/content_engage_notification.dart';
-import '../models/feed_notification.dart';
 import '../models/family_attachment.dart';
+import '../models/feed_notification.dart';
 import '../models/library_read.dart';
 import '../models/peer_search_result.dart';
 import '../models/terminal_session.dart';
@@ -842,6 +843,31 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  /// Sync ask to an Ext Agent (Coding Tier B).
+  ///
+  /// When [streamSessionId] is set, streaming backends (codex / claudecode)
+  /// emit assistant token upserts on `eh:timeline` under
+  /// `__ext__:$streamSessionId`. One-shot backends ignore streaming and
+  /// still return a sync reply.
+  Future<String> askExtAgent({
+    required String prompt,
+    String? agentId,
+    String? streamSessionId,
+  }) async {
+    final result = await _client.call('askExtAgent', {
+      'prompt': prompt,
+      if (agentId != null && agentId.trim().isNotEmpty)
+        'agentId': agentId.trim(),
+      if (streamSessionId != null && streamSessionId.trim().isNotEmpty)
+        'streamSessionId': streamSessionId.trim(),
+    }, const Duration(minutes: 5));
+    if (result is String) return result;
+    if (result is Map && result['text'] is String) {
+      return result['text'] as String;
+    }
+    return result?.toString() ?? '';
+  }
+
   /// Slash-command catalog for Ext Agent chat autocomplete.
   Future<Map<String, dynamic>> getExtAgentCommandCatalog({
     String? agentId,
@@ -1084,15 +1110,32 @@ class NodeServiceClient {
   }
 
   /// One-shot Pi prompt. May take up to ~2 minutes for long tool turns.
-  Future<String> sendToPi(String text) async {
+  ///
+  /// When [sessionId] is set, the home node streams the turn onto
+  /// `eh:timeline` under `__pi__:$sessionId` (Coding Chat).
+  Future<String> sendToPi(String text, {String? sessionId}) async {
     final result = await _client.call('sendToPi', {
       'text': text,
+      if (sessionId != null && sessionId.trim().isNotEmpty)
+        'sessionId': sessionId.trim(),
     }, const Duration(seconds: 120));
     if (result is String) return result;
     if (result is Map && result['text'] is String) {
       return result['text'] as String;
     }
     return result?.toString() ?? '';
+  }
+
+  /// Allow/deny an in-flight Pi tool-action request (`pi:proposal`).
+  Future<Map<String, dynamic>> piRespondToProposal({
+    required String uiRequestId,
+    required bool confirmed,
+  }) async {
+    return await _client.call('piRespondToProposal', {
+          'uiRequestId': uiRequestId,
+          'confirmed': confirmed,
+        })
+        as Map<String, dynamic>;
   }
 
   /// Persist Pi enable flag and/or full `piSettings` on the home node.
@@ -1144,6 +1187,90 @@ class NodeServiceClient {
           if (title != null) 'title': title,
         }, const Duration(seconds: 30))
         as Map<String, dynamic>;
+  }
+
+  /// Phase 68-C2 — build peer-review invite text. Caller must
+  /// [sendChat] with the returned `messageText`.
+  Future<Map<String, dynamic>> createCodingReviewInvite({
+    required String chatId,
+    required String peerOwnerId,
+    String? turnId,
+  }) async {
+    return await _client.call('createCodingReviewInvite', {
+          'chatId': chatId,
+          'peerOwnerId': peerOwnerId,
+          if (turnId != null) 'turnId': turnId,
+        }, const Duration(seconds: 30))
+        as Map<String, dynamic>;
+  }
+
+  /// Phase 68-C6 — list Coding heartbeats (cron wakes existing workspace).
+  Future<List<CodingHeartbeat>> listCodingHeartbeats() async {
+    final result = await _client.call('listCodingHeartbeats');
+    final list = (result as List<dynamic>?) ?? const [];
+    return list
+        .whereType<Map>()
+        .map((e) => CodingHeartbeat.fromJson(Map<String, dynamic>.from(e)))
+        .toList(growable: false);
+  }
+
+  /// Phase 68-C6 — create a Coding heartbeat for an existing workspace.
+  Future<CodingHeartbeat> createCodingHeartbeat(
+    CreateCodingHeartbeatInput input,
+  ) async {
+    final result = await _client.call(
+      'createCodingHeartbeat',
+      input.toJson(),
+      const Duration(seconds: 30),
+    );
+    return CodingHeartbeat.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
+  }
+
+  /// Phase 68-C6 — update name / cron / prompt / enabled.
+  Future<CodingHeartbeat> updateCodingHeartbeat({
+    required String id,
+    bool? enabled,
+    String? cron,
+    String? prompt,
+    String? name,
+  }) async {
+    final result = await _client.call(
+      'updateCodingHeartbeat',
+      {
+        'id': id.trim(),
+        if (enabled != null) 'enabled': enabled,
+        if (cron != null) 'cron': cron,
+        if (prompt != null) 'prompt': prompt,
+        if (name != null) 'name': name,
+      },
+      const Duration(seconds: 30),
+    );
+    return CodingHeartbeat.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
+  }
+
+  /// Phase 68-C6 — delete a Coding heartbeat.
+  Future<bool> deleteCodingHeartbeat(String id) async {
+    final result = await _client.call('deleteCodingHeartbeat', {
+      'id': id.trim(),
+    });
+    if (result is Map && result['deleted'] == true) return true;
+    return result == true;
+  }
+
+  /// Phase 68-C6 — force-fire a heartbeat (still skips if turn busy).
+  Future<CodingHeartbeat> runCodingHeartbeatNow(String id) async {
+    final result = await _client.call(
+      'runCodingHeartbeatNow',
+      {'id': id.trim()},
+      const Duration(seconds: 60),
+    );
+    return CodingHeartbeat.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
   }
 
   Future<Map<String, dynamic>> openEnvoyHarnessChat(String chatId) async {
@@ -1243,10 +1370,14 @@ class NodeServiceClient {
 
   Future<Map<String, dynamic>> getEnvoyHarnessChatHistory({
     String? chatId,
+    int? sinceRevision,
   }) async {
     return await _client.call(
           'getEnvoyHarnessChatHistory',
-          chatId != null ? {'chatId': chatId} : {},
+          {
+            if (chatId != null) 'chatId': chatId,
+            if (sinceRevision != null) 'sinceRevision': sinceRevision,
+          },
           const Duration(seconds: 30),
         )
         as Map<String, dynamic>;

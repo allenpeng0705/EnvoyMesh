@@ -198,7 +198,12 @@ describe("ext-agent-adapter backends", () => {
     expect(isExtAgentSidecarKind("mmx")).toBe(true);
   });
 
-  it("EXT_AGENT_SIDECAR_KINDS lists all eight kinds", () => {
+  it("isExtAgentSidecarKind includes opencode + codewhale (Phase 68-C3)", () => {
+    expect(isExtAgentSidecarKind("opencode")).toBe(true);
+    expect(isExtAgentSidecarKind("codewhale")).toBe(true);
+  });
+
+  it("EXT_AGENT_SIDECAR_KINDS lists all ten kinds", () => {
     expect(EXT_AGENT_SIDECAR_KINDS).toEqual([
       "pi",
       "hermes",
@@ -208,6 +213,8 @@ describe("ext-agent-adapter backends", () => {
       "cursor",
       "aider",
       "mmx",
+      "opencode",
+      "codewhale",
     ]);
   });
 
@@ -259,6 +266,28 @@ describe("ext-agent-adapter backends", () => {
     const backend = createBackend("mmx");
     expect(backend.kind).toBe("mmx");
     expect(backend.label.toLowerCase()).toContain("mmx");
+  });
+
+  it("createBackend('opencode') returns an OpenCodeBackend (Phase 68-C3)", () => {
+    const backend = createBackend("opencode");
+    expect(backend.kind).toBe("opencode");
+    expect(backend.label.toLowerCase()).toContain("opencode");
+  });
+
+  it("createBackend('codewhale') returns a CodeWhaleBackend (Phase 68-C3)", () => {
+    const backend = createBackend("codewhale");
+    expect(backend.kind).toBe("codewhale");
+    expect(backend.label.toLowerCase()).toContain("codewhale");
+  });
+
+  it("DEFAULT_EXT_AGENTS includes opencode + codewhale (Phase 68-C3)", async () => {
+    const { DEFAULT_EXT_AGENTS } = await import("@envoymesh/api");
+    const oc = DEFAULT_EXT_AGENTS.find((a) => a.id === "opencode");
+    const cw = DEFAULT_EXT_AGENTS.find((a) => a.id === "codewhale");
+    expect(oc?.enabled).toBe(true);
+    expect(oc?.url).toBe("http://127.0.0.1:8028/message");
+    expect(cw?.enabled).toBe(true);
+    expect(cw?.url).toBe("http://127.0.0.1:8029/message");
   });
 
   it("DEFAULT_EXT_AGENTS includes codex + claudecode presets (Phase 55D)", async () => {

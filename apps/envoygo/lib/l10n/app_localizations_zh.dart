@@ -24,6 +24,289 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navSocial => '社交';
 
   @override
+  String get navCoding => '编程';
+
+  @override
+  String get codingHomePlaceholder => '来自家用电脑的编程工作区会显示在这里。';
+
+  @override
+  String get codingNewWorkspaceTitle => '新建工作区';
+
+  @override
+  String get codingNewWorkspaceDesc => '选择编程引擎和项目文件夹。创建后引擎不可更改。';
+
+  @override
+  String get codingHarnessLabel => '编程引擎';
+
+  @override
+  String get codingStartWorkspace => '开始工作区';
+
+  @override
+  String get codingPiConsoleHint => '本地编程助手';
+
+  @override
+  String get codingEmptyTitle => '暂无工作区';
+
+  @override
+  String get codingEmptyHint => '在家用电脑上开始一个编程工作区。';
+
+  @override
+  String get codingGated => '此档案无法使用编程。';
+
+  @override
+  String get codingSectionProjects => '项目';
+
+  @override
+  String get codingStatusIdle => '空闲';
+
+  @override
+  String get codingExtHarnessHint => '通过 Ext Agent 在家用电脑上运行。';
+
+  @override
+  String codingExtEmpty(String name) {
+    return '向 $name 询问此项目。每条消息作为一次性 CLI 提问运行。';
+  }
+
+  @override
+  String codingExtPlaceholder(String name) {
+    return '给 $name 发消息…';
+  }
+
+  @override
+  String get codingExtNeedsInstall => '需安装';
+
+  @override
+  String codingExtInstallHint(String name) {
+    return '请在家用电脑上安装 $name 后再使用。';
+  }
+
+  @override
+  String get codingExtReady => '就绪';
+
+  @override
+  String get codingExtCheckInstall => '检查安装';
+
+  @override
+  String get codingExtThinking => '处理中…';
+
+  @override
+  String get codingExtEmptyReply => '（空回复）';
+
+  @override
+  String codingExtSendFailed(String error) {
+    return '无法联系 Ext Agent：$error';
+  }
+
+  @override
+  String get codingOpenReview => '打开审阅';
+
+  @override
+  String get codingInviteReview => '邀请好友审阅';
+
+  @override
+  String get codingInviteReviewTitle => '邀请好友审阅';
+
+  @override
+  String codingInviteReviewDesc(String title) {
+    return '发送聊天邀请，让已绑定的好友以只读审阅模式打开“$title”。';
+  }
+
+  @override
+  String get codingInviteReviewNoDirect => '还没有直接绑定的联系人。请先与好友建立绑定。';
+
+  @override
+  String get codingInviteReviewSend => '发送邀请';
+
+  @override
+  String get codingInviteReviewSending => '发送中…';
+
+  @override
+  String get codingInviteReviewSent => '审阅邀请已发送。';
+
+  @override
+  String get codingInviteReviewFailed => '无法发送审阅邀请，请重试。';
+
+  @override
+  String get codingInviteReviewBondDenied => '该联系人无法接收审阅邀请。';
+
+  @override
+  String get codingInviteReviewOpenOnOwnerHome => '请在所有者的主节点上打开以审阅此工作区。';
+
+  @override
+  String get codingReviewOnlyBanner => '只读审阅 — 可查看时间线与变更；工具与还原已禁用。';
+
+  @override
+  String get codingHeartbeatAdd => '添加心跳…';
+
+  @override
+  String get codingHeartbeatAddTitle => '添加心跳';
+
+  @override
+  String codingHeartbeatAddDesc(String title) {
+    return '按计划向“$title”发送提示。这会唤醒已有工作区 — 不会新建。';
+  }
+
+  @override
+  String codingHeartbeatDefaultName(String title) {
+    return '心跳 · $title';
+  }
+
+  @override
+  String get codingHeartbeatDefaultPrompt => '检查此工作区的进展，并继续有用的下一步。';
+
+  @override
+  String get codingHeartbeatName => '名称';
+
+  @override
+  String get codingHeartbeatSchedule => '计划';
+
+  @override
+  String get codingHeartbeatPreset5m => '5分钟';
+
+  @override
+  String get codingHeartbeatPreset15m => '15分钟';
+
+  @override
+  String get codingHeartbeatPreset1h => '每小时';
+
+  @override
+  String get codingHeartbeatPresetDaily => '每天';
+
+  @override
+  String get codingHeartbeatPresetCustom => '自定义';
+
+  @override
+  String get codingHeartbeatPrompt => '提示词';
+
+  @override
+  String get codingHeartbeatEnabled => '立即启用';
+
+  @override
+  String get codingHeartbeatSave => '保存心跳';
+
+  @override
+  String get codingHeartbeatSaving => '保存中…';
+
+  @override
+  String get codingHeartbeatSaved => '心跳已保存。';
+
+  @override
+  String get codingHeartbeatSaveFailed => '无法保存心跳，请重试。';
+
+  @override
+  String get codingHeartbeatInvalidCron => '请输入有效的 5 段 cron（UTC）。';
+
+  @override
+  String get codingHeartbeatListTitle => '心跳';
+
+  @override
+  String get codingHeartbeatListDesc => '针对已有编程工作区的定时提示。不是团队任务。';
+
+  @override
+  String get codingHeartbeatEmpty => '还没有心跳。可从工作区菜单添加。';
+
+  @override
+  String get codingHeartbeatListFailed => '无法加载心跳，请重试。';
+
+  @override
+  String get codingHeartbeatActionFailed => '该心跳操作失败，请重试。';
+
+  @override
+  String get codingHeartbeatOn => '开';
+
+  @override
+  String get codingHeartbeatOff => '已暂停';
+
+  @override
+  String codingHeartbeatRuns(int n) {
+    return '$n 次';
+  }
+
+  @override
+  String get codingHeartbeatPause => '暂停';
+
+  @override
+  String get codingHeartbeatResume => '继续';
+
+  @override
+  String get codingHeartbeatRunNow => '立即运行';
+
+  @override
+  String get codingHeartbeatDelete => '删除';
+
+  @override
+  String get piEmptyTitle => 'Pi — 本地编程助手';
+
+  @override
+  String get piEmptyBody =>
+      '让 Pi 写代码、重构文件、解释错误或运行命令。Pi 在你的家庭电脑上运行 — 不会访问你的网状联系人或知识库。';
+
+  @override
+  String get piPromptPlaceholder => '请 Pi 写代码、重构或解释…';
+
+  @override
+  String get piThinking => 'Pi 思考中…';
+
+  @override
+  String get piSend => '发送';
+
+  @override
+  String get piAllow => '允许';
+
+  @override
+  String get piDeny => '拒绝';
+
+  @override
+  String piProposalTitle(String title) {
+    return 'Pi 想要：$title';
+  }
+
+  @override
+  String get piProposalTimedOut => '工具请求已超时（Pi 已跳过）。';
+
+  @override
+  String piProposalRespondFailed(String error) {
+    return '无法送达回复：$error';
+  }
+
+  @override
+  String piSendFailed(String error) {
+    return '无法联系 Pi：$error';
+  }
+
+  @override
+  String get piDisabledHint => 'Pi 已禁用。请在设置 → AI 中启用。';
+
+  @override
+  String get piNotInstalledHint => '未捆绑 Pi 侧车（精简构建）。';
+
+  @override
+  String piErrorHint(String error) {
+    return 'Pi 未就绪：$error';
+  }
+
+  @override
+  String get piStartingHint => 'Pi 正在启动 — 请稍后再试。';
+
+  @override
+  String get piStateReady => '就绪';
+
+  @override
+  String get piStateStarting => '启动中';
+
+  @override
+  String get piStateDisabled => '已禁用';
+
+  @override
+  String get piStateNotInstalled => '未安装';
+
+  @override
+  String get piStateError => '错误';
+
+  @override
+  String get piStateStopped => '已停止';
+
+  @override
   String get socialContextPhone => '本机';
 
   @override
@@ -484,13 +767,13 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get mePublicAccess => '公网访问';
+  String get mePublicAccess => '直连家庭地址';
 
   @override
   String get mePort => '端口';
 
   @override
-  String get mePublicAccessSaved => '公网访问已保存';
+  String get mePublicAccessSaved => '直连地址已保存 — 正在重连…';
 
   @override
   String get meFamilyProfile => '家庭档案';
@@ -2459,13 +2742,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get meJustNow => '刚刚';
 
   @override
-  String get mePublicIpLabel => '公网 IP 或域名';
+  String get mePublicIpLabel => '主机（Tailscale、VPN 或公网 IP）';
 
   @override
-  String get mePublicIpHint => '例如 1.2.3.4 或 mynode.example.com';
+  String get mePublicIpHint => '例如 100.64.1.2 或 home.example.com';
 
   @override
-  String get mePublicIpHelp => '若家庭节点有公网 IP 或域名，请设置此项。\n可在 5G/WAN 上不经中继直连。';
+  String get mePublicIpHelp =>
+      '填写家用电脑的 Tailscale/VPN IP，或可直达的公网主机名。\nEnvoyGo 通过 WebSocket 连接 host:port（默认 3030）— 手机端不使用 SSH。\n优先于中继，排在局域网之后。';
 
   @override
   String get meNetworkDebug => '网络调试';

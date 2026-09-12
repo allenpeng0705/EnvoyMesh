@@ -29,6 +29,8 @@ export const zhTerminalMessages = {
   badgeBlocked: "已阻塞",
   badgeDone: "完成",
   focusEnvoyAi: "聚焦 EnvoyAI",
+  openCoding: "编程",
+  openCodingTitle: "打开编程页以使用 Pi、Envoy Harness 和其他编程代理",
   nestedMultiplexerTip:
     "在此浏览器终端内嵌套 tmux/TmuxAI 属于高级工作流。在 Agent 模式下，请在下方的 envoy> 输入框中输入；如需原生 tmux + TmuxAI，请改为 SSH 到您的主机。",
   nestedMultiplexerDismiss: "明白了",
@@ -136,7 +138,7 @@ export const zhTerminalMessages = {
     open: "使用说明",
     title: "终端怎么用",
     intro:
-      "终端在家用电脑上运行，并在此应用中打开。用 + 新建普通 shell，用 Envoy 在项目文件夹中打开 Envoy 工具台 TUI，用 Pi 打开 Pi 编程 TUI。从列表选择会话以聚焦；没有会话时列表为空即可。",
+      "终端在家用电脑上运行，并在此应用中打开。用 + 新建普通 shell。编程代理（Pi、Envoy Harness 等）在「编程」页。从列表选择会话以聚焦；没有会话时列表为空即可。",
     beforeTitle: "开始之前",
     before1: "将 Social 连接到支持远程终端的家用节点（通常是桌面家用电脑）。",
     before2: "若用 Envoy 或 Pi：先在家用机器上准备好项目文件夹——启动时会选择。",

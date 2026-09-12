@@ -38,7 +38,7 @@
  */
 
 import { spawn } from "node:child_process";
-import type { ExtAgentBackend } from "./types.js";
+import type { ExtAgentAskOpts, ExtAgentBackend } from "./types.js";
 // `query` is the only export we use at runtime; types come from
 // `sdk.d.ts` via the package's exports map. Top-level type-only import
 // keeps the dependency tree-shake friendly.
@@ -310,7 +310,11 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
   // ExtAgentBackend
   // -------------------------------------------------------------------------
 
-  async ask(text: string, sessionKey: string): Promise<string> {
+  async ask(
+    text: string,
+    sessionKey: string,
+    opts?: ExtAgentAskOpts,
+  ): Promise<string> {
     if (!text.trim()) return "";
     if (!sessionKey) {
       throw new Error("claudecode ask(): sessionKey is required");
@@ -344,6 +348,9 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), this.requestTimeoutMs);
     timer.unref?.();
+    const onDelta = opts?.onDelta;
+    /** Accumulated assistant text when using full `assistant` frames. */
+    let streamedSoFar = "";
 
     try {
       const options: Options = {
@@ -354,6 +361,7 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
         allowDangerouslySkipPermissions: this.allowDangerouslySkipPermissions,
         ...(this.disableTools ? { allowedTools: [] as string[] } : {}),
         ...(cachedSessionId ? { resume: cachedSessionId } : {}),
+        ...(onDelta ? { includePartialMessages: true } : {}),
       };
 
       const query = queryFn({ prompt: text, options });
@@ -377,6 +385,17 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
               (m as { slash_commands?: unknown }).slash_commands,
             );
           }
+        } else if (m.type === "stream_event" && onDelta) {
+          const chunk = extractStreamEventTextDelta(m);
+          if (chunk) onDelta(chunk);
+        } else if (m.type === "assistant" && onDelta) {
+          // Full assistant frames may arrive without stream_event (tests /
+          // older SDK paths). Emit only the newly appended text.
+          const full = extractAssistantMessageText(m);
+          if (full.length > streamedSoFar.length) {
+            onDelta(full.slice(streamedSoFar.length));
+            streamedSoFar = full;
+          }
         } else if (m.type === "result") {
           // `SDKResultMessage` is `SDKResultSuccess | SDKResultError`.
           // Success carries `result: string`; errors carry `errors: string[]`.
@@ -389,9 +408,6 @@ export class ClaudeCodeBackend implements ExtAgentBackend {
           // `result` is the terminal message — stop iterating.
           break;
         }
-        // `assistant`, `user`, `tool_progress`, etc. are intentionally
-        // ignored in the first iteration. We surface only the final
-        // reply text; streamed deltas are dropped.
       }
 
       // Persist the session id for next time (even on errors, so a
@@ -470,6 +486,39 @@ export function createClaudeCodeBackend(
   return new ClaudeCodeBackend(options);
 }
 
+/** Extract incremental text from an SDK `stream_event` (partial messages). */
+function extractStreamEventTextDelta(msg: {
+  type: "stream_event";
+  event?: unknown;
+}): string {
+  const event = msg.event;
+  if (!event || typeof event !== "object") return "";
+  const e = event as {
+    type?: string;
+    delta?: { type?: string; text?: string };
+  };
+  if (e.type !== "content_block_delta") return "";
+  if (e.delta?.type !== "text_delta") return "";
+  return typeof e.delta.text === "string" ? e.delta.text : "";
+}
+
+/** Flatten text blocks from a full SDK `assistant` message. */
+function extractAssistantMessageText(msg: {
+  type: "assistant";
+  message?: { content?: unknown };
+}): string {
+  const content = msg.message?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  let out = "";
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    const p = part as { type?: string; text?: string };
+    if (p.type === "text" && typeof p.text === "string") out += p.text;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Test-only exports (not part of the public API).
 // ---------------------------------------------------------------------------
@@ -481,6 +530,8 @@ export const _test = {
   isClaudeCodeAuthReady,
   _resetClaudeCodeAuthCacheForTests,
   getCachedClaudeCodeSlashCommands,
+  extractStreamEventTextDelta,
+  extractAssistantMessageText,
   _setCachedClaudeCodeSlashCommandsForTests(commands: string[]): void {
     cachedClaudeCodeSlashCommands = [...commands];
   },

@@ -39,6 +39,7 @@ import { EhTimelineFeed } from "../ehui/EhTimelineFeed.js"
 import { EhTurnReviewModal } from "../ehui/EhTurnReviewModal.js"
 import { EhChatComposer } from "../ehui/EhChatComposer.js"
 import { EhComposerDockStack } from "../ehui/EhComposerDockStack.js"
+import { EhTrackPills, type EhTrackId } from "../ehui/EhTrackPills.js"
 import { EnvoyHarnessEhuiRail } from "../ehui/EnvoyHarnessEhuiRail.js"
 import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeading.js"
 import {
@@ -67,11 +68,19 @@ interface EnvoyHarnessTurn {
   createdAt: number
 }
 
+const EMPTY_CHANGED_FILES: readonly string[] = []
+
 export interface EnvoyHarnessPanelProps {
   /** Sidebar chat thread id (`__envoy_harness__:<id>`); null = active/legacy chat. */
   chatId?: string | null
   /** Navigate back to the chat thread list (mobile / swipe-back). */
   onBackToChats?: () => void
+  /** Phase 68-C2 — mesh peer review: timeline + changes, no tools/revert. */
+  readOnlyReview?: boolean
+  /** Coding Changes overlay — live touched-file list from this turn. */
+  onTouchedFilesChange?: (files: readonly string[]) => void
+  /** Bump to open turn / git-diff review (Coding Changes overlay). */
+  openReviewRequest?: number
 }
 
 function stateLabelKey(state: EnvoyHarnessStatus["state"]): string {
@@ -161,7 +170,13 @@ function mergeHistoryWithLocalTurns(
   return extras.length === 0 ? incoming : [...incoming, ...extras]
 }
 
-export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelProps) {
+export function EnvoyHarnessPanel({
+  chatId,
+  onBackToChats,
+  readOnlyReview = false,
+  onTouchedFilesChange,
+  openReviewRequest = 0,
+}: EnvoyHarnessPanelProps) {
   const t = useT()
   const toast = useToast()
   const nodeService = useNodeService()
@@ -402,6 +417,8 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
   // effectiveChatId / timeline.replace identity changes mid-turn.
   const timelineReplaceRef = useRef(timeline.replace)
   timelineReplaceRef.current = timeline.replace
+  const timelineRevisionRef = useRef(timeline.state.revision)
+  timelineRevisionRef.current = timeline.state.revision
 
   useEffect(() => {
     // Prefer stable chatId. Do NOT key history on status.cwd — cwd can land
@@ -414,9 +431,14 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
     // Do not blank turns here — a failed/superseded load must not erase
     // the in-flight user message the queue already appended.
     let cancelled = false
-    const loadHistory = chatId
-      ? nodeServiceRef.current.openEnvoyHarnessChat(chatId)
-      : nodeServiceRef.current.getEnvoyHarnessChatHistory()
+    const sinceRevision = timelineRevisionRef.current
+    const loadHistory =
+      chatId && !(sinceRevision > 0)
+        ? nodeServiceRef.current.openEnvoyHarnessChat(chatId)
+        : nodeServiceRef.current.getEnvoyHarnessChatHistory(
+            chatId,
+            sinceRevision > 0 ? sinceRevision : undefined,
+          )
     void loadHistory
       .then((history) => {
         if (cancelled) return
@@ -429,7 +451,24 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         // `turns` before this RPC returns. Replacing wholesale made the
         // human bubble vanish when the turn later finished empty.
         setTurns((prev) => mergeHistoryWithLocalTurns(incoming, prev))
-        timelineReplaceRef.current(history.timeline ?? [])
+        const returnedRevision =
+          typeof history.revision === "number" ? history.revision : undefined
+        const timelineEmpty =
+          !history.timeline || history.timeline.length === 0
+        // Up-to-date resume: empty timeline + matching revision → keep live state.
+        if (
+          !(
+            timelineEmpty &&
+            returnedRevision !== undefined &&
+            returnedRevision === timelineRevisionRef.current &&
+            returnedRevision > 0
+          )
+        ) {
+          timelineReplaceRef.current(
+            history.timeline ?? [],
+            returnedRevision,
+          )
+        }
         refreshRef.current()
       })
       .catch(() => {
@@ -649,6 +688,46 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
       ehAttachments.clear()
     },
   })
+
+  const changedFilesForDock = ehReview.dismissedChanges
+    ? EMPTY_CHANGED_FILES
+    : turnContext.touchedFiles
+  const changedFilesKey = changedFilesForDock.join("\0")
+  const [activeTrack, setActiveTrack] = useState<EhTrackId | null>(null)
+  const [changesHidden, setChangesHidden] = useState(false)
+  const [queueHidden, setQueueHidden] = useState(false)
+  const changesDockRef = useRef<HTMLDivElement | null>(null)
+  const queueDockRef = useRef<HTMLDivElement | null>(null)
+  const onTouchedFilesChangeRef = useRef(onTouchedFilesChange)
+  onTouchedFilesChangeRef.current = onTouchedFilesChange
+
+  useEffect(() => {
+    onTouchedFilesChangeRef.current?.(
+      changedFilesKey ? changedFilesKey.split("\0") : EMPTY_CHANGED_FILES,
+    )
+  }, [changedFilesKey])
+
+  useEffect(() => {
+    if (!openReviewRequest) return
+    if (ehReview.lastReviewTurnId) ehReview.openTurnReview(ehReview.lastReviewTurnId)
+    else ehReview.setShowGitDiffReview(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bump-driven
+  }, [openReviewRequest])
+
+  const selectTrack = useCallback((track: EhTrackId) => {
+    setActiveTrack((prev) => {
+      if (track === "changes") {
+        setChangesHidden((hidden) => (prev === "changes" ? !hidden : false))
+      } else {
+        setQueueHidden((hidden) => (prev === "queue" ? !hidden : false))
+      }
+      return track
+    })
+    window.setTimeout(() => {
+      const el = track === "changes" ? changesDockRef.current : queueDockRef.current
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    }, 0)
+  }, [])
 
   /** Start a fresh persisted session for this chat (same as /new). */
   const resetChat = useCallback(async () => {
@@ -1263,6 +1342,18 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
       </header>
 
       <div className="pi-chat-thread" ref={threadRef}>
+        {readOnlyReview ? (
+          <div
+            className="eh-review-only-banner"
+            role="status"
+            data-testid="eh-review-only-banner"
+          >
+            {t(
+              "codingView.reviewOnlyBanner",
+              "Review only — timeline and changes; tools and revert are disabled.",
+            )}
+          </div>
+        ) : null}
         {transcriptSearchOpen && turns.length > 0 ? (
           <div className="eh-transcript-search" role="search">
             <input
@@ -1389,6 +1480,26 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         {timeline.state.state ? (
           <div className={`eh-agent-state eh-agent-state--${timeline.state.state.state}`}>
             <span>{timeline.state.state.label}</span>
+            {timeline.state.state.execution?.location === "peer" ? (
+              <small data-testid="eh-execution-identity">
+                {timeline.state.state.execution.deviceLabel ||
+                timeline.state.state.execution.ownerLabel
+                  ? t("eh.runningOnPeerNamed", "Running on {label}", {
+                      label:
+                        timeline.state.state.execution.deviceLabel ||
+                        timeline.state.state.execution.ownerLabel ||
+                        "",
+                    })
+                  : t("eh.runningOnPeer", "Running on a bonded peer")}
+              </small>
+            ) : timeline.state.state.execution?.location === "local" &&
+              timeline.state.state.execution.deviceLabel ? (
+              <small data-testid="eh-execution-identity">
+                {t("eh.runningOnDevice", "Running on {label}", {
+                  label: timeline.state.state.execution.deviceLabel,
+                })}
+              </small>
+            ) : null}
             {timeline.state.state.activitySummary ? (
               <small>{timeline.state.state.activitySummary}</small>
             ) : null}
@@ -1398,14 +1509,18 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         <EhTimelineFeed
           items={timeline.nonMessageItems.filter((item) => item.type !== "activity")}
           onReviewTurn={(turnId) => ehReview.openTurnReview(turnId)}
-          onRevertTurn={(turnId) => {
-            void ehReview.revertTurn(turnId).then((reverted) => {
-              if (reverted) timeline.remove(`turn:${turnId}:changes`)
-            })
-          }}
+          onRevertTurn={
+            readOnlyReview
+              ? undefined
+              : (turnId) => {
+                  void ehReview.revertTurn(turnId).then((reverted) => {
+                    if (reverted) timeline.remove(`turn:${turnId}:changes`)
+                  })
+                }
+          }
         />
 
-        {busy ? (
+        {busy && !readOnlyReview ? (
           <EhStillWorkingIndicator
             active={busy}
             waitingForUser={pendingQuestion !== null}
@@ -1440,6 +1555,14 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         </div>
       ) : null}
 
+      {!readOnlyReview ? (
+      <>
+      <EhTrackPills
+        changesCount={changedFilesForDock.length}
+        queueCount={queue.length}
+        activeTrack={activeTrack}
+        onSelectTrack={selectTrack}
+      />
       <EhComposerDockStack
         permission={pendingPermission}
         onPermissionDismiss={() => setPendingPermission(null)}
@@ -1466,13 +1589,18 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         onQueueUpdate={updateQueued}
         onQueueRemove={removeFromQueue}
         onQueueClear={clearQueue}
+        queueHidden={queueHidden}
+        queueDockRef={queueDockRef}
         contextFiles={[...new Set([...ehAttachments.pathList, ...turnContext.touchedFiles])]}
         attachedPaths={ehAttachments.pathList}
         onRemoveAttached={(path) => {
           const att = ehAttachments.attachments.find((a) => a.path === path)
           if (att) ehAttachments.remove(att.id)
         }}
-        changedFiles={ehReview.dismissedChanges ? [] : turnContext.touchedFiles}
+        changedFiles={changedFilesForDock}
+        changesHidden={changesHidden}
+        changesDockRef={changesDockRef}
+        forceExpandChanges={activeTrack === "changes" && !changesHidden}
         onReviewChanges={() => {
           if (ehReview.lastReviewTurnId) ehReview.openTurnReview(ehReview.lastReviewTurnId)
           else ehReview.setShowGitDiffReview(true)
@@ -1522,6 +1650,8 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
           </form>
         }
       />
+      </>
+      ) : null}
 
       {ehReview.showGitDiffReview ? (
         <EhuiPanelModal
@@ -1541,15 +1671,18 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
           focusPath={ehReview.reviewFocusPath}
           onClose={() => ehReview.setTurnReview(null)}
           onOpenFile={ehReview.openChangedFile}
-          onKeepAll={ehReview.handleKeepAllChanges}
-          onKeepFile={ehReview.handleKeepFile}
-          onRevertFile={ehReview.handleRevertFile}
+          onKeepAll={readOnlyReview ? undefined : ehReview.handleKeepAllChanges}
+          onKeepFile={readOnlyReview ? undefined : ehReview.handleKeepFile}
+          onRevertFile={readOnlyReview ? undefined : ehReview.handleRevertFile}
           onRevertAll={
-            ehReview.turnReview.canRevert ? ehReview.handleRevertAllChanges : undefined
+            readOnlyReview || !ehReview.turnReview.canRevert
+              ? undefined
+              : ehReview.handleRevertAllChanges
           }
         />
       ) : null}
     </section>
+    {!readOnlyReview ? (
     <aside className="eh-ehui-side-dock" aria-label={t("eh.ehuiDock", "EHUI panels")}>
       {status?.state === "ready" ? (
         <EhuiShell
@@ -1564,6 +1697,7 @@ export function EnvoyHarnessPanel({ chatId, onBackToChats }: EnvoyHarnessPanelPr
         </p>
       )}
     </aside>
+    ) : null}
     </div>
   )
 }

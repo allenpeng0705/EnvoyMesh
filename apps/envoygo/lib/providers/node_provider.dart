@@ -23,6 +23,7 @@ import '../services/push_preferences.dart';
 import '../services/upnp.dart';
 import '../storage/local_database.dart';
 import '../storage/secure_storage.dart';
+import '../navigation/owner_tabs.dart';
 import 'call_provider.dart';
 import 'chat_provider.dart';
 import 'contact_provider.dart';
@@ -742,7 +743,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     );
     _sessionRepairAttempted = false;
     // Fresh pair — always start on Social/Chats (owner vs family tab sets differ).
-    _ref.read(chatProvider.notifier).selectTab(0);
+    _ref.read(chatProvider.notifier).selectTab(
+          fallbackHomeTabId(isOwner: result.isOwnerProfile),
+        );
 
     // Build the StoredNode with relays from the QR code.
     // Extra `rels` / bootstrapPeers WS URLs enable regional fallback.
@@ -1054,10 +1057,11 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // on every home:config-updated).
     if (profileChanged) {
       unawaited(registerPushToken());
-      // Owner (4 tabs) vs family (2 tabs) share selectedTab indices differently
-      // (1 = Terminal vs Me). Reset to Social/Chats on identity flip.
+      // Tab sets differ by role; reset to Social/Chats (id-based — no index collision).
       if (ownerRoleChanged) {
-        _ref.read(chatProvider.notifier).selectTab(0);
+        _ref.read(chatProvider.notifier).selectTab(
+              fallbackHomeTabId(isOwner: nextIsOwner),
+            );
       }
     }
     // Owner toggled Ext Agent allow — refresh chat-row visibility from RPC
@@ -1851,24 +1855,34 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
   }
 
-  /// Update the public IP/domain for a paired node.
+  /// Update the manual direct home address (`host:port` / Tailscale / VPN).
+  ///
+  /// Persists [publicHost]/[publicPort] and re-dials the active node so the
+  /// new candidate is tried immediately (Phase 68-C1c).
   Future<void> updatePublicAccess(String nodeId, String host, int port) async {
     final rows = await _localDb.listNodes();
     final node = rows.where((r) => r['id'] == nodeId).firstOrNull;
     if (node == null) return;
 
-    final updated = {...node, 'public_host': host, 'public_port': port};
+    final trimmedHost = host.trim();
+    final updated = {
+      ...node,
+      'public_host': trimmedHost.isEmpty ? null : trimmedHost,
+      'public_port': port,
+    };
     await _localDb.upsertNode(updated);
 
     final stored = StoredNode.fromJson(updated);
+    final isActive = state.activeNode?.id == nodeId;
     state = state.copyWith(
-      activeNode: state.activeNode?.id == nodeId
-          ? stored
-          : state.activeNode,
+      activeNode: isActive ? stored : state.activeNode,
       pairedNodes: state.pairedNodes.map((n) {
         return n.id == nodeId ? stored : n;
       }).toList(),
     );
+    if (isActive) {
+      await forceReconnect();
+    }
   }
 
   /// Remove a paired node. This is the only path that clears the

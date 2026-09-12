@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest"
-import { isOwnerOnlyRpcMethod } from "../src/json-rpc-router.js"
+import { describe, expect, it, vi } from "vitest"
+import {
+  CODING_GATED_RPC,
+  isOwnerOnlyRpcMethod,
+  routeRpcMethod,
+} from "../src/json-rpc-router.js"
 import { requireOwnerProfile, runWithRpcCaller } from "../src/rpc-caller-context.js"
+import type { NodeService } from "@envoymesh/api"
 
 describe("isOwnerOnlyRpcMethod", () => {
   it("gates vault / library surfaces for family sessions", () => {
@@ -122,6 +127,49 @@ describe("isOwnerOnlyRpcMethod", () => {
     ]) {
       expect(isOwnerOnlyRpcMethod(method), method).toBe(false)
     }
+  })
+
+  it("every CODING_GATED_RPC method is not owner-only (codingEnabled gate)", () => {
+    for (const method of CODING_GATED_RPC) {
+      expect(isOwnerOnlyRpcMethod(method), method).toBe(false)
+    }
+  })
+
+  it("CODING_GATED_RPC denies when mayCallerUseCoding is false", async () => {
+    const ns = {
+      mayCallerUseCoding: vi.fn().mockResolvedValue(false),
+      createEnvoyHarnessChat: vi.fn(),
+      setEnvoyHarnessAutoRunPolicy: vi.fn(),
+      ensurePiTerminalSession: vi.fn(),
+    } as unknown as NodeService
+
+    await expect(
+      routeRpcMethod(ns, "createEnvoyHarnessChat", { cwd: "/tmp" }),
+    ).rejects.toThrow(/Coding assistants are disabled/)
+    await expect(
+      routeRpcMethod(ns, "setEnvoyHarnessAutoRunPolicy", { policy: "ask" }),
+    ).rejects.toThrow(/Coding assistants are disabled/)
+    await expect(
+      routeRpcMethod(ns, "ensurePiTerminalSession", {}),
+    ).rejects.toThrow(/Coding assistants are disabled/)
+
+    expect(ns.createEnvoyHarnessChat).not.toHaveBeenCalled()
+    expect(ns.setEnvoyHarnessAutoRunPolicy).not.toHaveBeenCalled()
+    expect(ns.ensurePiTerminalSession).not.toHaveBeenCalled()
+  })
+
+  it("listEnvoyHarnessChats soft-denies (returns []) when coding denied", async () => {
+    // Soft-deny: not in CODING_GATED_RPC — router still invokes the method;
+    // node-service-impl returns [] when _callerMayUseCoding() is false.
+    const ns = {
+      mayCallerUseCoding: vi.fn().mockResolvedValue(false),
+      listEnvoyHarnessChats: vi.fn().mockResolvedValue([]),
+    } as unknown as NodeService
+
+    const result = await routeRpcMethod(ns, "listEnvoyHarnessChats", {})
+    expect(result).toEqual([])
+    expect(ns.listEnvoyHarnessChats).toHaveBeenCalled()
+    expect(ns.mayCallerUseCoding).not.toHaveBeenCalled()
   })
 
   it("allows family chat RPCs", () => {

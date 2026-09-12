@@ -1,11 +1,16 @@
-/** Deep-link / Chat π → top Terminal view (optional Pi start). */
+/** Deep-link / Chat π → Terminal view (shell) or Coding (Pi). */
+
+import { openCoding } from "./open-coding-nav.js";
 
 export const OPEN_TERMINAL_EVENT = "envoymesh:open-terminal";
 
 export type OpenTerminalDetail = {
-  /** Focus Terminal and start / show Pi. */
+  /**
+   * @deprecated Prefer `openCoding({ harness: "pi" })`.
+   * Still accepted: redirects to Coding.
+   */
   startPi?: boolean;
-  /** Always pick a project folder (header “π Pi” / empty CTA). */
+  /** Always pick a project folder when starting Pi via Coding. */
   startNew?: boolean;
 };
 
@@ -18,6 +23,13 @@ export function takePendingTerminalOpen(): OpenTerminalDetail | null {
 }
 
 export function openTerminal(detail: OpenTerminalDetail = {}): void {
+  if (detail.startPi) {
+    openCoding({
+      harness: "pi",
+      startNew: detail.startNew !== false,
+    });
+    return;
+  }
   pending = detail;
   window.dispatchEvent(
     new CustomEvent<OpenTerminalDetail>(OPEN_TERMINAL_EVENT, { detail }),

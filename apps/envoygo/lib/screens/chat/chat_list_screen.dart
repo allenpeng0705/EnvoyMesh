@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:envoy_mesh/envoy_mesh.dart' show phoneLocalContextId;
 
 import '../../services/feature_flags.dart';
@@ -7,33 +5,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_thread.dart';
+import '../../navigation/owner_tabs.dart';
 import '../../providers/chat_provider.dart';
-import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
-import '../../providers/terminal_provider.dart';
 import '../../utils/localized_labels.dart';
 import '../../widgets/ext_agent_switcher.dart';
 import '../../widgets/thread_tile.dart';
-import '../terminals/terminal_create_actions.dart';
-import '../terminals/terminal_detail_screen.dart';
 import 'chat_detail_screen.dart';
-import 'envoy_harness_chat_screen.dart';
-import '../../widgets/home_folder_browser.dart';
 
 /// Unified thread list — direct chats, group chats, and AI chats.
+///
+/// Coding (EH / Pi) lives under the Coding tab (Phase 68-C1b.3).
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
-
-  static String _terminalSessionTitle(String displayName) {
-    var name = displayName;
-    if (name.startsWith(ThreadTitleSentinels.terminalPrefix)) {
-      name = name.substring(ThreadTitleSentinels.terminalPrefix.length);
-    }
-    if (name.startsWith('π ')) {
-      name = name.substring(2);
-    }
-    return name;
-  }
 
   static String _localizedThreadTitle(
     BuildContext context,
@@ -46,17 +30,22 @@ class ChatListScreen extends ConsumerWidget {
     );
   }
 
+  static bool _isCodingOrTerminalThread(ChatThread t) {
+    return t.type == ChatThreadType.terminal ||
+        t.type == ChatThreadType.pi ||
+        t.type == ChatThreadType.envoyHarness;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final chatState = ref.watch(chatProvider);
     final threads = chatState.threads
-        .where((t) => t.type != ChatThreadType.terminal && t.type != ChatThreadType.pi)
+        .where((t) => !_isCodingOrTerminalThread(t))
         .toList();
     final isOwner = ref.watch(nodeProvider).isOwnerProfile;
-    final mayUseCoding = ref.watch(nodeProvider).mayUseCoding;
 
-    if (threads.isEmpty && !mayUseCoding) {
+    if (threads.isEmpty) {
       return Stack(
         children: [
           ListView(
@@ -151,22 +140,8 @@ class ChatListScreen extends ConsumerWidget {
     final groups = isOwner
         ? threads.where((t) => t.type == ChatThreadType.group).toList()
         : <ChatThread>[];
-    final ehChats = threads
-        .where((t) => t.type == ChatThreadType.envoyHarness)
-        .toList();
     final sections = <_ThreadSection>[];
     if (ai.isNotEmpty) sections.add(_ThreadSection(l10n.chatsSectionAi, ai));
-    if (mayUseCoding) {
-      sections.add(
-        _ThreadSection(
-          l10n.chatsSectionCoding,
-          ehChats,
-          showPiRow: true,
-          showEhEmptyRow: ehChats.isEmpty,
-          onAddEh: () => _showNewEhChat(context, ref),
-        ),
-      );
-    }
     if (family.isNotEmpty) {
       sections.add(_ThreadSection(l10n.chatsSectionFamily, family));
     }
@@ -198,12 +173,7 @@ class ChatListScreen extends ConsumerWidget {
               child: ListView.builder(
                 itemCount: sections.fold<int>(
                   0,
-                  (sum, s) =>
-                      sum +
-                      1 +
-                      (s.showEhEmptyRow ? 1 : 0) +
-                      (s.showPiRow ? 1 : 0) +
-                      s.threads.length,
+                  (sum, s) => sum + 1 + s.threads.length,
                 ),
                 itemBuilder: (context, index) {
                   var offset = 0;
@@ -211,31 +181,18 @@ class ChatListScreen extends ConsumerWidget {
                     if (index == offset) {
                       return Padding(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                section.title,
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                        child: Text(
+                          section.title,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color:
+                                    Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.w600,
                               ),
-                            ),
-                            if (section.onAddEh != null)
-                              IconButton(
-                                tooltip: l10n.chatsEhNew,
-                                icon: const Icon(Icons.add),
-                                onPressed: section.onAddEh,
-                              ),
-                          ],
                         ),
                       );
                     }
                     offset++;
-                    // Envoy harness threads first, then the Pi create row.
                     final threadIndex = index - offset;
                     if (threadIndex >= 0 &&
                         threadIndex < section.threads.length) {
@@ -254,12 +211,6 @@ class ChatListScreen extends ConsumerWidget {
                             final ok = await _confirmDeleteBot(
                               context,
                               thread.displayName,
-                            );
-                            if (ok != true || !context.mounted) return false;
-                          } else if (thread.type == ChatThreadType.envoyHarness) {
-                            final ok = await _confirmRemoveEhChat(
-                              context,
-                              _localizedThreadTitle(context, thread),
                             );
                             if (ok != true || !context.mounted) return false;
                           }
@@ -312,51 +263,6 @@ class ChatListScreen extends ConsumerWidget {
                       );
                     }
                     offset += section.threads.length;
-                    if (section.showEhEmptyRow) {
-                      if (index == offset) {
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor:
-                                Theme.of(context).colorScheme.primaryContainer,
-                            child: Text(
-                              'EH',
-                              style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          title: Text(l10n.chatsCodingEh),
-                          subtitle: Text(l10n.ehChooseProjectDesc),
-                          onTap: section.onAddEh,
-                        );
-                      }
-                      offset++;
-                    }
-                    if (section.showPiRow) {
-                      if (index == offset) {
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor:
-                                Theme.of(context).colorScheme.primaryContainer,
-                            child: Text(
-                              'π',
-                              style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer,
-                              ),
-                            ),
-                          ),
-                          title: Text(l10n.chatsCodingPi),
-                          subtitle: Text(l10n.chatsCodingPiHint),
-                          onTap: () => showCreatePiDialog(context, ref),
-                        );
-                      }
-                      offset++;
-                    }
                   }
                   return const SizedBox.shrink();
                 },
@@ -436,28 +342,13 @@ class ChatListScreen extends ConsumerWidget {
   void _openThread(BuildContext context, WidgetRef ref, ChatThread thread) {
     switch (thread.type) {
       case ChatThreadType.terminal:
-        final parts = thread.id.split(':term:');
-        final sessionId = parts.length > 1 ? parts[1] : '';
-        final session = ref
-            .read(terminalProvider)
-            .sessions
-            .where((s) => s.id == sessionId)
-            .firstOrNull;
-        final role = session?.role ??
-            (thread.displayName.startsWith('EH ')
-                ? 'envoy-harness'
-                : thread.displayName.startsWith('π')
-                    ? 'pi'
-                    : null);
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => TerminalDetailScreen(
-              sessionId: sessionId,
-              sessionName: _terminalSessionTitle(thread.displayName),
-              sessionRole: role,
-            ),
-          ),
-        );
+        // Shell terminals live under the Terminal tab (Phase 68-C1b.3).
+        ref.read(chatProvider.notifier).selectTab(OwnerTabs.terminal);
+        return;
+      case ChatThreadType.pi:
+      case ChatThreadType.envoyHarness:
+        // Coding sessions live under the Coding tab (Phase 68-C1b.3).
+        ref.read(chatProvider.notifier).selectTab(OwnerTabs.coding);
         return;
       case ChatThreadType.envoyai:
       case ChatThreadType.externalAgent:
@@ -474,37 +365,6 @@ class ChatListScreen extends ConsumerWidget {
                       : thread.type == ChatThreadType.aiBot
                       ? 'bot:${thread.botId ?? ''}'
                       : 'envoyai'),
-            ),
-          ),
-        );
-        return;
-      case ChatThreadType.pi:
-        final parts = thread.id.split(':term:');
-        final sessionId = parts.length > 1 ? parts[1] : '';
-        final session = ref
-            .read(terminalProvider)
-            .sessions
-            .where((s) => s.id == sessionId)
-            .firstOrNull;
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => TerminalDetailScreen(
-              sessionId: sessionId,
-              sessionName: _terminalSessionTitle(thread.displayName),
-              sessionRole: session?.role ?? 'pi',
-            ),
-          ),
-        );
-        return;
-      case ChatThreadType.envoyHarness:
-        final parts = thread.id.split(':eh:');
-        final chatId = parts.length > 1 ? parts[1] : null;
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => EnvoyHarnessChatScreen(
-              threadId: thread.id,
-              displayName: _localizedThreadTitle(context, thread),
-              chatId: chatId,
             ),
           ),
         );
@@ -539,27 +399,6 @@ class ChatListScreen extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: Text(l10n.chatsDeleteBotTitle),
         content: Text(l10n.chatsDeleteBotBody(name)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.commonCancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(l10n.commonDelete),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<bool?> _confirmRemoveEhChat(BuildContext context, String name) {
-    final l10n = AppLocalizations.of(context);
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.chatsEhRemoveTitle),
-        content: Text(l10n.chatsEhRemoveBody(name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -873,167 +712,6 @@ class ChatListScreen extends ConsumerWidget {
     });
   }
 
-  /// Start a Pi coding TUI on the home node (project folder required).
-
-  Future<void> _showNewEhChat(BuildContext context, WidgetRef ref) async {
-    final ehCount = ref
-        .read(chatProvider)
-        .threads
-        .where((t) => t.type == ChatThreadType.envoyHarness)
-        .length;
-    if (ehCount >= kMaxEnvoyHarnessChats) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'At most $kMaxEnvoyHarnessChats coding chats — remove one first.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final pathController = TextEditingController();
-    var creating = false;
-
-    unawaited(() async {
-      final client = ref.read(nodeServiceProvider);
-      if (client == null) return;
-      try {
-        final cfg = await client.getNodeConfig();
-        final envoyCwd = cfg['envoyHarnessCwd']?.toString().trim();
-        if (envoyCwd != null &&
-            envoyCwd.isNotEmpty &&
-            pathController.text.isEmpty) {
-          pathController.text = envoyCwd;
-        }
-        if (pathController.text.isEmpty) {
-          final settings = (cfg['piSettings'] as Map?)?.cast<String, dynamic>();
-          final paths = settings?['allowedPaths'];
-          if (paths is List && paths.isNotEmpty) {
-            final first = paths.first?.toString().trim() ?? '';
-            if (first.isNotEmpty) {
-              pathController.text = first;
-            }
-          }
-        }
-      } catch (_) {}
-    }());
-
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        final l10n = AppLocalizations.of(ctx);
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              title: Text(l10n.chatsEhNew),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(l10n.chatsPiBody, style: const TextStyle(fontSize: 13)),
-                  const SizedBox(height: 12),
-                  Text(
-                    l10n.chatsPiFolder,
-                    style: Theme.of(ctx).textTheme.labelLarge,
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          pathController.text.trim().isEmpty
-                              ? l10n.chatsPiFolderHint
-                              : pathController.text.trim(),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: pathController.text.trim().isEmpty
-                                ? Theme.of(ctx).colorScheme.onSurfaceVariant
-                                : Theme.of(ctx).colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: creating
-                            ? null
-                            : () async {
-                                final client = ref.read(nodeServiceProvider);
-                                if (client == null) return;
-                                final picked = await HomeFolderBrowser.open(
-                                  ctx,
-                                  client: client,
-                                  initialPath:
-                                      pathController.text.trim().isEmpty
-                                          ? null
-                                          : pathController.text.trim(),
-                                );
-                                if (picked == null) return;
-                                setLocal(() => pathController.text = picked);
-                              },
-                        child: Text(l10n.knowledgePanelBrowse),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: creating
-                      ? null
-                      : () => Navigator.of(ctx).pop(),
-                  child: Text(l10n.commonCancel),
-                ),
-                FilledButton(
-                  onPressed: creating
-                      ? null
-                      : () async {
-                          final path = pathController.text.trim();
-                          if (path.isEmpty) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              SnackBar(content: Text(l10n.chatsPiFolderRequired)),
-                            );
-                            return;
-                          }
-                          setLocal(() => creating = true);
-                          try {
-                            final threadId = await ref
-                                .read(chatProvider.notifier)
-                                .createEhChat(projectPath: path);
-                            if (!ctx.mounted) return;
-                            Navigator.of(ctx).pop();
-                            final thread = ref
-                                .read(chatProvider)
-                                .threads
-                                .where((t) => t.id == threadId)
-                                .firstOrNull;
-                            if (thread != null && context.mounted) {
-                              _openThread(context, ref, thread);
-                            }
-                          } catch (e) {
-                            if (!ctx.mounted) return;
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              SnackBar(content: Text(e.toString())),
-                            );
-                            setLocal(() => creating = false);
-                          }
-                        },
-                  child: Text(
-                    creating ? l10n.commonSaving : l10n.commonCreate,
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    pathController.dispose();
-  }
-
   void _showCreateRoomDialog(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final controller = TextEditingController();
@@ -1204,15 +882,6 @@ class _AiBotRowMenu extends StatelessWidget {
 class _ThreadSection {
   final String title;
   final List<ChatThread> threads;
-  final bool showPiRow;
-  final bool showEhEmptyRow;
-  final VoidCallback? onAddEh;
 
-  const _ThreadSection(
-    this.title,
-    this.threads, {
-    this.showPiRow = false,
-    this.showEhEmptyRow = false,
-    this.onAddEh,
-  });
+  const _ThreadSection(this.title, this.threads);
 }

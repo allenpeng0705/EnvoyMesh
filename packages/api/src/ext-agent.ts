@@ -94,6 +94,22 @@ export const DEFAULT_EXT_AGENTS: ExtAgentDefinition[] = [
     url: "http://127.0.0.1:8027/message",
     enabled: true,
   },
+  // Phase 68-C3 — OpenCode + CodeWhale (one-shot CLI backends).
+  // Ports 8028 / 8029 are additive (8026/8027 already used by aider/mmx).
+  {
+    id: "opencode",
+    name: "OpenCode",
+    adapter: "envoymesh-message",
+    url: "http://127.0.0.1:8028/message",
+    enabled: true,
+  },
+  {
+    id: "codewhale",
+    name: "CodeWhale",
+    adapter: "envoymesh-message",
+    url: "http://127.0.0.1:8029/message",
+    enabled: true,
+  },
 ];
 
 export function mergeExtAgentPresets(
@@ -421,6 +437,8 @@ export const EXT_AGENTS_WITH_PROJECT_PATH = [
   "cursor",
   "aider",
   "mmx",
+  "opencode",
+  "codewhale",
   "hermes",
   "openhuman",
 ] as const;
@@ -496,6 +514,10 @@ export function defaultExtAgentStartHint(agentId: string): string {
       return "Install Aider onto a PATH the home node can see: `uv tool install aider-chat` (preferred) or `pip install --user aider-chat`. Then `aider --version`, set ANTHROPIC_API_KEY or OPENAI_API_KEY on the home node, and restart the node.";
     case "mmx":
       return "Install MMX-CLI: `npm install -g mmx-cli`. Then run `mmx auth login --api-key sk-xxxx` to authenticate; the CLI auto-detects global vs CN region from the key prefix.";
+    case "opencode":
+      return "Install OpenCode: `curl -fsSL https://opencode.ai/install | bash` (or `npm install -g opencode-ai`). Then `opencode --version` and `opencode auth login`.";
+    case "codewhale":
+      return "Install CodeWhale: `curl -fsSL https://codewhale.net/install.sh | sh` (or `npm install -g codewhale`). Then `codewhale --version` and `codewhale auth set --provider deepseek` (or set your provider key).";
     case "pi":
       return "Pi is built into full desktop installs. If chat stays silent, reinstall a full build (Pi sidecar staged) and confirm Settings → AI has a real model (not mock/disabled).";
     default:
@@ -591,6 +613,22 @@ export function getExtAgentInstallInfo(agentId: string): ExtAgentInstallInfo {
         agentId: id,
         homepageUrl: "https://github.com/MiniMax-AI/cli",
         homepageLabel: "MMX-CLI on GitHub",
+        startHint: defaultExtAgentStartHint(id),
+        builtIn: false,
+      };
+    case "opencode":
+      return {
+        agentId: id,
+        homepageUrl: "https://opencode.ai/",
+        homepageLabel: "OpenCode website",
+        startHint: defaultExtAgentStartHint(id),
+        builtIn: false,
+      };
+    case "codewhale":
+      return {
+        agentId: id,
+        homepageUrl: "https://codewhale.net/",
+        homepageLabel: "CodeWhale website",
         startHint: defaultExtAgentStartHint(id),
         builtIn: false,
       };
@@ -727,6 +765,32 @@ const INSTALL_TABLE: Record<string, InstallTableRow> = {
       "Run `mmx auth login --api-key sk-xxxx` to authenticate; OAuth (browser) is also supported.",
       "Region is auto-detected by the CLI from the API key prefix (global vs CN).",
       "MMX-CLI requires Node.js 18+; verify with `node --version`.",
+    ],
+  },
+  opencode: {
+    command: "opencode",
+    // Official install script (macOS/Linux); npm package is `opencode-ai`
+    // (unscoped `opencode` on npm is a different project).
+    installCommand: "curl -fsSL https://opencode.ai/install | bash",
+    verifyCommand: "opencode --version",
+    homepageUrl: "https://opencode.ai/",
+    homepageLabel: "OpenCode website",
+    commonIssues: [
+      "Alternative: `npm install -g opencode-ai` (package name is opencode-ai, not opencode).",
+      "Run `opencode auth login` to configure a model provider.",
+      "If `opencode --version` fails after curl install, add `~/.local/bin` to PATH and restart the home node.",
+    ],
+  },
+  codewhale: {
+    command: "codewhale",
+    installCommand: "curl -fsSL https://codewhale.net/install.sh | sh",
+    verifyCommand: "codewhale --version",
+    homepageUrl: "https://codewhale.net/",
+    homepageLabel: "CodeWhale website",
+    commonIssues: [
+      "Alternative: `npm install -g codewhale` (Node 18+).",
+      "Authenticate with `codewhale auth set --provider deepseek` (or another supported provider).",
+      "If `codewhale --version` fails after curl install, add `~/.local/bin` to PATH and restart the home node.",
     ],
   },
 };

@@ -212,6 +212,35 @@ describe("claudecode-backend (55C) — ask()", () => {
     expect(text).toBe("hello from claude");
   });
 
+  it("ask() emits onDelta from assistant stream frames", async () => {
+    const assistant = {
+      type: "assistant",
+      message: {
+        content: [{ type: "text", text: "streamed hi" }],
+      },
+      parent_tool_use_id: null,
+      uuid: "asst-uuid" as never,
+      session_id: "sess-stream",
+    } as unknown as SDKMessage;
+    const { fn, calls } = makeRecordingQuery([
+      makeInit("sess-stream"),
+      assistant,
+      makeSuccessResult("streamed hi", "sess-stream"),
+    ]);
+    const backend = new ClaudeCodeBackend({
+      queryFn: fn,
+      apiKey: "k",
+      requestTimeoutMs: 2_000,
+    });
+    const chunks: string[] = [];
+    const text = await backend.ask("hi", "owner-A", {
+      onDelta: (chunk) => chunks.push(chunk),
+    });
+    expect(text).toBe("streamed hi");
+    expect(chunks).toEqual(["streamed hi"]);
+    expect(calls[0]?.options?.includePartialMessages).toBe(true);
+  });
+
   it("ask() caches system/init slash_commands for the Ext Agent catalog", async () => {
     const { fn } = makeRecordingQuery([
       makeInit("sess-slash", ["compact", "review", "model"]),

@@ -669,6 +669,8 @@ import { saveEnvoyUpload } from "./envoy-uploads.js";
 import { buildAgentAttachmentContext } from "./agent-attachment-context.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
+import { createBackend } from "./ext-agent-adapter/backends.js";
+import { isExtAgentSidecarKind } from "./ext-agent-adapter/types.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import { OPENCLAW_SKILLS, PI_SKILLS, type AgentAdapter } from "@envoymesh/agent-adapter";
 import {
@@ -1419,9 +1421,21 @@ import {
 } from "./eh-turn-checkpoint.js";
 import {
   LEGACY_EH_CHAT_ID,
+  EH_CHAT_PLACEHOLDER_TITLE,
+  CODING_REVIEW_REF_KIND,
+  ehChatTitleFromUserPrompt,
+  extTimelineChatId,
+  formatCodingReviewInviteMessage,
   legacyEhEventToTimelineItems,
+  normalizeEhChatModel,
+  resolveEhChatDisplayTitle,
+  resolveEhChatHostCreds,
+  resolveEhChatHostModel,
+  shouldAutoSetEhChatTitle,
+  type CodingReviewRef,
   type EhAgentStateName,
   type EhLegacyTimelineEvent,
+  type EhTimelineUpdate,
 } from "@envoymesh/api";
 import {
   createEnvoyHarnessSessionStore,
@@ -1433,6 +1447,27 @@ import {
 } from "./envoy-harness-workspace.js";
 import { EhChatRuntime } from "./eh-chat-runtime.js";
 import {
+  auditEhPermissionResponded,
+  auditEhReviewAccepted,
+  auditEhReviewInvited,
+  auditEhTurnCancelled,
+  auditEhTurnStarted,
+} from "./eh-audit.js";
+import { CodingHeartbeatStore } from "./coding-heartbeat-store.js";
+import {
+  auditCodingHeartbeatFailed,
+  auditCodingHeartbeatFired,
+} from "./coding-heartbeat-audit.js";
+import { CodingScheduleStore } from "./coding-schedule-store.js";
+import {
+  auditCodingScheduleFailed,
+  auditCodingScheduleFired,
+} from "./coding-schedule-audit.js";
+import {
+  currentEhTimelineRevision,
+  nextEhTimelineRevision,
+} from "./eh-timeline-revision.js";
+import {
   assertEhChatCapacity,
   findEhChatByCwd,
   findEhChatById,
@@ -1443,6 +1478,7 @@ import {
   touchEhChat,
   upsertEhChatSessionId,
   updateEhChatCwd,
+  updateEhChatTitle,
 } from "./envoy-harness-chats.js";
 import {
   cancelEnvoyLocalDownloadViaRuntime,
@@ -1776,6 +1812,15 @@ class NodeServiceImpl implements NodeService {
   private _chatRoomSyncFlushTimer: ReturnType<typeof setInterval> | null = null;
   /** Periodic prune of unbounded per-peer Maps to prevent memory leaks over multi-week runs. */
   private _memoryPruneTimer: ReturnType<typeof setInterval> | null = null;
+  /** Phase 68-C6 — Coding heartbeat ticker (~60s). */
+  private _codingHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly _codingHeartbeatStore = new CodingHeartbeatStore();
+  private readonly _codingHeartbeatFiring = new Set<string>();
+  private _codingHeartbeatReady: Promise<void> | null = null;
+  /** Phase 68-C7 — Coding schedule ticker (shares ~60s interval with heartbeats). */
+  private readonly _codingScheduleStore = new CodingScheduleStore();
+  private readonly _codingScheduleFiring = new Set<string>();
+  private _codingScheduleReady: Promise<void> | null = null;
   private readonly _agentActivityStore: LocalAgentActivityStore | null;
   private readonly _agentCardStore: AgentCardStore | null;
   private readonly _chatDraftStore: ChatDraftStore | null;
@@ -2456,6 +2501,31 @@ class NodeServiceImpl implements NodeService {
         console.error("[node-service] memory prune error:", err);
       }
     }, 60 * 60 * 1000); // 1 hour
+
+    // Phase 68-C6/C7 — Coding heartbeats + schedules (~60s shared ticker).
+    if (profileDir && profileDir !== "/tmp/unknown") {
+      this._codingHeartbeatReady = this._codingHeartbeatStore
+        .init(profileDir)
+        .then(() => {
+          this._codingHeartbeatTimer = setInterval(() => {
+            void this.tickCodingHeartbeats().catch((err) => {
+              console.warn("[coding.heartbeat] tick failed:", err);
+            });
+            void this.tickCodingSchedules().catch((err) => {
+              console.warn("[coding.schedule] tick failed:", err);
+            });
+          }, 60_000);
+        })
+        .catch((err) => {
+          console.warn("[coding.heartbeat] store init failed:", err);
+        });
+      this._codingScheduleReady = this._codingScheduleStore
+        .init(profileDir)
+        .catch((err) => {
+          console.warn("[coding.schedule] store init failed:", err);
+        });
+    }
+
     this._agentActivityStore =
       profileDir && profileDir !== "/tmp/unknown" ? createLocalAgentActivityStore(profileDir) : null;
     this._agentCardStore =
@@ -4969,6 +5039,21 @@ class NodeServiceImpl implements NodeService {
   private readonly _ehPendingCheckpoints = new Map<string, EhPendingCheckpoint>();
   private readonly _ehCompletedCheckpoints = new Map<string, EhCompletedCheckpoint>();
   private readonly _ehPendingTimelineInteractions = new Map<string, import("@envoymesh/api").EhApprovalItem | import("@envoymesh/api").EhQuestionItem>();
+  /** Last emitted agent state name per chat (for list summaries / uiBucket). */
+  private readonly _ehAgentStateByChatId = new Map<string, EhAgentStateName>();
+
+  private _emitEhTimelineUpdate(update: EhTimelineUpdate): void {
+    const chatId =
+      update.type === "state"
+        ? update.state.chatId
+        : update.type === "upsert"
+          ? update.item.chatId
+          : update.type === "remove"
+            ? update.chatId
+            : update.snapshot.chatId;
+    const revision = nextEhTimelineRevision(chatId);
+    this.emit("eh:timeline", { ...update, revision });
+  }
 
   private _emitEhTimelineEvent(event: EhLegacyTimelineEvent): void {
     const receivedAt = new Date().toISOString();
@@ -4976,7 +5061,7 @@ class NodeServiceImpl implements NodeService {
       if (item.type === "approval" || item.type === "question") {
         this._ehPendingTimelineInteractions.set(item.requestId, item);
       }
-      this.emit("eh:timeline", { type: "upsert", item });
+      this._emitEhTimelineUpdate({ type: "upsert", item });
     }
     if (event.name === "eh:turn_complete") {
       const payload = event.payload;
@@ -4984,7 +5069,7 @@ class NodeServiceImpl implements NodeService {
       const liveId = payload.turnId
         ? `turn:${payload.turnId}:activity-live`
         : `activity:${chatId}:live`;
-      this.emit("eh:timeline", { type: "remove", chatId, id: liveId });
+      this._emitEhTimelineUpdate({ type: "remove", chatId, id: liveId });
     }
   }
 
@@ -5000,7 +5085,7 @@ class NodeServiceImpl implements NodeService {
     const item = pending.type === "question"
       ? { ...pending, status: status as import("@envoymesh/api").EhQuestionItem["status"], ...(answer !== undefined ? { answer } : {}), updatedAt }
       : { ...pending, status: status as import("@envoymesh/api").EhApprovalItem["status"], updatedAt };
-    this.emit("eh:timeline", { type: "upsert", item });
+    this._emitEhTimelineUpdate({ type: "upsert", item });
   }
 
   private _emitEhAgentState(
@@ -5010,11 +5095,13 @@ class NodeServiceImpl implements NodeService {
     turnId?: string,
     activitySummary?: string,
   ): void {
-    this.emit("eh:timeline", {
+    const resolvedChatId = chatId ?? LEGACY_EH_CHAT_ID;
+    this._ehAgentStateByChatId.set(resolvedChatId, state);
+    this._emitEhTimelineUpdate({
       type: "state",
       state: {
         state,
-        chatId: chatId ?? LEGACY_EH_CHAT_ID,
+        chatId: resolvedChatId,
         ...(turnId ? { turnId } : {}),
         label,
         ...(activitySummary ? { activitySummary } : {}),
@@ -5376,6 +5463,11 @@ class NodeServiceImpl implements NodeService {
       throw new Error("envoy_harness_turn_busy");
     }
 
+    // Paseo-aligned: first user prompt becomes the workspace title.
+    if (chat) {
+      await this._maybeAutoTitleEhChatFromPrompt(chat, trimmed);
+    }
+
     await this._getOrInitEnvoyHarnessRuntime();
     const askOpts = {
       providerHint: opts?.providerHint,
@@ -5402,6 +5494,10 @@ class NodeServiceImpl implements NodeService {
     this.emit("eh:turn_started", startedEvent);
     this._emitEhTimelineEvent({ name: "eh:turn_started", payload: startedEvent });
     this._emitEhAgentState("thinking", "Thinking", chat?.id, turnId);
+    auditEhTurnStarted(this._taskStore, {
+      turnId,
+      ...(chat ? { chatId: chat.id } : {}),
+    });
     this.emit("eh:prompt_busy", {
       busy: true,
       ...(chat ? { chatId: chat.id } : {}),
@@ -5705,9 +5801,11 @@ class NodeServiceImpl implements NodeService {
     } else {
       await persistEhTurnCheckpoint(this._profileDir, checkpoint).catch(() => undefined);
     }
+    const remainingFiles = checkpoint.review.files.length;
+    auditEhReviewAccepted(this._taskStore, { turnId, remainingFiles });
     return {
       accepted: true,
-      remainingFiles: checkpoint.review.files.length,
+      remainingFiles,
       cleared,
     };
   }
@@ -6304,13 +6402,96 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
-   * Sync ask to the active Ext Agent for Team-job subtasks.
-   * Requires a synchronous HTTP reply — async bridge replies are not accepted.
+   * Sync ask to an Ext Agent (Coding Tier B / Team-job subtasks).
+   * Sidecar kinds call `createBackend(agentId).ask` directly (no need to
+   * switch the global active Ext Agent). Other agents POST `/message`.
    */
-  async askExtAgent(prompt: string): Promise<string> {
-    const bridgeCfg = await loadBridgeConfigFromProfile(this._profileDir).catch(() => null);
+  async askExtAgent(
+    promptOrParams: string | import("@envoymesh/api").AskExtAgentParams,
+  ): Promise<string> {
+    const params =
+      typeof promptOrParams === "string"
+        ? { prompt: promptOrParams }
+        : promptOrParams;
+    const prompt = params.prompt?.trim() ?? "";
+    if (!prompt) {
+      throw new Error("askExtAgent requires a non-empty prompt");
+    }
+    if (!(await this._callerMayUseExtAgent())) {
+      throw this._extAgentDeniedError();
+    }
+
+    const bridgeCfg = await loadBridgeConfigFromProfile(this._profileDir).catch(
+      () => null,
+    );
     const snap = this._bridgeStatus;
-    const agentUrl = (snap?.agentUrl ?? bridgeCfg?.agentUrl)?.trim();
+    const agents = mergeExtAgentPresets(
+      snap?.extAgents ?? bridgeCfg?.extAgents,
+    );
+    const requested = params.agentId?.trim();
+    const active =
+      (requested ? agents.find((a) => a.id === requested) : undefined) ??
+      resolveActiveExtAgent(
+        agents,
+        snap?.activeExtAgentId ?? bridgeCfg?.activeExtAgent,
+      ) ??
+      agents[0];
+    const agentId = active?.id ?? requested ?? "pi";
+    const sessionKey = this._bridgeAskSessionKey();
+    const streamSessionId = params.streamSessionId?.trim() || "";
+
+    if (isExtAgentSidecarKind(agentId)) {
+      const chatId = streamSessionId ? extTimelineChatId(streamSessionId) : "";
+      const assistantId = streamSessionId
+        ? `turn:${streamSessionId}:assistant`
+        : "";
+      let streamingText = "";
+      let assistantCreatedAt = "";
+      const emitAssistant = (text: string, streaming: boolean) => {
+        if (!chatId || !assistantId) return;
+        const now = new Date().toISOString();
+        if (!assistantCreatedAt) assistantCreatedAt = now;
+        this._emitEhTimelineUpdate({
+          type: "upsert",
+          item: {
+            id: assistantId,
+            chatId,
+            turnId: streamSessionId,
+            type: "message",
+            role: "assistant",
+            text,
+            streaming,
+            createdAt: assistantCreatedAt,
+            updatedAt: now,
+          },
+        });
+      };
+      const text = await createBackend(agentId).ask(
+        prompt,
+        sessionKey,
+        streamSessionId
+          ? {
+              onDelta: (chunk) => {
+                if (!chunk) return;
+                streamingText += chunk;
+                emitAssistant(streamingText, true);
+              },
+            }
+          : undefined,
+      );
+      const out = typeof text === "string" ? text.trim() : "";
+      if (!out) {
+        throw new Error(
+          `${active?.name ?? agentId} returned an empty reply`,
+        );
+      }
+      if (streamSessionId) {
+        emitAssistant(out, false);
+      }
+      return out;
+    }
+
+    const agentUrl = (active?.url ?? snap?.agentUrl ?? bridgeCfg?.agentUrl)?.trim();
     if (!agentUrl) {
       throw new Error("Ext Agent is not configured (no agent URL)");
     }
@@ -6325,8 +6506,7 @@ class NodeServiceImpl implements NodeService {
         agentUrl,
         listenPort: bridgeCfg?.listenPort ?? 3031,
         agentName: snap?.agentName ?? bridgeCfg?.agentName ?? "Ext Agent",
-        activeExtAgent:
-          snap?.activeExtAgentId ?? bridgeCfg?.activeExtAgent ?? "pi",
+        activeExtAgent: agentId,
         secret: bridgeCfg?.secret,
       },
       {
@@ -6441,11 +6621,22 @@ class NodeServiceImpl implements NodeService {
     import("@envoymesh/api").EnvoyHarnessStatus
   > {
     await this._refreshEnvoyHarnessHostConfig();
-      const eh = loadEnvoyHarnessRuntimeConfig({
-        hostModel: this._envoyHarnessHostModel,
-        hostApiKey: this._envoyHarnessHostApiKey,
-        hostEndpoint: this._envoyHarnessHostEndpoint,
-      });
+    const activeChat = await this._resolveEhChat(undefined).catch(() => undefined);
+    const hostModel = resolveEhChatHostModel(
+      activeChat?.model,
+      this._envoyHarnessHostModel,
+    );
+    const creds = resolveEhChatHostCreds({
+      chatEndpoint: activeChat?.endpoint,
+      chatApiKey: activeChat?.apiKey,
+      globalEndpoint: this._envoyHarnessHostEndpoint,
+      globalApiKey: this._envoyHarnessHostApiKey,
+    });
+    const eh = loadEnvoyHarnessRuntimeConfig({
+      hostModel,
+      hostApiKey: creds.apiKey,
+      hostEndpoint: creds.endpoint,
+    });
     const peers = this.listEnvoyHarnessPeers();
     const cwd = await this._envoyHarnessResolvedCwd();
     let sessionId: string | undefined;
@@ -6541,16 +6732,20 @@ class NodeServiceImpl implements NodeService {
 
   async getEnvoyHarnessChatHistory(
     chatId?: string,
+    sinceRevision?: number,
   ): Promise<import("@envoymesh/api").EhChatHistory> {
     await this._refreshEnvoyHarnessHostConfig();
     const chat = await this._resolveEhChat(chatId ?? null);
     const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
     const normalized = normalizeEhWorkspaceCwd(cwd);
+    const revKey = chat?.id ?? LEGACY_EH_CHAT_ID;
+    const currentRevision = currentEhTimelineRevision(revKey);
     const empty: import("@envoymesh/api").EhChatHistory = {
       ...(chat ? { chatId: chat.id } : {}),
       sessionId: "",
       cwd: normalized,
       turns: [],
+      revision: currentRevision,
     };
     const eh = loadEnvoyHarnessRuntimeConfig({
       hostModel: this._envoyHarnessHostModel,
@@ -6561,6 +6756,29 @@ class NodeServiceImpl implements NodeService {
 
     if (chat && chatId) {
       await this._activateEhChat(chat);
+    }
+
+    // Client already has this revision — skip disk timeline merge.
+    if (
+      typeof sinceRevision === "number" &&
+      sinceRevision >= currentRevision &&
+      currentRevision > 0
+    ) {
+      const cfg = await this._configStore.load().catch(() => undefined);
+      const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+      const resolved = await resolveEhSessionIdForCwd({
+        cwd,
+        sessionByCwd: cfg?.envoyHarnessSessionByCwd,
+        sessionStore,
+      });
+      return {
+        ...(chat ? { chatId: chat.id } : {}),
+        sessionId: resolved.sessionId ?? "",
+        cwd: normalized,
+        turns: [],
+        timeline: [],
+        revision: currentRevision,
+      };
     }
 
     const cfg = await this._configStore.load().catch(() => undefined);
@@ -6596,21 +6814,44 @@ class NodeServiceImpl implements NodeService {
       files: checkpoint.review.files.map((file) => file.path),
       createdAt: new Date(0).toISOString(),
     }] : []);
-    return { ...scoped, timeline: [...(scoped.timeline ?? []), ...reviewItems] };
+    return {
+      ...scoped,
+      timeline: [...(scoped.timeline ?? []), ...reviewItems],
+      revision: currentRevision,
+    };
   }
 
   async listEnvoyHarnessChats(): Promise<
     import("@envoymesh/api").EhChatWorkspaceSummary[]
   > {
+    // Soft-deny: return [] when coding is disabled (not a hard CODING_GATED_RPC throw).
     if (!(await this._callerMayUseCoding())) return [];
     const { chats, sessionByCwd } = await this._loadEhChatState();
     const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
-    return summarizeEhChats({ chats, sessionStore, sessionByCwd });
+    const agentStateByChatId: Record<string, EhAgentStateName> = {};
+    for (const [id, state] of this._ehAgentStateByChatId) {
+      agentStateByChatId[id] = state;
+    }
+    const pendingByChatId: Record<string, boolean> = {};
+    for (const item of this._ehPendingTimelineInteractions.values()) {
+      pendingByChatId[item.chatId] = true;
+    }
+    return summarizeEhChats({
+      chats,
+      sessionStore,
+      sessionByCwd,
+      agentStateByChatId,
+      pendingByChatId,
+    });
   }
 
   async createEnvoyHarnessChat(opts: {
     cwd: string;
     title?: string;
+    forceNew?: boolean;
+    model?: string;
+    endpoint?: string;
+    apiKey?: string;
   }): Promise<import("@envoymesh/api").EhChatWorkspaceSummary> {
     const abs = resolvePiProjectDir(opts.cwd);
     if (abs === null) {
@@ -6618,25 +6859,38 @@ class NodeServiceImpl implements NodeService {
     }
     const normalized = normalizeEhWorkspaceCwd(abs);
     const { chats } = await this._loadEhChatState();
-    const existing = findEhChatByCwd(chats, normalized);
-    if (existing) {
-      await this._activateEhChat(existing);
-      const listed = await this.listEnvoyHarnessChats();
-      const summary = listed.find((c) => c.id === existing.id);
-      if (summary) return summary;
-      return {
-        id: existing.id,
-        cwd: existing.cwd,
-        title: existing.title ?? normalized,
-        lastUsedAt: existing.lastUsedAt,
-      };
+    if (!opts.forceNew) {
+      const existing = findEhChatByCwd(chats, normalized);
+      if (existing) {
+        await this._activateEhChat(existing);
+        const listed = await this.listEnvoyHarnessChats();
+        const summary = listed.find((c) => c.id === existing.id);
+        if (summary) return summary;
+        return {
+          id: existing.id,
+          cwd: existing.cwd,
+          title: existing.title ?? normalized,
+          lastUsedAt: existing.lastUsedAt,
+          ...(existing.model?.trim() ? { model: existing.model.trim() } : {}),
+          ...(existing.endpoint?.trim()
+            ? { endpoint: existing.endpoint.trim() }
+            : {}),
+          ...(existing.apiKey?.trim() ? { hasApiKey: true } : {}),
+        };
+      }
     }
     assertEhChatCapacity(chats);
     const now = new Date().toISOString();
+    const lockedModel = normalizeEhChatModel(opts.model);
+    const lockedEndpoint = normalizeEhChatModel(opts.endpoint);
+    const lockedApiKey = normalizeEhChatModel(opts.apiKey);
     const chat: import("@envoymesh/api").EhChatWorkspace = {
       id: crypto.randomUUID(),
       cwd: normalized,
       title: opts.title?.trim() || undefined,
+      ...(lockedModel ? { model: lockedModel } : {}),
+      ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+      ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
       createdAt: now,
       lastUsedAt: now,
     };
@@ -6653,11 +6907,378 @@ class NodeServiceImpl implements NodeService {
       return {
         id: chat.id,
         cwd: normalized,
-        title: opts.title?.trim() || normalized,
+        title: opts.title?.trim() || EH_CHAT_PLACEHOLDER_TITLE,
         lastUsedAt: now,
+        ...(lockedModel ? { model: lockedModel } : {}),
+        ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+        ...(lockedApiKey ? { hasApiKey: true } : {}),
       };
     }
     return created;
+  }
+
+  /**
+   * Phase 68-C2 — build peer-review invite text. Caller (Social) must
+   * `sendChat(peerOwnerId, messageText)` after this RPC.
+   */
+  async createCodingReviewInvite(opts: {
+    chatId: string;
+    peerOwnerId: string;
+    turnId?: string;
+  }): Promise<{ reviewRef: CodingReviewRef; messageText: string }> {
+    const chatId = opts.chatId.trim();
+    const peerOwnerId = opts.peerOwnerId.trim();
+    if (!chatId) throw new Error("envoy_harness_chat_id_required");
+    if (!peerOwnerId) throw new Error("coding_review_peer_required");
+
+    const chat = await this._resolveEhChat(chatId);
+    if (!chat) {
+      throw new Error(`envoy_harness_chat_not_found: ${chatId}`);
+    }
+
+    const trust = await this._trustStore.getTrustRecord(peerOwnerId);
+    const level = trust?.level;
+    // Prefer direct; allow referred. Reject missing / public / blocked.
+    if (!level || level === "blocked" || level === "public") {
+      throw new Error(
+        level === "blocked"
+          ? "coding_review_peer_blocked"
+          : "coding_review_peer_not_bonded",
+      );
+    }
+
+    const profile = this.getProfile();
+    const revision = currentEhTimelineRevision(chat.id);
+    const title = resolveEhChatDisplayTitle(chat.title, chat.cwd);
+    const turnId = opts.turnId?.trim() || undefined;
+    const reviewRef: CodingReviewRef = {
+      kind: CODING_REVIEW_REF_KIND,
+      v: 1,
+      ownerId: profile.owner.ownerId,
+      chatId: chat.id,
+      ...(title ? { title } : {}),
+      ...(chat.cwd ? { cwd: chat.cwd } : {}),
+      ...(turnId ? { turnId } : {}),
+      ...(revision > 0 ? { revision } : {}),
+    };
+    const messageText = formatCodingReviewInviteMessage(reviewRef);
+    auditEhReviewInvited(this._taskStore, {
+      chatId: chat.id,
+      peerOwnerId,
+      turnId,
+    });
+    return { reviewRef, messageText };
+  }
+
+  private async _ensureCodingHeartbeatStore(): Promise<void> {
+    if (this._codingHeartbeatReady) {
+      await this._codingHeartbeatReady;
+      return;
+    }
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("coding_heartbeat_store_not_ready");
+    }
+    this._codingHeartbeatReady = this._codingHeartbeatStore.init(this._profileDir);
+    await this._codingHeartbeatReady;
+  }
+
+  /** Phase 68-C6 — cron tick; fires due Coding heartbeats. */
+  async tickCodingHeartbeats(now: Date = new Date()): Promise<void> {
+    await this._ensureCodingHeartbeatStore();
+    const due = this._codingHeartbeatStore.selectDue(now);
+    for (const hb of due) {
+      void this._fireCodingHeartbeat(hb, { force: false });
+    }
+  }
+
+  async listCodingHeartbeats(): Promise<
+    import("@envoymesh/api").CodingHeartbeat[]
+  > {
+    await this._ensureCodingHeartbeatStore();
+    return this._codingHeartbeatStore.list();
+  }
+
+  async createCodingHeartbeat(
+    input: import("@envoymesh/api").CreateCodingHeartbeatInput,
+  ): Promise<import("@envoymesh/api").CodingHeartbeat> {
+    await this._ensureCodingHeartbeatStore();
+    return this._codingHeartbeatStore.create(input);
+  }
+
+  async updateCodingHeartbeat(
+    input: import("@envoymesh/api").UpdateCodingHeartbeatInput,
+  ): Promise<import("@envoymesh/api").CodingHeartbeat> {
+    await this._ensureCodingHeartbeatStore();
+    return this._codingHeartbeatStore.update(input);
+  }
+
+  async deleteCodingHeartbeat(id: string): Promise<{ deleted: boolean }> {
+    await this._ensureCodingHeartbeatStore();
+    const deleted = await this._codingHeartbeatStore.delete(id);
+    return { deleted };
+  }
+
+  async runCodingHeartbeatNow(
+    id: string,
+  ): Promise<import("@envoymesh/api").CodingHeartbeat> {
+    await this._ensureCodingHeartbeatStore();
+    const hb = this._codingHeartbeatStore.get(id.trim());
+    if (!hb) throw new Error("coding_heartbeat_not_found");
+    return this._fireCodingHeartbeat(hb, { force: true });
+  }
+
+  private async _fireCodingHeartbeat(
+    hb: import("@envoymesh/api").CodingHeartbeat,
+    opts: { force: boolean },
+  ): Promise<import("@envoymesh/api").CodingHeartbeat> {
+    if (this._codingHeartbeatFiring.has(hb.id)) {
+      const skipped = await this._codingHeartbeatStore.recordSkipError(
+        hb.id,
+        "already_firing",
+      );
+      auditCodingHeartbeatFailed(this._taskStore, {
+        id: hb.id,
+        name: hb.name,
+        reason: "already_firing",
+      });
+      return skipped ?? hb;
+    }
+
+    if (hb.target.kind === "eh") {
+      if (this._ehChatRuntime.hasTurnForChat(hb.target.chatId)) {
+        const skipped = await this._codingHeartbeatStore.recordSkipError(
+          hb.id,
+          "turn_busy",
+        );
+        auditCodingHeartbeatFailed(this._taskStore, {
+          id: hb.id,
+          name: hb.name,
+          reason: "turn_busy",
+        });
+        return skipped ?? hb;
+      }
+    }
+
+    this._codingHeartbeatFiring.add(hb.id);
+    try {
+      if (hb.target.kind === "eh") {
+        await this.startEnvoyHarnessTurn(hb.prompt, {
+          chatId: hb.target.chatId,
+        });
+      } else if (hb.target.kind === "pi") {
+        await this.sendToPi(hb.prompt, { sessionId: hb.target.sessionId });
+      } else {
+        await this.askExtAgent({
+          prompt: hb.prompt,
+          agentId: hb.target.agentId,
+          streamSessionId: hb.target.sessionId,
+        });
+      }
+      const next = await this._codingHeartbeatStore.recordFire(hb.id);
+      auditCodingHeartbeatFired(this._taskStore, {
+        id: hb.id,
+        name: hb.name,
+        kind: hb.target.kind,
+      });
+      return next ?? hb;
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.message.trim()
+          ? err.message.trim().slice(0, 200)
+          : "dispatch_failed";
+      const next = await this._codingHeartbeatStore.recordFire(hb.id, {
+        error: reason,
+      });
+      auditCodingHeartbeatFailed(this._taskStore, {
+        id: hb.id,
+        name: hb.name,
+        reason,
+      });
+      if (opts.force) {
+        // Still return the updated row; UI reads lastError.
+        return next ?? hb;
+      }
+      return next ?? hb;
+    } finally {
+      this._codingHeartbeatFiring.delete(hb.id);
+    }
+  }
+
+  private async _ensureCodingScheduleStore(): Promise<void> {
+    if (this._codingScheduleReady) {
+      await this._codingScheduleReady;
+      return;
+    }
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("coding_schedule_store_not_ready");
+    }
+    this._codingScheduleReady = this._codingScheduleStore.init(this._profileDir);
+    await this._codingScheduleReady;
+  }
+
+  /** Phase 68-C7 — cron tick; fires due Coding schedules. */
+  async tickCodingSchedules(now: Date = new Date()): Promise<void> {
+    await this._ensureCodingScheduleStore();
+    const due = this._codingScheduleStore.selectDue(now);
+    for (const row of due) {
+      void this._fireCodingSchedule(row, { force: false });
+    }
+  }
+
+  async listCodingSchedules(): Promise<
+    import("@envoymesh/api").CodingSchedule[]
+  > {
+    await this._ensureCodingScheduleStore();
+    return this._codingScheduleStore.list();
+  }
+
+  async createCodingSchedule(
+    input: import("@envoymesh/api").CreateCodingScheduleInput,
+  ): Promise<import("@envoymesh/api").CodingSchedule> {
+    await this._ensureCodingScheduleStore();
+    return this._codingScheduleStore.create(input);
+  }
+
+  async updateCodingSchedule(
+    input: import("@envoymesh/api").UpdateCodingScheduleInput,
+  ): Promise<import("@envoymesh/api").CodingSchedule> {
+    await this._ensureCodingScheduleStore();
+    return this._codingScheduleStore.update(input);
+  }
+
+  async deleteCodingSchedule(id: string): Promise<{ deleted: boolean }> {
+    await this._ensureCodingScheduleStore();
+    const deleted = await this._codingScheduleStore.delete(id);
+    return { deleted };
+  }
+
+  async runCodingScheduleNow(
+    id: string,
+  ): Promise<import("@envoymesh/api").CodingSchedule> {
+    await this._ensureCodingScheduleStore();
+    const row = this._codingScheduleStore.get(id.trim());
+    if (!row) throw new Error("coding_schedule_not_found");
+    return this._fireCodingSchedule(row, { force: true });
+  }
+
+  private async _fireCodingSchedule(
+    row: import("@envoymesh/api").CodingSchedule,
+    _opts: { force: boolean },
+  ): Promise<import("@envoymesh/api").CodingSchedule> {
+    if (this._codingScheduleFiring.has(row.id)) {
+      const skipped = await this._codingScheduleStore.recordSkipError(
+        row.id,
+        "already_firing",
+      );
+      auditCodingScheduleFailed(this._taskStore, {
+        id: row.id,
+        name: row.name,
+        reason: "already_firing",
+      });
+      return skipped ?? row;
+    }
+
+    // Skip if previous fire's EH workspace is still mid-turn.
+    if (
+      row.harness === "envoy-harness" &&
+      row.lastWorkspaceId &&
+      this._ehChatRuntime.hasTurnForChat(row.lastWorkspaceId)
+    ) {
+      const skipped = await this._codingScheduleStore.recordSkipError(
+        row.id,
+        "turn_busy",
+      );
+      auditCodingScheduleFailed(this._taskStore, {
+        id: row.id,
+        name: row.name,
+        reason: "turn_busy",
+      });
+      return skipped ?? row;
+    }
+
+    this._codingScheduleFiring.add(row.id);
+    let workspaceId: string | undefined;
+    try {
+      const title =
+        row.name.trim() ||
+        `Scheduled: ${row.cwd.split(/[/\\]/).pop() || "project"}`;
+
+      if (row.harness === "envoy-harness") {
+        // Free the previous schedule-owned EH slot so recurring fires stay under cap.
+        if (row.lastWorkspaceId) {
+          try {
+            await this.removeEnvoyHarnessChat(row.lastWorkspaceId);
+          } catch {
+            // Cap / missing — create may still succeed or fail honestly.
+          }
+        }
+        const created = await this.createEnvoyHarnessChat({
+          cwd: row.cwd,
+          title,
+          forceNew: true,
+        });
+        workspaceId = created.id;
+        await this.startEnvoyHarnessTurn(row.prompt, { chatId: created.id });
+      } else if (row.harness === "pi") {
+        const ensured = await this.ensurePiTerminalSession({
+          projectPath: row.cwd,
+        });
+        if (!ensured.ok || !ensured.session?.sessionId) {
+          throw new Error(
+            ensured.ok === false
+              ? ensured.reason || ensured.code || "pi_ensure_failed"
+              : "pi_ensure_failed",
+          );
+        }
+        workspaceId = ensured.session.sessionId;
+        await this.sendToPi(row.prompt, { sessionId: workspaceId });
+      } else {
+        // Tier B — new ephemeral stream session each fire.
+        const agentId = row.harness;
+        try {
+          await this.setExtAgentProjectPath({
+            agentId,
+            path: row.cwd,
+          });
+        } catch {
+          // non-fatal — ask may still work with prior cwd
+        }
+        workspaceId = crypto.randomUUID();
+        await this.askExtAgent({
+          prompt: row.prompt,
+          agentId,
+          streamSessionId: workspaceId,
+        });
+      }
+
+      const next = await this._codingScheduleStore.recordFire(row.id, {
+        lastWorkspaceId: workspaceId,
+      });
+      auditCodingScheduleFired(this._taskStore, {
+        id: row.id,
+        name: row.name,
+        harness: row.harness,
+        workspaceId,
+      });
+      return next ?? row;
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.message.trim()
+          ? err.message.trim().slice(0, 200)
+          : "dispatch_failed";
+      const next = await this._codingScheduleStore.recordFire(row.id, {
+        error: reason,
+        ...(workspaceId ? { lastWorkspaceId: workspaceId } : {}),
+      });
+      auditCodingScheduleFailed(this._taskStore, {
+        id: row.id,
+        name: row.name,
+        reason,
+      });
+      return next ?? row;
+    } finally {
+      this._codingScheduleFiring.delete(row.id);
+    }
   }
 
   async openEnvoyHarnessChat(
@@ -6888,7 +7509,7 @@ class NodeServiceImpl implements NodeService {
     });
     if (
       chats.length > 0 &&
-      (cfg?.envoyHarnessChats === undefined || cfg.envoyHarnessChats.length === 0)
+      cfg?.envoyHarnessChats === undefined
     ) {
       const migrated = sortEhChats(chats)[0];
       await this.updateNodeConfig({
@@ -6917,6 +7538,34 @@ class NodeServiceImpl implements NodeService {
       sessionByCwd: cfg?.envoyHarnessSessionByCwd ?? {},
       activeId,
     };
+  }
+
+  private async _maybeAutoTitleEhChatFromPrompt(
+    chat: import("@envoymesh/api").EhChatWorkspace,
+    prompt: string,
+  ): Promise<void> {
+    let messageCount = 0;
+    if (chat.sessionId) {
+      try {
+        const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+        const history = await loadEhChatHistoryFromStore({
+          sessionStore,
+          sessionId: chat.sessionId,
+          cwd: chat.cwd,
+        });
+        messageCount = history.turns.length;
+      } catch {
+        messageCount = 0;
+      }
+    }
+    if (!shouldAutoSetEhChatTitle(chat.title, chat.cwd, { messageCount })) {
+      return;
+    }
+    const nextTitle = ehChatTitleFromUserPrompt(prompt);
+    if (!nextTitle || nextTitle === chat.title?.trim()) return;
+    const { chats } = await this._loadEhChatState();
+    const nextChats = updateEhChatTitle(chats, chat.id, nextTitle);
+    await this.updateNodeConfig({ envoyHarnessChats: nextChats });
   }
 
   private async _resolveEhChat(
@@ -7011,6 +7660,11 @@ class NodeServiceImpl implements NodeService {
     runtime: RealEnvoyHarnessRuntime,
     cwd: string,
     chatId?: string,
+    hostOverrides?: {
+      model?: string;
+      endpoint?: string;
+      apiKey?: string;
+    },
   ): Promise<ProtocolSessionBackend> {
     await runtime.ensureInternals();
     const cfg = await this._configStore.load().catch(() => undefined);
@@ -7020,10 +7674,19 @@ class NodeServiceImpl implements NodeService {
     const autoRun =
       cfg?.envoyHarnessAutoRunPolicy ??
       "safe-only";
+    const creds = resolveEhChatHostCreds({
+      chatEndpoint: hostOverrides?.endpoint,
+      chatApiKey: hostOverrides?.apiKey,
+      globalEndpoint: this._envoyHarnessHostEndpoint,
+      globalApiKey: this._envoyHarnessHostApiKey,
+    });
     const eh = loadEnvoyHarnessRuntimeConfig({
-      hostModel: this._envoyHarnessHostModel,
-      hostApiKey: this._envoyHarnessHostApiKey,
-      hostEndpoint: this._envoyHarnessHostEndpoint,
+      hostModel: resolveEhChatHostModel(
+        hostOverrides?.model,
+        this._envoyHarnessHostModel,
+      ),
+      hostApiKey: creds.apiKey,
+      hostEndpoint: creds.endpoint,
     });
     const memoryStore = new LocalMemoryStore({
       memoryRoot: join(cwd, "memories"),
@@ -7102,10 +7765,23 @@ class NodeServiceImpl implements NodeService {
     chatId: string,
     cwd: string,
   ): Promise<{ host: EnvoyHarnessPersistentAcpHost; sessionId: string }> {
+    await this._refreshEnvoyHarnessHostConfig();
+    const { chats } = await this._loadEhChatState();
+    const chat = findEhChatById(chats, chatId);
+    const hostModel = resolveEhChatHostModel(
+      chat?.model,
+      this._envoyHarnessHostModel,
+    );
+    const creds = resolveEhChatHostCreds({
+      chatEndpoint: chat?.endpoint,
+      chatApiKey: chat?.apiKey,
+      globalEndpoint: this._envoyHarnessHostEndpoint,
+      globalApiKey: this._envoyHarnessHostApiKey,
+    });
     const eh = loadEnvoyHarnessRuntimeConfig({
-      hostModel: this._envoyHarnessHostModel,
-      hostApiKey: this._envoyHarnessHostApiKey,
-      hostEndpoint: this._envoyHarnessHostEndpoint,
+      hostModel,
+      hostApiKey: creds.apiKey,
+      hostEndpoint: creds.endpoint,
     });
     const policyKey = await this._envoyHarnessAutoRunPolicyKey();
     const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}:${policyKey}`;
@@ -7130,6 +7806,11 @@ class NodeServiceImpl implements NodeService {
       runtime,
       normalized,
       chatId,
+      {
+        model: chat?.model,
+        endpoint: chat?.endpoint,
+        apiKey: chat?.apiKey,
+      },
     );
     const cfg = await this._configStore.load().catch(() => undefined);
     const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
@@ -7789,8 +8470,11 @@ class NodeServiceImpl implements NodeService {
   }
 
   /** One-shot prompt — used by the sendToPi JSON-RPC method. */
-  async sendToPi(text: string): Promise<string> {
-    return this._sendToPiInternal(text, { emitPushHint: true })
+  async sendToPi(text: string, opts?: { sessionId?: string }): Promise<string> {
+    return this._sendToPiInternal(text, {
+      emitPushHint: true,
+      sessionId: opts?.sessionId,
+    })
   }
 
   /**
@@ -7809,10 +8493,15 @@ class NodeServiceImpl implements NodeService {
 
   private async _sendToPiInternal(
     text: string,
-    opts: { emitPushHint: boolean },
+    opts: { emitPushHint: boolean; sessionId?: string },
   ): Promise<string> {
     // Always Pi. Coding chat uses askEnvoyHarness / startEnvoyHarnessTurn.
-    const result = await askPiViaRuntime(this._piState, this._piRuntimeDeps(), text)
+    const result = await askPiViaRuntime(
+      this._piState,
+      this._piRuntimeDeps(),
+      text,
+      opts.sessionId ? { sessionId: opts.sessionId } : undefined,
+    )
     // Direct sendToPi RPC only: wake backgrounded devices. Ext Agent replies
     // are notified via the normal bridge `chat:message` → push listener.
     if (opts.emitPushHint && result.text) {
@@ -8517,6 +9206,10 @@ class NodeServiceImpl implements NodeService {
       params.requestId,
       params.allowed ? "allow" : "deny",
     )
+    auditEhPermissionResponded(this._taskStore, {
+      requestId: params.requestId,
+      allowed: params.allowed,
+    })
     return { requestId: params.requestId, delivered: result.delivered }
   }
 
@@ -8538,6 +9231,10 @@ class NodeServiceImpl implements NodeService {
     if (turn.chatId) {
       this._ehUserQuestionBridge.clearForChat(turn.chatId);
     }
+    auditEhTurnCancelled(this._taskStore, {
+      turnId: turn.turnId,
+      ...(turn.chatId ? { chatId: turn.chatId } : {}),
+    });
     return { cancelled: true };
   }
 

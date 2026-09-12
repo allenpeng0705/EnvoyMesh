@@ -8,6 +8,8 @@ import { useT } from "../../context/I18nContext.js"
 
 export interface EhChangesDockProps {
   files: readonly string[]
+  /** When true, expand the file list (track pill focus). */
+  forceExpanded?: boolean
   onReview?: () => void
   onReviewFile?: (path: string) => void
   onKeepAll?: () => void
@@ -18,6 +20,7 @@ export interface EhChangesDockProps {
 
 export function EhChangesDock({
   files,
+  forceExpanded = false,
   onReview,
   onReviewFile,
   onKeepAll,
@@ -27,6 +30,7 @@ export function EhChangesDock({
 }: EhChangesDockProps) {
   const t = useT()
   const [expanded, setExpanded] = useState(files.length <= 6)
+  const showExpanded = forceExpanded || expanded
 
   if (files.length === 0) return null
 
@@ -41,16 +45,16 @@ export function EhChangesDock({
             <button
               type="button"
               className="eh-changes-toggle"
-              aria-expanded={expanded}
+              aria-expanded={showExpanded}
               onClick={() => setExpanded((open) => !open)}
             >
-              {expanded
+              {showExpanded
                 ? t("eh.changesHideList", "Hide list")
                 : t("eh.changesShowList", "Show list")}
             </button>
           ) : null}
         </div>
-        {expanded ? (
+        {showExpanded ? (
           <ul className="eh-changes-file-list">
             {files.map((path) => (
               <li key={path}>

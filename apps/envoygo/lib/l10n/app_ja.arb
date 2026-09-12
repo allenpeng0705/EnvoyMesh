@@ -5,6 +5,8 @@
   "navInbox": "受信箱",
   "navContent": "コンテンツ",
   "navSocial": "ソーシャル",
+  "navCoding": "コーディング",
+  "codingHomePlaceholder": "ホームのコーディングワークスペースがここに表示されます。準備ができたら + から開始できます。",
   "navTerminal": "ターミナル",
   "navKnowledge": "ナレッジ",
   "navMe": "自分",
@@ -63,9 +65,9 @@
   "meUnpairFailed": "ペア解除に失敗: {error}",
   "meEditProfile": "プロフィールを編集",
   "meProfileUpdateFailed": "プロフィールを更新できません: {error}",
-  "mePublicAccess": "公開アクセス",
+  "mePublicAccess": "直接ホームアドレス",
   "mePort": "ポート",
-  "mePublicAccessSaved": "公開アクセスを保存しました",
+  "mePublicAccessSaved": "直接アドレスを保存しました — 再接続中…",
   "meFamilyProfile": "ファミリープロフィール",
   "meFamilyProfileHint": "家族メンバーとしてこのホームに接続しています",
   "mePreferences": "設定",
@@ -107,7 +109,9 @@
   "marketSearchNoResults": "「{query}」に一致する出品はありません。",
   "@marketSearchNoResults": {
     "placeholders": {
-      "query": { "type": "String" }
+      "query": {
+        "type": "String"
+      }
     }
   },
   "marketSearchIdleHint": "キーワードを入力するか、下の候補をタップ。",
@@ -514,9 +518,9 @@
   "audioVoiceNote": "音声メモ",
   "meLastAttempt": "最終試行: {time}",
   "meJustNow": "たった今",
-  "mePublicIpLabel": "パブリック IP またはドメイン",
-  "mePublicIpHint": "例: 1.2.3.4 または mynode.example.com",
-  "mePublicIpHelp": "ホームノードにパブリック IP またはドメインがある場合に設定します。\n5G/WAN でリレーなしの直接接続が可能になります。",
+  "mePublicIpLabel": "ホスト（Tailscale・VPN・またはパブリック IP）",
+  "mePublicIpHint": "例: 100.64.1.2 または home.example.com",
+  "mePublicIpHelp": "自宅PCの Tailscale/VPN IP、または到達可能なホスト名を入力します。\nEnvoyGo は WebSocket で host:port（既定 3030）に接続します — 電話では SSH を使いません。\nLAN の次、リレーの前に試行します。",
   "meNetworkDebug": "ネットワークデバッグ",
   "meRunNetworkTests": "ネットワークテストを実行",
   "meTesting": "テスト中…",
@@ -568,8 +572,12 @@
   "chatFileTooLarge": "{name}: ファイルが大きすぎます（最大 {maxMb} MiB）",
   "@chatFileTooLarge": {
     "placeholders": {
-      "name": { "type": "String" },
-      "maxMb": { "type": "String" }
+      "name": {
+        "type": "String"
+      },
+      "maxMb": {
+        "type": "String"
+      }
     }
   },
   "chatAgentAttachOwnerOnly": "エージェントチャットにファイルを添付できるのはノード所有者のみです。",
@@ -1469,5 +1477,59 @@
   "phoneMeshRetryNow": "今すぐ再試行",
   "phoneMeshLanHint": "同じ Wi‑Fi の近くの検出がオフです — iPhone では 設定 → EnvoyGo で「ローカルネットワーク」を許可してください。インターネット経由の検索は利用できます。",
   "phoneMeshDescErrorGeneric": "端末メッシュで問題が発生しました。ソーシャルをいったん離れて戻るか、アプリを再起動してください。",
-  "phoneMeshDescError": "端末メッシュエラー: {error}"
+  "phoneMeshDescError": "端末メッシュエラー: {error}",
+  "codingPiConsoleHint": "Local coding agent",
+  "codingExtHarnessHint": "Runs on your home computer via Ext Agent.",
+  "codingExtEmpty": "Ask {name} about this project. Each message runs as a one-shot CLI ask.",
+  "codingExtPlaceholder": "Message {name}…",
+  "codingExtNeedsInstall": "Install",
+  "codingExtInstallHint": "Install {name} on your home computer to use it here.",
+  "codingExtReady": "Ready",
+  "codingExtCheckInstall": "Check install",
+  "codingExtThinking": "Working…",
+  "codingExtEmptyReply": "(empty reply)",
+  "codingExtSendFailed": "Failed to reach Ext Agent: {error}",
+  "codingOpenReview": "レビューを開く",
+  "codingInviteReview": "ピアにレビューを依頼",
+  "codingInviteReviewTitle": "ピアにレビューを依頼",
+  "codingInviteReviewDesc": "チャット招待を送り、ボンド済みの友だちが「{title}」を読み取り専用レビューで開けるようにします。",
+  "codingInviteReviewNoDirect": "直接ボンドの連絡先がありません。先に友だちとボンドしてください。",
+  "codingInviteReviewSend": "招待を送る",
+  "codingInviteReviewSending": "送信中…",
+  "codingInviteReviewSent": "レビュー招待を送りました。",
+  "codingInviteReviewFailed": "レビュー招待を送れませんでした。もう一度お試しください。",
+  "codingInviteReviewBondDenied": "この連絡先にはレビュー招待を送れません。",
+  "codingInviteReviewOpenOnOwnerHome": "このワークスペースをレビューするには所有者のホームノードで開いてください。",
+  "codingReviewOnlyBanner": "レビューのみ — タイムラインと変更を表示。ツールと取り消しは無効です。",
+  "codingHeartbeatAdd": "Add heartbeat…",
+  "codingHeartbeatAddTitle": "Add heartbeat",
+  "codingHeartbeatAddDesc": "On a schedule, send a prompt to “{title}”. This wakes the existing workspace — it does not create a new one.",
+  "codingHeartbeatDefaultName": "Heartbeat · {title}",
+  "codingHeartbeatDefaultPrompt": "Check progress on this workspace and continue useful next steps.",
+  "codingHeartbeatName": "Name",
+  "codingHeartbeatSchedule": "Schedule",
+  "codingHeartbeatPreset5m": "5m",
+  "codingHeartbeatPreset15m": "15m",
+  "codingHeartbeatPreset1h": "1h",
+  "codingHeartbeatPresetDaily": "Daily",
+  "codingHeartbeatPresetCustom": "Custom",
+  "codingHeartbeatPrompt": "Prompt",
+  "codingHeartbeatEnabled": "Enable now",
+  "codingHeartbeatSave": "Save heartbeat",
+  "codingHeartbeatSaving": "Saving…",
+  "codingHeartbeatSaved": "Heartbeat saved.",
+  "codingHeartbeatSaveFailed": "Couldn’t save the heartbeat. Try again.",
+  "codingHeartbeatInvalidCron": "Enter a valid 5-field cron (UTC).",
+  "codingHeartbeatListTitle": "Heartbeats",
+  "codingHeartbeatListDesc": "Scheduled prompts for existing Coding workspaces. Not Team jobs.",
+  "codingHeartbeatEmpty": "No heartbeats yet. Add one from a workspace menu.",
+  "codingHeartbeatListFailed": "Couldn’t load heartbeats. Try again.",
+  "codingHeartbeatActionFailed": "That heartbeat action didn’t work. Try again.",
+  "codingHeartbeatOn": "On",
+  "codingHeartbeatOff": "Paused",
+  "codingHeartbeatRuns": "{n} runs",
+  "codingHeartbeatPause": "Pause",
+  "codingHeartbeatResume": "Resume",
+  "codingHeartbeatRunNow": "Run now",
+  "codingHeartbeatDelete": "Delete"
 }

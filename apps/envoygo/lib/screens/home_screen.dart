@@ -9,15 +9,17 @@ import '../../providers/node_provider.dart';
 import '../../widgets/connection_indicator.dart';
 import '../../widgets/incoming_call_overlay.dart';
 import 'chat/chat_list_screen.dart';
+import 'coding/coding_home_screen.dart';
 import 'content/knowledge_screen.dart';
 import 'me/me_screen.dart';
 import 'social/social_screen.dart';
 import 'terminals/terminal_list_screen.dart';
 
-/// Main scaffold with bottom navigation.
+/// Main scaffold with bottom navigation (tab **ids**, not shared int indices).
 ///
-/// Owner: Social / Terminal / Knowledge / Me.
-/// Family member (Phase 51E): Chats / Me only — no mesh Terminal/Knowledge.
+/// Owner: Social / Coding / Knowledge / Terminal / Me.
+/// Family+coding: Chats / Coding / Me.
+/// Family−coding: Chats / Me.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -29,10 +31,17 @@ class HomeScreen extends ConsumerWidget {
     final engage = ref.watch(contentEngageProvider);
     final feedNotify = ref.watch(feedNotifyProvider);
     final contentSurface = ref.watch(contentSurfaceProvider);
-    final isOwner = ref.watch(nodeProvider).isOwnerProfile;
-    final maxTab = isOwner ? OwnerTabs.me : 1;
-    final tab = chatState.selectedTab.clamp(0, maxTab);
-    final viewingSocial = isOwner && tab == OwnerTabs.social;
+    final node = ref.watch(nodeProvider);
+    final isOwner = node.isOwnerProfile;
+    final mayUseCoding = node.mayUseCoding;
+    final tabs = buildHomeTabIds(isOwner: isOwner, mayUseCoding: mayUseCoding);
+    final selectedId = resolveHomeTabId(
+      chatState.selectedTabId,
+      tabs,
+      fallback: fallbackHomeTabId(isOwner: isOwner),
+    );
+    final tabIndex = tabs.indexOf(selectedId).clamp(0, tabs.length - 1);
+    final viewingSocial = isOwner && selectedId == HomeTabId.social;
     final viewingFeeds =
         viewingSocial && contentSurface == SocialSurfaces.feeds;
     final engageBadge = engage.visibleTotalCount(
@@ -42,33 +51,16 @@ class HomeScreen extends ConsumerWidget {
     final feedNotifyBadge = viewingFeeds ? 0 : feedNotify.unread.length;
     final socialBadge = engageBadge + feedNotifyBadge;
 
-    final bodyIndex = isOwner ? tab : (tab == 0 ? 0 : 1);
+    final bodies = <Widget>[
+      for (final id in tabs) _bodyForTab(id, l10n),
+    ];
 
     return Scaffold(
       body: Stack(
         children: [
           IndexedStack(
-            index: bodyIndex,
-            children: isOwner
-                ? const [
-                    SocialScreen(),
-                    TerminalHomeScreen(),
-                    KnowledgeScreen(),
-                    MeScreen(),
-                  ]
-                : [
-                    Scaffold(
-                      appBar: AppBar(
-                        title: Text(l10n.navChats),
-                        actions: const [
-                          ConnectionIndicator(),
-                          SizedBox(width: 12),
-                        ],
-                      ),
-                      body: const ChatListScreen(),
-                    ),
-                    const MeScreen(),
-                  ],
+            index: tabIndex,
+            children: bodies,
           ),
           Positioned.fill(
             child: IncomingCallOverlay(callProvider: callProviderRef),
@@ -76,56 +68,105 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
+        selectedIndex: tabIndex,
         onDestinationSelected: (index) {
-          ref.read(chatProvider.notifier).selectTab(index);
-          // Match former Content-tab UX: opening Social clears Feed/Blog badges
-          // (sub-tabs also dismiss per-surface when Feeds/Blog are selected).
-          if (isOwner && index == OwnerTabs.social) {
+          final id = tabs[index];
+          ref.read(chatProvider.notifier).selectTab(id);
+          if (id == HomeTabId.social) {
             ref.read(contentEngageProvider.notifier).dismiss(surface: 'all');
             ref.read(feedNotifyProvider.notifier).dismissAll();
           }
         },
         destinations: [
-          if (isOwner)
-            NavigationDestination(
-              icon: Badge(
-                isLabelVisible: socialBadge > 0,
-                label: Text(socialBadge > 99 ? '99+' : '$socialBadge'),
-                child: const Icon(Icons.groups_outlined),
-              ),
-              selectedIcon: Badge(
-                isLabelVisible: socialBadge > 0,
-                label: Text(socialBadge > 99 ? '99+' : '$socialBadge'),
-                child: const Icon(Icons.groups),
-              ),
-              label: l10n.navSocial,
-            )
-          else
-            NavigationDestination(
-              icon: const Icon(Icons.chat_bubble_outline),
-              selectedIcon: const Icon(Icons.chat_bubble),
-              label: l10n.navChats,
-            ),
-          if (isOwner) ...[
-            NavigationDestination(
-              icon: const Icon(Icons.terminal_outlined),
-              selectedIcon: const Icon(Icons.terminal),
-              label: l10n.navTerminal,
-            ),
-            NavigationDestination(
-              icon: const Icon(Icons.menu_book_outlined),
-              selectedIcon: const Icon(Icons.menu_book),
-              label: l10n.navKnowledge,
-            ),
-          ],
-          NavigationDestination(
-            icon: const Icon(Icons.person_outline),
-            selectedIcon: const Icon(Icons.person),
-            label: l10n.navMe,
-          ),
+          for (final id in tabs) _destinationForTab(id, l10n, socialBadge),
         ],
       ),
     );
+  }
+
+  Widget _bodyForTab(String id, AppLocalizations l10n) {
+    switch (id) {
+      case HomeTabId.social:
+        return const SocialScreen();
+      case HomeTabId.chats:
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(l10n.navChats),
+            actions: const [
+              ConnectionIndicator(),
+              SizedBox(width: 12),
+            ],
+          ),
+          body: const ChatListScreen(),
+        );
+      case HomeTabId.coding:
+        return const CodingHomeScreen();
+      case HomeTabId.knowledge:
+        return const KnowledgeScreen();
+      case HomeTabId.terminal:
+        return const TerminalHomeScreen();
+      case HomeTabId.me:
+        return const MeScreen();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  NavigationDestination _destinationForTab(
+    String id,
+    AppLocalizations l10n,
+    int socialBadge,
+  ) {
+    switch (id) {
+      case HomeTabId.social:
+        return NavigationDestination(
+          icon: Badge(
+            isLabelVisible: socialBadge > 0,
+            label: Text(socialBadge > 99 ? '99+' : '$socialBadge'),
+            child: const Icon(Icons.groups_outlined),
+          ),
+          selectedIcon: Badge(
+            isLabelVisible: socialBadge > 0,
+            label: Text(socialBadge > 99 ? '99+' : '$socialBadge'),
+            child: const Icon(Icons.groups),
+          ),
+          label: l10n.navSocial,
+        );
+      case HomeTabId.chats:
+        return NavigationDestination(
+          icon: const Icon(Icons.chat_bubble_outline),
+          selectedIcon: const Icon(Icons.chat_bubble),
+          label: l10n.navChats,
+        );
+      case HomeTabId.coding:
+        return NavigationDestination(
+          icon: const Icon(Icons.code_outlined),
+          selectedIcon: const Icon(Icons.code),
+          label: l10n.navCoding,
+        );
+      case HomeTabId.knowledge:
+        return NavigationDestination(
+          icon: const Icon(Icons.menu_book_outlined),
+          selectedIcon: const Icon(Icons.menu_book),
+          label: l10n.navKnowledge,
+        );
+      case HomeTabId.terminal:
+        return NavigationDestination(
+          icon: const Icon(Icons.terminal_outlined),
+          selectedIcon: const Icon(Icons.terminal),
+          label: l10n.navTerminal,
+        );
+      case HomeTabId.me:
+        return NavigationDestination(
+          icon: const Icon(Icons.person_outline),
+          selectedIcon: const Icon(Icons.person),
+          label: l10n.navMe,
+        );
+      default:
+        return NavigationDestination(
+          icon: const Icon(Icons.circle_outlined),
+          label: id,
+        );
+    }
   }
 }

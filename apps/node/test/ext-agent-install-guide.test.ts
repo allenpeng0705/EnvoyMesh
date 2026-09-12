@@ -150,6 +150,30 @@ describe("getExtAgentInstallGuide — known agents", () => {
       expect(g.commonIssues.some((s) => s.includes("Region") || s.includes("region"))).toBe(true);
     });
   });
+
+  describe("opencode (Phase 68-C3)", () => {
+    it("not-installed: curl install + verify", () => {
+      const g = getExtAgentInstallGuide("opencode", "not-installed");
+      expect(g.agentId).toBe("opencode");
+      expect(g.installed).toBe(false);
+      expect(g.command).toBe("opencode");
+      expect(g.installCommand).toContain("opencode.ai/install");
+      expect(g.verifyCommand).toBe("opencode --version");
+      expect(g.homepageUrl).toBe("https://opencode.ai/");
+    });
+  });
+
+  describe("codewhale (Phase 68-C3)", () => {
+    it("not-installed: curl install + verify", () => {
+      const g = getExtAgentInstallGuide("codewhale", "not-installed");
+      expect(g.agentId).toBe("codewhale");
+      expect(g.installed).toBe(false);
+      expect(g.command).toBe("codewhale");
+      expect(g.installCommand).toContain("codewhale.net/install");
+      expect(g.verifyCommand).toBe("codewhale --version");
+      expect(g.homepageUrl).toBe("https://codewhale.net/");
+    });
+  });
 });
 
 describe("getExtAgentInstallGuide — built-in (Pi)", () => {

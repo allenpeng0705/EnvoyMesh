@@ -316,7 +316,19 @@ export type AuditEventType =
   | "pi.tool.proposed"
   | "pi.tool.executed"
   | "pi.tool.denied"
-  | "pi.tool.failed";
+  | "pi.tool.failed"
+  // Phase 68-C2 — Envoy Harness coding-action audit.
+  | "eh.turn.started"
+  | "eh.turn.cancelled"
+  | "eh.permission.responded"
+  | "eh.review.accepted"
+  | "eh.review.invited"
+  // Phase 68-C6 — Coding heartbeats (wake existing workspace).
+  | "coding.heartbeat.fired"
+  | "coding.heartbeat.failed"
+  // Phase 68-C7 — Coding schedules (new workspace each fire).
+  | "coding.schedule.fired"
+  | "coding.schedule.failed";
 
 export type AuditDirection = "inbound" | "outbound" | "local";
 

@@ -26,4 +26,9 @@ export interface EhChatHistory {
   title?: string
   /** Shared semantic timeline; legacy `turns` remains during migration. */
   timeline?: import("./eh-timeline.js").EhTimelineItem[]
+  /**
+   * Server timeline revision for this chat (monotonic while the node process lives).
+   * Clients pass `sinceRevision` on history fetch to skip a full timeline replace when up to date.
+   */
+  revision?: number
 }

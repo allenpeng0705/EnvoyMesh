@@ -5,6 +5,8 @@
   "navInbox": "Boîte de réception",
   "navContent": "Contenu",
   "navSocial": "Social",
+  "navCoding": "Coding",
+  "codingHomePlaceholder": "Les espaces de coding de votre home apparaîtront ici. Démarrez-en un avec + quand vous êtes prêt.",
   "navTerminal": "Terminal",
   "navKnowledge": "Connaissances",
   "navMe": "Moi",
@@ -63,9 +65,9 @@
   "meUnpairFailed": "Échec de la dissociation : {error}",
   "meEditProfile": "Modifier le profil",
   "meProfileUpdateFailed": "Impossible de mettre à jour le profil : {error}",
-  "mePublicAccess": "Accès public",
+  "mePublicAccess": "Adresse directe du foyer",
   "mePort": "Port",
-  "mePublicAccessSaved": "Accès public enregistré",
+  "mePublicAccessSaved": "Adresse directe enregistrée — reconnexion…",
   "meFamilyProfile": "Profil familial",
   "meFamilyProfileHint": "Vous êtes connecté à ce domicile en tant que membre de la famille",
   "mePreferences": "Préférences",
@@ -107,7 +109,9 @@
   "marketSearchNoResults": "Aucune annonce pour « {query} ».",
   "@marketSearchNoResults": {
     "placeholders": {
-      "query": { "type": "String" }
+      "query": {
+        "type": "String"
+      }
     }
   },
   "marketSearchIdleHint": "Saisissez un mot-clé, ou touchez une suggestion.",
@@ -514,9 +518,9 @@
   "audioVoiceNote": "Note vocale",
   "meLastAttempt": "Dernière tentative : {time}",
   "meJustNow": "à l'instant",
-  "mePublicIpLabel": "IP publique ou domaine",
-  "mePublicIpHint": "ex. 1.2.3.4 ou mynode.example.com",
-  "mePublicIpHelp": "Définissez ceci si votre nœud domicile a une IP publique ou un domaine.\nPermet une connexion directe sans relais en 5G/WAN.",
+  "mePublicIpLabel": "Hôte (Tailscale, VPN ou IP publique)",
+  "mePublicIpHint": "ex. 100.64.1.2 ou home.example.com",
+  "mePublicIpHelp": "IP Tailscale/VPN de votre ordinateur domicile, ou nom d’hôte joignable.\nEnvoyGo se connecte en WebSocket host:port (défaut 3030) — pas de SSH sur le téléphone.\nAprès le LAN, avant le relais.",
   "meNetworkDebug": "Débogage réseau",
   "meRunNetworkTests": "Lancer les tests réseau",
   "meTesting": "Test en cours…",
@@ -568,8 +572,12 @@
   "chatFileTooLarge": "{name} : fichier trop volumineux (max. {maxMb} Mo)",
   "@chatFileTooLarge": {
     "placeholders": {
-      "name": { "type": "String" },
-      "maxMb": { "type": "String" }
+      "name": {
+        "type": "String"
+      },
+      "maxMb": {
+        "type": "String"
+      }
     }
   },
   "chatAgentAttachOwnerOnly": "Seul le propriétaire du nœud peut joindre des fichiers aux chats d'agent.",
@@ -1469,5 +1477,59 @@
   "phoneMeshRetryNow": "Réessayer maintenant",
   "phoneMeshLanHint": "La découverte à proximité (même Wi‑Fi) est désactivée — sur iPhone, autorisez le réseau local dans Réglages → EnvoyGo. La recherche via Internet fonctionne toujours.",
   "phoneMeshDescErrorGeneric": "Le mesh téléphone a un problème. Quittez Social puis revenez, ou redémarrez l’app.",
-  "phoneMeshDescError": "Erreur mesh téléphone : {error}"
+  "phoneMeshDescError": "Erreur mesh téléphone : {error}",
+  "codingPiConsoleHint": "Local coding agent",
+  "codingExtHarnessHint": "Runs on your home computer via Ext Agent.",
+  "codingExtEmpty": "Ask {name} about this project. Each message runs as a one-shot CLI ask.",
+  "codingExtPlaceholder": "Message {name}…",
+  "codingExtNeedsInstall": "Install",
+  "codingExtInstallHint": "Install {name} on your home computer to use it here.",
+  "codingExtReady": "Ready",
+  "codingExtCheckInstall": "Check install",
+  "codingExtThinking": "Working…",
+  "codingExtEmptyReply": "(empty reply)",
+  "codingExtSendFailed": "Failed to reach Ext Agent: {error}",
+  "codingOpenReview": "Ouvrir la relecture",
+  "codingInviteReview": "Inviter un pair à relire",
+  "codingInviteReviewTitle": "Inviter un pair à relire",
+  "codingInviteReviewDesc": "Envoyez une invitation de chat pour qu’un ami lié ouvre « {title} » en mode relecture seule.",
+  "codingInviteReviewNoDirect": "Aucun contact lié en direct pour l’instant. Liez d’abord un ami.",
+  "codingInviteReviewSend": "Envoyer l’invitation",
+  "codingInviteReviewSending": "Envoi…",
+  "codingInviteReviewSent": "Invitation de relecture envoyée.",
+  "codingInviteReviewFailed": "Impossible d’envoyer l’invitation. Réessayez.",
+  "codingInviteReviewBondDenied": "Ce contact ne peut pas recevoir une invitation de relecture.",
+  "codingInviteReviewOpenOnOwnerHome": "Ouvrez sur le nœud home du propriétaire pour relire cet espace de travail.",
+  "codingReviewOnlyBanner": "Relecture seule — chronologie et modifications ; outils et annulation désactivés.",
+  "codingHeartbeatAdd": "Add heartbeat…",
+  "codingHeartbeatAddTitle": "Add heartbeat",
+  "codingHeartbeatAddDesc": "On a schedule, send a prompt to “{title}”. This wakes the existing workspace — it does not create a new one.",
+  "codingHeartbeatDefaultName": "Heartbeat · {title}",
+  "codingHeartbeatDefaultPrompt": "Check progress on this workspace and continue useful next steps.",
+  "codingHeartbeatName": "Name",
+  "codingHeartbeatSchedule": "Schedule",
+  "codingHeartbeatPreset5m": "5m",
+  "codingHeartbeatPreset15m": "15m",
+  "codingHeartbeatPreset1h": "1h",
+  "codingHeartbeatPresetDaily": "Daily",
+  "codingHeartbeatPresetCustom": "Custom",
+  "codingHeartbeatPrompt": "Prompt",
+  "codingHeartbeatEnabled": "Enable now",
+  "codingHeartbeatSave": "Save heartbeat",
+  "codingHeartbeatSaving": "Saving…",
+  "codingHeartbeatSaved": "Heartbeat saved.",
+  "codingHeartbeatSaveFailed": "Couldn’t save the heartbeat. Try again.",
+  "codingHeartbeatInvalidCron": "Enter a valid 5-field cron (UTC).",
+  "codingHeartbeatListTitle": "Heartbeats",
+  "codingHeartbeatListDesc": "Scheduled prompts for existing Coding workspaces. Not Team jobs.",
+  "codingHeartbeatEmpty": "No heartbeats yet. Add one from a workspace menu.",
+  "codingHeartbeatListFailed": "Couldn’t load heartbeats. Try again.",
+  "codingHeartbeatActionFailed": "That heartbeat action didn’t work. Try again.",
+  "codingHeartbeatOn": "On",
+  "codingHeartbeatOff": "Paused",
+  "codingHeartbeatRuns": "{n} runs",
+  "codingHeartbeatPause": "Pause",
+  "codingHeartbeatResume": "Resume",
+  "codingHeartbeatRunNow": "Run now",
+  "codingHeartbeatDelete": "Delete"
 }

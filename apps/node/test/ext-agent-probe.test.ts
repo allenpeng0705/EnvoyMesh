@@ -405,6 +405,40 @@ describe("classifyExtAgentInstallState", () => {
     expect(r.installGuide!.installCommand).toBe("npm install -g mmx-cli")
     expect(r.installGuide!.verifyCommand).toBe("mmx --version")
   })
+
+  it("opencode with binary on PATH is 'installed'", async () => {
+    let checked: string | undefined
+    const r = await classifyExtAgentInstallState("opencode", async (cmd) => {
+      checked = cmd
+      return true
+    })
+    expect(r.installState).toBe("installed")
+    expect(checked).toBe("opencode")
+  })
+
+  it("opencode missing → installGuide", async () => {
+    const r = await classifyExtAgentInstallState("opencode", async () => false)
+    expect(r.installState).toBe("not-installed")
+    expect(r.installGuide!.command).toBe("opencode")
+    expect(r.installGuide!.installCommand).toContain("opencode.ai/install")
+  })
+
+  it("codewhale with binary on PATH is 'installed'", async () => {
+    let checked: string | undefined
+    const r = await classifyExtAgentInstallState("codewhale", async (cmd) => {
+      checked = cmd
+      return true
+    })
+    expect(r.installState).toBe("installed")
+    expect(checked).toBe("codewhale")
+  })
+
+  it("codewhale missing → installGuide", async () => {
+    const r = await classifyExtAgentInstallState("codewhale", async () => false)
+    expect(r.installState).toBe("not-installed")
+    expect(r.installGuide!.command).toBe("codewhale")
+    expect(r.installGuide!.installCommand).toContain("codewhale.net/install")
+  })
 })
 
 describe("defaultBinaryOnPath", () => {

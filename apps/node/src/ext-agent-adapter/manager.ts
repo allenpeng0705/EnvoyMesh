@@ -39,6 +39,9 @@ const DEFAULT_PORTS: Record<ExtAgentSidecarKind, number> = {
   cursor: 8025,
   aider: 8026,
   mmx: 8027,
+  // Phase 68-C3 — OpenCode / CodeWhale (8026/8027 already aider/mmx).
+  opencode: 8028,
+  codewhale: 8029,
 };
 
 /**
@@ -57,6 +60,8 @@ const PORT_ENV_FOR: Record<ExtAgentSidecarKind, string> = {
   cursor: "ENVOYMESH_CURSOR_PORT",
   aider: "ENVOYMESH_AIDER_PORT",
   mmx: "ENVOYMESH_MMX_PORT",
+  opencode: "ENVOYMESH_OPENCODE_PORT",
+  codewhale: "ENVOYMESH_CODEWHALE_PORT",
 };
 
 let running: ExtAgentHttpServerHandle | null = null;

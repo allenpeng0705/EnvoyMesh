@@ -34,7 +34,7 @@ import {
   resolveExtAgentBinary,
 } from "./resolve-ext-agent-binary.js";
 import { getExtAgentProjectPathCwd } from "./project-path-store.js";
-import type { ExtAgentBackend } from "./types.js";
+import type { ExtAgentAskOpts, ExtAgentBackend } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Wire types (vendored from openclaw extensions/codex)
@@ -153,6 +153,13 @@ interface PendingRequest {
   timer?: NodeJS.Timeout;
 }
 
+interface CodexAgentMessageDeltaParams {
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
+  delta?: string;
+}
+
 interface PendingCompletion {
   sessionKey: string;
   threadId: string;
@@ -160,6 +167,7 @@ interface PendingCompletion {
   resolve: (text: string) => void;
   reject: (err: Error) => void;
   timer: NodeJS.Timeout;
+  onDelta?: (chunk: string) => void;
 }
 
 export class CodexBackend implements ExtAgentBackend {
@@ -258,7 +266,11 @@ export class CodexBackend implements ExtAgentBackend {
   // ExtAgentBackend
   // -------------------------------------------------------------------------
 
-  async ask(text: string, sessionKey: string): Promise<string> {
+  async ask(
+    text: string,
+    sessionKey: string,
+    opts?: ExtAgentAskOpts,
+  ): Promise<string> {
     if (!text.trim()) return "";
     if (!sessionKey) {
       throw new Error("codex ask(): sessionKey is required");
@@ -296,6 +308,7 @@ export class CodexBackend implements ExtAgentBackend {
         resolve,
         reject,
         timer,
+        onDelta: opts?.onDelta,
       });
     });
 
@@ -544,12 +557,28 @@ export class CodexBackend implements ExtAgentBackend {
       case "turn/completed":
         this.handleTurnCompleted(msg.params as CodexTurnCompletedParams);
         break;
-      // Other notifications (`item/agentMessage/delta`,
-      // `thread/status/changed`, etc.) are intentionally ignored in
-      // the first iteration. The final text comes via `turn/completed`.
+      case "item/agentMessage/delta":
+        this.handleAgentMessageDelta(
+          msg.params as CodexAgentMessageDeltaParams | undefined,
+        );
+        break;
+      // Other notifications (`thread/status/changed`, etc.) are
+      // intentionally ignored. Final text still comes via turn/completed.
       default:
         break;
     }
+  }
+
+  private handleAgentMessageDelta(
+    params: CodexAgentMessageDeltaParams | undefined,
+  ): void {
+    if (!params || typeof params.delta !== "string" || !params.delta) return;
+    const threadId = typeof params.threadId === "string" ? params.threadId : "";
+    if (!threadId) return;
+    const sessionKey = this.threadIdToSessionKey.get(threadId);
+    if (!sessionKey) return;
+    const pending = this.pendingCompletions.get(sessionKey);
+    pending?.onDelta?.(params.delta);
   }
 
   private handleTurnCompleted(params: CodexTurnCompletedParams | undefined): void {

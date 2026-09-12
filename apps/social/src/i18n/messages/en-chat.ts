@@ -317,6 +317,8 @@ export const terminalMessages = {
   badgeBlocked: "Blocked",
   badgeDone: "Done",
   focusEnvoyAi: "Focus EnvoyAI",
+  openCoding: "Coding",
+  openCodingTitle: "Open Coding for Pi, Envoy Harness, and other coding agents",
   nestedMultiplexerTip:
     "Nested tmux/TmuxAI inside this browser terminal is an advanced workflow. In Agent mode, type in the envoy> box below; for native tmux + TmuxAI, SSH to your home machine instead.",
   nestedMultiplexerDismiss: "Got it",
@@ -324,7 +326,7 @@ export const terminalMessages = {
     open: "How it works",
     title: "How Terminals work",
     intro:
-      "Terminals run on your home computer and open in this app. Use + for a plain shell, Envoy for the Envoy harness TUI in a project folder, or Pi for the Pi coding TUI. Pick a session in the list to focus it; leave the list empty until you create one.",
+      "Terminals run on your home computer and open in this app. Use + for a plain shell. Coding agents (Pi, Envoy Harness, and others) live in the Coding tab. Pick a session in the list to focus it; leave the list empty until you create one.",
     beforeTitle: "Before you start",
     before1: "Connect Social to a home node that supports remote terminals (desktop home is typical).",
     before2: "For Envoy or Pi: have a project folder on the home machine ready — you will pick it when you start.",

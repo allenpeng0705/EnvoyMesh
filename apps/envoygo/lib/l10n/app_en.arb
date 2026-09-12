@@ -5,6 +5,152 @@
   "navInbox": "Inbox",
   "navContent": "Content",
   "navSocial": "Social",
+  "navCoding": "Coding",
+  "codingHomePlaceholder": "Coding workspaces from your home will appear here.",
+  "codingNewWorkspaceTitle": "New workspace",
+  "codingNewWorkspaceDesc": "Pick a harness and project folder. The harness stays fixed for this workspace.",
+  "codingHarnessLabel": "Harness",
+  "codingStartWorkspace": "Start workspace",
+  "codingPiConsoleHint": "Local coding agent",
+  "codingEmptyTitle": "No workspaces yet",
+  "codingEmptyHint": "Start a coding workspace on your home computer.",
+  "codingGated": "Coding isn’t available for this profile.",
+  "codingSectionProjects": "Projects",
+  "codingStatusIdle": "Idle",
+  "codingExtHarnessHint": "Runs on your home computer via Ext Agent.",
+  "codingExtEmpty": "Ask {name} about this project. Each message runs as a one-shot CLI ask.",
+  "@codingExtEmpty": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "codingExtPlaceholder": "Message {name}…",
+  "@codingExtPlaceholder": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "codingExtNeedsInstall": "Install",
+  "codingExtInstallHint": "Install {name} on your home computer to use it here.",
+  "@codingExtInstallHint": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "codingExtReady": "Ready",
+  "codingExtCheckInstall": "Check install",
+  "codingExtThinking": "Working…",
+  "codingExtEmptyReply": "(empty reply)",
+  "codingExtSendFailed": "Failed to reach Ext Agent: {error}",
+  "@codingExtSendFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "codingOpenReview": "Open review",
+  "codingInviteReview": "Invite peer to review",
+  "codingInviteReviewTitle": "Invite peer to review",
+  "codingInviteReviewDesc": "Send a chat invite so a bonded friend can open “{title}” in read-only review mode.",
+  "@codingInviteReviewDesc": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "codingInviteReviewNoDirect": "No direct-bonded contacts yet. Bond with a friend first.",
+  "codingInviteReviewSend": "Send invite",
+  "codingInviteReviewSending": "Sending…",
+  "codingInviteReviewSent": "Review invite sent.",
+  "codingInviteReviewFailed": "Couldn’t send the review invite. Try again.",
+  "codingInviteReviewBondDenied": "That contact isn’t eligible for a review invite.",
+  "codingInviteReviewOpenOnOwnerHome": "Open on the owner’s home node to review this workspace.",
+  "codingReviewOnlyBanner": "Review only — timeline and changes; tools and revert are disabled.",
+  "codingHeartbeatAdd": "Add heartbeat…",
+  "codingHeartbeatAddTitle": "Add heartbeat",
+  "codingHeartbeatAddDesc": "On a schedule, send a prompt to “{title}”. This wakes the existing workspace — it does not create a new one.",
+  "@codingHeartbeatAddDesc": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "codingHeartbeatDefaultName": "Heartbeat · {title}",
+  "@codingHeartbeatDefaultName": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "codingHeartbeatDefaultPrompt": "Check progress on this workspace and continue useful next steps.",
+  "codingHeartbeatName": "Name",
+  "codingHeartbeatSchedule": "Schedule",
+  "codingHeartbeatPreset5m": "5m",
+  "codingHeartbeatPreset15m": "15m",
+  "codingHeartbeatPreset1h": "1h",
+  "codingHeartbeatPresetDaily": "Daily",
+  "codingHeartbeatPresetCustom": "Custom",
+  "codingHeartbeatPrompt": "Prompt",
+  "codingHeartbeatEnabled": "Enable now",
+  "codingHeartbeatSave": "Save heartbeat",
+  "codingHeartbeatSaving": "Saving…",
+  "codingHeartbeatSaved": "Heartbeat saved.",
+  "codingHeartbeatSaveFailed": "Couldn’t save the heartbeat. Try again.",
+  "codingHeartbeatInvalidCron": "Enter a valid 5-field cron (UTC).",
+  "codingHeartbeatListTitle": "Heartbeats",
+  "codingHeartbeatListDesc": "Scheduled prompts for existing Coding workspaces. Not Team jobs.",
+  "codingHeartbeatEmpty": "No heartbeats yet. Add one from a workspace menu.",
+  "codingHeartbeatListFailed": "Couldn’t load heartbeats. Try again.",
+  "codingHeartbeatActionFailed": "That heartbeat action didn’t work. Try again.",
+  "codingHeartbeatOn": "On",
+  "codingHeartbeatOff": "Paused",
+  "codingHeartbeatRuns": "{n} runs",
+  "@codingHeartbeatRuns": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+  "codingHeartbeatPause": "Pause",
+  "codingHeartbeatResume": "Resume",
+  "codingHeartbeatRunNow": "Run now",
+  "codingHeartbeatDelete": "Delete",
+  "piEmptyTitle": "Pi — your local coding agent",
+  "piEmptyBody": "Ask Pi to write code, refactor a file, explain an error, or run a shell command. Pi runs on your home computer — it does not access your mesh contacts or knowledge.",
+  "piPromptPlaceholder": "Ask Pi to code, refactor, or explain…",
+  "piThinking": "Pi is thinking…",
+  "piSend": "Send",
+  "piAllow": "Allow",
+  "piDeny": "Deny",
+  "piProposalTitle": "Pi wants to: {title}",
+  "@piProposalTitle": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "piProposalTimedOut": "Tool request timed out (Pi skipped it).",
+  "piProposalRespondFailed": "Failed to deliver response: {error}",
+  "@piProposalRespondFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "piSendFailed": "Failed to reach Pi: {error}",
+  "@piSendFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "piDisabledHint": "Pi is disabled. Enable it in Settings → AI.",
+  "piNotInstalledHint": "Pi sidecar not bundled (slim build).",
+  "piErrorHint": "Pi is not ready: {error}",
+  "@piErrorHint": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "piStartingHint": "Pi is starting — try again in a moment.",
+  "piStateReady": "Ready",
+  "piStateStarting": "Starting",
+  "piStateDisabled": "Disabled",
+  "piStateNotInstalled": "Not installed",
+  "piStateError": "Error",
+  "piStateStopped": "Stopped",
   "socialContextPhone": "On this phone",
   "socialContextHome": "Home",
   "socialContextSheetTitle": "Social identity",
@@ -180,9 +326,9 @@
       }
     }
   },
-  "mePublicAccess": "Public Access",
+  "mePublicAccess": "Direct home address",
   "mePort": "Port",
-  "mePublicAccessSaved": "Public access saved",
+  "mePublicAccessSaved": "Direct address saved — reconnecting…",
   "meFamilyProfile": "Family profile",
   "meFamilyProfileHint": "You are on this home as a family member",
   "mePreferences": "Preferences",
@@ -1171,9 +1317,9 @@
     }
   },
   "meJustNow": "just now",
-  "mePublicIpLabel": "Public IP or domain",
-  "mePublicIpHint": "e.g. 1.2.3.4 or mynode.example.com",
-  "mePublicIpHelp": "Set this if your home node has a public IP or domain.\nEnables direct connection without the relay on 5G/WAN.",
+  "mePublicIpLabel": "Host (Tailscale, VPN, or public IP)",
+  "mePublicIpHint": "e.g. 100.64.1.2 or home.example.com",
+  "mePublicIpHelp": "Use your home computer’s Tailscale/VPN IP or a reachable public hostname.\nEnvoyGo connects over WebSocket to host:port (default 3030) — no SSH on the phone.\nTried after LAN, before relay.",
   "meNetworkDebug": "Network Debug",
   "meRunNetworkTests": "Run Network Tests",
   "meTesting": "Testing…",

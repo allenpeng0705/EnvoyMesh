@@ -70,15 +70,38 @@ describe("Header", () => {
     const nav = screen.getByRole("navigation", { name: /primary/i });
     expect(within(nav).queryByRole("button", { name: /^assistant$/i })).toBeNull();
     expect(within(nav).getByTestId("nav-social")).toBeDefined();
-    expect(within(nav).getByTestId("nav-terminal")).toBeDefined();
+    expect(within(nav).getByTestId("nav-coding")).toBeDefined();
     expect(within(nav).getByTestId("nav-knowledge")).toBeDefined();
+    expect(within(nav).getByTestId("nav-terminal")).toBeDefined();
     expect(within(nav).getByTestId("nav-chains")).toBeDefined();
     expect(within(nav).getByTestId("nav-settings")).toBeDefined();
     expect(within(nav).getByTestId("nav-inbox")).toBeDefined();
+    // Inbox is icon-only (aria/title kept); no visible "Inbox" text label in the tab.
+    expect(within(nav).queryByText(/^inbox$/i)).toBeNull();
     expect(within(nav).queryByRole("button", { name: /^discover$/i })).toBeNull();
     expect(within(nav).queryByRole("button", { name: /^content$/i })).toBeNull();
     expect(within(nav).queryByRole("button", { name: /^profile$/i })).toBeNull();
     expect(screen.getByRole("button", { name: /^profile$/i })).toBeDefined();
+  });
+
+  it("navigates to Coding when Coding is clicked", () => {
+    const onNavigate = vi.fn();
+    renderHeader({ ...baseProps, onNavigate });
+    fireEvent.click(screen.getByTestId("nav-coding"));
+    expect(onNavigate).toHaveBeenCalledWith("coding");
+  });
+
+  it("orders nav Social, Coding, Knowledge, Terminal before Team jobs", () => {
+    renderHeader(baseProps);
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    const ids = ["nav-social", "nav-coding", "nav-knowledge", "nav-terminal", "nav-chains"].map(
+      (id) => within(nav).getByTestId(id),
+    );
+    for (let i = 1; i < ids.length; i++) {
+      expect(
+        Boolean(ids[i - 1].compareDocumentPosition(ids[i]) & Node.DOCUMENT_POSITION_FOLLOWING),
+      ).toBe(true);
+    }
   });
 
   it("navigates to Profile when Profile control is clicked", () => {

@@ -5,6 +5,152 @@
   "navInbox": "收件箱",
   "navContent": "内容",
   "navSocial": "社交",
+  "navCoding": "编程",
+  "codingHomePlaceholder": "来自家用电脑的编程工作区会显示在这里。",
+  "codingNewWorkspaceTitle": "新建工作区",
+  "codingNewWorkspaceDesc": "选择编程引擎和项目文件夹。创建后引擎不可更改。",
+  "codingHarnessLabel": "编程引擎",
+  "codingStartWorkspace": "开始工作区",
+  "codingPiConsoleHint": "本地编程助手",
+  "codingEmptyTitle": "暂无工作区",
+  "codingEmptyHint": "在家用电脑上开始一个编程工作区。",
+  "codingGated": "此档案无法使用编程。",
+  "codingSectionProjects": "项目",
+  "codingStatusIdle": "空闲",
+  "codingExtHarnessHint": "通过 Ext Agent 在家用电脑上运行。",
+  "codingExtEmpty": "向 {name} 询问此项目。每条消息作为一次性 CLI 提问运行。",
+  "@codingExtEmpty": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "codingExtPlaceholder": "给 {name} 发消息…",
+  "@codingExtPlaceholder": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "codingExtNeedsInstall": "需安装",
+  "codingExtInstallHint": "请在家用电脑上安装 {name} 后再使用。",
+  "@codingExtInstallHint": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "codingExtReady": "就绪",
+  "codingExtCheckInstall": "检查安装",
+  "codingExtThinking": "处理中…",
+  "codingExtEmptyReply": "（空回复）",
+  "codingExtSendFailed": "无法联系 Ext Agent：{error}",
+  "@codingExtSendFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "codingOpenReview": "打开审阅",
+  "codingInviteReview": "邀请好友审阅",
+  "codingInviteReviewTitle": "邀请好友审阅",
+  "codingInviteReviewDesc": "发送聊天邀请，让已绑定的好友以只读审阅模式打开“{title}”。",
+  "@codingInviteReviewDesc": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "codingInviteReviewNoDirect": "还没有直接绑定的联系人。请先与好友建立绑定。",
+  "codingInviteReviewSend": "发送邀请",
+  "codingInviteReviewSending": "发送中…",
+  "codingInviteReviewSent": "审阅邀请已发送。",
+  "codingInviteReviewFailed": "无法发送审阅邀请，请重试。",
+  "codingInviteReviewBondDenied": "该联系人无法接收审阅邀请。",
+  "codingInviteReviewOpenOnOwnerHome": "请在所有者的主节点上打开以审阅此工作区。",
+  "codingReviewOnlyBanner": "只读审阅 — 可查看时间线与变更；工具与还原已禁用。",
+  "codingHeartbeatAdd": "添加心跳…",
+  "codingHeartbeatAddTitle": "添加心跳",
+  "codingHeartbeatAddDesc": "按计划向“{title}”发送提示。这会唤醒已有工作区 — 不会新建。",
+  "@codingHeartbeatAddDesc": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "codingHeartbeatDefaultName": "心跳 · {title}",
+  "@codingHeartbeatDefaultName": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "codingHeartbeatDefaultPrompt": "检查此工作区的进展，并继续有用的下一步。",
+  "codingHeartbeatName": "名称",
+  "codingHeartbeatSchedule": "计划",
+  "codingHeartbeatPreset5m": "5分钟",
+  "codingHeartbeatPreset15m": "15分钟",
+  "codingHeartbeatPreset1h": "每小时",
+  "codingHeartbeatPresetDaily": "每天",
+  "codingHeartbeatPresetCustom": "自定义",
+  "codingHeartbeatPrompt": "提示词",
+  "codingHeartbeatEnabled": "立即启用",
+  "codingHeartbeatSave": "保存心跳",
+  "codingHeartbeatSaving": "保存中…",
+  "codingHeartbeatSaved": "心跳已保存。",
+  "codingHeartbeatSaveFailed": "无法保存心跳，请重试。",
+  "codingHeartbeatInvalidCron": "请输入有效的 5 段 cron（UTC）。",
+  "codingHeartbeatListTitle": "心跳",
+  "codingHeartbeatListDesc": "针对已有编程工作区的定时提示。不是团队任务。",
+  "codingHeartbeatEmpty": "还没有心跳。可从工作区菜单添加。",
+  "codingHeartbeatListFailed": "无法加载心跳，请重试。",
+  "codingHeartbeatActionFailed": "该心跳操作失败，请重试。",
+  "codingHeartbeatOn": "开",
+  "codingHeartbeatOff": "已暂停",
+  "codingHeartbeatRuns": "{n} 次",
+  "@codingHeartbeatRuns": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+  "codingHeartbeatPause": "暂停",
+  "codingHeartbeatResume": "继续",
+  "codingHeartbeatRunNow": "立即运行",
+  "codingHeartbeatDelete": "删除",
+  "piEmptyTitle": "Pi — 本地编程助手",
+  "piEmptyBody": "让 Pi 写代码、重构文件、解释错误或运行命令。Pi 在你的家庭电脑上运行 — 不会访问你的网状联系人或知识库。",
+  "piPromptPlaceholder": "请 Pi 写代码、重构或解释…",
+  "piThinking": "Pi 思考中…",
+  "piSend": "发送",
+  "piAllow": "允许",
+  "piDeny": "拒绝",
+  "piProposalTitle": "Pi 想要：{title}",
+  "@piProposalTitle": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "piProposalTimedOut": "工具请求已超时（Pi 已跳过）。",
+  "piProposalRespondFailed": "无法送达回复：{error}",
+  "@piProposalRespondFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "piSendFailed": "无法联系 Pi：{error}",
+  "@piSendFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "piDisabledHint": "Pi 已禁用。请在设置 → AI 中启用。",
+  "piNotInstalledHint": "未捆绑 Pi 侧车（精简构建）。",
+  "piErrorHint": "Pi 未就绪：{error}",
+  "@piErrorHint": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "piStartingHint": "Pi 正在启动 — 请稍后再试。",
+  "piStateReady": "就绪",
+  "piStateStarting": "启动中",
+  "piStateDisabled": "已禁用",
+  "piStateNotInstalled": "未安装",
+  "piStateError": "错误",
+  "piStateStopped": "已停止",
   "navTerminal": "终端",
   "navKnowledge": "知识库",
   "navMe": "我",
@@ -71,9 +217,9 @@
   "meUnpairFailed": "取消配对失败：{error}",
   "meEditProfile": "编辑资料",
   "meProfileUpdateFailed": "无法更新资料：{error}",
-  "mePublicAccess": "公网访问",
+  "mePublicAccess": "直连家庭地址",
   "mePort": "端口",
-  "mePublicAccessSaved": "公网访问已保存",
+  "mePublicAccessSaved": "直连地址已保存 — 正在重连…",
   "meFamilyProfile": "家庭档案",
   "meFamilyProfileHint": "你以家庭成员身份连接此家庭节点",
   "mePreferences": "偏好设置",
@@ -790,9 +936,9 @@
   "audioVoiceNote": "语音消息",
   "meLastAttempt": "上次尝试：{time}",
   "meJustNow": "刚刚",
-  "mePublicIpLabel": "公网 IP 或域名",
-  "mePublicIpHint": "例如 1.2.3.4 或 mynode.example.com",
-  "mePublicIpHelp": "若家庭节点有公网 IP 或域名，请设置此项。\n可在 5G/WAN 上不经中继直连。",
+  "mePublicIpLabel": "主机（Tailscale、VPN 或公网 IP）",
+  "mePublicIpHint": "例如 100.64.1.2 或 home.example.com",
+  "mePublicIpHelp": "填写家用电脑的 Tailscale/VPN IP，或可直达的公网主机名。\nEnvoyGo 通过 WebSocket 连接 host:port（默认 3030）— 手机端不使用 SSH。\n优先于中继，排在局域网之后。",
   "meNetworkDebug": "网络调试",
   "meRunNetworkTests": "运行网络测试",
   "meTesting": "测试中…",

@@ -21,6 +21,7 @@ import {
   summarizeEhChats,
   touchEhChat,
   updateEhChatCwd,
+  updateEhChatTitle,
   upsertEhChatSessionId,
 } from "../src/envoy-harness-chats.js";
 
@@ -77,6 +78,15 @@ describe("envoy-harness-chats", () => {
     expect(migrated[0]?.title).toBe("app");
   });
 
+  it("does not re-seed from legacy cwd when chats were explicitly cleared", () => {
+    const migrated = migrateLegacyEhChats({
+      chats: [],
+      legacyCwd: "/projects/app",
+      sessionByCwd: { "/projects/app": "sess-legacy" },
+    });
+    expect(migrated).toEqual([]);
+  });
+
   it("keeps existing chats over legacy migration (no duplicates)", () => {
     const existing = [chat({ id: "keep" })];
     const migrated = migrateLegacyEhChats({
@@ -110,6 +120,32 @@ describe("envoy-harness-chats", () => {
     expect(summaries).toHaveLength(1);
     expect(summaries[0]?.messageCount).toBe(2);
     expect(summaries[0]?.title).toBe("app");
+    expect(summaries[0]?.harness).toBe("envoy-harness");
+    expect(summaries[0]?.uiBucket).toBe("done");
+  });
+
+  it("promotes agentState + pending into uiBucket", async () => {
+    const store = new SessionStore({ dir: tmpDir });
+    const summaries = await summarizeEhChats({
+      chats: [chat({ id: "busy" })],
+      sessionStore: store,
+      sessionByCwd: {},
+      agentStateByChatId: { busy: "thinking" },
+      pendingByChatId: { busy: true },
+    });
+    expect(summaries[0]?.harness).toBe("envoy-harness");
+    expect(summaries[0]?.agentState).toBe("thinking");
+    expect(summaries[0]?.uiBucket).toBe("needs_input");
+  });
+
+  it("includes locked workspace model on summary", async () => {
+    const store = new SessionStore({ dir: tmpDir });
+    const summaries = await summarizeEhChats({
+      chats: [chat({ id: "locked", model: "openai:gpt-4o" })],
+      sessionStore: store,
+      sessionByCwd: {},
+    });
+    expect(summaries[0]?.model).toBe("openai:gpt-4o");
   });
 
   it("summarizes chats without a session (messageCount omitted)", async () => {
@@ -137,10 +173,23 @@ describe("envoy-harness-chats", () => {
     const updated = updateEhChatCwd(chats, "a", "/projects/new");
     const row = updated.find((c) => c.id === "a");
     expect(row?.cwd).toBe("/projects/new");
-    expect(row?.title).toBe("new");
+    expect(row?.title).toBeUndefined();
     expect(row?.sessionId).toBeUndefined();
 
+    const titled = updateEhChatTitle(chats, "a", "  Fix login  ");
+    expect(titled.find((c) => c.id === "a")?.title).toBe("Fix login");
+
     expect(removeEhChat(chats, "b").map((c) => c.id)).toEqual(["a"]);
+  });
+
+  it("summarizes missing titles as New workspace", async () => {
+    const store = new SessionStore({ dir: tmpDir });
+    const summaries = await summarizeEhChats({
+      chats: [chat({ id: "untitled", title: undefined })],
+      sessionStore: store,
+      sessionByCwd: {},
+    });
+    expect(summaries[0]?.title).toBe("New workspace");
   });
 
   it("enforces the chat capacity cap", () => {

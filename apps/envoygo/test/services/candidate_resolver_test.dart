@@ -49,5 +49,29 @@ void main() {
       final names = candidates.map((c) => c.name).toList();
       expect(names, contains('relay'));
     });
+
+    test('inserts manual host:port (Tailscale) as public after LAN', () {
+      CandidateResolver.setCommunityHomePeerId('12D3KooWHomeNode');
+      final resolver = CandidateResolver();
+      final node = StoredNode(
+        id: 'n3',
+        name: 'home',
+        ownerId: 'envoy:owner:test',
+        homePeerId: '12D3KooWHomeNode',
+        lanIp: 'ws://192.168.3.85:3030/ws',
+        publicHost: '100.64.1.2',
+        publicPort: 3030,
+        pairedAt: DateTime.now(),
+      );
+      final candidates =
+          resolver.resolve(node, sessionToken: 'tok', isOnWifi: true);
+
+      final names = candidates.map((c) => c.name).toList();
+      expect(names, contains('lan'));
+      expect(names, contains('public'));
+      expect(names.indexOf('lan'), lessThan(names.indexOf('public')));
+      final public = candidates.firstWhere((c) => c.name == 'public');
+      expect(public.url, 'ws://100.64.1.2:3030/ws?token=tok');
+    });
   });
 }

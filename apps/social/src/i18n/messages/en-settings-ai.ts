@@ -36,10 +36,10 @@ export const aiSettingsMessages = {
     selectAgent: "External agent",
     webhookUrl: "Webhook URL",
     listenPort: "Listen Port",
-    projectFolder: "Project folder",
+    projectFolder: "Default folder for external coding agents",
     projectFolderHint:
-      "Working folder on this home node for coding agents (cwd). On desktop, use Browse; in the browser, enter an absolute path.",
-    projectFolderTitle: "Choose project folder",
+      "Fallback working folder on this home node when no Coding project is set. New Coding workspaces use each project’s own folder.",
+    projectFolderTitle: "Choose default folder",
     projectFolderPlaceholder: "No folder selected",
     projectFolderPathPlaceholder: "/absolute/path/on/home/node",
     projectFolderUnset: "Not set (home node default)",
@@ -98,10 +98,10 @@ export const aiSettingsMessages = {
     iconExtAgent: "EX",
     iconPi: "π",
     iconEh: "EH",
-    // ----- Coding agents (EH = coding chat + Terminal; Pi = Terminal + Ext Agent) -----
-    piAgent: "Coding agents",
+    // ----- Coding harnesses (EH = coding chat + Terminal; Pi = Terminal + Ext Agent) -----
+    piAgent: "Coding harnesses",
     piAgentDesc:
-      "Two local coding agents on this machine. Envoy Harness powers coding chat and is always available in Terminal. Pi is available in Terminal and for Ext Agent. They do NOT access mesh contacts or knowledge — that's Built-in OpenClaw's job.",
+      "Local coding harnesses on this machine. Envoy Harness powers coding chat and is always available in Terminal. Pi is available in Terminal and for Ext Agent. They do NOT access mesh contacts or knowledge — that's Built-in OpenClaw's job. Per-project folders and defaults live in Coding → project settings.",
     piSectionTitle: "Pi",
     piSectionDesc:
       "Sidecar coding agent for Terminal and Ext Agent. Enable, auto-run, and model override are Pi-only.",
@@ -144,18 +144,18 @@ export const aiSettingsMessages = {
       "Disabling Pi stops the Pi runtime immediately. Re-enabling starts it on the next save. Envoy Harness (coding chat + Terminal) is unaffected.",
     ehSectionTitle: "Envoy Harness",
     ehSectionDesc:
-      "Powers coding chat and is always available in Terminal. Auto-run here is harness-only; project folder, peers, and slash commands live in the Envoy chat panel.",
+      "Powers coding chat and is always available in Terminal. Auto-run here is harness-only. Coding workspaces use each project’s folder; the active harness folder below is the current session cwd.",
     ehStatusReady: "Ready",
     ehStatusError: "Not ready",
     ehModelError: "Envoy Harness is not ready: {error}",
     ehAutoRunPolicy: "Auto-run policy",
     ehAutoRunNever: "Never ask (auto-allow all)",
     ehAutoRunNeverDesc: "Never prompt — every tool call is allowed automatically.",
-    ehCwdLabel: "Project folder",
+    ehCwdLabel: "Active harness folder",
     ehPeersLabel: "Peer cluster",
     ehPeersValue: "{connected} connected · {failed} failed",
     ehConfigHint:
-      "Change the project folder with /cd in the Envoy chat panel. Peer cluster is set on the home node under coding-agent settings.",
+      "Change the active folder with /cd in the Envoy chat panel, or open Project settings in Coding for each registered project. Peer cluster is set on the home node under coding-agent settings.",
     // ----- Mode-summary banner (top of the AI Engine block) -----
     modeLabel: "AI engine mode",
     modeDescBoth: "Built-in OpenClaw + external agent bridge are both available.",

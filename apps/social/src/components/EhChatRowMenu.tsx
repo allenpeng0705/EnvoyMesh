@@ -33,9 +33,23 @@ function clampMenuPosition(
 export interface EhChatRowMenuProps {
   chat: EhChatWorkspaceSummary;
   onRemove: (chat: EhChatWorkspaceSummary) => void;
+  /** Phase 68-C2 — invite a bonded peer to review this workspace. */
+  onInviteReview?: (chat: EhChatWorkspaceSummary) => void;
+  /** History-as-list-power — archive / unarchive this workspace. */
+  archiveLabel?: string;
+  onArchive?: (chat: EhChatWorkspaceSummary) => void;
+  /** Phase 68-C6 — add heartbeat for this EH workspace. */
+  onAddHeartbeat?: (chat: EhChatWorkspaceSummary) => void;
 }
 
-export function EhChatRowMenu({ chat, onRemove }: EhChatRowMenuProps) {
+export function EhChatRowMenu({
+  chat,
+  onRemove,
+  onInviteReview,
+  archiveLabel,
+  onArchive,
+  onAddHeartbeat,
+}: EhChatRowMenuProps) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -99,10 +113,13 @@ export function EhChatRowMenu({ chat, onRemove }: EhChatRowMenuProps) {
         ref={triggerRef}
         type="button"
         className={`ai-bot-row-menu-btn${open ? " ai-bot-row-menu-btn--open" : ""}`}
-        aria-label={t("eh.removeChatAria", "Remove coding chat")}
+        aria-label={t(
+          "codingView.workspaceActionsAria",
+          "Workspace actions",
+        )}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={t("eh.removeChatAria", "Remove coding chat")}
+        title={t("codingView.workspaceActionsAria", "Workspace actions")}
         data-testid={`eh-chat-row-menu-btn-${chat.id}`}
         onClick={toggleMenu}
       >
@@ -118,16 +135,84 @@ export function EhChatRowMenu({ chat, onRemove }: EhChatRowMenuProps) {
               style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 10000 }}
               onClick={(e) => e.stopPropagation()}
             >
+              {onInviteReview ? (
+                <div
+                  className="context-menu-item"
+                  role="menuitem"
+                  data-testid={`eh-chat-row-menu-invite-${chat.id}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpen(false);
+                    window.setTimeout(() => onInviteReview(chat), 0);
+                  }}
+                >
+                  {t(
+                    "codingView.inviteReview",
+                    "Invite peer to review",
+                  )}
+                </div>
+              ) : null}
+              {onAddHeartbeat ? (
+                <div
+                  className="context-menu-item"
+                  role="menuitem"
+                  data-testid={`eh-chat-row-menu-heartbeat-${chat.id}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpen(false);
+                    window.setTimeout(() => onAddHeartbeat(chat), 0);
+                  }}
+                >
+                  {t("codingView.heartbeatAdd", "Add heartbeat…")}
+                </div>
+              ) : null}
+              {archiveLabel && onArchive ? (
+                <div
+                  className="context-menu-item"
+                  role="menuitem"
+                  data-testid={`eh-chat-row-menu-archive-${chat.id}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpen(false);
+                    window.setTimeout(() => onArchive(chat), 0);
+                  }}
+                >
+                  {archiveLabel}
+                </div>
+              ) : null}
               <div
                 className="context-menu-item context-menu-item--danger"
                 role="menuitem"
                 data-testid={`eh-chat-row-menu-remove-${chat.id}`}
-                onClick={() => {
+                onMouseDown={(e) => {
+                  // Prevent the triggering click from falling through onto a
+                  // ConfirmDialog overlay mounted in the same gesture.
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   setOpen(false);
-                  onRemove(chat);
+                  window.setTimeout(() => onRemove(chat), 0);
                 }}
               >
-                {t("eh.removeChat", "Remove")}
+                {t("codingView.remove", "Remove")}
               </div>
             </div>,
             document.body,

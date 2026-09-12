@@ -28,6 +28,8 @@ import { createHermesSupervisedBackend } from "./supervised-hermes-backend.js";
 import { createCursorAgentBackend } from "./cursor-agent-backend.js";
 import { createAiderBackend } from "./aider-backend.js";
 import { createMmxBackend } from "./mmx-backend.js";
+import { createOpenCodeBackend } from "./opencode-backend.js";
+import { createCodeWhaleBackend } from "./codewhale-backend.js";
 import { getExtAgentSessionModel } from "./session-model-store.js";
 import {
   fetchOpenAiCompatibleModels,
@@ -1019,6 +1021,14 @@ export function createBackend(kind: ExtAgentSidecarKind): ExtAgentBackend {
     // ask via the shared `OneShotCliBackend` base. Install via
     // `npm install -g mmx-cli`; auth via `mmx auth login --api-key ...`.
     return createMmxBackend();
+  }
+  if (kind === "opencode") {
+    // Phase 68-C3 — OpenCode (`opencode run`) one-shot.
+    return createOpenCodeBackend();
+  }
+  if (kind === "codewhale") {
+    // Phase 68-C3 — CodeWhale (`codewhale -p`) one-shot print mode.
+    return createCodeWhaleBackend();
   }
   // Exhaustiveness guard — if a new sidecar kind is added, this will
   // type-error until the new branch is handled.

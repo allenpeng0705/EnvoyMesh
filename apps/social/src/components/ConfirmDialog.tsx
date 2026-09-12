@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useT } from "../context/I18nContext.js";
 import { ModalPortal } from "./ModalPortal.js";
 
@@ -19,6 +19,9 @@ export interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
+/** Ignore overlay dismiss briefly after open (portal menu click-through). */
+const OVERLAY_DISMISS_GUARD_MS = 300;
+
 /**
  * A themed confirmation dialog that replaces native `alert()` / `window.confirm()`.
  * Rendered via ModalPortal so it is not clipped by sidebar scroll containers.
@@ -35,10 +38,12 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const t = useT();
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const openedAtRef = useRef(Date.now());
   const [mounted, setMounted] = useState(false);
 
   // Focus the cancel button by default (safe choice for destructive actions)
   useEffect(() => {
+    openedAtRef.current = Date.now();
     setMounted(true);
     const timer = requestAnimationFrame(() => cancelRef.current?.focus());
     return () => cancelAnimationFrame(timer);
@@ -90,8 +95,10 @@ export function ConfirmDialog({
     return () => panel.removeEventListener("keydown", handleKeyDown);
   }, [mounted, onCancel]);
 
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onCancel();
+  const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
+    if (Date.now() - openedAtRef.current < OVERLAY_DISMISS_GUARD_MS) return;
+    onCancel();
   };
 
   return (

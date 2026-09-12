@@ -135,23 +135,26 @@ export async function ensurePiTerminalSession(
     }
   }
 
-  if (!cfg.modelProviders) {
+  if (!cfg.modelProviders && !params.modelOverride?.model?.trim()) {
     return {
       ok: false,
       code: "no_model",
-      reason: "Configure a model in Settings → AI before opening Pi.",
+      reason: "Choose a model for this workspace, or configure one in Settings → AI.",
     }
   }
 
-  const override: PiModelOverride | undefined = cfg.piSettings?.modelOverride
+  const override: PiModelOverride | undefined =
+    params.modelOverride?.model?.trim()
+      ? params.modelOverride
+      : cfg.piSettings?.modelOverride
   const spawnConfig = buildPiSpawnConfig(cfg.modelProviders, override)
   if (!spawnConfig) {
     return {
       ok: false,
       code: "no_model",
       reason: override
-        ? "Pi custom model is incomplete — fix Settings → AI → Pi, or clear the override."
-        : `Model mode "${cfg.modelProviders.mode}" is not usable by Pi — configure a real provider.`,
+        ? "Pi model override is incomplete — check model, provider, and key."
+        : `Model mode "${cfg.modelProviders?.mode ?? "unset"}" is not usable by Pi — configure a real provider.`,
     }
   }
 

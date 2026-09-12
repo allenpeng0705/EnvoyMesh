@@ -405,6 +405,17 @@ textarea::placeholder {
   display: none !important;
 }
 
+/* Visible keep-alive slots must fill `.main` so pane children get a bounded
+   height (otherwise height:100% collapses and `<main>` scrolls the whole UI). */
+.main-view-slot:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
 /* Loading/Error */
 .loading,
 .error {
@@ -1029,13 +1040,15 @@ textarea::placeholder {
   gap: var(--space-3);
   width: 100%;
   padding: var(--space-3) var(--space-4);
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   text-align: left;
   min-height: 56px;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+  color: var(--color-text);
 }
 
 .contact-list button:has(.contact-thread-meta):not(.thread-row-remove-btn, .contact-list-section-add-btn) {
@@ -1043,14 +1056,24 @@ textarea::placeholder {
 }
 
 .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn):hover {
-  background: var(--color-primary-subtle);
+  background: var(--color-list-hover-bg);
 }
 
 .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn).active {
-  background: var(--color-primary-subtle);
-  color: var(--color-primary);
-  box-shadow: inset 3px 0 0 0 var(--color-primary);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--color-list-selected-bg);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--color-text);
+}
+
+.contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn).active:hover {
+  background: var(--color-list-selected-bg);
+}
+
+.contact-list button.active .thread-title,
+.contact-list button.active .contact-thread-title-row .name {
+  color: var(--color-text);
+  font-weight: 600;
 }
 
 .contact-list button.active .avatar {
@@ -19136,6 +19159,56 @@ button:disabled {
   font-size: 0.75rem;
   color: var(--color-text-muted);
   opacity: 0.95;
+}
+
+.chat-coding-review-cta {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.chat-coding-review-cta__hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.coding-invite-review-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  max-height: 240px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.coding-invite-review-row {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--color-border-subtle);
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+}
+
+.coding-invite-review-row.active,
+.coding-invite-review-row:hover {
+  border-color: var(--color-accent, var(--color-border));
+  background: color-mix(in srgb, var(--color-border) 35%, transparent);
+}
+
+.eh-review-only-banner {
+  margin: 0.5rem 0.75rem;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-border) 45%, transparent);
+  border-radius: var(--radius-sm);
 }
 
 .market-view__muted {

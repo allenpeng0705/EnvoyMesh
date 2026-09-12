@@ -110,6 +110,8 @@ const BINARY_FOR_AGENT: Record<string, string> = {
   cursor: "cursor-agent",
   aider: "aider",
   mmx: "mmx",
+  opencode: "opencode",
+  codewhale: "codewhale",
 };
 
 /**

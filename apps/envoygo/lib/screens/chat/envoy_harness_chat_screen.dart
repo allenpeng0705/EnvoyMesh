@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../coding/coding_heartbeat.dart';
 import '../../eh/eh_review_prefs.dart';
 import '../../eh/eh_timeline.dart';
 import '../../eh/eh_turn_queue.dart';
@@ -13,12 +14,15 @@ import '../../eh/envoy_harness_history.dart';
 import '../../ext_agent/agent_attachments.dart';
 import '../../ext_agent/envoy_harness_slash_commands.dart';
 import '../../l10n/app_localizations.dart';
-import '../../providers/contact_provider.dart' show nodeServiceProvider;
+import '../../models/contact.dart';
+import '../../providers/contact_provider.dart'
+    show contactProvider, nodeServiceProvider;
 import '../../widgets/agent_attachment_bar.dart';
 import '../../widgets/chat/slash_command_suggest.dart';
 import '../../widgets/eh/eh_changes_banner.dart';
 import '../../widgets/eh/eh_turn_review_sheet.dart';
 import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
+import '../coding/coding_heartbeat_ui.dart';
 import '../files/home_file_pick_screen.dart';
 
 /// Envoy Harness coding chat — multi-turn agent thread per project folder.
@@ -28,11 +32,15 @@ class EnvoyHarnessChatScreen extends ConsumerStatefulWidget {
     required this.threadId,
     required this.displayName,
     this.chatId,
+    this.readOnlyReview = false,
   });
 
   final String threadId;
   final String displayName;
   final String? chatId;
+
+  /// Phase 68-C2 — mesh peer-review: timeline + changes view-only.
+  final bool readOnlyReview;
 
   @override
   ConsumerState<EnvoyHarnessChatScreen> createState() =>
@@ -624,9 +632,13 @@ class _EnvoyHarnessChatScreenState
       _error = null;
     });
     try {
-      final history = widget.chatId != null
+      final sinceRevision = _timeline.revision > 0 ? _timeline.revision : null;
+      final history = widget.chatId != null && sinceRevision == null
           ? await client.openEnvoyHarnessChat(widget.chatId!)
-          : await client.getEnvoyHarnessChatHistory();
+          : await client.getEnvoyHarnessChatHistory(
+              chatId: widget.chatId,
+              sinceRevision: sinceRevision,
+            );
       final loaded = parseEnvoyHarnessHistory(history['turns'])
           .map(
             (message) => _EhMessage(
@@ -640,18 +652,32 @@ class _EnvoyHarnessChatScreenState
       // would merge against an already-empty list and drop the in-flight human bubble.
       final localSnapshot = List<_EhMessage>.from(_messages);
       final merged = _mergeHistoryWithLocal(loaded, localSnapshot);
+      final returnedRevision = history['revision'] is int
+          ? history['revision'] as int
+          : int.tryParse('${history['revision']}');
+      final timelineRaw = history['timeline'];
+      final timelineEmpty =
+          timelineRaw is! List || timelineRaw.isEmpty;
+      final skipReplace =
+          timelineEmpty &&
+          returnedRevision != null &&
+          returnedRevision == _timeline.revision &&
+          returnedRevision > 0;
       setState(() {
         _messages
           ..clear()
           ..addAll(merged);
         _loading = false;
-        _timeline = EhTimelineState(
-          chatId:
-              history['chatId']?.toString() ??
-              widget.chatId ??
-              '__envoy_harness__',
-          items: dedupeEhTimelineItems(history['timeline']),
-        );
+        if (!skipReplace) {
+          _timeline = EhTimelineState(
+            chatId:
+                history['chatId']?.toString() ??
+                widget.chatId ??
+                '__envoy_harness__',
+            items: dedupeEhTimelineItems(history['timeline']),
+            revision: returnedRevision ?? 0,
+          );
+        }
       });
       _scrollToEnd();
     } catch (e) {
@@ -714,6 +740,92 @@ class _EnvoyHarnessChatScreenState
     }
   }
 
+  Future<void> _invitePeerToReview() async {
+    final chatId = widget.chatId?.trim();
+    if (chatId == null || chatId.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
+    final contacts = ref
+        .read(contactProvider)
+        .bonds
+        .where((c) => c.bondLevel == 'direct')
+        .toList()
+      ..sort((a, b) {
+        final an = (a.displayName?.trim().isNotEmpty == true)
+            ? a.displayName!.trim()
+            : a.ownerId;
+        final bn = (b.displayName?.trim().isNotEmpty == true)
+            ? b.displayName!.trim()
+            : b.ownerId;
+        return an.toLowerCase().compareTo(bn.toLowerCase());
+      });
+    if (contacts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.codingInviteReviewNoDirect)),
+      );
+      return;
+    }
+    final chosen = await showModalBottomSheet<Contact>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final sheetL10n = AppLocalizations.of(ctx);
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title: Text(sheetL10n.codingInviteReviewTitle),
+                subtitle: Text(
+                  sheetL10n.codingInviteReviewDesc(widget.displayName),
+                ),
+              ),
+              for (final c in contacts)
+                ListTile(
+                  title: Text(
+                    c.displayName?.trim().isNotEmpty == true
+                        ? c.displayName!
+                        : c.ownerId,
+                  ),
+                  onTap: () => Navigator.pop(ctx, c),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+    if (chosen == null || !mounted) return;
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final invite = await client.createCodingReviewInvite(
+        chatId: chatId,
+        peerOwnerId: chosen.ownerId,
+      );
+      final messageText = invite['messageText']?.toString() ?? '';
+      if (messageText.isEmpty) {
+        throw StateError('missing messageText');
+      }
+      await client.sendChat(chosen.ownerId, messageText);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.codingInviteReviewSent)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString();
+      final denied = msg.contains('coding_review_peer');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            denied
+                ? l10n.codingInviteReviewBondDenied
+                : l10n.codingInviteReviewFailed,
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _reviewTurn(String turnId, {String? focusPath}) async {
     if (_reviewSheetOpen || !mounted) return;
     final client = ref.read(nodeServiceProvider);
@@ -735,6 +847,7 @@ class _EnvoyHarnessChatScreenState
             turnId: turnId,
             chatId: widget.chatId,
             focusPath: focusPath,
+            readOnly: widget.readOnlyReview,
             onNotify: (text, {bool error = false}) =>
                 _setSystem(text, error: error),
             onDismissed: _clearReviewState,
@@ -1174,32 +1287,66 @@ class _EnvoyHarnessChatScreenState
               if (!_searching) _searchController.clear();
             }),
           ),
-          PopupMenuButton<String>(
-            tooltip: l10n.ehPermsTooltip,
-            onSelected: (value) => unawaited(_changePolicy(value)),
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'safe-only',
-                child: Text(l10n.ehPermsSafe),
-              ),
-              PopupMenuItem(
-                value: 'always-confirm',
-                child: Text(l10n.ehPermsAsk),
-              ),
-              PopupMenuItem(
-                value: 'off',
-                child: Text(l10n.ehPermsApprove),
-              ),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Text(
-                _policyLabel(l10n, _status?['autoRunPolicy']?.toString()),
-                style: Theme.of(context).textTheme.bodySmall,
+          if (!widget.readOnlyReview)
+            PopupMenuButton<String>(
+              tooltip: l10n.ehPermsTooltip,
+              onSelected: (value) {
+                if (value == 'invite-review') {
+                  unawaited(_invitePeerToReview());
+                  return;
+                }
+                if (value == 'add-heartbeat') {
+                  final chatId = widget.chatId?.trim();
+                  if (chatId == null || chatId.isEmpty) return;
+                  unawaited(() async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    final ok = await showCodingHeartbeatDialog(
+                      context,
+                      workspaceTitle: widget.displayName,
+                      target: CodingHeartbeatTargetEh(chatId: chatId),
+                    );
+                    if (!mounted || !ok) return;
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(l10n.codingHeartbeatSaved)),
+                    );
+                  }());
+                  return;
+                }
+                unawaited(_changePolicy(value));
+              },
+              itemBuilder: (context) => [
+                if (widget.chatId != null && widget.chatId!.trim().isNotEmpty)
+                  PopupMenuItem(
+                    value: 'invite-review',
+                    child: Text(l10n.codingInviteReview),
+                  ),
+                if (widget.chatId != null && widget.chatId!.trim().isNotEmpty)
+                  PopupMenuItem(
+                    value: 'add-heartbeat',
+                    child: Text(l10n.codingHeartbeatAdd),
+                  ),
+                PopupMenuItem(
+                  value: 'safe-only',
+                  child: Text(l10n.ehPermsSafe),
+                ),
+                PopupMenuItem(
+                  value: 'always-confirm',
+                  child: Text(l10n.ehPermsAsk),
+                ),
+                PopupMenuItem(
+                  value: 'off',
+                  child: Text(l10n.ehPermsApprove),
+                ),
+              ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Text(
+                  _policyLabel(l10n, _status?['autoRunPolicy']?.toString()),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
             ),
-          ),
-          if (_busy)
+          if (!widget.readOnlyReview && _busy)
             IconButton(
               tooltip: l10n.ehTurnCancelled,
               icon: const Icon(Icons.stop_circle_outlined),
@@ -1235,6 +1382,33 @@ class _EnvoyHarnessChatScreenState
       ),
       body: Column(
         children: [
+          if (widget.readOnlyReview)
+            Material(
+              color: scheme.secondaryContainer,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.visibility_outlined,
+                      size: 18,
+                      color: scheme.onSecondaryContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        l10n.codingReviewOnlyBanner,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: scheme.onSecondaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (_timeline.agentState != null)
             Container(
               width: double.infinity,
@@ -1291,16 +1465,17 @@ class _EnvoyHarnessChatScreenState
                 ),
               ),
             ),
-          EnvoyHarnessTerminalChrome(
-            chatId: widget.chatId,
-            showCommandRails: false,
-            onSendToTerminal: (text) {
-              final value = text.trim();
-              if (value.isEmpty) return;
-              _controller.text = value;
-              unawaited(_send());
-            },
-          ),
+          if (!widget.readOnlyReview)
+            EnvoyHarnessTerminalChrome(
+              chatId: widget.chatId,
+              showCommandRails: false,
+              onSendToTerminal: (text) {
+                final value = text.trim();
+                if (value.isEmpty) return;
+                _controller.text = value;
+                unawaited(_send());
+              },
+            ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -1325,8 +1500,10 @@ class _EnvoyHarnessChatScreenState
                                       visibleMessages.length],
                               onReview: (turnId) =>
                                   unawaited(_reviewTurn(turnId)),
-                              onRevert: (turnId) =>
-                                  unawaited(_revertTurn(turnId)),
+                              onRevert: widget.readOnlyReview
+                                  ? null
+                                  : (turnId) =>
+                                      unawaited(_revertTurn(turnId)),
                             );
                           }
                           final msg = visibleMessages[index];
@@ -1364,7 +1541,7 @@ class _EnvoyHarnessChatScreenState
                                       assistant: !isUser,
                                     ),
                                   ),
-                                  if (!msg.streaming)
+                                  if (!widget.readOnlyReview && !msg.streaming)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 2),
                                       child: Row(
@@ -1385,6 +1562,16 @@ class _EnvoyHarnessChatScreenState
                                         ],
                                       ),
                                     ),
+                                  if (widget.readOnlyReview && !msg.streaming)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: _EhBubbleIconButton(
+                                        icon: Icons.content_copy,
+                                        tooltip: l10n.ehCopyTurn,
+                                        onPressed: () =>
+                                            unawaited(_copyMessage(msg)),
+                                      ),
+                                    ),
                                   const SizedBox(height: 6),
                                 ],
                               ),
@@ -1395,7 +1582,7 @@ class _EnvoyHarnessChatScreenState
                     },
                   ),
           ),
-          _buildQueueBar(l10n),
+          if (!widget.readOnlyReview) _buildQueueBar(l10n),
           if (!_dismissedChanges && _changedFiles.isNotEmpty)
             EhChangesBanner(
               files: _changedFiles,
@@ -1409,17 +1596,21 @@ class _EnvoyHarnessChatScreenState
                       _reviewTurn(_lastReviewTurnId!, focusPath: path),
                     )
                   : null,
-              onKeepAll: () => unawaited(_handleKeepAllChanges()),
-              onRevertAll: _lastReviewTurnId != null
-                  ? () => unawaited(_revertTurn(_lastReviewTurnId!))
-                  : null,
+              onKeepAll: widget.readOnlyReview
+                  ? null
+                  : () => unawaited(_handleKeepAllChanges()),
+              onRevertAll: widget.readOnlyReview || _lastReviewTurnId == null
+                  ? null
+                  : () => unawaited(_revertTurn(_lastReviewTurnId!)),
               reviewMinFiles: _reviewMinFiles,
-              onReviewMinFilesChange: (value) {
-                setState(() => _reviewMinFiles = value);
-                unawaited(setEhReviewMinFiles(value));
-              },
+              onReviewMinFilesChange: widget.readOnlyReview
+                  ? null
+                  : (value) {
+                      setState(() => _reviewMinFiles = value);
+                      unawaited(setEhReviewMinFiles(value));
+                    },
             ),
-          if (_busy)
+          if (!widget.readOnlyReview && _busy)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Row(
@@ -1438,68 +1629,70 @@ class _EnvoyHarnessChatScreenState
                 ],
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-            child: _buildSlashSuggest(),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (_attachments.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6, right: 2),
-                      child: AgentAttachmentBar(
-                        attachments: _attachments,
-                        onRemove: (id) => setState(() {
-                          _attachments.removeWhere((a) => a.id == id);
-                        }),
-                        onClearAll: () => setState(() => _attachments.clear()),
-                      ),
-                    ),
-                  IconButton(
-                    tooltip: 'Attach home file',
-                    onPressed: () => unawaited(_pickHomeAttachment()),
-                    icon: const Icon(Icons.attach_file),
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      minLines: 1,
-                      maxLines: 4,
-                      decoration: InputDecoration(
-                        hintText: _busy
-                            ? l10n.ehQueueFollowUpHint
-                            : l10n.chatsEhPromptHint,
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.help_outline),
-                          tooltip: l10n.termQuickHelp,
-                          onPressed: () =>
-                              unawaited(_handleSlashCommand('/help')),
+          if (!widget.readOnlyReview) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+              child: _buildSlashSuggest(),
+            ),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (_attachments.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6, right: 2),
+                        child: AgentAttachmentBar(
+                          attachments: _attachments,
+                          onRemove: (id) => setState(() {
+                            _attachments.removeWhere((a) => a.id == id);
+                          }),
+                          onClearAll: () => setState(() => _attachments.clear()),
                         ),
                       ),
-                      onSubmitted: (_) => unawaited(_send()),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (_busy)
                     IconButton(
-                      tooltip: l10n.ehInjectTooltip,
-                      onPressed: () =>
-                          unawaited(_send(mode: EhSubmitMode.inject)),
-                      icon: const Icon(Icons.fast_forward),
+                      tooltip: 'Attach home file',
+                      onPressed: () => unawaited(_pickHomeAttachment()),
+                      icon: const Icon(Icons.attach_file),
                     ),
-                  IconButton.filled(
-                    onPressed: () => unawaited(_send()),
-                    icon: Icon(_busy ? Icons.playlist_add : Icons.send),
-                  ),
-                ],
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        minLines: 1,
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText: _busy
+                              ? l10n.ehQueueFollowUpHint
+                              : l10n.chatsEhPromptHint,
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.help_outline),
+                            tooltip: l10n.termQuickHelp,
+                            onPressed: () =>
+                                unawaited(_handleSlashCommand('/help')),
+                          ),
+                        ),
+                        onSubmitted: (_) => unawaited(_send()),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (_busy)
+                      IconButton(
+                        tooltip: l10n.ehInjectTooltip,
+                        onPressed: () =>
+                            unawaited(_send(mode: EhSubmitMode.inject)),
+                        icon: const Icon(Icons.fast_forward),
+                      ),
+                    IconButton.filled(
+                      onPressed: () => unawaited(_send()),
+                      icon: Icon(_busy ? Icons.playlist_add : Icons.send),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

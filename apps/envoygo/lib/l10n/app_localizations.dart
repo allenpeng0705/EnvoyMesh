@@ -138,6 +138,522 @@ abstract class AppLocalizations {
   /// **'Social'**
   String get navSocial;
 
+  /// No description provided for @navCoding.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding'**
+  String get navCoding;
+
+  /// No description provided for @codingHomePlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding workspaces from your home will appear here.'**
+  String get codingHomePlaceholder;
+
+  /// No description provided for @codingNewWorkspaceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'New workspace'**
+  String get codingNewWorkspaceTitle;
+
+  /// No description provided for @codingNewWorkspaceDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a harness and project folder. The harness stays fixed for this workspace.'**
+  String get codingNewWorkspaceDesc;
+
+  /// No description provided for @codingHarnessLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Harness'**
+  String get codingHarnessLabel;
+
+  /// No description provided for @codingStartWorkspace.
+  ///
+  /// In en, this message translates to:
+  /// **'Start workspace'**
+  String get codingStartWorkspace;
+
+  /// No description provided for @codingPiConsoleHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Local coding agent'**
+  String get codingPiConsoleHint;
+
+  /// No description provided for @codingEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No workspaces yet'**
+  String get codingEmptyTitle;
+
+  /// No description provided for @codingEmptyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a coding workspace on your home computer.'**
+  String get codingEmptyHint;
+
+  /// No description provided for @codingGated.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding isn’t available for this profile.'**
+  String get codingGated;
+
+  /// No description provided for @codingSectionProjects.
+  ///
+  /// In en, this message translates to:
+  /// **'Projects'**
+  String get codingSectionProjects;
+
+  /// No description provided for @codingStatusIdle.
+  ///
+  /// In en, this message translates to:
+  /// **'Idle'**
+  String get codingStatusIdle;
+
+  /// No description provided for @codingExtHarnessHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Runs on your home computer via Ext Agent.'**
+  String get codingExtHarnessHint;
+
+  /// No description provided for @codingExtEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask {name} about this project. Each message runs as a one-shot CLI ask.'**
+  String codingExtEmpty(String name);
+
+  /// No description provided for @codingExtPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Message {name}…'**
+  String codingExtPlaceholder(String name);
+
+  /// No description provided for @codingExtNeedsInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Install'**
+  String get codingExtNeedsInstall;
+
+  /// No description provided for @codingExtInstallHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Install {name} on your home computer to use it here.'**
+  String codingExtInstallHint(String name);
+
+  /// No description provided for @codingExtReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get codingExtReady;
+
+  /// No description provided for @codingExtCheckInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Check install'**
+  String get codingExtCheckInstall;
+
+  /// No description provided for @codingExtThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'Working…'**
+  String get codingExtThinking;
+
+  /// No description provided for @codingExtEmptyReply.
+  ///
+  /// In en, this message translates to:
+  /// **'(empty reply)'**
+  String get codingExtEmptyReply;
+
+  /// No description provided for @codingExtSendFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to reach Ext Agent: {error}'**
+  String codingExtSendFailed(String error);
+
+  /// No description provided for @codingOpenReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Open review'**
+  String get codingOpenReview;
+
+  /// No description provided for @codingInviteReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite peer to review'**
+  String get codingInviteReview;
+
+  /// No description provided for @codingInviteReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite peer to review'**
+  String get codingInviteReviewTitle;
+
+  /// No description provided for @codingInviteReviewDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a chat invite so a bonded friend can open “{title}” in read-only review mode.'**
+  String codingInviteReviewDesc(String title);
+
+  /// No description provided for @codingInviteReviewNoDirect.
+  ///
+  /// In en, this message translates to:
+  /// **'No direct-bonded contacts yet. Bond with a friend first.'**
+  String get codingInviteReviewNoDirect;
+
+  /// No description provided for @codingInviteReviewSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send invite'**
+  String get codingInviteReviewSend;
+
+  /// No description provided for @codingInviteReviewSending.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending…'**
+  String get codingInviteReviewSending;
+
+  /// No description provided for @codingInviteReviewSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Review invite sent.'**
+  String get codingInviteReviewSent;
+
+  /// No description provided for @codingInviteReviewFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t send the review invite. Try again.'**
+  String get codingInviteReviewFailed;
+
+  /// No description provided for @codingInviteReviewBondDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'That contact isn’t eligible for a review invite.'**
+  String get codingInviteReviewBondDenied;
+
+  /// No description provided for @codingInviteReviewOpenOnOwnerHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Open on the owner’s home node to review this workspace.'**
+  String get codingInviteReviewOpenOnOwnerHome;
+
+  /// No description provided for @codingReviewOnlyBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Review only — timeline and changes; tools and revert are disabled.'**
+  String get codingReviewOnlyBanner;
+
+  /// No description provided for @codingHeartbeatAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add heartbeat…'**
+  String get codingHeartbeatAdd;
+
+  /// No description provided for @codingHeartbeatAddTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add heartbeat'**
+  String get codingHeartbeatAddTitle;
+
+  /// No description provided for @codingHeartbeatAddDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'On a schedule, send a prompt to “{title}”. This wakes the existing workspace — it does not create a new one.'**
+  String codingHeartbeatAddDesc(String title);
+
+  /// No description provided for @codingHeartbeatDefaultName.
+  ///
+  /// In en, this message translates to:
+  /// **'Heartbeat · {title}'**
+  String codingHeartbeatDefaultName(String title);
+
+  /// No description provided for @codingHeartbeatDefaultPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Check progress on this workspace and continue useful next steps.'**
+  String get codingHeartbeatDefaultPrompt;
+
+  /// No description provided for @codingHeartbeatName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get codingHeartbeatName;
+
+  /// No description provided for @codingHeartbeatSchedule.
+  ///
+  /// In en, this message translates to:
+  /// **'Schedule'**
+  String get codingHeartbeatSchedule;
+
+  /// No description provided for @codingHeartbeatPreset5m.
+  ///
+  /// In en, this message translates to:
+  /// **'5m'**
+  String get codingHeartbeatPreset5m;
+
+  /// No description provided for @codingHeartbeatPreset15m.
+  ///
+  /// In en, this message translates to:
+  /// **'15m'**
+  String get codingHeartbeatPreset15m;
+
+  /// No description provided for @codingHeartbeatPreset1h.
+  ///
+  /// In en, this message translates to:
+  /// **'1h'**
+  String get codingHeartbeatPreset1h;
+
+  /// No description provided for @codingHeartbeatPresetDaily.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily'**
+  String get codingHeartbeatPresetDaily;
+
+  /// No description provided for @codingHeartbeatPresetCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get codingHeartbeatPresetCustom;
+
+  /// No description provided for @codingHeartbeatPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt'**
+  String get codingHeartbeatPrompt;
+
+  /// No description provided for @codingHeartbeatEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable now'**
+  String get codingHeartbeatEnabled;
+
+  /// No description provided for @codingHeartbeatSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save heartbeat'**
+  String get codingHeartbeatSave;
+
+  /// No description provided for @codingHeartbeatSaving.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving…'**
+  String get codingHeartbeatSaving;
+
+  /// No description provided for @codingHeartbeatSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Heartbeat saved.'**
+  String get codingHeartbeatSaved;
+
+  /// No description provided for @codingHeartbeatSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t save the heartbeat. Try again.'**
+  String get codingHeartbeatSaveFailed;
+
+  /// No description provided for @codingHeartbeatInvalidCron.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid 5-field cron (UTC).'**
+  String get codingHeartbeatInvalidCron;
+
+  /// No description provided for @codingHeartbeatListTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Heartbeats'**
+  String get codingHeartbeatListTitle;
+
+  /// No description provided for @codingHeartbeatListDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled prompts for existing Coding workspaces. Not Team jobs.'**
+  String get codingHeartbeatListDesc;
+
+  /// No description provided for @codingHeartbeatEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No heartbeats yet. Add one from a workspace menu.'**
+  String get codingHeartbeatEmpty;
+
+  /// No description provided for @codingHeartbeatListFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t load heartbeats. Try again.'**
+  String get codingHeartbeatListFailed;
+
+  /// No description provided for @codingHeartbeatActionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'That heartbeat action didn’t work. Try again.'**
+  String get codingHeartbeatActionFailed;
+
+  /// No description provided for @codingHeartbeatOn.
+  ///
+  /// In en, this message translates to:
+  /// **'On'**
+  String get codingHeartbeatOn;
+
+  /// No description provided for @codingHeartbeatOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get codingHeartbeatOff;
+
+  /// No description provided for @codingHeartbeatRuns.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} runs'**
+  String codingHeartbeatRuns(int n);
+
+  /// No description provided for @codingHeartbeatPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get codingHeartbeatPause;
+
+  /// No description provided for @codingHeartbeatResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get codingHeartbeatResume;
+
+  /// No description provided for @codingHeartbeatRunNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Run now'**
+  String get codingHeartbeatRunNow;
+
+  /// No description provided for @codingHeartbeatDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get codingHeartbeatDelete;
+
+  /// No description provided for @piEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi — your local coding agent'**
+  String get piEmptyTitle;
+
+  /// No description provided for @piEmptyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask Pi to write code, refactor a file, explain an error, or run a shell command. Pi runs on your home computer — it does not access your mesh contacts or knowledge.'**
+  String get piEmptyBody;
+
+  /// No description provided for @piPromptPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask Pi to code, refactor, or explain…'**
+  String get piPromptPlaceholder;
+
+  /// No description provided for @piThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi is thinking…'**
+  String get piThinking;
+
+  /// No description provided for @piSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get piSend;
+
+  /// No description provided for @piAllow.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow'**
+  String get piAllow;
+
+  /// No description provided for @piDeny.
+  ///
+  /// In en, this message translates to:
+  /// **'Deny'**
+  String get piDeny;
+
+  /// No description provided for @piProposalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi wants to: {title}'**
+  String piProposalTitle(String title);
+
+  /// No description provided for @piProposalTimedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool request timed out (Pi skipped it).'**
+  String get piProposalTimedOut;
+
+  /// No description provided for @piProposalRespondFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to deliver response: {error}'**
+  String piProposalRespondFailed(String error);
+
+  /// No description provided for @piSendFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to reach Pi: {error}'**
+  String piSendFailed(String error);
+
+  /// No description provided for @piDisabledHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi is disabled. Enable it in Settings → AI.'**
+  String get piDisabledHint;
+
+  /// No description provided for @piNotInstalledHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi sidecar not bundled (slim build).'**
+  String get piNotInstalledHint;
+
+  /// No description provided for @piErrorHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi is not ready: {error}'**
+  String piErrorHint(String error);
+
+  /// No description provided for @piStartingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi is starting — try again in a moment.'**
+  String get piStartingHint;
+
+  /// No description provided for @piStateReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get piStateReady;
+
+  /// No description provided for @piStateStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting'**
+  String get piStateStarting;
+
+  /// No description provided for @piStateDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Disabled'**
+  String get piStateDisabled;
+
+  /// No description provided for @piStateNotInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Not installed'**
+  String get piStateNotInstalled;
+
+  /// No description provided for @piStateError.
+  ///
+  /// In en, this message translates to:
+  /// **'Error'**
+  String get piStateError;
+
+  /// No description provided for @piStateStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped'**
+  String get piStateStopped;
+
   /// No description provided for @socialContextPhone.
   ///
   /// In en, this message translates to:
@@ -1041,7 +1557,7 @@ abstract class AppLocalizations {
   /// No description provided for @mePublicAccess.
   ///
   /// In en, this message translates to:
-  /// **'Public Access'**
+  /// **'Direct home address'**
   String get mePublicAccess;
 
   /// No description provided for @mePort.
@@ -1053,7 +1569,7 @@ abstract class AppLocalizations {
   /// No description provided for @mePublicAccessSaved.
   ///
   /// In en, this message translates to:
-  /// **'Public access saved'**
+  /// **'Direct address saved — reconnecting…'**
   String get mePublicAccessSaved;
 
   /// No description provided for @meFamilyProfile.
@@ -4755,19 +5271,19 @@ abstract class AppLocalizations {
   /// No description provided for @mePublicIpLabel.
   ///
   /// In en, this message translates to:
-  /// **'Public IP or domain'**
+  /// **'Host (Tailscale, VPN, or public IP)'**
   String get mePublicIpLabel;
 
   /// No description provided for @mePublicIpHint.
   ///
   /// In en, this message translates to:
-  /// **'e.g. 1.2.3.4 or mynode.example.com'**
+  /// **'e.g. 100.64.1.2 or home.example.com'**
   String get mePublicIpHint;
 
   /// No description provided for @mePublicIpHelp.
   ///
   /// In en, this message translates to:
-  /// **'Set this if your home node has a public IP or domain.\nEnables direct connection without the relay on 5G/WAN.'**
+  /// **'Use your home computer’s Tailscale/VPN IP or a reachable public hostname.\nEnvoyGo connects over WebSocket to host:port (default 3030) — no SSH on the phone.\nTried after LAN, before relay.'**
   String get mePublicIpHelp;
 
   /// No description provided for @meNetworkDebug.

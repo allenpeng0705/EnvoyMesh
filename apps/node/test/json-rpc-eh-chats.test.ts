@@ -24,8 +24,45 @@ describe("json-rpc — envoy harness chats", () => {
     expect(ns.createEnvoyHarnessChat).toHaveBeenCalledWith({
       cwd: "/projects/app",
       title: undefined,
+      forceNew: false,
+      model: undefined,
+      endpoint: undefined,
+      apiKey: undefined,
     });
     expect(result).toEqual(summary);
+  });
+
+  it("routes createEnvoyHarnessChat model", async () => {
+    const summary = {
+      id: "chat-2",
+      cwd: "/projects/app",
+      title: "New workspace",
+      lastUsedAt: "2026-08-25T00:00:00.000Z",
+      model: "openai:gpt-4o",
+    };
+    const ns = {
+      mayCallerUseCoding: vi.fn().mockResolvedValue(true),
+      createEnvoyHarnessChat: vi.fn().mockResolvedValue(summary),
+    } as unknown as NodeService;
+
+    await runWithRpcCaller(localOwnerCaller(""), () =>
+      routeRpcMethod(ns, "createEnvoyHarnessChat", {
+        cwd: "/projects/app",
+        forceNew: true,
+        model: "openai:gpt-4o",
+        endpoint: "https://api.openai.com/v1",
+        apiKey: "sk-test",
+      }),
+    );
+
+    expect(ns.createEnvoyHarnessChat).toHaveBeenCalledWith({
+      cwd: "/projects/app",
+      title: undefined,
+      forceNew: true,
+      model: "openai:gpt-4o",
+      endpoint: "https://api.openai.com/v1",
+      apiKey: "sk-test",
+    });
   });
 
   it("routes removeEnvoyHarnessChat", async () => {

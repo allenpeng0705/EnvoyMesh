@@ -435,6 +435,20 @@ const STATIC_BY_AGENT: Record<string, { commands: StaticCmd[]; limitations?: str
       BRIDGE_LIMIT,
     ],
   },
+  opencode: {
+    commands: [],
+    limitations: [
+      "OpenCode Coding asks use one-shot `opencode run` — TUI slash commands are not mirrored here.",
+      BRIDGE_LIMIT,
+    ],
+  },
+  codewhale: {
+    commands: [],
+    limitations: [
+      "CodeWhale Coding asks use one-shot `codewhale -p` — ACP serve is out of scope for Tier B.",
+      BRIDGE_LIMIT,
+    ],
+  },
 };
 
 function dynamicDescriptors(slashNames: string[]): ExtAgentCommandDescriptor[] {

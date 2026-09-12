@@ -7,15 +7,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
+import '../../coding/coding_review_ref.dart';
+import '../../ext_agent/agent_attachments.dart';
 import '../../ext_agent/envoy_ai_slash_commands.dart';
 import '../../ext_agent/ext_agent_presets.dart';
 import '../../ext_agent/ext_agent_slash_commands.dart';
-import '../../ext_agent/agent_attachments.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_message.dart';
 import '../../models/chat_thread.dart';
 import '../../models/family_attachment.dart';
 import '../../models/web_content.dart';
+import '../../navigation/owner_tabs.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
@@ -31,6 +33,7 @@ import '../../widgets/voice_note_recorder_bar.dart';
 import '../call/voice_call_screen.dart';
 import '../content/published_content_sheet.dart';
 import '../files/home_file_pick_screen.dart';
+import 'envoy_harness_chat_screen.dart';
 
 /// Chat detail view — message list with compose bar.
 ///
@@ -1521,6 +1524,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                                 (_isFamily || _isFamilyRoom)
                                 ? _loadFamilyAttachment
                                 : null,
+                            localOwnerId: ref.watch(nodeProvider).ownerId,
+                            onOpenCodingReview: _openCodingReview,
                           ),
                         );
                       },
@@ -2612,6 +2617,31 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             child: Text(l10n.commonClear),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openCodingReview(CodingReviewRef reviewRef) {
+    final l10n = AppLocalizations.of(context);
+    final localOwner =
+        (ref.read(nodeProvider).ownerId ?? '').trim();
+    if (localOwner.isEmpty || reviewRef.ownerId != localOwner) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.codingInviteReviewOpenOnOwnerHome)),
+      );
+      return;
+    }
+    ref.read(chatProvider.notifier).selectTab(OwnerTabs.coding);
+    final title = reviewRef.title?.trim();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EnvoyHarnessChatScreen(
+          threadId: reviewRef.chatId,
+          chatId: reviewRef.chatId,
+          displayName:
+              (title != null && title.isNotEmpty) ? title : reviewRef.chatId,
+          readOnlyReview: true,
+        ),
       ),
     );
   }

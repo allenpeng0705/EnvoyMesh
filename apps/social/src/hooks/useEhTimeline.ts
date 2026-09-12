@@ -15,7 +15,7 @@ export interface EhTimelineSource {
 }
 
 type Action =
-  | { type: "replace"; chatId: string; items: EhTimelineItem[] }
+  | { type: "replace"; chatId: string; items: EhTimelineItem[]; revision?: number }
   | { type: "update"; update: EhTimelineUpdate }
 
 function reducer(state: EhTimelineState, action: Action): EhTimelineState {
@@ -23,7 +23,7 @@ function reducer(state: EhTimelineState, action: Action): EhTimelineState {
     return {
       chatId: action.chatId,
       items: action.items,
-      revision: 0,
+      revision: action.revision ?? 0,
     }
   }
   return reduceEhTimeline(state, action.update)
@@ -45,8 +45,8 @@ export function useEhTimeline(source: EhTimelineSource, chatId?: string | null) 
   )
 
   const replace = useCallback(
-    (items: EhTimelineItem[]) => {
-      dispatch({ type: "replace", chatId: scopedChatId, items })
+    (items: EhTimelineItem[], revision?: number) => {
+      dispatch({ type: "replace", chatId: scopedChatId, items, revision })
     },
     [scopedChatId],
   )

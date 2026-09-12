@@ -10,6 +10,7 @@
 import 'dart:convert';
 import 'package:envoy_thin_client/services/home_remote_client.dart';
 import 'package:envoy_thin_client/services/web_socket_like.dart';
+import 'package:envoygo/coding/coding_heartbeat.dart';
 import 'package:envoygo/services/node_service_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -1064,6 +1065,178 @@ void main() {
       final suggest = await suggestFuture;
       expect(suggest['ok'], true);
       expect(suggest['reply'], '120 CNY');
+    });
+
+    test('askExtAgent sends prompt / agentId / streamSessionId', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final future = client.askExtAgent(
+        prompt: 'fix login',
+        agentId: 'codex',
+        streamSessionId: 'ext:codex:sess-1',
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'askExtAgent');
+      expect(sent['params']['prompt'], 'fix login');
+      expect(sent['params']['agentId'], 'codex');
+      expect(sent['params']['streamSessionId'], 'ext:codex:sess-1');
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': 'done',
+      });
+      expect(await future, 'done');
+    });
+
+    test('createCodingReviewInvite sends chatId and peerOwnerId', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final future = client.createCodingReviewInvite(
+        chatId: 'chat-1',
+        peerOwnerId: 'envoy:owner:bob',
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'createCodingReviewInvite');
+      expect(sent['params']['chatId'], 'chat-1');
+      expect(sent['params']['peerOwnerId'], 'envoy:owner:bob');
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'messageText': 'invite body',
+          'reviewRef': {
+            'kind': 'eh-workspace-review',
+            'v': 1,
+            'ownerId': 'envoy:owner:alice',
+            'chatId': 'chat-1',
+          },
+        },
+      });
+      final result = await future;
+      expect(result['messageText'], 'invite body');
+    });
+
+    test('listCodingHeartbeats / create / update / delete / runNow', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final listFuture = client.listCodingHeartbeats();
+      await Future.delayed(Duration.zero);
+      final listSent = _lastSent(mock);
+      expect(listSent['method'], 'listCodingHeartbeats');
+      mock.simulateMessage({
+        'id': listSent['id'],
+        'result': [
+          {
+            'id': 'hb1',
+            'name': 'N',
+            'cron': '*/15 * * * *',
+            'prompt': 'p',
+            'target': {'kind': 'eh', 'chatId': 'c1'},
+            'enabled': true,
+            'runCount': 0,
+            'createdAt': 't0',
+            'updatedAt': 't0',
+          },
+        ],
+      });
+      final listed = await listFuture;
+      expect(listed, hasLength(1));
+      expect(listed.first.id, 'hb1');
+
+      final createFuture = client.createCodingHeartbeat(
+        const CreateCodingHeartbeatInput(
+          name: 'HB',
+          cron: '*/5 * * * *',
+          prompt: 'go',
+          target: CodingHeartbeatTargetPi(sessionId: 's1'),
+          enabled: true,
+        ),
+      );
+      await Future.delayed(Duration.zero);
+      final createSent = _lastSent(mock);
+      expect(createSent['method'], 'createCodingHeartbeat');
+      expect(createSent['params']['target'], {
+        'kind': 'pi',
+        'sessionId': 's1',
+      });
+      mock.simulateMessage({
+        'id': createSent['id'],
+        'result': {
+          'id': 'hb2',
+          'name': 'HB',
+          'cron': '*/5 * * * *',
+          'prompt': 'go',
+          'target': {'kind': 'pi', 'sessionId': 's1'},
+          'enabled': true,
+          'runCount': 0,
+          'createdAt': 't1',
+          'updatedAt': 't1',
+        },
+      });
+      expect((await createFuture).id, 'hb2');
+
+      final updateFuture = client.updateCodingHeartbeat(
+        id: 'hb1',
+        enabled: false,
+      );
+      await Future.delayed(Duration.zero);
+      final updateSent = _lastSent(mock);
+      expect(updateSent['method'], 'updateCodingHeartbeat');
+      expect(updateSent['params']['id'], 'hb1');
+      expect(updateSent['params']['enabled'], false);
+      mock.simulateMessage({
+        'id': updateSent['id'],
+        'result': {
+          'id': 'hb1',
+          'name': 'N',
+          'cron': '*/15 * * * *',
+          'prompt': 'p',
+          'target': {'kind': 'eh', 'chatId': 'c1'},
+          'enabled': false,
+          'runCount': 0,
+          'createdAt': 't0',
+          'updatedAt': 't2',
+        },
+      });
+      expect((await updateFuture).enabled, isFalse);
+
+      final deleteFuture = client.deleteCodingHeartbeat('hb1');
+      await Future.delayed(Duration.zero);
+      final deleteSent = _lastSent(mock);
+      expect(deleteSent['method'], 'deleteCodingHeartbeat');
+      expect(deleteSent['params']['id'], 'hb1');
+      mock.simulateMessage({
+        'id': deleteSent['id'],
+        'result': {'deleted': true},
+      });
+      expect(await deleteFuture, isTrue);
+
+      final runFuture = client.runCodingHeartbeatNow('hb2');
+      await Future.delayed(Duration.zero);
+      final runSent = _lastSent(mock);
+      expect(runSent['method'], 'runCodingHeartbeatNow');
+      expect(runSent['params']['id'], 'hb2');
+      mock.simulateMessage({
+        'id': runSent['id'],
+        'result': {
+          'id': 'hb2',
+          'name': 'HB',
+          'cron': '*/5 * * * *',
+          'prompt': 'go',
+          'target': {'kind': 'pi', 'sessionId': 's1'},
+          'enabled': true,
+          'runCount': 1,
+          'createdAt': 't1',
+          'updatedAt': 't3',
+        },
+      });
+      expect((await runFuture).runCount, 1);
     });
   });
 }

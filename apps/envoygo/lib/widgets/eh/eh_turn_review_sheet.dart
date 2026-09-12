@@ -20,6 +20,7 @@ class EhTurnReviewSheet extends StatefulWidget {
     required this.onDismissed,
     this.onUx,
     this.onOpenGitDiffFallback,
+    this.readOnly = false,
   });
 
   final NodeServiceClient client;
@@ -30,6 +31,9 @@ class EhTurnReviewSheet extends StatefulWidget {
   final VoidCallback onDismissed;
   final EhReviewUx? onUx;
   final VoidCallback? onOpenGitDiffFallback;
+
+  /// Phase 68-C2 — hide keep/revert destructive actions.
+  final bool readOnly;
 
   @override
   State<EhTurnReviewSheet> createState() => _EhTurnReviewSheetState();
@@ -319,11 +323,12 @@ class _EhTurnReviewSheetState extends State<EhTurnReviewSheet> {
                     Wrap(
                       spacing: 8,
                       children: [
-                        OutlinedButton(
-                          onPressed: () => unawaited(_keepFile(path)),
-                          child: Text(l10n.ehReviewKeepFile),
-                        ),
-                        if (revertible)
+                        if (!widget.readOnly)
+                          OutlinedButton(
+                            onPressed: () => unawaited(_keepFile(path)),
+                            child: Text(l10n.ehReviewKeepFile),
+                          ),
+                        if (!widget.readOnly && revertible)
                           OutlinedButton(
                             onPressed: () => unawaited(_revertFile(path)),
                             child: Text(l10n.ehReviewRevertFile),
@@ -361,12 +366,14 @@ class _EhTurnReviewSheetState extends State<EhTurnReviewSheet> {
                   child: Text(l10n.commonClose),
                 ),
                 const Spacer(),
-                if (_files.isNotEmpty)
+                if (!widget.readOnly && _files.isNotEmpty)
                   FilledButton(
                     onPressed: () => unawaited(_keepAll()),
                     child: Text(l10n.ehChangesKeepAll),
                   ),
-                if (_canRevert && _revertibleCount > 0) ...[
+                if (!widget.readOnly &&
+                    _canRevert &&
+                    _revertibleCount > 0) ...[
                   const SizedBox(width: 8),
                   FilledButton.tonal(
                     onPressed: () => unawaited(_revertAll()),

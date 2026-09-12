@@ -24,6 +24,300 @@ class AppLocalizationsJa extends AppLocalizations {
   String get navSocial => 'ソーシャル';
 
   @override
+  String get navCoding => 'コーディング';
+
+  @override
+  String get codingHomePlaceholder =>
+      'ホームのコーディングワークスペースがここに表示されます。準備ができたら + から開始できます。';
+
+  @override
+  String get codingNewWorkspaceTitle => 'New workspace';
+
+  @override
+  String get codingNewWorkspaceDesc =>
+      'Pick a harness and project folder. The harness stays fixed for this workspace.';
+
+  @override
+  String get codingHarnessLabel => 'Harness';
+
+  @override
+  String get codingStartWorkspace => 'Start workspace';
+
+  @override
+  String get codingPiConsoleHint => 'Local coding agent';
+
+  @override
+  String get codingEmptyTitle => 'No workspaces yet';
+
+  @override
+  String get codingEmptyHint =>
+      'Start a coding workspace on your home computer.';
+
+  @override
+  String get codingGated => 'Coding isn’t available for this profile.';
+
+  @override
+  String get codingSectionProjects => 'Projects';
+
+  @override
+  String get codingStatusIdle => 'Idle';
+
+  @override
+  String get codingExtHarnessHint =>
+      'Runs on your home computer via Ext Agent.';
+
+  @override
+  String codingExtEmpty(String name) {
+    return 'Ask $name about this project. Each message runs as a one-shot CLI ask.';
+  }
+
+  @override
+  String codingExtPlaceholder(String name) {
+    return 'Message $name…';
+  }
+
+  @override
+  String get codingExtNeedsInstall => 'Install';
+
+  @override
+  String codingExtInstallHint(String name) {
+    return 'Install $name on your home computer to use it here.';
+  }
+
+  @override
+  String get codingExtReady => 'Ready';
+
+  @override
+  String get codingExtCheckInstall => 'Check install';
+
+  @override
+  String get codingExtThinking => 'Working…';
+
+  @override
+  String get codingExtEmptyReply => '(empty reply)';
+
+  @override
+  String codingExtSendFailed(String error) {
+    return 'Failed to reach Ext Agent: $error';
+  }
+
+  @override
+  String get codingOpenReview => 'レビューを開く';
+
+  @override
+  String get codingInviteReview => 'ピアにレビューを依頼';
+
+  @override
+  String get codingInviteReviewTitle => 'ピアにレビューを依頼';
+
+  @override
+  String codingInviteReviewDesc(String title) {
+    return 'チャット招待を送り、ボンド済みの友だちが「$title」を読み取り専用レビューで開けるようにします。';
+  }
+
+  @override
+  String get codingInviteReviewNoDirect => '直接ボンドの連絡先がありません。先に友だちとボンドしてください。';
+
+  @override
+  String get codingInviteReviewSend => '招待を送る';
+
+  @override
+  String get codingInviteReviewSending => '送信中…';
+
+  @override
+  String get codingInviteReviewSent => 'レビュー招待を送りました。';
+
+  @override
+  String get codingInviteReviewFailed => 'レビュー招待を送れませんでした。もう一度お試しください。';
+
+  @override
+  String get codingInviteReviewBondDenied => 'この連絡先にはレビュー招待を送れません。';
+
+  @override
+  String get codingInviteReviewOpenOnOwnerHome =>
+      'このワークスペースをレビューするには所有者のホームノードで開いてください。';
+
+  @override
+  String get codingReviewOnlyBanner => 'レビューのみ — タイムラインと変更を表示。ツールと取り消しは無効です。';
+
+  @override
+  String get codingHeartbeatAdd => 'Add heartbeat…';
+
+  @override
+  String get codingHeartbeatAddTitle => 'Add heartbeat';
+
+  @override
+  String codingHeartbeatAddDesc(String title) {
+    return 'On a schedule, send a prompt to “$title”. This wakes the existing workspace — it does not create a new one.';
+  }
+
+  @override
+  String codingHeartbeatDefaultName(String title) {
+    return 'Heartbeat · $title';
+  }
+
+  @override
+  String get codingHeartbeatDefaultPrompt =>
+      'Check progress on this workspace and continue useful next steps.';
+
+  @override
+  String get codingHeartbeatName => 'Name';
+
+  @override
+  String get codingHeartbeatSchedule => 'Schedule';
+
+  @override
+  String get codingHeartbeatPreset5m => '5m';
+
+  @override
+  String get codingHeartbeatPreset15m => '15m';
+
+  @override
+  String get codingHeartbeatPreset1h => '1h';
+
+  @override
+  String get codingHeartbeatPresetDaily => 'Daily';
+
+  @override
+  String get codingHeartbeatPresetCustom => 'Custom';
+
+  @override
+  String get codingHeartbeatPrompt => 'Prompt';
+
+  @override
+  String get codingHeartbeatEnabled => 'Enable now';
+
+  @override
+  String get codingHeartbeatSave => 'Save heartbeat';
+
+  @override
+  String get codingHeartbeatSaving => 'Saving…';
+
+  @override
+  String get codingHeartbeatSaved => 'Heartbeat saved.';
+
+  @override
+  String get codingHeartbeatSaveFailed =>
+      'Couldn’t save the heartbeat. Try again.';
+
+  @override
+  String get codingHeartbeatInvalidCron => 'Enter a valid 5-field cron (UTC).';
+
+  @override
+  String get codingHeartbeatListTitle => 'Heartbeats';
+
+  @override
+  String get codingHeartbeatListDesc =>
+      'Scheduled prompts for existing Coding workspaces. Not Team jobs.';
+
+  @override
+  String get codingHeartbeatEmpty =>
+      'No heartbeats yet. Add one from a workspace menu.';
+
+  @override
+  String get codingHeartbeatListFailed =>
+      'Couldn’t load heartbeats. Try again.';
+
+  @override
+  String get codingHeartbeatActionFailed =>
+      'That heartbeat action didn’t work. Try again.';
+
+  @override
+  String get codingHeartbeatOn => 'On';
+
+  @override
+  String get codingHeartbeatOff => 'Paused';
+
+  @override
+  String codingHeartbeatRuns(int n) {
+    return '$n runs';
+  }
+
+  @override
+  String get codingHeartbeatPause => 'Pause';
+
+  @override
+  String get codingHeartbeatResume => 'Resume';
+
+  @override
+  String get codingHeartbeatRunNow => 'Run now';
+
+  @override
+  String get codingHeartbeatDelete => 'Delete';
+
+  @override
+  String get piEmptyTitle => 'Pi — your local coding agent';
+
+  @override
+  String get piEmptyBody =>
+      'Ask Pi to write code, refactor a file, explain an error, or run a shell command. Pi runs on your home computer — it does not access your mesh contacts or knowledge.';
+
+  @override
+  String get piPromptPlaceholder => 'Ask Pi to code, refactor, or explain…';
+
+  @override
+  String get piThinking => 'Pi is thinking…';
+
+  @override
+  String get piSend => 'Send';
+
+  @override
+  String get piAllow => 'Allow';
+
+  @override
+  String get piDeny => 'Deny';
+
+  @override
+  String piProposalTitle(String title) {
+    return 'Pi wants to: $title';
+  }
+
+  @override
+  String get piProposalTimedOut => 'Tool request timed out (Pi skipped it).';
+
+  @override
+  String piProposalRespondFailed(String error) {
+    return 'Failed to deliver response: $error';
+  }
+
+  @override
+  String piSendFailed(String error) {
+    return 'Failed to reach Pi: $error';
+  }
+
+  @override
+  String get piDisabledHint => 'Pi is disabled. Enable it in Settings → AI.';
+
+  @override
+  String get piNotInstalledHint => 'Pi sidecar not bundled (slim build).';
+
+  @override
+  String piErrorHint(String error) {
+    return 'Pi is not ready: $error';
+  }
+
+  @override
+  String get piStartingHint => 'Pi is starting — try again in a moment.';
+
+  @override
+  String get piStateReady => 'Ready';
+
+  @override
+  String get piStateStarting => 'Starting';
+
+  @override
+  String get piStateDisabled => 'Disabled';
+
+  @override
+  String get piStateNotInstalled => 'Not installed';
+
+  @override
+  String get piStateError => 'Error';
+
+  @override
+  String get piStateStopped => 'Stopped';
+
+  @override
   String get socialContextPhone => 'この端末';
 
   @override
@@ -489,13 +783,13 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
-  String get mePublicAccess => '公開アクセス';
+  String get mePublicAccess => '直接ホームアドレス';
 
   @override
   String get mePort => 'ポート';
 
   @override
-  String get mePublicAccessSaved => '公開アクセスを保存しました';
+  String get mePublicAccessSaved => '直接アドレスを保存しました — 再接続中…';
 
   @override
   String get meFamilyProfile => 'ファミリープロフィール';
@@ -2481,14 +2775,14 @@ class AppLocalizationsJa extends AppLocalizations {
   String get meJustNow => 'たった今';
 
   @override
-  String get mePublicIpLabel => 'パブリック IP またはドメイン';
+  String get mePublicIpLabel => 'ホスト（Tailscale・VPN・またはパブリック IP）';
 
   @override
-  String get mePublicIpHint => '例: 1.2.3.4 または mynode.example.com';
+  String get mePublicIpHint => '例: 100.64.1.2 または home.example.com';
 
   @override
   String get mePublicIpHelp =>
-      'ホームノードにパブリック IP またはドメインがある場合に設定します。\n5G/WAN でリレーなしの直接接続が可能になります。';
+      '自宅PCの Tailscale/VPN IP、または到達可能なホスト名を入力します。\nEnvoyGo は WebSocket で host:port（既定 3030）に接続します — 電話では SSH を使いません。\nLAN の次、リレーの前に試行します。';
 
   @override
   String get meNetworkDebug => 'ネットワークデバッグ';

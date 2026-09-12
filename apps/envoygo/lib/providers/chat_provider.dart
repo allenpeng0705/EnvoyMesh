@@ -17,6 +17,8 @@ import 'contact_provider.dart';
 import 'node_provider.dart';
 import 'social_context_provider.dart';
 import 'terminal_provider.dart';
+import '../navigation/owner_tabs.dart';
+import '../services/home_tab_preferences.dart';
 
 /// Max Envoy Harness coding chats per home node (matches `@envoymesh/api`).
 const kMaxEnvoyHarnessChats = 5;
@@ -26,14 +28,15 @@ class ChatState {
   final List<ChatThread> threads;
   final Map<String, List<ChatMessage>> messages;
   final bool isLoading;
-  final int selectedTab;
+  /// Bottom-nav tab id ([HomeTabId]), not a shared int index.
+  final String selectedTabId;
   final String? syncError;
 
   const ChatState({
     this.threads = const [],
     this.messages = const {},
     this.isLoading = false,
-    this.selectedTab = 0,
+    this.selectedTabId = HomeTabId.social,
     this.syncError,
   });
 
@@ -41,14 +44,14 @@ class ChatState {
     List<ChatThread>? threads,
     Map<String, List<ChatMessage>>? messages,
     bool? isLoading,
-    int? selectedTab,
+    String? selectedTabId,
     String? syncError,
   }) {
     return ChatState(
       threads: threads ?? this.threads,
       messages: messages ?? this.messages,
       isLoading: isLoading ?? this.isLoading,
-      selectedTab: selectedTab ?? this.selectedTab,
+      selectedTabId: selectedTabId ?? this.selectedTabId,
       syncError: syncError,
     );
   }
@@ -286,7 +289,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final _seenMessageIds = <String>{};
   Future<void>? _syncTerminalsInFlight;
 
-  ChatNotifier(this._ref) : super(const ChatState());
+  ChatNotifier(this._ref) : super(const ChatState()) {
+    unawaited(_restoreSelectedTab());
+  }
+
+  Future<void> _restoreSelectedTab() async {
+    try {
+      final stored = await HomeTabPreferences.getSelectedTabId();
+      if (stored == null || stored.isEmpty) return;
+      if (!mounted) return;
+      state = state.copyWith(selectedTabId: stored);
+    } catch (_) {
+      // SharedPreferences may be unavailable in unit tests / early boot.
+    }
+  }
 
   /// Drop threads/messages for [nodeId] (used on unpair).
   void clearForNode(String nodeId) {
@@ -296,7 +312,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messages: Map.fromEntries(
         state.messages.entries.where((e) => !e.key.startsWith(prefix)),
       ),
-      selectedTab: 0,
+      selectedTabId: HomeTabId.social,
     );
     // Dedup set mixes bare messageIds and `$threadId:$messageId` keys.
     _seenMessageIds.clear();
@@ -3235,9 +3251,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.copyWith(threads: threads, messages: messages);
   }
 
-  /// Select a tab.
-  void selectTab(int index) {
-    state = state.copyWith(selectedTab: index);
+  /// Select a bottom-nav tab by id ([HomeTabId]).
+  void selectTab(String tabId) {
+    state = state.copyWith(selectedTabId: tabId);
+    unawaited(HomeTabPreferences.setSelectedTabId(tabId));
   }
 
   /// Create chat threads for all bonded contacts that don't have one yet.

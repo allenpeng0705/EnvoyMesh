@@ -169,7 +169,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
     final l10n = AppLocalizations.of(context);
     final engage = ref.watch(contentEngageProvider);
     final feedNotify = ref.watch(feedNotifyProvider);
-    final homeTab = ref.watch(chatProvider.select((s) => s.selectedTab));
+    final homeTab = ref.watch(chatProvider.select((s) => s.selectedTabId));
     final viewingSocial = homeTab == OwnerTabs.social;
     final surface = _tabs == null
         ? SocialSurfaces.chats
@@ -177,7 +177,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
     final preferShop = ref.watch(marketPreferShopProvider);
 
     ref.listen(contentEngageProvider, (prev, next) {
-      if (ref.read(chatProvider).selectedTab != OwnerTabs.social) return;
+      if (ref.read(chatProvider).selectedTabId != OwnerTabs.social) return;
       if (surface == SocialSurfaces.feeds && next.feedCount > 0) {
         ref.read(contentEngageProvider.notifier).dismiss(surface: 'feed');
       } else if (surface == SocialSurfaces.blog && next.blogCount > 0) {

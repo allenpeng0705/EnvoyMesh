@@ -4,8 +4,17 @@
 
 import { basename } from "node:path";
 
-import type { EhChatWorkspace, EhChatWorkspaceSummary } from "@envoymesh/api";
-import { defaultEhChatTitle, MAX_ENVOY_HARNESS_CHATS } from "@envoymesh/api";
+import type {
+  EhAgentStateName,
+  EhChatWorkspace,
+  EhChatWorkspaceSummary,
+} from "@envoymesh/api";
+import {
+  defaultEhChatTitle,
+  deriveCodingUiBucket,
+  resolveEhChatDisplayTitle,
+  MAX_ENVOY_HARNESS_CHATS,
+} from "@envoymesh/api";
 import type { SessionStore } from "@envoymesh/envoy-harness";
 
 import {
@@ -41,8 +50,10 @@ export function migrateLegacyEhChats(opts: {
   legacyCwd: string | undefined;
   sessionByCwd: Record<string, string> | undefined;
 }): EhChatWorkspace[] {
-  const existing = opts.chats ?? [];
-  if (existing.length > 0) return existing;
+  // Explicit array (including []) means the multi-chat registry is authoritative.
+  // Only `undefined` means “never migrated” — re-seeding from legacy cwd when the
+  // user cleared all chats made Remove look like a no-op (new UUID each time).
+  if (opts.chats !== undefined) return opts.chats;
   const cwd = opts.legacyCwd?.trim();
   if (!cwd) return [];
   const normalized = normalizeEhWorkspaceCwd(cwd);
@@ -64,6 +75,10 @@ export async function summarizeEhChats(opts: {
   chats: readonly EhChatWorkspace[];
   sessionStore: SessionStore;
   sessionByCwd?: Record<string, string>;
+  /** Live EH agent state per chat (from node runtime). */
+  agentStateByChatId?: Record<string, EhAgentStateName>;
+  /** Pending permission / user-question per chat. */
+  pendingByChatId?: Record<string, boolean>;
 }): Promise<EhChatWorkspaceSummary[]> {
   const summaries: EhChatWorkspaceSummary[] = [];
   for (const chat of sortEhChats([...opts.chats])) {
@@ -89,12 +104,24 @@ export async function summarizeEhChats(opts: {
         messageCount = undefined;
       }
     }
+    const agentState = opts.agentStateByChatId?.[chat.id];
+    const pending = opts.pendingByChatId?.[chat.id] === true;
+    const uiBucket = deriveCodingUiBucket({
+      state: agentState ?? "ready",
+      hasPendingPermissionOrQuestion: pending,
+    });
     summaries.push({
       id: chat.id,
       cwd: chat.cwd,
-      title: chat.title?.trim() || defaultEhChatTitle(chat.cwd),
+      title: resolveEhChatDisplayTitle(chat.title, chat.cwd),
       lastUsedAt: chat.lastUsedAt,
       ...(messageCount !== undefined ? { messageCount } : {}),
+      ...(chat.model?.trim() ? { model: chat.model.trim() } : {}),
+      ...(chat.endpoint?.trim() ? { endpoint: chat.endpoint.trim() } : {}),
+      ...(chat.apiKey?.trim() ? { hasApiKey: true } : {}),
+      harness: "envoy-harness",
+      uiBucket,
+      ...(agentState ? { agentState } : {}),
     });
   }
   return summaries;
@@ -131,11 +158,22 @@ export function updateEhChatCwd(
       ? {
           ...c,
           cwd: normalized,
-          title: defaultEhChatTitle(normalized),
+          // Reset to placeholder until the next first prompt.
+          title: undefined,
           sessionId: undefined,
         }
       : c,
   );
+}
+
+export function updateEhChatTitle(
+  chats: EhChatWorkspace[],
+  chatId: string,
+  title: string,
+): EhChatWorkspace[] {
+  const next = title.trim();
+  if (!next) return chats;
+  return chats.map((c) => (c.id === chatId ? { ...c, title: next } : c));
 }
 
 export function removeEhChat(

@@ -340,14 +340,14 @@ export function normalizePiModelOverride(raw: unknown): PiModelOverride | undefi
  * `inherited` is false — OpenClaw/Hermes/OpenHuman are unaffected.
  */
 export function buildPiSpawnConfig(
-  modelProviders: ModelProviderConfig,
+  modelProviders: ModelProviderConfig | null | undefined,
   override?: PiModelOverride,
 ): PiSpawnConfig | null {
   const normalized = normalizePiModelOverride(override)
   if (normalized) {
     // Prefer Pi-native provider when both are present.
     // Empty override.apiKey → reuse Settings → AI key (provider/model still override).
-    const apiKey = normalized.apiKey?.trim() || modelProviders.apiKey
+    const apiKey = normalized.apiKey?.trim() || modelProviders?.apiKey
     if (normalized.provider?.trim()) {
       return resolvePiSpawnFromDirectProvider({ ...normalized, apiKey })
     }
@@ -364,6 +364,7 @@ export function buildPiSpawnConfig(
     return null
   }
 
+  if (!modelProviders) return null
   const mode = modelProviders.mode
   if (mode === "disabled" || mode === "mock") return null
   if (!modelProviders.modelName) return null

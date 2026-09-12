@@ -96,7 +96,11 @@ export abstract class OneShotCliBackend implements ExtAgentBackend {
    * (synchronous or async via the `error` event). Times out after
    * `requestTimeoutMs` (kills the subprocess).
    */
-  async ask(text: string, sessionKey: string): Promise<string> {
+  async ask(
+    text: string,
+    sessionKey: string,
+    _opts?: import("./types.js").ExtAgentAskOpts,
+  ): Promise<string> {
     if (!text.trim()) return "";
     if (!sessionKey) {
       throw new Error(`${this.kind} ask(): sessionKey is required`);

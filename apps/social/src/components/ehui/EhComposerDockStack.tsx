@@ -2,7 +2,7 @@
  * Cursor-shaped stack above the EH composer.
  */
 
-import type { ReactNode } from "react"
+import type { ReactNode, RefObject } from "react"
 
 import type { EhPermissionEvent, EhUserQuestionEvent, EhTurnHintsEvent } from "@envoymesh/api"
 
@@ -27,10 +27,17 @@ export interface EhComposerDockStackProps {
   onQueueUpdate: (id: string, text: string) => void
   onQueueRemove: (id: string) => void
   onQueueClear?: () => void
+  /** When true, hide the queue dock (track pill toggle). */
+  queueHidden?: boolean
+  queueDockRef?: RefObject<HTMLDivElement | null>
   contextFiles: readonly string[]
   attachedPaths?: readonly string[]
   onRemoveAttached?: (path: string) => void
   changedFiles: readonly string[]
+  /** When true, hide the changes dock (track pill toggle). */
+  changesHidden?: boolean
+  changesDockRef?: RefObject<HTMLDivElement | null>
+  forceExpandChanges?: boolean
   onReviewChanges?: () => void
   onReviewFile?: (path: string) => void
   onKeepAllChanges?: () => void
@@ -54,10 +61,15 @@ export function EhComposerDockStack({
   onQueueUpdate,
   onQueueRemove,
   onQueueClear,
+  queueHidden = false,
+  queueDockRef,
   contextFiles,
   attachedPaths,
   onRemoveAttached,
   changedFiles,
+  changesHidden = false,
+  changesDockRef,
+  forceExpandChanges = false,
   onReviewChanges,
   onReviewFile,
   onKeepAllChanges,
@@ -87,15 +99,20 @@ export function EhComposerDockStack({
         attachedPaths={attachedPaths}
         onRemoveAttached={onRemoveAttached}
       />
-      <EhChangesDock
-        files={changedFiles}
-        onReview={onReviewChanges}
-        onReviewFile={onReviewFile}
-        onKeepAll={onKeepAllChanges}
-        onRevert={onRevertChanges}
-        reviewMinFiles={reviewMinFiles}
-        onReviewMinFilesChange={onReviewMinFilesChange}
-      />
+      {!changesHidden ? (
+        <div ref={changesDockRef}>
+          <EhChangesDock
+            files={changedFiles}
+            forceExpanded={forceExpandChanges}
+            onReview={onReviewChanges}
+            onReviewFile={onReviewFile}
+            onKeepAll={onKeepAllChanges}
+            onRevert={onRevertChanges}
+            reviewMinFiles={reviewMinFiles}
+            onReviewMinFilesChange={onReviewMinFilesChange}
+          />
+        </div>
+      ) : null}
       {turnHints ? (
         <EhTurnHintsDock
           hints={turnHints}
@@ -103,12 +120,16 @@ export function EhComposerDockStack({
           onSelectFollowUp={onSelectFollowUp}
         />
       ) : null}
-      <EhInputQueue
-        items={queue}
-        onUpdate={onQueueUpdate}
-        onRemove={onQueueRemove}
-        onClear={onQueueClear}
-      />
+      {!queueHidden ? (
+        <div ref={queueDockRef}>
+          <EhInputQueue
+            items={queue}
+            onUpdate={onQueueUpdate}
+            onRemove={onQueueRemove}
+            onClear={onQueueClear}
+          />
+        </div>
+      ) : null}
       {composer ?? null}
     </div>
   )

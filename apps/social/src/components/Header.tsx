@@ -38,6 +38,10 @@ function isKnowledgeTopView(view: ViewName): boolean {
   return view === "knowledge";
 }
 
+function isCodingTopView(view: ViewName): boolean {
+  return view === "coding";
+}
+
 interface HeaderProps {
   currentView: ViewName;
   onNavigate: (view: ViewName) => void;
@@ -137,6 +141,7 @@ export function Header({
     isPublicNetwork && isEffectiveNodeRunning(nodeStatus, connectionStatus) && !connectionStatus?.online;
 
   const socialActive = isSocialTopView(currentView);
+  const codingActive = isCodingTopView(currentView);
   const terminalActive = isTerminalTopView(currentView);
   const knowledgeActive = isKnowledgeTopView(currentView);
 
@@ -182,12 +187,12 @@ export function Header({
         </button>
         <button
           type="button"
-          className={terminalActive ? "active" : ""}
-          onClick={() => onNavigate("terminal")}
-          aria-current={terminalActive ? "page" : undefined}
-          data-testid="nav-terminal"
+          className={codingActive ? "active" : ""}
+          onClick={() => onNavigate("coding")}
+          aria-current={codingActive ? "page" : undefined}
+          data-testid="nav-coding"
         >
-          {t("nav.terminal")}
+          {t("nav.coding")}
         </button>
         <button
           type="button"
@@ -197,6 +202,15 @@ export function Header({
           data-testid="nav-knowledge"
         >
           {t("nav.knowledge")}
+        </button>
+        <button
+          type="button"
+          className={terminalActive ? "active" : ""}
+          onClick={() => onNavigate("terminal")}
+          aria-current={terminalActive ? "page" : undefined}
+          data-testid="nav-terminal"
+        >
+          {t("nav.terminal")}
         </button>
         <button
           type="button"
@@ -228,7 +242,6 @@ export function Header({
             data-testid="nav-inbox"
           >
             <InboxIcon size={16} />
-            <span className="header-inbox-label">{t("nav.inbox")}</span>
             {inboxActivityCount > 0 && (
               <span className="inbox-badge" aria-hidden>
                 {inboxActivityCount > 99 ? "99+" : inboxActivityCount}

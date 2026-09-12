@@ -79,6 +79,15 @@ describe("isCronMatch", () => {
     expect(isCronMatch("0 9 * * 4", date)).toBe(false);
   });
 
+  it("matches */N minute steps", () => {
+    expect(isCronMatch("*/5 * * * *", new Date("2026-05-07T09:10:00Z"))).toBe(
+      true,
+    );
+    expect(isCronMatch("*/5 * * * *", new Date("2026-05-07T09:11:00Z"))).toBe(
+      false,
+    );
+  });
+
   it("returns false for invalid cron", () => {
     const date = new Date("2026-05-07T09:00:00Z");
     expect(isCronMatch("invalid", date)).toBe(false);

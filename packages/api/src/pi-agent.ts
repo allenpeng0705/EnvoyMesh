@@ -408,6 +408,11 @@ export interface EnsurePiTerminalParams {
    * for the same project folder.
    */
   forceRestart?: boolean
+  /**
+   * One-shot Coding workspace override for this spawn only.
+   * Does not write `piSettings.modelOverride`.
+   */
+  modelOverride?: PiModelOverride
 }
 
 /** Result of ensuring a Pi interactive TUI terminal session. */

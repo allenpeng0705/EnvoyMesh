@@ -5,6 +5,8 @@
   "navInbox": "Posta in arrivo",
   "navContent": "Contenuti",
   "navSocial": "Social",
+  "navCoding": "Coding",
+  "codingHomePlaceholder": "Gli workspace di coding del tuo home appariranno qui. Avviane uno con + quando sei pronto.",
   "navTerminal": "Terminale",
   "navKnowledge": "Conoscenza",
   "navMe": "Io",
@@ -63,9 +65,9 @@
   "meUnpairFailed": "Dissociazione non riuscita: {error}",
   "meEditProfile": "Modifica profilo",
   "meProfileUpdateFailed": "Impossibile aggiornare il profilo: {error}",
-  "mePublicAccess": "Accesso pubblico",
+  "mePublicAccess": "Indirizzo casa diretto",
   "mePort": "Porta",
-  "mePublicAccessSaved": "Accesso pubblico salvato",
+  "mePublicAccessSaved": "Indirizzo diretto salvato — riconnessione…",
   "meFamilyProfile": "Profilo famiglia",
   "meFamilyProfileHint": "Sei connesso a questa casa come membro della famiglia",
   "mePreferences": "Preferenze",
@@ -107,7 +109,9 @@
   "marketSearchNoResults": "Nessuna inserzione per “{query}”.",
   "@marketSearchNoResults": {
     "placeholders": {
-      "query": { "type": "String" }
+      "query": {
+        "type": "String"
+      }
     }
   },
   "marketSearchIdleHint": "Prova una parola chiave o tocca un suggerimento.",
@@ -514,9 +518,9 @@
   "audioVoiceNote": "Nota vocale",
   "meLastAttempt": "Ultimo tentativo: {time}",
   "meJustNow": "proprio ora",
-  "mePublicIpLabel": "IP pubblico o dominio",
-  "mePublicIpHint": "es. 1.2.3.4 o mynode.example.com",
-  "mePublicIpHelp": "Imposta se il nodo di casa ha un IP pubblico o dominio.\nConsente connessione diretta senza relay su 5G/WAN.",
+  "mePublicIpLabel": "Host (Tailscale, VPN o IP pubblico)",
+  "mePublicIpHint": "es. 100.64.1.2 o home.example.com",
+  "mePublicIpHelp": "IP Tailscale/VPN del computer di casa o hostname raggiungibile.\nEnvoyGo si collega via WebSocket a host:port (predefinito 3030) — niente SSH sul telefono.\nDopo la LAN, prima del relay.",
   "meNetworkDebug": "Debug di rete",
   "meRunNetworkTests": "Esegui test di rete",
   "meTesting": "Test in corso…",
@@ -568,8 +572,12 @@
   "chatFileTooLarge": "{name}: file troppo grande (max {maxMb} MiB)",
   "@chatFileTooLarge": {
     "placeholders": {
-      "name": { "type": "String" },
-      "maxMb": { "type": "String" }
+      "name": {
+        "type": "String"
+      },
+      "maxMb": {
+        "type": "String"
+      }
     }
   },
   "chatAgentAttachOwnerOnly": "Solo il proprietario del nodo può allegare file alle chat agente.",
@@ -1469,5 +1477,59 @@
   "phoneMeshRetryNow": "Riprova ora",
   "phoneMeshLanHint": "La scoperta nelle vicinanze (stesso Wi‑Fi) è disattivata — su iPhone consenti Rete locale in Impostazioni → EnvoyGo. La ricerca via Internet funziona comunque.",
   "phoneMeshDescErrorGeneric": "Il mesh del telefono ha un problema. Esci da Social e rientra, oppure riavvia l’app.",
-  "phoneMeshDescError": "Errore mesh telefono: {error}"
+  "phoneMeshDescError": "Errore mesh telefono: {error}",
+  "codingPiConsoleHint": "Local coding agent",
+  "codingExtHarnessHint": "Runs on your home computer via Ext Agent.",
+  "codingExtEmpty": "Ask {name} about this project. Each message runs as a one-shot CLI ask.",
+  "codingExtPlaceholder": "Message {name}…",
+  "codingExtNeedsInstall": "Install",
+  "codingExtInstallHint": "Install {name} on your home computer to use it here.",
+  "codingExtReady": "Ready",
+  "codingExtCheckInstall": "Check install",
+  "codingExtThinking": "Working…",
+  "codingExtEmptyReply": "(empty reply)",
+  "codingExtSendFailed": "Failed to reach Ext Agent: {error}",
+  "codingOpenReview": "Apri revisione",
+  "codingInviteReview": "Invita un peer a revisionare",
+  "codingInviteReviewTitle": "Invita un peer a revisionare",
+  "codingInviteReviewDesc": "Invia un invito in chat così un amico bonded può aprire “{title}” in modalità sola revisione.",
+  "codingInviteReviewNoDirect": "Nessun contatto bonded diretto. Prima crea un bond con un amico.",
+  "codingInviteReviewSend": "Invia invito",
+  "codingInviteReviewSending": "Invio…",
+  "codingInviteReviewSent": "Invito di revisione inviato.",
+  "codingInviteReviewFailed": "Impossibile inviare l’invito. Riprova.",
+  "codingInviteReviewBondDenied": "Questo contatto non può ricevere un invito di revisione.",
+  "codingInviteReviewOpenOnOwnerHome": "Apri sul nodo home del proprietario per revisionare questo workspace.",
+  "codingReviewOnlyBanner": "Solo revisione — timeline e modifiche; strumenti e ripristino disabilitati.",
+  "codingHeartbeatAdd": "Add heartbeat…",
+  "codingHeartbeatAddTitle": "Add heartbeat",
+  "codingHeartbeatAddDesc": "On a schedule, send a prompt to “{title}”. This wakes the existing workspace — it does not create a new one.",
+  "codingHeartbeatDefaultName": "Heartbeat · {title}",
+  "codingHeartbeatDefaultPrompt": "Check progress on this workspace and continue useful next steps.",
+  "codingHeartbeatName": "Name",
+  "codingHeartbeatSchedule": "Schedule",
+  "codingHeartbeatPreset5m": "5m",
+  "codingHeartbeatPreset15m": "15m",
+  "codingHeartbeatPreset1h": "1h",
+  "codingHeartbeatPresetDaily": "Daily",
+  "codingHeartbeatPresetCustom": "Custom",
+  "codingHeartbeatPrompt": "Prompt",
+  "codingHeartbeatEnabled": "Enable now",
+  "codingHeartbeatSave": "Save heartbeat",
+  "codingHeartbeatSaving": "Saving…",
+  "codingHeartbeatSaved": "Heartbeat saved.",
+  "codingHeartbeatSaveFailed": "Couldn’t save the heartbeat. Try again.",
+  "codingHeartbeatInvalidCron": "Enter a valid 5-field cron (UTC).",
+  "codingHeartbeatListTitle": "Heartbeats",
+  "codingHeartbeatListDesc": "Scheduled prompts for existing Coding workspaces. Not Team jobs.",
+  "codingHeartbeatEmpty": "No heartbeats yet. Add one from a workspace menu.",
+  "codingHeartbeatListFailed": "Couldn’t load heartbeats. Try again.",
+  "codingHeartbeatActionFailed": "That heartbeat action didn’t work. Try again.",
+  "codingHeartbeatOn": "On",
+  "codingHeartbeatOff": "Paused",
+  "codingHeartbeatRuns": "{n} runs",
+  "codingHeartbeatPause": "Pause",
+  "codingHeartbeatResume": "Resume",
+  "codingHeartbeatRunNow": "Run now",
+  "codingHeartbeatDelete": "Delete"
 }

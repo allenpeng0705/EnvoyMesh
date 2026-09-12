@@ -151,20 +151,27 @@ export function createTrigger(
 }
 
 /**
- * Parse cron expression to check if it matches a given time.
- * Simplified implementation for basic cron expressions.
+ * Match one cron field: star, exact int, or every-N step.
+ */
+function cronFieldMatches(field: string, value: number): boolean {
+  if (field === "*") return true;
+  if (field.startsWith("*/")) {
+    const step = parseInt(field.slice(2), 10);
+    return Number.isFinite(step) && step > 0 && value % step === 0;
+  }
+  const n = parseInt(field, 10);
+  return Number.isFinite(n) && n === value;
+}
+
+/**
+ * Parse cron expression to check if it matches a given time (UTC).
+ * Supports star, exact integers, and every-N step fields. Five fields only.
  */
 export function isCronMatch(cron: string, date: Date): boolean {
-  const parts = cron.split(" ");
+  const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return false;
 
   const [minuteStr, hourStr, dayOfMonthStr, monthStr, dayOfWeekStr] = parts;
-
-  const minute = minuteStr === "*" ? null : parseInt(minuteStr, 10);
-  const hour = hourStr === "*" ? null : parseInt(hourStr, 10);
-  const dayOfMonth = dayOfMonthStr === "*" ? null : parseInt(dayOfMonthStr, 10);
-  const month = monthStr === "*" ? null : parseInt(monthStr, 10);
-  const dayOfWeek = dayOfWeekStr === "*" ? null : parseInt(dayOfWeekStr, 10);
 
   const currentMinute = date.getUTCMinutes();
   const currentHour = date.getUTCHours();
@@ -172,11 +179,11 @@ export function isCronMatch(cron: string, date: Date): boolean {
   const currentMonth = date.getUTCMonth() + 1;
   const currentDayOfWeek = date.getUTCDay();
 
-  if (minute !== null && minute !== currentMinute) return false;
-  if (hour !== null && hour !== currentHour) return false;
-  if (dayOfMonth !== null && dayOfMonth !== currentDayOfMonth) return false;
-  if (month !== null && month !== currentMonth) return false;
-  if (dayOfWeek !== null && dayOfWeek !== currentDayOfWeek) return false;
+  if (!cronFieldMatches(minuteStr!, currentMinute)) return false;
+  if (!cronFieldMatches(hourStr!, currentHour)) return false;
+  if (!cronFieldMatches(dayOfMonthStr!, currentDayOfMonth)) return false;
+  if (!cronFieldMatches(monthStr!, currentMonth)) return false;
+  if (!cronFieldMatches(dayOfWeekStr!, currentDayOfWeek)) return false;
 
   return true;
 }

@@ -53,4 +53,18 @@ describe("getExtAgentInstallInfo", () => {
     expect(info.homepageUrl).toBe("https://github.com/MiniMax-AI/cli")
     expect(info.startHint).toContain("mmx-cli")
   })
+
+  it("returns OpenCode website (Phase 68-C3)", () => {
+    const info = getExtAgentInstallInfo("opencode")
+    expect(info.builtIn).toBe(false)
+    expect(info.homepageUrl).toBe("https://opencode.ai/")
+    expect(info.startHint.toLowerCase()).toContain("opencode")
+  })
+
+  it("returns CodeWhale website (Phase 68-C3)", () => {
+    const info = getExtAgentInstallInfo("codewhale")
+    expect(info.builtIn).toBe(false)
+    expect(info.homepageUrl).toBe("https://codewhale.net/")
+    expect(info.startHint.toLowerCase()).toContain("codewhale")
+  })
 })

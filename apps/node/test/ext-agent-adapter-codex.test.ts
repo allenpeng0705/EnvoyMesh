@@ -115,6 +115,80 @@ function handleRequest(msg) {
 }
 `;
 
+/**
+ * Like SCRIPT_HAPPY but also emits `item/agentMessage/delta` notifications
+ * before `turn/completed` so onDelta streaming can be asserted.
+ */
+const SCRIPT_WITH_DELTAS = `#!/usr/bin/env node
+let nextThreadSeq = 1;
+let nextTurnSeq = 1;
+let initHandled = false;
+let buffer = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  let nl;
+  while ((nl = buffer.indexOf("\\n")) !== -1) {
+    const line = buffer.slice(0, nl);
+    buffer = buffer.slice(nl + 1);
+    if (!line.trim()) continue;
+    let msg;
+    try { msg = JSON.parse(line); } catch { continue; }
+    if (msg.id === undefined) continue;
+    handleRequest(msg);
+  }
+});
+function reply(id, result) {
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result }) + "\\n");
+}
+function notify(method, params) {
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\\n");
+}
+function handleRequest(msg) {
+  switch (msg.method) {
+    case "initialize":
+      initHandled = true;
+      reply(msg.id, { serverInfo: { name: "fake-codex", version: "0.0.0" } });
+      return;
+    case "thread/start":
+      reply(msg.id, { thread: { id: "thread-" + nextThreadSeq }, model: "fake" });
+      nextThreadSeq++;
+      return;
+    case "turn/start": {
+      const turnId = "turn-" + nextTurnSeq;
+      nextTurnSeq++;
+      const threadId = msg.params && msg.params.threadId;
+      reply(msg.id, { turn: { id: turnId, threadId, status: "inProgress" } });
+      setImmediate(() => {
+        notify("item/agentMessage/delta", {
+          threadId, turnId, itemId: "msg-" + turnId, delta: "Hel",
+        });
+        notify("item/agentMessage/delta", {
+          threadId, turnId, itemId: "msg-" + turnId, delta: "lo",
+        });
+        notify("turn/completed", {
+          threadId,
+          turnId,
+          turn: {
+            id: turnId,
+            status: "completed",
+            items: [
+              { id: "msg-" + turnId, type: "agentMessage", title: null, text: "Hello" },
+            ],
+          },
+        });
+      });
+      return;
+    }
+    case "thread/list":
+      reply(msg.id, { data: [], nextCursor: null });
+      return;
+    default:
+      reply(msg.id, { error: { code: -32601, message: "method not found: " + msg.method } });
+  }
+}
+`;
+
 /** Replies to `thread/list` with an error — used to verify probe() returns false. */
 const SCRIPT_BAD_PROBE = `#!/usr/bin/env node
 let buffer = "";
@@ -152,6 +226,7 @@ beforeAll(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "codex-backend-"));
   const files: Record<string, string> = {
     "happy.js": SCRIPT_HAPPY,
+    "with-deltas.js": SCRIPT_WITH_DELTAS,
     "bad-probe.js": SCRIPT_BAD_PROBE,
     "exit.js": SCRIPT_EXIT,
   };
@@ -217,6 +292,16 @@ describe("codex-backend (55B) — basic lifecycle", () => {
     const text = await backend.ask("hello codex", "sess-1");
     expect(text).toContain("hello from codex");
     expect(text).toContain("thread-");
+  }, 10_000);
+
+  it("ask() forwards item/agentMessage/delta chunks to onDelta", async () => {
+    backend = makeBackend({ args: [scripts["with-deltas.js"]!] });
+    const chunks: string[] = [];
+    const text = await backend.ask("stream please", "sess-delta", {
+      onDelta: (chunk) => chunks.push(chunk),
+    });
+    expect(chunks).toEqual(["Hel", "lo"]);
+    expect(text).toBe("Hello");
   }, 10_000);
 
   it("ask() reuses the same threadId for the same sessionKey", async () => {

@@ -674,8 +674,8 @@ class _MeScreenState extends ConsumerState<MeScreen> {
           Card(
             child: _PublicHostEditor(
               node: nodeState.activeNode!,
-              onSave: (host, port) {
-                ref
+              onSave: (host, port) async {
+                await ref
                     .read(nodeProvider.notifier)
                     .updatePublicAccess(nodeState.activeNode!.id, host, port);
               },
@@ -962,10 +962,10 @@ Color _parseHexColor(String? hex) {
   return const Color(0xFF6366F1);
 }
 
-/// Inline editor for public IP/domain and port.
+/// Inline editor for manual direct home address (Tailscale / VPN / public IP).
 class _PublicHostEditor extends StatefulWidget {
   final StoredNode node;
-  final void Function(String host, int port) onSave;
+  final Future<void> Function(String host, int port) onSave;
 
   const _PublicHostEditor({required this.node, required this.onSave});
 
@@ -976,6 +976,7 @@ class _PublicHostEditor extends StatefulWidget {
 class _PublicHostEditorState extends State<_PublicHostEditor> {
   late final TextEditingController _hostController;
   late final TextEditingController _portController;
+  var _saving = false;
 
   @override
   void initState() {
@@ -1035,14 +1036,23 @@ class _PublicHostEditorState extends State<_PublicHostEditor> {
           Align(
             alignment: Alignment.centerRight,
             child: FilledButton(
-              onPressed: () {
-                final host = _hostController.text.trim();
-                final port = int.tryParse(_portController.text.trim()) ?? 3030;
-                widget.onSave(host, port);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(l10n.mePublicAccessSaved)),
-                );
-              },
+              onPressed: _saving
+                  ? null
+                  : () async {
+                      final host = _hostController.text.trim();
+                      final port =
+                          int.tryParse(_portController.text.trim()) ?? 3030;
+                      setState(() => _saving = true);
+                      try {
+                        await widget.onSave(host, port);
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(l10n.mePublicAccessSaved)),
+                        );
+                      } finally {
+                        if (mounted) setState(() => _saving = false);
+                      }
+                    },
               child: Text(l10n.commonSave),
             ),
           ),

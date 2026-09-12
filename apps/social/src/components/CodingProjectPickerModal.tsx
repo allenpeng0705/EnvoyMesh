@@ -119,6 +119,7 @@ export function CodingProjectPickerModal({
               type="button"
               className="primary"
               disabled={!canConfirm}
+              data-testid="coding-add-project-confirm"
               onClick={onConfirm}
             >
               {busy ? (busyLabel ?? "…") : confirmLabel}

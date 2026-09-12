@@ -23,23 +23,19 @@ import type { ChatRoom, FamilyRoom } from "@envoymesh/api";
 import { OpenClawOfflineBanner } from "./OpenClawOfflineBanner.js";
 import { BotChatPanel } from "./BotChatPanel.js";
 import { AIChatPanel } from "./AIChatPanel.js";
-import { EnvoyHarnessPanel } from "./EnvoyHarnessPanel.js";
 import { getEnvoyAiInflight, subscribeEnvoyAiInflight } from "../../lib/envoy-ai-inflight.js";
-import { openTerminal } from "../../lib/open-terminal-nav.js";
+import { openCoding } from "../../lib/open-coding-nav.js";
 
 /**
  * Chat threads UI (sidebar + contact/AI panel).
  * Inbox and Terminals live outside this view (header popover / top Terminal tab).
+ * Envoy Harness coding sessions live under the Coding tab (not here).
  */
 export interface ChatViewProps {
   selectedContact: string | null;
   onSelectedContactChange: (id: string | null) => void;
   onOpenAssistant?: () => void;
   onOpenDiscover?: () => void;
-  /** Open top-level Terminal and start/show Pi. */
-  onOpenPi?: () => void;
-  /** Open the dedicated envoy-harness chat panel in the thread list. */
-  onOpenEnvoyHarness?: () => void;
   onOpenActivity?: () => void;
   onOpenChains?: () => void;
   onOpenSettingsAi?: () => void;
@@ -51,8 +47,6 @@ export function ChatView({
   onSelectedContactChange,
   onOpenAssistant,
   onOpenDiscover,
-  onOpenPi: onOpenPiProp,
-  onOpenEnvoyHarness: onOpenEnvoyHarnessProp,
   onOpenActivity,
   onOpenChains,
   onOpenSettingsAi,
@@ -69,19 +63,13 @@ export function ChatView({
     return unsub;
   }, []);
 
-  const openPiTerminal = () => {
-    onOpenPiProp?.();
-    openTerminal({ startPi: true });
-  };
-
-  const openEnvoyHarnessChat = () => {
-    onOpenEnvoyHarnessProp?.();
-  };
-
-  const selectedEhChatId = isEnvoyHarnessThreadKey(selectedContact ?? "")
-    ? parseEnvoyHarnessChatId(selectedContact ?? "")
-    : null;
-  const showEnvoyHarnessPanel = isEnvoyHarnessThreadKey(selectedContact ?? "");
+  // Legacy Chat EH thread keys → Coding tab (clear Chat selection).
+  useEffect(() => {
+    if (!selectedContact || !isEnvoyHarnessThreadKey(selectedContact)) return;
+    const chatId = parseEnvoyHarnessChatId(selectedContact) ?? undefined;
+    openCoding(chatId ? { chatId } : {});
+    onSelectedContactChange(null);
+  }, [selectedContact, onSelectedContactChange]);
 
   const selectedFamilyRoom = isChatRoomThreadKey(selectedContact ?? "")
     ? familyRooms.find((r) => r.roomId === parseChatRoomThreadKey(selectedContact!))
@@ -98,9 +86,13 @@ export function ChatView({
     if (selectedRoom || selectedFamilyRoom) return;
     if (!nodeService.listFamilyRooms) return;
     let cancelled = false;
-    void nodeService.listFamilyRooms().then((result) => {
-      if (!cancelled) setFamilyRooms(result.rooms ?? []);
-    });
+    void nodeService
+      .listFamilyRooms()
+      .then((result) => {
+        if (cancelled) return;
+        setFamilyRooms(result.rooms ?? []);
+      })
+      .catch(console.error);
     return () => {
       cancelled = true;
     };
@@ -115,13 +107,19 @@ export function ChatView({
   useEffect(() => {
     if (!nodeService.isConnected) return;
     let cancelled = false;
-    void nodeService.listChatRooms().then((rooms) => {
-      if (!cancelled) setChatRooms(rooms);
-    });
+    void nodeService
+      .listChatRooms()
+      .then((rooms) => {
+        if (!cancelled) setChatRooms(rooms);
+      })
+      .catch(console.error);
     if (nodeService.listFamilyRooms) {
-      void nodeService.listFamilyRooms().then((result) => {
-        if (!cancelled) setFamilyRooms(result.rooms ?? []);
-      });
+      void nodeService
+        .listFamilyRooms()
+        .then((result) => {
+          if (!cancelled) setFamilyRooms(result.rooms ?? []);
+        })
+        .catch(console.error);
     }
     const unsub = nodeService.on("chat:room-updated", (room) => {
       const kind = (room as { kind?: string }).kind;
@@ -162,6 +160,9 @@ export function ChatView({
     };
   }, [nodeService, nodeService.isConnected, onSelectedContactChange, selectedContact]);
 
+  const isEhRedirect =
+    Boolean(selectedContact) && isEnvoyHarnessThreadKey(selectedContact ?? "");
+
   return (
     <div className="chat-view">
       <OpenClawOfflineBanner />
@@ -171,8 +172,6 @@ export function ChatView({
           onSelectContact={onSelectedContactChange}
           onOpenAssistant={onOpenAssistant}
           onOpenDiscover={onOpenDiscover}
-          onOpenPi={() => openPiTerminal()}
-          onOpenEnvoyHarness={() => openEnvoyHarnessChat()}
         />
         <section className="chat-area">
           {(selectedContact === ENVOY_AI_THREAD_KEY || envoyAiInflight) && (
@@ -191,20 +190,9 @@ export function ChatView({
               </div>
             </div>
           )}
-          {showEnvoyHarnessPanel && (
-            <div className="assistant-chat-wrapper">
-              <div className="assistant-chat-panel">
-                <EnvoyHarnessPanel
-                  key={selectedContact ?? "envoy-harness"}
-                  chatId={selectedEhChatId}
-                  onBackToChats={() => onSelectedContactChange(null)}
-                />
-              </div>
-            </div>
-          )}
           {selectedContact &&
           selectedContact !== ENVOY_AI_THREAD_KEY &&
-          !isEnvoyHarnessThreadKey(selectedContact) ? (
+          !isEhRedirect ? (
             isChatRoomThreadKey(selectedContact) && selectedFamilyRoom ? (
               <FamilyGroupChatPanel
                 threadKey={selectedContact}
@@ -249,7 +237,7 @@ export function ChatView({
               />
             )
           ) : selectedContact === ENVOY_AI_THREAD_KEY ||
-            showEnvoyHarnessPanel ||
+            isEhRedirect ||
             envoyAiInflight ? null : (
             <div className="no-chat-selected">
               <div className="no-chat-selected-icon">
@@ -257,28 +245,18 @@ export function ChatView({
               </div>
               {bonds.length === 0 ? (
                 <>
-                  <h3>{t("chat.welcomeTitle")}</h3>
-                  <p>{t("chat.welcomeDesc")}</p>
-                  {onOpenDiscover && (
-                    <button type="button" className="primary" style={{ marginTop: "1rem" }} onClick={onOpenDiscover}>
+                  <h3>{t("chat.emptyTitle")}</h3>
+                  <p>{t("chat.emptyDesc")}</p>
+                  {onOpenDiscover ? (
+                    <button type="button" className="primary" onClick={onOpenDiscover}>
                       {t("chat.openDiscover")}
                     </button>
-                  )}
-                  {onOpenAssistant && nodeConfig?.modelProviders?.mode !== "disabled" && (
-                    <button type="button" className="secondary" style={{ marginTop: "0.5rem" }} onClick={onOpenAssistant}>
-                      {t("chat.openAssistant")}
-                    </button>
-                  )}
+                  ) : null}
                 </>
               ) : (
                 <>
-                  <h3>{t("chat.selectContact")}</h3>
-                  <p>{t("chat.selectContactDesc")}</p>
-                  {onOpenAssistant && nodeConfig?.modelProviders?.mode !== "disabled" && (
-                    <button type="button" className="primary" style={{ marginTop: "1rem" }} onClick={onOpenAssistant}>
-                      {t("chat.openAssistant")}
-                    </button>
-                  )}
+                  <h3>{t("chat.selectContactTitle", "Select a contact")}</h3>
+                  <p>{t("chat.selectContactDesc", "Choose someone from the list to start chatting.")}</p>
                 </>
               )}
             </div>

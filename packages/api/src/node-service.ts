@@ -246,6 +246,7 @@ import type {
   ExtAgentReachability,
   ExtAgentCommandCatalog,
   ProbeExtAgentParams,
+  AskExtAgentParams,
   GetExtAgentCommandCatalogParams,
   SetExtAgentSessionModelParams,
   SetExtAgentSessionModelResult,
@@ -2933,6 +2934,13 @@ export interface NodeService {
   probeExtAgent(params?: ProbeExtAgentParams): Promise<ExtAgentReachability>;
 
   /**
+   * Sync ask to an Ext Agent (Coding Tier B composer / Team jobs).
+   * Prefer sidecar `createBackend(agentId).ask` when the agent is a local
+   * Ext Agent sidecar; otherwise POST the configured `/message` URL.
+   */
+  askExtAgent(params: AskExtAgentParams): Promise<string>;
+
+  /**
    * Slash-command catalog for Ext Agent chat autocomplete (per active agent).
    * HomeClaw returns an empty command list with a limitation note.
    */
@@ -3146,7 +3154,10 @@ export interface NodeService {
   ): Promise<import("./envoy-local.js").EnvoyLocalEmbedStatus>;
 
   /** One-shot prompt — used by the sendToPi JSON-RPC method. Returns the text. */
-  sendToPi(text: string): Promise<string>;
+  sendToPi(
+    text: string,
+    opts?: { sessionId?: string },
+  ): Promise<string>;
   /** Dynamic AI bot — send a message to a character bot, get a reply. */
   sendToAiBot(botId: string, text: string): Promise<void>;
   /**
@@ -3212,6 +3223,7 @@ export interface NodeService {
   /** Load persisted chat transcript for a workspace (defaults to active chat). */
   getEnvoyHarnessChatHistory(
     chatId?: string,
+    sinceRevision?: number,
   ): Promise<import("./eh-chat-history.js").EhChatHistory>;
 
   /** List open Envoy chat threads (sidebar). */
@@ -3223,7 +3235,70 @@ export interface NodeService {
   createEnvoyHarnessChat(opts: {
     cwd: string;
     title?: string;
+    /** When true, always create a new chat even if cwd already has one (schedules). */
+    forceNew?: boolean;
+    /**
+     * Create-time locked LLM (`provider:model` or bare name).
+     * Omitted / empty → inherit Settings → AI model for this workspace.
+     */
+    model?: string;
+    /** Create-time locked OpenAI/Anthropic-compatible endpoint. */
+    endpoint?: string;
+    /** Create-time locked API key for this workspace. */
+    apiKey?: string;
   }): Promise<import("./eh-chat-workspace.js").EhChatWorkspaceSummary>;
+
+  /**
+   * Phase 68-C2 — build a mesh peer-review invite for an EH Coding workspace.
+   * Returns `messageText` for Social to `sendChat(peerOwnerId, messageText)`.
+   * Does not send the chat message itself.
+   */
+  createCodingReviewInvite(opts: {
+    chatId: string;
+    peerOwnerId: string;
+    turnId?: string;
+  }): Promise<{
+    reviewRef: import("./coding-review-ref.js").CodingReviewRef;
+    messageText: string;
+  }>;
+
+  /**
+   * Phase 68-C6 — Coding heartbeats: cron wakes an existing workspace.
+   * Not Schedules (new workspace each run) and not Team jobs / TriggerStore.
+   */
+  listCodingHeartbeats(): Promise<
+    import("./coding-heartbeat.js").CodingHeartbeat[]
+  >;
+  createCodingHeartbeat(
+    input: import("./coding-heartbeat.js").CreateCodingHeartbeatInput,
+  ): Promise<import("./coding-heartbeat.js").CodingHeartbeat>;
+  updateCodingHeartbeat(
+    input: import("./coding-heartbeat.js").UpdateCodingHeartbeatInput,
+  ): Promise<import("./coding-heartbeat.js").CodingHeartbeat>;
+  deleteCodingHeartbeat(id: string): Promise<{ deleted: boolean }>;
+  /** Force-fire for test / UI (still skips if turn busy / already firing). */
+  runCodingHeartbeatNow(
+    id: string,
+  ): Promise<import("./coding-heartbeat.js").CodingHeartbeat>;
+
+  /**
+   * Phase 68-C7 — Coding schedules: cron creates a **new** workspace then
+   * runs the prompt once. Not heartbeats / Team jobs / TriggerStore.
+   */
+  listCodingSchedules(): Promise<
+    import("./coding-schedule.js").CodingSchedule[]
+  >;
+  createCodingSchedule(
+    input: import("./coding-schedule.js").CreateCodingScheduleInput,
+  ): Promise<import("./coding-schedule.js").CodingSchedule>;
+  updateCodingSchedule(
+    input: import("./coding-schedule.js").UpdateCodingScheduleInput,
+  ): Promise<import("./coding-schedule.js").CodingSchedule>;
+  deleteCodingSchedule(id: string): Promise<{ deleted: boolean }>;
+  /** Force-fire for test / UI (still skips if previous fire busy / already firing). */
+  runCodingScheduleNow(
+    id: string,
+  ): Promise<import("./coding-schedule.js").CodingSchedule>;
 
   /** Activate a chat thread and load its transcript. */
   openEnvoyHarnessChat(

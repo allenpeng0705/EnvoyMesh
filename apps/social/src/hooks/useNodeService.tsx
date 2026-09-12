@@ -389,6 +389,10 @@ export interface NodeServiceClient {
   probeExtAgent(
     params?: import("@envoymesh/api").ProbeExtAgentParams,
   ): Promise<import("@envoymesh/api").ExtAgentReachability>;
+  /** Sync ask for Coding Tier B / harness composer. */
+  askExtAgent(
+    params: import("@envoymesh/api").AskExtAgentParams,
+  ): Promise<string>;
   /** Slash catalog for Ext Agent chat autocomplete. */
   getExtAgentCommandCatalog(
     params?: import("@envoymesh/api").GetExtAgentCommandCatalogParams,
@@ -489,7 +493,7 @@ export interface NodeServiceClient {
   >;
   updateEnvoyLocalEngine(): Promise<import("@envoymesh/api").EnvoyLocalStatus>;
   /** One-shot prompt — collects streamed text into a single response. */
-  sendToPi(text: string): Promise<string>;
+  sendToPi(text: string, opts?: { sessionId?: string }): Promise<string>;
   // U4 — dedicated Envoy Harness UI surface.
   /** envoy-harness runtime status (ready/model/error + peer cluster counts). */
   getEnvoyHarnessStatus(): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
@@ -509,6 +513,7 @@ export interface NodeServiceClient {
   ): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
   getEnvoyHarnessChatHistory(
     chatId?: string,
+    sinceRevision?: number,
   ): Promise<import("@envoymesh/api").EhChatHistory>;
   listEnvoyHarnessChats(): Promise<
     import("@envoymesh/api").EhChatWorkspaceSummary[]
@@ -516,7 +521,44 @@ export interface NodeServiceClient {
   createEnvoyHarnessChat(opts: {
     cwd: string;
     title?: string;
+    forceNew?: boolean;
+    model?: string;
+    endpoint?: string;
+    apiKey?: string;
   }): Promise<import("@envoymesh/api").EhChatWorkspaceSummary>;
+  /**
+   * Phase 68-C2 — peer-review invite. Social must sendChat(messageText) after.
+   */
+  createCodingReviewInvite(opts: {
+    chatId: string;
+    peerOwnerId: string;
+    turnId?: string;
+  }): Promise<{
+    reviewRef: import("@envoymesh/api").CodingReviewRef;
+    messageText: string;
+  }>;
+  listCodingHeartbeats(): Promise<import("@envoymesh/api").CodingHeartbeat[]>;
+  createCodingHeartbeat(
+    input: import("@envoymesh/api").CreateCodingHeartbeatInput,
+  ): Promise<import("@envoymesh/api").CodingHeartbeat>;
+  updateCodingHeartbeat(
+    input: import("@envoymesh/api").UpdateCodingHeartbeatInput,
+  ): Promise<import("@envoymesh/api").CodingHeartbeat>;
+  deleteCodingHeartbeat(id: string): Promise<{ deleted: boolean }>;
+  runCodingHeartbeatNow(
+    id: string,
+  ): Promise<import("@envoymesh/api").CodingHeartbeat>;
+  listCodingSchedules(): Promise<import("@envoymesh/api").CodingSchedule[]>;
+  createCodingSchedule(
+    input: import("@envoymesh/api").CreateCodingScheduleInput,
+  ): Promise<import("@envoymesh/api").CodingSchedule>;
+  updateCodingSchedule(
+    input: import("@envoymesh/api").UpdateCodingScheduleInput,
+  ): Promise<import("@envoymesh/api").CodingSchedule>;
+  deleteCodingSchedule(id: string): Promise<{ deleted: boolean }>;
+  runCodingScheduleNow(
+    id: string,
+  ): Promise<import("@envoymesh/api").CodingSchedule>;
   openEnvoyHarnessChat(
     chatId: string,
   ): Promise<import("@envoymesh/api").EhChatHistory>;
@@ -1615,6 +1657,13 @@ function createWsNodeServiceClient(
         { timeoutMs: 5_000 },
       ) as Promise<import("@envoymesh/api").ExtAgentReachability>;
     },
+    async askExtAgent(params: import("@envoymesh/api").AskExtAgentParams) {
+      return wsClient.rpc(
+        "askExtAgent",
+        params as Record<string, unknown>,
+        { timeoutMs: 300_000 },
+      ) as Promise<string>;
+    },
     async getExtAgentCommandCatalog(
       params?: import("@envoymesh/api").GetExtAgentCommandCatalogParams,
     ) {
@@ -1900,10 +1949,17 @@ function createWsNodeServiceClient(
         import("@envoymesh/api").EnvoyLocalStatus
       >;
     },
-    async sendToPi(text: string) {
+    async sendToPi(text: string, opts?: { sessionId?: string }) {
       // One Pi turn = LLM round-trip + any tool calls. Match the terminal
       // assist budget (120s) since a coding task can be long-running.
-      return wsClient.rpc("sendToPi", { text }, { timeoutMs: 120_000 }) as Promise<string>;
+      return wsClient.rpc(
+        "sendToPi",
+        {
+          text,
+          ...(opts?.sessionId ? { sessionId: opts.sessionId } : {}),
+        },
+        { timeoutMs: 120_000 },
+      ) as Promise<string>;
     },
     async getEnvoyHarnessStatus() {
       return wsClient.rpc("getEnvoyHarnessStatus") as Promise<
@@ -1947,10 +2003,13 @@ function createWsNodeServiceClient(
         { timeoutMs: 30_000 },
       ) as Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
     },
-    async getEnvoyHarnessChatHistory(chatId?: string) {
+    async getEnvoyHarnessChatHistory(chatId?: string, sinceRevision?: number) {
       return wsClient.rpc(
         "getEnvoyHarnessChatHistory",
-        chatId ? { chatId } : {},
+        {
+          ...(chatId ? { chatId } : {}),
+          ...(typeof sinceRevision === "number" ? { sinceRevision } : {}),
+        },
         { timeoutMs: 30_000 },
       ) as Promise<import("@envoymesh/api").EhChatHistory>;
     },
@@ -1959,10 +2018,95 @@ function createWsNodeServiceClient(
         import("@envoymesh/api").EhChatWorkspaceSummary[]
       >;
     },
-    async createEnvoyHarnessChat(opts: { cwd: string; title?: string }) {
+    async createEnvoyHarnessChat(opts: {
+      cwd: string;
+      title?: string;
+      forceNew?: boolean;
+      model?: string;
+      endpoint?: string;
+      apiKey?: string;
+    }) {
       return wsClient.rpc("createEnvoyHarnessChat", opts, { timeoutMs: 30_000 }) as Promise<
         import("@envoymesh/api").EhChatWorkspaceSummary
       >;
+    },
+    async createCodingReviewInvite(opts: {
+      chatId: string;
+      peerOwnerId: string;
+      turnId?: string;
+    }) {
+      return wsClient.rpc("createCodingReviewInvite", opts, {
+        timeoutMs: 15_000,
+      }) as Promise<{
+        reviewRef: import("@envoymesh/api").CodingReviewRef;
+        messageText: string;
+      }>;
+    },
+    async listCodingHeartbeats() {
+      return wsClient.rpc("listCodingHeartbeats", {}, {
+        timeoutMs: 15_000,
+      }) as Promise<import("@envoymesh/api").CodingHeartbeat[]>;
+    },
+    async createCodingHeartbeat(
+      input: import("@envoymesh/api").CreateCodingHeartbeatInput,
+    ) {
+      return wsClient.rpc("createCodingHeartbeat", input, {
+        timeoutMs: 15_000,
+      }) as Promise<import("@envoymesh/api").CodingHeartbeat>;
+    },
+    async updateCodingHeartbeat(
+      input: import("@envoymesh/api").UpdateCodingHeartbeatInput,
+    ) {
+      return wsClient.rpc("updateCodingHeartbeat", input, {
+        timeoutMs: 15_000,
+      }) as Promise<import("@envoymesh/api").CodingHeartbeat>;
+    },
+    async deleteCodingHeartbeat(id: string) {
+      return wsClient.rpc(
+        "deleteCodingHeartbeat",
+        { id },
+        { timeoutMs: 15_000 },
+      ) as Promise<{ deleted: boolean }>;
+    },
+    async runCodingHeartbeatNow(id: string) {
+      return wsClient.rpc(
+        "runCodingHeartbeatNow",
+        { id },
+        { timeoutMs: 120_000 },
+      ) as Promise<import("@envoymesh/api").CodingHeartbeat>;
+    },
+    async listCodingSchedules() {
+      return wsClient.rpc("listCodingSchedules", {}, {
+        timeoutMs: 15_000,
+      }) as Promise<import("@envoymesh/api").CodingSchedule[]>;
+    },
+    async createCodingSchedule(
+      input: import("@envoymesh/api").CreateCodingScheduleInput,
+    ) {
+      return wsClient.rpc("createCodingSchedule", input, {
+        timeoutMs: 15_000,
+      }) as Promise<import("@envoymesh/api").CodingSchedule>;
+    },
+    async updateCodingSchedule(
+      input: import("@envoymesh/api").UpdateCodingScheduleInput,
+    ) {
+      return wsClient.rpc("updateCodingSchedule", input, {
+        timeoutMs: 15_000,
+      }) as Promise<import("@envoymesh/api").CodingSchedule>;
+    },
+    async deleteCodingSchedule(id: string) {
+      return wsClient.rpc(
+        "deleteCodingSchedule",
+        { id },
+        { timeoutMs: 15_000 },
+      ) as Promise<{ deleted: boolean }>;
+    },
+    async runCodingScheduleNow(id: string) {
+      return wsClient.rpc(
+        "runCodingScheduleNow",
+        { id },
+        { timeoutMs: 120_000 },
+      ) as Promise<import("@envoymesh/api").CodingSchedule>;
     },
     async openEnvoyHarnessChat(chatId: string) {
       return wsClient.rpc("openEnvoyHarnessChat", { chatId }, { timeoutMs: 30_000 }) as Promise<

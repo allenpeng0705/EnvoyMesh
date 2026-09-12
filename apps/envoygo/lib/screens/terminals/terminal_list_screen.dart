@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_thread.dart';
+import '../../navigation/owner_tabs.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../widgets/pair_required_panel.dart';
@@ -13,7 +14,9 @@ import '../../widgets/thread_tile.dart';
 import 'terminal_create_actions.dart';
 import 'terminal_detail_screen.dart';
 
-/// Owner Terminal tab — session list, empty hints, New Pi / New Terminal FAB.
+/// Owner Terminal tab — shell sessions only (Phase 68-C1b.3).
+///
+/// Pi / Envoy Harness live under the Coding tab.
 class TerminalHomeScreen extends ConsumerWidget {
   const TerminalHomeScreen({super.key});
 
@@ -28,15 +31,31 @@ class TerminalHomeScreen extends ConsumerWidget {
     return name;
   }
 
+  static bool _isCodingRole(String? role) =>
+      role == 'pi' || role == 'envoy-harness';
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final hasHome = ref.watch(nodeProvider).activeNode != null;
+    final sessionsById = {
+      for (final s in ref.watch(terminalProvider).sessions) s.id: s,
+    };
     final threads = ref
         .watch(chatProvider)
         .threads
-        .where((t) =>
-            t.type == ChatThreadType.terminal || t.type == ChatThreadType.pi)
+        .where((t) {
+          if (t.type == ChatThreadType.pi) return false;
+          if (t.type != ChatThreadType.terminal) return false;
+          final parts = t.id.split(':term:');
+          final sessionId = parts.length > 1 ? parts[1] : '';
+          final session = sessionsById[sessionId];
+          if (session != null) return !_isCodingRole(session.role);
+          // No session metadata: hide EH/π-titled leftovers.
+          final name = t.displayName;
+          if (name.startsWith('EH ') || name.startsWith('π')) return false;
+          return true;
+        })
         .toList();
 
     return Scaffold(
@@ -47,8 +66,6 @@ class TerminalHomeScreen extends ConsumerWidget {
       body: threads.isEmpty
           ? _EmptyTerminals(
               hasHome: hasHome,
-              onNewPi: () => showCreatePiDialog(context, ref),
-              onNewEnvoy: () => showCreateEnvoyDialog(context, ref),
               onNewTerminal: () => showCreateTerminalDialog(context, ref),
             )
           : ListView.builder(
@@ -60,17 +77,16 @@ class TerminalHomeScreen extends ConsumerWidget {
                   onTap: () {
                     final parts = thread.id.split(':term:');
                     final sessionId = parts.length > 1 ? parts[1] : '';
-                    final session = ref
-                        .read(terminalProvider)
-                        .sessions
-                        .where((s) => s.id == sessionId)
-                        .firstOrNull;
-                    final role = session?.role ??
-                        (thread.displayName.startsWith('EH ')
-                            ? 'envoy-harness'
-                            : thread.displayName.startsWith('π')
-                                ? 'pi'
-                                : null);
+                    final session = sessionsById[sessionId];
+                    final role = session?.role;
+                    if (_isCodingRole(role) ||
+                        thread.displayName.startsWith('EH ') ||
+                        thread.displayName.startsWith('π')) {
+                      ref
+                          .read(chatProvider.notifier)
+                          .selectTab(OwnerTabs.coding);
+                      return;
+                    }
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => TerminalDetailScreen(
@@ -87,68 +103,11 @@ class TerminalHomeScreen extends ConsumerWidget {
       floatingActionButton: hasHome
           ? FloatingActionButton(
               heroTag: 'terminal-compose',
-              tooltip: l10n.chatsFabNew,
-              onPressed: () => _showNewActions(context, ref),
+              tooltip: l10n.chatsNewTerminal,
+              onPressed: () => showCreateTerminalDialog(context, ref),
               child: const Icon(Icons.add),
             )
           : null,
-    );
-  }
-
-  void _showNewActions(BuildContext context, WidgetRef ref) {
-    if (ref.read(nodeProvider).activeNode == null) return;
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        final l10n = AppLocalizations.of(sheetContext);
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.integration_instructions_outlined),
-                title: Text(l10n.chatsNewEnvoy),
-                subtitle: Text(l10n.chatsNewEnvoyHint),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  showCreateEnvoyDialog(context, ref);
-                },
-              ),
-              ListTile(
-                leading: const SizedBox(
-                  width: 24,
-                  child: Center(
-                    child: Text(
-                      'π',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                title: Text(l10n.chatsNewPi),
-                subtitle: Text(l10n.chatsNewPiHint),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  showCreatePiDialog(context, ref);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.terminal),
-                title: Text(l10n.chatsNewTerminal),
-                subtitle: Text(l10n.chatsNewTerminalHint),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  showCreateTerminalDialog(context, ref);
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
     );
   }
 }
@@ -156,14 +115,10 @@ class TerminalHomeScreen extends ConsumerWidget {
 class _EmptyTerminals extends StatelessWidget {
   const _EmptyTerminals({
     required this.hasHome,
-    required this.onNewPi,
-    required this.onNewEnvoy,
     required this.onNewTerminal,
   });
 
   final bool hasHome;
-  final VoidCallback onNewPi;
-  final VoidCallback onNewEnvoy;
   final VoidCallback onNewTerminal;
 
   @override
@@ -196,31 +151,12 @@ class _EmptyTerminals extends StatelessWidget {
                   ),
               textAlign: TextAlign.center,
             ),
-            if (hasHome) ...[
-              const SizedBox(height: 24),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                alignment: WrapAlignment.center,
-                children: [
-                  FilledButton.tonalIcon(
-                    onPressed: onNewEnvoy,
-                    icon: const Icon(Icons.integration_instructions_outlined),
-                    label: Text(l10n.chatsNewEnvoy),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: onNewPi,
-                    icon: const Text('π', style: TextStyle(fontWeight: FontWeight.w700)),
-                    label: Text(l10n.chatsNewPi),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: onNewTerminal,
-                    icon: const Icon(Icons.terminal),
-                    label: Text(l10n.chatsNewTerminal),
-                  ),
-                ],
-              ),
-            ],
+            const SizedBox(height: 24),
+            FilledButton.tonalIcon(
+              onPressed: onNewTerminal,
+              icon: const Icon(Icons.terminal),
+              label: Text(l10n.chatsNewTerminal),
+            ),
           ],
         ),
       ),

@@ -12,12 +12,15 @@
  * this file is the EnvoyMesh-shaped wrapper that decides WHEN to spawn.
  */
 
+import { randomUUID } from "node:crypto"
 import { PiRuntime, discoverPiCli, buildPiSpawnConfig } from "./pi-runtime.js"
 import { piRequestToProposal, auditPiTool } from "./pi-tool-bridge.js"
 import { resolve } from "node:path"
 import type { LocalTaskStore } from "@envoymesh/local-store"
 import type {
+  EhTimelineUpdate,
   ModelProviderConfig,
+  PiEvent,
   PiExtensionUiRequest,
   PiPromptResult,
   PiProposalEvent,
@@ -25,6 +28,13 @@ import type {
   PiSettings,
   PiStatus,
   PiToolProposal,
+} from "@envoymesh/api"
+import {
+  createPiTimelineTurnAcc,
+  piEventToTimelineUpdates,
+  piTimelineChatId,
+  piUserPromptTimelineItem,
+  piAgentStateUpdate,
 } from "@envoymesh/api"
 
 // ---------------------------------------------------------------------------
@@ -123,6 +133,11 @@ export interface PiRuntimeDeps {
   onProposal?: (proposal: PiToolProposal, raw: PiExtensionUiRequest) => void
   /** Audit store — when present, pi.tool.* events are appended. */
   taskStore?: LocalTaskStore | null
+  /**
+   * Phase 68-C2 — emit `eh:timeline` updates for Pi Coding Chat.
+   * Host stamps revisions (e.g. NodeServiceImpl._emitEhTimelineUpdate).
+   */
+  emitTimeline?: (update: EhTimelineUpdate) => void
 }
 
 export function buildPiRuntimeDeps(host: any): PiRuntimeDeps {
@@ -130,6 +145,11 @@ export function buildPiRuntimeDeps(host: any): PiRuntimeDeps {
     loadConfig: () => host._configStore.load(),
     onProposal: (proposal, raw) => host.emit("pi:proposal", { proposal } satisfies PiProposalEvent),
     taskStore: host._taskStore ?? null,
+    emitTimeline: (update) => {
+      if (typeof host._emitEhTimelineUpdate === "function") {
+        host._emitEhTimelineUpdate(update)
+      }
+    },
     // Hint for monorepo / bundle layouts only. Do NOT return TAURI_RESOURCE_DIR
     // here — discoverPiCli already reads that env (and ENVOYMESH_PI_CLI) and
     // treating Resources/ as a repo root adds dead paths like Resources/resources/pi.
@@ -381,13 +401,112 @@ export async function ensurePiReadyViaRuntime(
 // ask: one-shot prompt (used by sendToPi JSON-RPC method)
 // ---------------------------------------------------------------------------
 
+export type AskPiViaRuntimeOpts = {
+  /**
+   * Coding terminal session id — when set with `emitTimeline`, bridges Pi
+   * JSONL events onto `eh:timeline` under `__pi__:${sessionId}`.
+   */
+  sessionId?: string
+}
+
 export async function askPiViaRuntime(
   state: PiRuntimeStateMutable,
   deps: PiRuntimeDeps,
   prompt: string,
+  opts?: AskPiViaRuntimeOpts,
 ): Promise<PiPromptResult> {
   const runtime = await ensurePiReadyViaRuntime(state, deps)
-  return runtime.prompt(prompt)
+  const sessionId = opts?.sessionId?.trim()
+  const emit = deps.emitTimeline
+  if (!sessionId || !emit) {
+    return runtime.prompt(prompt)
+  }
+
+  const chatId = piTimelineChatId(sessionId)
+  const turnId = randomUUID()
+  const acc = createPiTimelineTurnAcc(chatId, turnId)
+  const startedAt = new Date().toISOString()
+
+  emit({ type: "upsert", item: piUserPromptTimelineItem(acc, prompt, startedAt) })
+  emit(piAgentStateUpdate(chatId, "submitting", "Submitting…", { turnId, updatedAt: startedAt }))
+
+  const onEvent = (event: PiEvent) => {
+    const receivedAt = new Date().toISOString()
+    for (const update of piEventToTimelineUpdates(event, acc, receivedAt)) {
+      emit(update)
+    }
+  }
+  runtime.on("event", onEvent)
+  try {
+    const result = await runtime.prompt(prompt)
+    const doneAt = new Date().toISOString()
+    // If the settle path already emitted completion, these are idempotent upserts.
+    if (result.cancelled) {
+      emit({
+        type: "upsert",
+        item: {
+          id: `turn:${turnId}:completion`,
+          chatId,
+          turnId,
+          type: "completion",
+          status: "cancelled",
+          summary: "Turn cancelled",
+          createdAt: doneAt,
+        },
+      })
+      emit(piAgentStateUpdate(chatId, "cancelled", "Cancelled", { turnId, updatedAt: doneAt }))
+    } else if (result.text?.trim() && !acc.streamingText.trim()) {
+      // Prompt collected text without streaming events (some providers).
+      emit({
+        type: "upsert",
+        item: {
+          id: `turn:${turnId}:assistant`,
+          chatId,
+          turnId,
+          type: "message",
+          role: "assistant",
+          text: result.text.trim(),
+          streaming: false,
+          createdAt: doneAt,
+          updatedAt: doneAt,
+        },
+      })
+      emit({
+        type: "upsert",
+        item: {
+          id: `turn:${turnId}:completion`,
+          chatId,
+          turnId,
+          type: "completion",
+          status: "completed",
+          summary: "Completed",
+          createdAt: doneAt,
+        },
+      })
+      emit(piAgentStateUpdate(chatId, "completed", "Completed", { turnId, updatedAt: doneAt }))
+    }
+    return result
+  } catch (err) {
+    const failedAt = new Date().toISOString()
+    const message = err instanceof Error ? err.message : String(err)
+    emit({
+      type: "upsert",
+      item: {
+        id: `turn:${turnId}:error`,
+        chatId,
+        turnId,
+        type: "error",
+        category: "host",
+        message,
+        recoverable: true,
+        createdAt: failedAt,
+      },
+    })
+    emit(piAgentStateUpdate(chatId, "failed", "Failed", { turnId, updatedAt: failedAt }))
+    throw err
+  } finally {
+    runtime.off("event", onEvent)
+  }
 }
 
 /**

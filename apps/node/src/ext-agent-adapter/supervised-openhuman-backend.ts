@@ -154,9 +154,13 @@ export class OpenHumanSupervisedBackend implements ExtAgentBackend {
   // ExtAgentBackend
   // -------------------------------------------------------------------------
 
-  async ask(text: string, sessionKey: string): Promise<string> {
+  async ask(
+    text: string,
+    sessionKey: string,
+    opts?: import("./types.js").ExtAgentAskOpts,
+  ): Promise<string> {
     if (!this.supervisor) {
-      return this.inner.ask(text, sessionKey);
+      return this.inner.ask(text, sessionKey, opts);
     }
 
     // Probe-first before replaying a cached spawn failure — OpenHuman.app
@@ -185,7 +189,7 @@ export class OpenHumanSupervisedBackend implements ExtAgentBackend {
         throw this.lastStartError;
       }
     }
-    return this.inner.ask(text, sessionKey);
+    return this.inner.ask(text, sessionKey, opts);
   }
 
   /**

@@ -265,6 +265,7 @@ export type RpcMethods =
    | "getOpenClawStatus"
    | "restartOpenClaw"
    | "probeExtAgent"
+   | "askExtAgent"
    | "getExtAgentCommandCatalog"
    | "setExtAgentSessionModel"
    | "getHomeFsInfo"
@@ -326,6 +327,17 @@ export type RpcMethods =
     | "getEnvoyHarnessChatHistory"
     | "listEnvoyHarnessChats"
     | "createEnvoyHarnessChat"
+    | "createCodingReviewInvite"
+    | "listCodingHeartbeats"
+    | "createCodingHeartbeat"
+    | "updateCodingHeartbeat"
+    | "deleteCodingHeartbeat"
+    | "runCodingHeartbeatNow"
+    | "listCodingSchedules"
+    | "createCodingSchedule"
+    | "updateCodingSchedule"
+    | "deleteCodingSchedule"
+    | "runCodingScheduleNow"
     | "openEnvoyHarnessChat"
     | "removeEnvoyHarnessChat"
     | "deleteEnvoyHarnessChatTurn"
@@ -1669,6 +1681,19 @@ export interface GetOpenClawStatusResult {
 export interface ProbeExtAgentParams {
   /** When omitted, probes the currently active Ext Agent. */
   agentId?: string;
+}
+
+/** Sync ask to an Ext Agent (Coding Tier B / Team jobs). */
+export interface AskExtAgentParams {
+  prompt: string;
+  /** When omitted, uses the currently active Ext Agent. */
+  agentId?: string;
+  /**
+   * When set, streaming backends (codex / claudecode) emit assistant
+   * token upserts on `eh:timeline` under `__ext__:${streamSessionId}`.
+   * One-shot backends ignore streaming and still return a sync reply.
+   */
+  streamSessionId?: string;
 }
 
 export interface GetPairingPayloadParams {}

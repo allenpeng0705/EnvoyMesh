@@ -109,6 +109,13 @@
   --color-info: #2563eb;
   --color-info-subtle: #eff6ff;
 
+  /*
+   * List rows: selected = soft canvas highlight; hover = slight step from that
+   * (not brand primary green).
+   */
+  --color-list-selected-bg: var(--color-bg);
+  --color-list-hover-bg: color-mix(in srgb, var(--color-bg) 72%, var(--color-surface-muted));
+
   /* Thread / message role accents */
   --color-role-human: #3b82f6;
   --color-role-agent: #7c3aed;

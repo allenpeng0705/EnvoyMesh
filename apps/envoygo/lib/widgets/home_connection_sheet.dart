@@ -137,6 +137,17 @@ class _HomeConnectionSheet extends ConsumerWidget {
                 const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: () {
+                  final node = active ?? paired.firstOrNull;
+                  if (node == null) return;
+                  Navigator.of(context).pop();
+                  _editDirectAddress(context, ref, node);
+                },
+                icon: const Icon(Icons.lan_outlined),
+                label: Text(l10n.mePublicAccess),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () {
                   Navigator.of(context).pop();
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -164,6 +175,77 @@ class _HomeConnectionSheet extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  void _editDirectAddress(
+    BuildContext context,
+    WidgetRef ref,
+    StoredNode node,
+  ) {
+    final l10n = AppLocalizations.of(context);
+    final hostController = TextEditingController(text: node.publicHost ?? '');
+    final portController = TextEditingController(text: '${node.publicPort}');
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.mePublicAccess),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: hostController,
+              decoration: InputDecoration(
+                labelText: l10n.mePublicIpLabel,
+                hintText: l10n.mePublicIpHint,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: portController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: l10n.mePort,
+                hintText: '3030',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              l10n.mePublicIpHelp,
+              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(l10n.commonCancel),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final host = hostController.text.trim();
+              final port = int.tryParse(portController.text.trim()) ?? 3030;
+              Navigator.of(ctx).pop();
+              await ref
+                  .read(nodeProvider.notifier)
+                  .updatePublicAccess(node.id, host, port);
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(l10n.mePublicAccessSaved)),
+              );
+            },
+            child: Text(l10n.commonSave),
+          ),
+        ],
+      ),
+    ).whenComplete(() {
+      hostController.dispose();
+      portController.dispose();
+    });
   }
 
   void _confirmUnpair(
