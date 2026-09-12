@@ -9,7 +9,7 @@
  * The full PiRuntime class (spawn, JSONL protocol, readiness) is integration-
  * tested separately (gated on RUN_PI_TESTS=1 since it needs the real Pi binary).
  */
-import { describe, it, expect } from "vitest"
+import { afterEach, describe, it, expect } from "vitest"
 import {
   buildPiSpawnConfig,
   discoverPiCli,
@@ -23,6 +23,8 @@ import {
 } from "@envoymesh/harness/pi-runtime"
 import type { ModelProviderConfig, PiModelOverride } from "@envoymesh/api"
 import { existsSync, readFileSync } from "node:fs"
+import { mkdtemp, rm } from "node:fs/promises"
+import { homedir, tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 
 describe("discoverPiCli", () => {
@@ -401,44 +403,124 @@ describe("withPiToolPath", () => {
     return env.PATH ?? env.Path
   }
 
-  it("preserves provider env and may add PATH for tool discovery", () => {
+  // These tests own `process.env.PATH` instead of inheriting the developer's.
+  //
+  // `withPiToolPath` prepends the tool dirs it can find that are **not already
+  // on the PATH**, and returns the input env untouched when there is nothing to
+  // add — which is correct and harmless, because `PiRuntime` spawns with
+  // `{ ...process.env, ...spawnEnv }` (`pi-runtime.ts`, "spread spawnConfig.env
+  // INTO process.env, not replace it"). The old assertions here assumed at
+  // least one tool dir was missing from PATH, so they passed on a machine with a
+  // partially-populated PATH and failed on one where PATH already had them all.
+  // The PATH is now controlled, which makes the expectations machine-independent
+  // and lets them cover both directions: dirs get prepended, and nothing is
+  // added twice.
+  const TOOL_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", join(homedir(), ".pi", "agent", "bin")]
+  const BASE_PATH = ["/usr/bin", "/bin"].join(delimiter)
+  const savedPath = process.env.PATH
+  const savedToolsDir = process.env.ENVOYMESH_PI_TOOLS_DIR
+  const savedNodeExe = process.env.ENVOYMESH_NODE_EXE
+  const savedResourceDir = process.env.TAURI_RESOURCE_DIR
+  const savedAppResourcesDir = process.env.TAURI_APP_RESOURCES_DIR
+
+  afterEach(() => {
+    const restore = (key: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    restore("PATH", savedPath)
+    restore("ENVOYMESH_PI_TOOLS_DIR", savedToolsDir)
+    restore("ENVOYMESH_NODE_EXE", savedNodeExe)
+    restore("TAURI_RESOURCE_DIR", savedResourceDir)
+    restore("TAURI_APP_RESOURCES_DIR", savedAppResourcesDir)
+  })
+
+  /** No bundled tools dir, no staged node exe → only the filesystem probes can add. */
+  function clearOptionalExtras() {
+    delete process.env.ENVOYMESH_PI_TOOLS_DIR
+    delete process.env.ENVOYMESH_NODE_EXE
+    delete process.env.TAURI_RESOURCE_DIR
+    delete process.env.TAURI_APP_RESOURCES_DIR
+    delete process.env.ENVOYMESH_PI_CLI
+  }
+
+  it("prepends every tool dir it finds, then the caller's PATH", () => {
+    clearOptionalExtras()
+    process.env.PATH = BASE_PATH
     const out = withPiToolPath({ OPENAI_API_KEY: "k" })
     expect(out.OPENAI_API_KEY).toBe("k")
-    if (existsSync("/opt/homebrew/bin") || existsSync("/usr/local/bin")) {
-      expect(pathFromEnv(out)).toBeTruthy()
-      expect(pathFromEnv(out)).toMatch(/homebrew|\/usr\/local\/bin/)
+
+    const parts = pathFromEnv(out)!.split(delimiter)
+    // Asserted only for dirs that exist on this machine, but asserted *whenever*
+    // they do — the old version skipped the whole test in that case.
+    for (const dir of TOOL_DIRS.filter((d) => existsSync(d))) {
+      expect(parts, `${dir} must be prepended`).toContain(dir)
     }
+    // Order matters: tool dirs first, the caller's PATH preserved at the end.
+    expect(parts.slice(-2)).toEqual(["/usr/bin", "/bin"])
   })
 
-  it("prefers ENVOYMESH_PI_TOOLS_DIR on PATH when set", () => {
-    const prev = process.env.ENVOYMESH_PI_TOOLS_DIR
-    const staged = join(
-      process.cwd(),
-      "apps/tauri/src-tauri/resources/pi/bin",
-    )
-    if (!existsSync(staged)) return
-    process.env.ENVOYMESH_PI_TOOLS_DIR = staged
+  it("returns the env unchanged when every tool dir is already on PATH", () => {
+    clearOptionalExtras()
+    const already = TOOL_DIRS.filter((d) => existsSync(d))
+    process.env.PATH = [...already, "/usr/bin", "/bin"].join(delimiter)
+    const input = { OPENAI_API_KEY: "k" }
+    // The pass-through is safe precisely because PiRuntime spreads this into
+    // process.env rather than replacing it.
+    expect(withPiToolPath(input)).toEqual(input)
+  })
+
+  it("prefers ENVOYMESH_PI_TOOLS_DIR first, and never adds it twice", async () => {
+    // A temp dir, so this test always runs: the old version returned early
+    // unless the Tauri sidecar happened to be fetched, i.e. it passed by doing
+    // nothing on most machines.
+    const toolsDir = await mkdtemp(join(tmpdir(), "pi-tools-"))
     try {
+      process.env.ENVOYMESH_PI_TOOLS_DIR = toolsDir
+      process.env.PATH = BASE_PATH
+
       const out = withPiToolPath({ FOO: "1" })
       expect(out.FOO).toBe("1")
-      expect(pathFromEnv(out)?.split(delimiter)[0]).toBe(staged)
+      expect(pathFromEnv(out)?.split(delimiter)[0]).toBe(toolsDir)
+
+      // Idempotence: with the tools dir already on PATH there is nothing to add,
+      // so the input comes back untouched — and the PATH the child actually gets
+      // (`PiRuntime` spreads the spawn env into `process.env`) still has it once.
+      process.env.PATH = pathFromEnv(out)!
+      const again = withPiToolPath({ FOO: "1" })
+      expect(again).toEqual({ FOO: "1" })
+      const childPath = { ...process.env, ...again }.PATH!
+      expect(childPath.split(delimiter).filter((p) => p === toolsDir)).toHaveLength(1)
     } finally {
-      if (prev === undefined) delete process.env.ENVOYMESH_PI_TOOLS_DIR
-      else process.env.ENVOYMESH_PI_TOOLS_DIR = prev
+      await rm(toolsDir, { recursive: true, force: true }).catch(() => undefined)
     }
   })
 
-  it("includes PATH on openai-compatible spawn config when brew dirs exist", () => {
+  it("carries the tool dirs on openai-compatible spawn config", async () => {
     const cfg: ModelProviderConfig = {
       mode: "openai-compatible",
       apiKey: "k",
       modelName: "gpt-4o-mini",
       endpoint: "https://api.openai.com/v1",
     }
-    const result = buildPiSpawnConfig(cfg)!
-    expect(result.env.OPENAI_API_KEY).toBe("k")
-    if (existsSync("/opt/homebrew/bin")) {
-      expect(pathFromEnv(result.env)).toContain("/opt/homebrew/bin")
+    const toolsDir = await mkdtemp(join(tmpdir(), "pi-tools-cfg-"))
+    try {
+      process.env.ENVOYMESH_PI_TOOLS_DIR = toolsDir
+      process.env.PATH = BASE_PATH
+
+      const result = buildPiSpawnConfig(cfg)!
+      expect(result.env.OPENAI_API_KEY).toBe("k")
+
+      const parts = pathFromEnv(result.env)!.split(delimiter)
+      // Deterministic on every machine: the staged dir is always prepended.
+      expect(parts[0]).toBe(toolsDir)
+      for (const dir of TOOL_DIRS.filter((d) => existsSync(d))) {
+        expect(parts, `${dir} must be on the spawn PATH`).toContain(dir)
+      }
+      // The API key must never leak into the caller's process env (Phase 49).
+      expect(process.env.OPENAI_API_KEY).toBeUndefined()
+    } finally {
+      await rm(toolsDir, { recursive: true, force: true }).catch(() => undefined)
     }
   })
 })

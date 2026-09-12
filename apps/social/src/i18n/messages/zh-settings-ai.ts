@@ -186,7 +186,7 @@ export const zhAiSettingsMessages = {
     selectAgent: "外部代理",
     webhookUrl: "Webhook URL",
     listenPort: "监听端口",
-    projectFolder: "外部编码代理的默认文件夹",
+    projectFolder: "项目文件夹",
     projectFolderHint:
       "未设置编程项目时的回退工作目录。新建编程工作区会使用各项目自己的文件夹。",
     projectFolderTitle: "选择默认文件夹",

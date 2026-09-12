@@ -36,7 +36,11 @@ export const aiSettingsMessages = {
     selectAgent: "External agent",
     webhookUrl: "Webhook URL",
     listenPort: "Listen Port",
-    projectFolder: "Default folder for external coding agents",
+    // A *label*, not a sentence: this key is also the accessible name of the
+    // picker input and of the chat-header link (WCAG 2.5.3, label in name). The
+    // explanation lives in `projectFolderHint` just below, and the other five
+    // locales already carry the short form.
+    projectFolder: "Project folder",
     projectFolderHint:
       "Fallback working folder on this home node when no Coding project is set. New Coding workspaces use each project’s own folder.",
     projectFolderTitle: "Choose default folder",

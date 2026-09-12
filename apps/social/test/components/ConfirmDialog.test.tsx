@@ -58,15 +58,32 @@ describe("ConfirmDialog", () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it("calls onCancel when the overlay is clicked", async () => {
-    const onConfirm = vi.fn();
-    const onCancel = vi.fn();
-    renderWithI18n(
-      <ConfirmDialog title="Overlay test" onConfirm={onConfirm} onCancel={onCancel} />,
-    );
-    const overlay = screen.getByRole("presentation");
-    fireEvent.click(overlay);
-    expect(onCancel).toHaveBeenCalledTimes(1);
+  it("calls onCancel when the overlay is clicked, but not within the opening-click guard", async () => {
+    // `ConfirmDialog` ignores an overlay click for `OVERLAY_DISMISS_GUARD_MS`
+    // (300 ms) after opening, so the click that *opened* the dialog cannot also
+    // dismiss it. This test used to click immediately and expect a cancel, which
+    // is the behaviour the guard was added to prevent — it had been failing ever
+    // since. Both halves are asserted now: the guard holds, and a deliberate
+    // later click still dismisses.
+    vi.useFakeTimers();
+    try {
+      const onConfirm = vi.fn();
+      const onCancel = vi.fn();
+      renderWithI18n(
+        <ConfirmDialog title="Overlay test" onConfirm={onConfirm} onCancel={onCancel} />,
+      );
+      const overlay = screen.getByRole("presentation");
+
+      fireEvent.click(overlay);
+      expect(onCancel).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(400); // past the guard
+      fireEvent.click(overlay);
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onConfirm).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("uses custom confirmLabel when provided", async () => {
