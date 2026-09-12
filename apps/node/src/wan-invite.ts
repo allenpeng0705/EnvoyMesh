@@ -6,7 +6,7 @@ import {
   isBootstrapRelayMultiaddr,
   wanJoinInviteSeedAddrs,
   type WanJoinInviteV1,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 export type { WanJoinInviteV1 };
 export { encodeWanJoinInviteV1, decodeWanJoinInviteV1 };

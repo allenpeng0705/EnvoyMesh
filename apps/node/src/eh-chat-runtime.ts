@@ -2,7 +2,7 @@
  * Per-chat Envoy Harness runtime: ACP hosts + in-flight turns (parallel across projects).
  */
 
-import type { EhTurnCompleteEvent } from "@envoymesh/api";
+import type { EhTurnCompleteEvent } from "@envoymesh/api/core";
 
 import type { EnvoyHarnessPersistentAcpHost } from "./agent-runtime-envoy/persistent-acp-host.js";
 

@@ -18,12 +18,16 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { spawn } from "node:child_process"
+// From `@envoymesh/api/core` — the package's declared reusable half. These four
+// symbols are declared in `ext-agent.ts`, which the manifest calls `reusable`, so
+// they are re-exported by `core`; importing the api *root* would taint this file
+// (and, through `backends.ts`, the rest of the package).
 import {
   defaultExtAgentStartHint,
   getExtAgentInstallGuide,
   type ExtAgentReachability,
   type InstallState,
-} from "@envoymesh/api"
+} from "@envoymesh/api/core"
 import { createBackend, openHumanHttpBase } from "./backends.js"
 import { isExtAgentBinaryAvailable, resolveExtAgentBinary } from "./resolve-ext-agent-binary.js"
 import { isExtAgentSidecarKind } from "./types.js"

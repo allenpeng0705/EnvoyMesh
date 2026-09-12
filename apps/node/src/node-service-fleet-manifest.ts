@@ -32,10 +32,10 @@ import type {
   ImportFleetManifestResult,
   ImportFleetManifestSkipped,
   RevokeFleetManifestResult,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import type { LocalTrustStore, LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import type { BondLevel } from "@envoymesh/bonds";
-import type { NodeProfile } from "@envoymesh/api";
+import type { NodeProfile } from "@envoymesh/api/core";
 import { createAuditEvent } from "@envoymesh/local-store";
 import { anLog, anWarn, shortId } from "./agent-network-debug.js";
 const MAX_FLEET_MEMBERS = 1024;

@@ -1338,31 +1338,17 @@ export interface ContactAiPreferences {
   priority: "high" | "low";
 }
 
-/** Model provider mode: mock (no external calls), ollama (local), litellm (local/cloud), openai-compatible (OpenAI Chat Completions API format), anthropic-compatible (Anthropic Messages API format), or disabled. */
-export type ModelProviderMode = "mock" | "ollama" | "litellm" | "openai-compatible" | "anthropic-compatible" | "disabled";
-
-export interface ModelProviderConfig {
-  /** Provider mode. When "disabled", no model calls are made. Default: "mock". */
-  mode: ModelProviderMode;
-  /**
-   * Optional curated preset id (e.g. "minimax-cn", "anthropic").
-   * UI/OpenClaw metadata — transport still uses {@link mode}.
-   */
-  presetId?: string;
-  /** Base URL for OpenAI-compatible `/chat/completions` (include `/v1`): Ollama `http://127.0.0.1:11434/v1`, LiteLLM `http://127.0.0.1:4000/v1`. Bare host roots are normalized at runtime. Anthropic mode uses API host without `/v1` (e.g. `https://api.anthropic.com`). */
-  endpoint?: string;
-  /** Model name for ollama (e.g. "llama3.1") or litellm (e.g. "gpt-4o-mini"). */
-  modelName?: string;
-  /** Optional API key for litellm, openai, and anthropic providers. */
-  apiKey?: string;
-  /** If true, cloud providers require explicit owner approval per request. Default: true. */
-  requireApprovalForCloud?: boolean;
-  /**
-   * Mock-mode only: fixed completion text, or `__plan_assign_from_roster__` to
-   * synthesize a Team-jobs plan+assign JSON from the Assigner prompt roster.
-   */
-  mockResponseText?: string;
-}
+// `ModelProviderConfig` and `ModelProviderMode` moved to their own module so a
+// reusable package can import them (see `model-provider-config.ts`). Imported for
+// local use *and* re-exported, so every importer of this file is unchanged.
+import type {
+  ModelProviderConfig,
+  ModelProviderMode,
+} from "./model-provider-config.js";
+export type {
+  ModelProviderConfig,
+  ModelProviderMode,
+} from "./model-provider-config.js";
 
 /**
  * Phase 40D — defaults applied to every new chain this node launches.

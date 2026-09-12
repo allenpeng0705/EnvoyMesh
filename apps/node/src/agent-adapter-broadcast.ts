@@ -22,7 +22,7 @@ import {
   type SkillDescriptor,
 } from "@envoymesh/protocol";
 import { derivePeerId, signCanonicalPayload } from "@envoymesh/identity";
-import type { NodeProfile } from "@envoymesh/api";
+import type { NodeProfile } from "@envoymesh/api/core";
 import type { EnvoyMesh } from "@envoymesh/network";
 import {
   sendEnvelopeWithRetry,

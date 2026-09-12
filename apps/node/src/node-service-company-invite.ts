@@ -20,7 +20,7 @@ import type {
   CreateCompanyInviteResult,
   ListCompanyInvitesResult,
   RevokeCompanyInviteResult,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { getPairingUriForInvite } from "./envoy-invite-uri.js";
 
 const DEFAULT_EXPIRES_HOURS = 24 * 7; // 7 days

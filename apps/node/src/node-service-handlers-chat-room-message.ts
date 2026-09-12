@@ -13,7 +13,7 @@ import {
 import { deriveCorrelationIdFromEnvelope } from "@envoymesh/local-store";
 import { handleInboundChatRoomMessageImpl } from "./chat-room-service.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
-import { chatRoomThreadKey } from "@envoymesh/api";
+import { chatRoomThreadKey } from "@envoymesh/api/core";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

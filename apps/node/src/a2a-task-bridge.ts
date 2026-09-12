@@ -26,9 +26,9 @@ import type {
   A2ATask,
   A2ATaskBridgeExecutor,
   A2ATaskStatus,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import type { AuditEvent } from "@envoymesh/local-store";
-import { A2A_JSONRPC_ERROR_CODES } from "@envoymesh/api";
+import { A2A_JSONRPC_ERROR_CODES } from "@envoymesh/api/core";
 import { artifactsToA2AParts } from "./a2a-artifact-map.js";
 import { toA2AState } from "./a2a-state-map.js";
 

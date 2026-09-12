@@ -16,7 +16,7 @@ import {
   type LibraryReadParams,
   type LibraryReadResult,
   type ParsedFeedIndexEntry,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { randomUUID } from "node:crypto";
 import {
   appendFeedNotifyInboxItem,

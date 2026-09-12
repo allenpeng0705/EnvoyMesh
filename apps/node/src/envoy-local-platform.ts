@@ -2,7 +2,7 @@
  * Platform / accelerator detection and llama.cpp release asset naming (Phase 54).
  */
 import { execFileSync } from "node:child_process";
-import type { EnvoyLocalAccel } from "@envoymesh/api";
+import type { EnvoyLocalAccel } from "@envoymesh/api/core";
 
 export type EnvoyLocalOs = "darwin" | "win32" | "linux";
 export type EnvoyLocalArch = "x64" | "arm64";

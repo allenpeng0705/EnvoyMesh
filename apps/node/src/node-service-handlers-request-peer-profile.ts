@@ -25,7 +25,7 @@ import type {
   ContactOwnerKeyStore,
   PeerProfileCacheStore,
 } from "@envoymesh/local-store";
-import type { NodeProfile } from "@envoymesh/api";
+import type { NodeProfile } from "@envoymesh/api/core";
 import type { MeshLike } from "./request-peer-profile-types.js";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

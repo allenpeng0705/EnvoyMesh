@@ -15,7 +15,7 @@ import {
   verifyRelayRosterDocument,
   type RelayRosterDocument,
   type UnsignedRelayRosterDocument,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 const CACHE_FILE = "relay-roster-cache.json";
 const SEED_FILE = "relay-roster.json";

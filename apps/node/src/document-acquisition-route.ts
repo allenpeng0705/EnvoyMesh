@@ -2,7 +2,7 @@ import {
   getAgentCapabilityRoute,
   resolveRouteStepExecution,
   type DocumentAcquisitionJob,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 export async function tryExecuteDocumentAcquisitionRouteStep(
   deps: {

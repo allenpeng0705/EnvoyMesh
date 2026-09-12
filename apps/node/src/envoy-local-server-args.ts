@@ -5,7 +5,7 @@
 import {
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
   type EnvoyLocalServerParams,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { isAbsolute, resolve } from "node:path";
 import type { EnvoyLocalPlatform } from "./envoy-local-platform.js";
 

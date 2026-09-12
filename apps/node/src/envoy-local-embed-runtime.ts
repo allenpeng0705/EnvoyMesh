@@ -22,7 +22,7 @@ import {
   type EnvoyLocalPhase,
   type EnvoyLocalServerParams,
   type SetEnvoyLocalActiveModelParams,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import {
   embedPoolingForModel,
   getEnvoyLocalEmbedCatalogModel,

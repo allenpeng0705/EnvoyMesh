@@ -5,8 +5,8 @@
  * Local (Envoy Local) uses leaner caps than cloud so llama.cpp prefill stays snappy.
  */
 
-import type { AiKnowledgeBaseScope, AiKnowledgeBaseSettings } from "@envoymesh/api";
-import { resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
+import type { AiKnowledgeBaseScope, AiKnowledgeBaseSettings } from "@envoymesh/api/core";
+import { resolveAiKnowledgeBaseSettings } from "@envoymesh/api/core";
 import type { AgentIdentityStore, HumanProfileStore, LocalChatLogStore, LocalTrustStore } from "@envoymesh/local-store";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { loadAgentIdentitySection } from "./agent-identity-context.js";

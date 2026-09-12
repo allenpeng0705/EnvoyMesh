@@ -4,7 +4,7 @@
 
 import { resolve } from "node:path";
 
-import type { AgentAttachmentRef } from "@envoymesh/api";
+import type { AgentAttachmentRef } from "@envoymesh/api/core";
 
 import {
   buildAgentAttachmentContext,

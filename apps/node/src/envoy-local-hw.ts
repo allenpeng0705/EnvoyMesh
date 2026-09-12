@@ -5,7 +5,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { totalmem } from "node:os";
-import type { EnvoyLocalAccel } from "@envoymesh/api";
+import type { EnvoyLocalAccel } from "@envoymesh/api/core";
 import type { EnvoyLocalPlatform } from "./envoy-local-platform.js";
 import { DEFAULT_ENVOY_LOCAL_MODEL } from "./envoy-local-platform.js";
 

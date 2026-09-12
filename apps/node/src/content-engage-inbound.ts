@@ -16,7 +16,7 @@ import {
   type FeedEngagePayload,
 } from "@envoymesh/protocol";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
-import type { NodeProfile } from "@envoymesh/api";
+import type { NodeProfile } from "@envoymesh/api/core";
 import {
   addContentCommentInStore,
   loadContentEngagement,

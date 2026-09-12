@@ -8,7 +8,7 @@ import type { EnvoyMesh } from "@envoymesh/network";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 export interface RelayControlTargetConfig {
   configuredRelays?: readonly { enabled?: boolean; addr?: string }[];

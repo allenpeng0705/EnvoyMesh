@@ -7,7 +7,7 @@ import {
   parseEnvoyJoinUri,
   parseSetupSponsorFriendConfig,
   type SetupSponsorFriendConfig,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { isPrivateLanTcpDialHint, isPrivateRelayHopCircuitDialHint } from "@envoymesh/network";
 import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 

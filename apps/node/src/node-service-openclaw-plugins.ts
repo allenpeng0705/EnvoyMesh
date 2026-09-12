@@ -56,7 +56,7 @@ function readPluginManifest(dir: string): PluginManifest | null {
  *
  * Returns deduplicated plugins keyed by id (later roots override earlier).
  */
-function scanBundledPluginsFromDisk(ocDir: string, workspaceDir?: string): import("@envoymesh/api").OpenClawPluginInfo[] {
+function scanBundledPluginsFromDisk(ocDir: string, workspaceDir?: string): import("@envoymesh/api/core").OpenClawPluginInfo[] {
   const resourceDir = process.env.TAURI_RESOURCE_DIR?.trim() || process.env.TAURI_APP_RESOURCES_DIR?.trim()
 
   // Build candidate extension directories to scan (same priority order as
@@ -87,7 +87,7 @@ function scanBundledPluginsFromDisk(ocDir: string, workspaceDir?: string): impor
     scanRoots.push(join(home, ".openclaw", "extensions"))
   }
 
-  const seen = new Map<string, import("@envoymesh/api").OpenClawPluginInfo>()
+  const seen = new Map<string, import("@envoymesh/api/core").OpenClawPluginInfo>()
 
   for (const root of scanRoots) {
     if (!existsSync(root)) continue
@@ -257,7 +257,7 @@ async function resolveOpenClawBin(): Promise<string | null> {
  */
 export async function listOpenClawExtensionPluginsViaRuntime(
   ctx: OpenClawPluginContext,
-): Promise<import("@envoymesh/api").OpenClawPluginInfo[]> {
+): Promise<import("@envoymesh/api/core").OpenClawPluginInfo[]> {
   try {
     const workspaceDir = ctx.resolveOpenClawWorkspaceDir()
     const stdout = await runOpenClawPluginsCommandInWorkspace(
@@ -291,7 +291,7 @@ export async function listOpenClawExtensionPluginsViaRuntime(
 export async function inspectOpenClawExtensionPluginViaRuntime(
   ctx: OpenClawPluginContext,
   id: string,
-): Promise<import("@envoymesh/api").OpenClawPluginDetail | null> {
+): Promise<import("@envoymesh/api/core").OpenClawPluginDetail | null> {
   try {
     const workspaceDir = ctx.resolveOpenClawWorkspaceDir()
     const stdout = await runOpenClawPluginsCommandInWorkspace(

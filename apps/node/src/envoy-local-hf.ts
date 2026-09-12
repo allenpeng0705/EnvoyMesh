@@ -2,7 +2,7 @@
  * Live Hugging Face Hub GGUF search for Envoy Local (Phase 54).
  * Models are never packaged — search + download are post-install only.
  */
-import type { EnvoyLocalCatalogModel } from "@envoymesh/api";
+import type { EnvoyLocalCatalogModel } from "@envoymesh/api/core";
 import type { EnvoyLocalModelRegion } from "./envoy-local-mirrors.js";
 import { detectEnvoyLocalModelRegion } from "./envoy-local-mirrors.js";
 

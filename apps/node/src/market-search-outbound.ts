@@ -10,7 +10,7 @@ import {
   createUnsignedEnvelope,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
-import type { NodeProfile } from "@envoymesh/api";
+import type { NodeProfile } from "@envoymesh/api/core";
 import type { EnvoyMesh } from "@envoymesh/network";
 import {
   sendExpectReplyWithRetry,

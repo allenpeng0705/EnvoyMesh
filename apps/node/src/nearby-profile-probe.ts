@@ -1,4 +1,4 @@
-import type { NodeProfile, PeerSearchResult } from "@envoymesh/api";
+import type { NodeProfile, PeerSearchResult } from "@envoymesh/api/core";
 import type { ContactOwnerKeyStore, PeerProfileCacheStore } from "@envoymesh/local-store";
 import type { OutboundExpectReplyMesh } from "./chat-outbound-deliver.js";
 import { handleInboundProfileSync } from "./profile-sync-inbound.js";

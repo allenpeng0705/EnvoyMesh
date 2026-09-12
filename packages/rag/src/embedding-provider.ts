@@ -2,14 +2,14 @@ import type {
   AiEmbeddingSettings,
   EmbeddingResponseShape,
   ModelProviderConfig,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import {
   ENVOY_LOCAL_EMBED_CTX_SIZE,
   ENVOY_LOCAL_EMBED_SOFT_TOKEN_RATIO,
   isEmbeddingContextOverflowError,
   parseEmbeddingContextOverflowSizes,
   truncateTextForEmbedding,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { createHash } from "node:crypto";
 import {
   KNOWN_EMBEDDING_PROVIDERS,

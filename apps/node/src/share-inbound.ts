@@ -19,7 +19,7 @@ import {
 import { evaluatePolicy } from "@envoymesh/bonds";
 import { derivePeerId } from "@envoymesh/identity";
 import { searchVaultWithAudit, type VaultIndex } from "@envoymesh/vault";
-import type { ModelProviderConfig } from "@envoymesh/api";
+import type { ModelProviderConfig } from "@envoymesh/api/core";
 import { ZodError } from "zod";
 
 export type SharePreviewResult =

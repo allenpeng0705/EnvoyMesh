@@ -37,8 +37,8 @@ import type {
   PiPromptResult,
   PiResponse,
   PiToolTraceCall,
-} from "@envoymesh/api"
-import type { ModelProviderConfig } from "@envoymesh/api"
+} from "@envoymesh/api/core"
+import type { ModelProviderConfig } from "@envoymesh/api/core"
 
 const require = createRequire(import.meta.url)
 

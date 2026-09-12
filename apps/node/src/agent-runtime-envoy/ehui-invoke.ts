@@ -1,4 +1,4 @@
-import type { EhuiInvokeRequest } from "@envoymesh/api";
+import type { EhuiInvokeRequest } from "@envoymesh/api/core";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

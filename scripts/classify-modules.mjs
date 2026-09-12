@@ -109,6 +109,15 @@ export const CORE_PACKAGES = [
   "@envoymesh/ipfs-helia",
   "@envoymesh/mobile-identity",
   "@envoymesh/openclaw-runtime",
+  // A **declared subpath**, not the package: the api package's reusable half
+  // (`packages/api/src/core.ts`, filtered from its barrel by the manifest).
+  // `@envoymesh/api` itself stays out of this list — it exports the product
+  // surface too, so importing it still means importing all of it.
+  "@envoymesh/api/core",
+  "@envoymesh/harness",
+  "@envoymesh/kb-obsidian",
+  "@envoymesh/models",
+  "@envoymesh/rag",
 ];
 
 /**
@@ -269,6 +278,39 @@ async function classify() {
   const pkgImports = new Map(); // rel -> Set of @envoymesh/* packages
   const deps = new Map(); // rel -> [rel]
 
+  // **Declared subpath entry points are their own surface.** `@envoymesh/api/core`
+  // and `@envoymesh/api` are different dependencies: the first is the package's
+  // declared reusable half, the second exports the whole product surface. Until
+  // this, specifiers were truncated to the package root, so a subpath could not
+  // be declared core and the only lever was all-or-nothing — which is why
+  // `@envoymesh/api` could not be added to the core set without also untainting
+  // every module that imports its product types.
+  //
+  // Only subpaths the package *declares* in its `exports` map count (the same
+  // test rule 2 uses): a deep path into another package's `src/` is still just
+  // the package.
+  const declaredSubpathSpecifiers = new Set();
+  try {
+    const pkgDirs = await fs.readdir(path.join(repoRoot, "packages"), { withFileTypes: true });
+    for (const e of pkgDirs) {
+      if (!e.isDirectory()) continue;
+      try {
+        const pj = JSON.parse(
+          await fs.readFile(path.join(repoRoot, "packages", e.name, "package.json"), "utf8"),
+        );
+        if (typeof pj.name !== "string" || !pj.name.startsWith("@envoymesh/")) continue;
+        for (const key of Object.keys(pj.exports ?? {})) {
+          if (key === "." || !key.startsWith("./")) continue;
+          declaredSubpathSpecifiers.add(`${pj.name}/${key.slice(2)}`);
+        }
+      } catch {
+        /* no package.json — not a published package */
+      }
+    }
+  } catch {
+    /* partial tree */
+  }
+
   for (const rel of relPaths) {
     const raw = await fs.readFile(abs.get(rel), "utf8");
     const code = stripCommentsAndStrings(raw);
@@ -289,10 +331,11 @@ async function classify() {
 
     const pkgs = new Set();
     for (const s of specs) {
-      if (s.startsWith("@envoymesh/")) {
-        const parts = s.split("/");
-        pkgs.add(`${parts[0]}/${parts[1]}`);
-      }
+      if (!s.startsWith("@envoymesh/")) continue;
+      const parts = s.split("/");
+      const root = `${parts[0]}/${parts[1]}`;
+      // Keep the full specifier when the package declares it as an entry point.
+      pkgs.add(declaredSubpathSpecifiers.has(s) ? s : root);
     }
     pkgImports.set(rel, pkgs);
 

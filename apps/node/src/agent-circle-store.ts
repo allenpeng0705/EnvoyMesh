@@ -5,7 +5,7 @@
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentCircle } from "@envoymesh/api";
+import type { AgentCircle } from "@envoymesh/api/core";
 
 const CIRCLES_FILENAME = "agent-circles.json";
 

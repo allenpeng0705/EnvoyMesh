@@ -6,7 +6,7 @@ import {
   type EnvoyEnvelope,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
-import type { NodeProfile } from "@envoymesh/api";
+import type { NodeProfile } from "@envoymesh/api/core";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { derivePeerId } from "@envoymesh/identity";
 import {

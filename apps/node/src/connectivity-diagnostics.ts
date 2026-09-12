@@ -1,4 +1,4 @@
-import type { ConnectivityDiagnostics } from "@envoymesh/api";
+import type { ConnectivityDiagnostics } from "@envoymesh/api/core";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { assessDialBudget } from "@envoymesh/network";
 import {

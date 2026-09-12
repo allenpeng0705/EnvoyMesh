@@ -10,7 +10,7 @@
  * - verify_only — one worker + independent verifier (not dual execution)
  */
 
-import type { ChainTeamStrategyId } from "@envoymesh/api";
+import type { ChainTeamStrategyId } from "@envoymesh/api/core";
 
 export type ChainSpeculationMode = "immediate_dual" | "hedged" | "verify_only" | "off";
 

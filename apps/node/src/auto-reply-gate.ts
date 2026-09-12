@@ -8,7 +8,7 @@ import {
   type AutoReplyPausedNotification,
   type InboundChatSenderRole,
   shouldEnforceAutoReplyLimits,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import type { AutoReplyLimitStore } from "@envoymesh/local-store";
 
 export async function checkAutoReplyAllowed(input: {

@@ -29,7 +29,7 @@ import type {
   KbPluginMetadataEntry,
   KbPluginMetadataMap,
   KnowledgeBasePlugin,
-} from "@envoymesh/api"
+} from "@envoymesh/api/core"
 import {
   parseFrontmatter,
   frontmatterString,

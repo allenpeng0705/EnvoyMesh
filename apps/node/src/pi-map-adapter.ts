@@ -15,7 +15,7 @@
  */
 
 import { PiAdapter, type PiAdapterInput, type PiRunResult } from "@envoymesh/agent-adapter";
-import type { PiPromptResult } from "@envoymesh/api";
+import type { PiPromptResult } from "@envoymesh/api/core";
 
 export interface PiMapHost {
   /** One-shot prompt — mirrors `askPiViaRuntime(state, deps, prompt)`. */

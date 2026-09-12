@@ -10,11 +10,14 @@
  * intercepts run locally. Agents driven as one-shot CLI / app-server may ignore
  * TUI-only verbs — see per-agent `limitations`.
  */
+// `ExtAgentCommandCatalog` comes from `@envoymesh/api/core` (it is declared in the
+// reusable `ext-agent.ts`); the other two moved to `@envoymesh/protocol` with the
+// rest of the shared ext-agent contract and are imported from there directly.
+import type { ExtAgentCommandCatalog } from "@envoymesh/api/core";
 import type {
-  ExtAgentCommandCatalog,
   ExtAgentCommandDescriptor,
   ExtAgentCommandIntercept,
-} from "@envoymesh/api";
+} from "@envoymesh/protocol";
 import { supportsExtAgentSessionModel } from "./session-model-store.js";
 import {
   mergeMmxMediaLimitations,

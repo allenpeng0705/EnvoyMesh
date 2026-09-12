@@ -7,7 +7,7 @@ import type {
   ShopListingCategory,
   ShopListingCondition,
   ShopListingVisibility,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 const CATEGORY_HINTS: Array<{ category: ShopListingCategory; needles: string[] }> = [
   { category: "books", needles: ["book", "textbook", "novel", "manga", "书", "本"] },

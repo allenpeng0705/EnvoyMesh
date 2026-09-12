@@ -7,8 +7,8 @@
 
 import { resolve } from "node:path";
 
-import { ehHistoryToTimelineItems, stripModelThinking } from "@envoymesh/api";
-import type { EhChatHistory, EhChatTurn } from "@envoymesh/api";
+import { ehHistoryToTimelineItems, stripModelThinking } from "@envoymesh/api/core";
+import type { EhChatHistory, EhChatTurn } from "@envoymesh/api/core";
 import {
   SessionStore,
   isEphemeralUserMessage,

@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-/** Mirrors {@link import("@envoymesh/api").ContactAutoReplyLimitState} — kept local to avoid a package cycle. */
+/** Mirrors {@link import("@envoymesh/api/core").ContactAutoReplyLimitState} — kept local to avoid a package cycle. */
 export interface ContactAutoReplyLimitState {
   hourlySentAt: number[];
   dailyDateKey: string;

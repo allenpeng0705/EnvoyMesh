@@ -14,7 +14,7 @@ import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { sendEnvelopeWithRetry, sendExpectReplyWithRetry } from "./chat-outbound-deliver.js";
 import { cidForCapabilityTopic } from "@envoymesh/network";
-import type { NodeProfile } from "@envoymesh/api";
+import type { NodeProfile } from "@envoymesh/api/core";
 import { peerIdFromRelayTarget, type InboundMessageGuard } from "./inbound-guard.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import { logClientRelayLookupResponse, logRelayReachableAddrsForCheckin } from "./relay-checkin-log.js";

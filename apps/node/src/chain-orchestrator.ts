@@ -72,7 +72,7 @@ import { resolveAllowedChainDepth } from "./chain-depth-mandate.js";
 import {
   DEFAULT_CHAIN_INPUT_DELIVERY_POLICY,
   parseChainInputAttachmentsFromGoal,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 import { signCanonicalPayload } from "@envoymesh/identity";
 
@@ -260,7 +260,7 @@ export interface ChainOrchestratorHandlerDeps extends ChainOrchestratorSendDeps 
    */
   onParentArtifactsStaged?: (
     state: ChainState,
-    records: import("@envoymesh/api").ChainArtifactDeliveryRecord[],
+    records: import("@envoymesh/api/core").ChainArtifactDeliveryRecord[],
   ) => void | Promise<void>;
   /**
    * Phase 41 / MAP — orchestrator-side verification loop (design §8.3). When
@@ -388,13 +388,13 @@ export interface ChainState {
    */
   awardMode: "direct" | "competitive";
   /** Phase 59 — composer attachments for this job (Assigner-home paths). */
-  inputAttachments?: import("@envoymesh/api").ChainInputAttachment[];
+  inputAttachments?: import("@envoymesh/api/core").ChainInputAttachment[];
   /** Phase 59 — per-worker delivery progress. */
-  inputDeliveries?: import("@envoymesh/api").ChainInputDeliveryRecord[];
+  inputDeliveries?: import("@envoymesh/api/core").ChainInputDeliveryRecord[];
   /** Phase 59 — delivery policy (defaults from 59A lock). */
-  inputDeliveryPolicy?: import("@envoymesh/api").ChainInputDeliveryPolicy;
+  inputDeliveryPolicy?: import("@envoymesh/api/core").ChainInputDeliveryPolicy;
   /** Phase 65C — intermediate artifact ledger (stage + per-worker delivery). */
-  artifactDeliveries?: import("@envoymesh/api").ChainArtifactDeliveryRecord[];
+  artifactDeliveries?: import("@envoymesh/api/core").ChainArtifactDeliveryRecord[];
   /** Phase 60A — each award/replacement is a distinct execution attempt. */
   attempts: Map<string, ChainAttemptState>;
   /** Compatibility projection: selected/current attempt for each subtask. */

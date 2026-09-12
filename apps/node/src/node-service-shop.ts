@@ -16,7 +16,7 @@ import type {
   ShopUpdateProfileResult,
   ShopUpsertListingParams,
   ShopUpsertListingResult,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import type {
   ShopListingRecord,
   ShopProfileRecord,

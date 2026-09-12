@@ -17,7 +17,7 @@
  *   ENVOYMESH_ENVOY_LOCAL_RUNTIME_URL — full URL for the primary runtime archive
  *   ENVOYMESH_ENVOY_LOCAL_RUNTIME_MIRROR_BASE — CDN/proxy base (see resolveEnvoyLocalRuntimeDownloadUrls)
  */
-import type { EnvoyLocalCatalogModel } from "@envoymesh/api";
+import type { EnvoyLocalCatalogModel } from "@envoymesh/api/core";
 
 export type EnvoyLocalModelRegion = "cn" | "global";
 

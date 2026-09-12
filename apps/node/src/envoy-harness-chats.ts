@@ -8,13 +8,13 @@ import type {
   EhAgentStateName,
   EhChatWorkspace,
   EhChatWorkspaceSummary,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import {
   defaultEhChatTitle,
   deriveCodingUiBucket,
   resolveEhChatDisplayTitle,
   MAX_ENVOY_HARNESS_CHATS,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import type { SessionStore } from "@envoymesh/envoy-harness";
 
 import {

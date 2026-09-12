@@ -469,6 +469,7 @@
     "@anthropic-ai/claude-agent-sdk" "^0.3.156"
     "@envoymesh/api" "0.5.0"
     "@envoymesh/node-core" "0.5.0"
+    "@envoymesh/protocol" "0.5.0"
 
 "@envoymesh/host-connect@0.5.0", "@envoymesh/host-connect@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/host-connect":
   version "0.5.0"

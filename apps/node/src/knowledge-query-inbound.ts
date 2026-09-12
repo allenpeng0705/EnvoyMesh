@@ -19,7 +19,7 @@ import {
   type KnowledgeSyndicationSensitivity,
   type ModelProviderConfig,
   stripModelThinking,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { ZodError } from "zod";
 import { formatVaultKnowledgeSection, loadKnowledgeSensitivityOverrides, searchVaultKnowledgeBase, type KnowledgeAccessLevel } from "./ai-context.js";
 import type { RagService } from "./rag-service.js";

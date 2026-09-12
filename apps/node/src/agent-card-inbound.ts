@@ -16,7 +16,7 @@ import {
   type AgentCard,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
-import { withAgentNetworkMembership } from "@envoymesh/api";
+import { withAgentNetworkMembership } from "@envoymesh/api/core";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import { interestTopicFor, publishTopicFor } from "./capability-discovery.js";
 import { createWebContentStore } from "./web-content-store.js";

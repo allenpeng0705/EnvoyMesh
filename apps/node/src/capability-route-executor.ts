@@ -1,4 +1,4 @@
-import type { CapabilityProviderJob } from "@envoymesh/api";
+import type { CapabilityProviderJob } from "@envoymesh/api/core";
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
 
 export interface CapabilityRouteExecutorDeps {

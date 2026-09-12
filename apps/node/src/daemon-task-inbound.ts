@@ -5,7 +5,7 @@ import {
   type TaskRuntimeStateStore,
 } from "@envoymesh/local-store";
 import { parseReportCreatePayload, parseTaskResultPayload, type EnvoyEnvelope } from "@envoymesh/protocol";
-import { createTaskDispatcher, isA2ATaskIntent, type TaskDispatcher } from "@envoymesh/api";
+import { createTaskDispatcher, isA2ATaskIntent, type TaskDispatcher } from "@envoymesh/api/core";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
 import type { NodeServiceImpl } from "./node-service-impl.js";
 import type { DispatcherDecision } from "./task-dispatcher.js";

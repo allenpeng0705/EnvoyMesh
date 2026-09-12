@@ -5,8 +5,8 @@
  * and returns formatted text to prepend to model prompts.
  */
 
-import type { AiKnowledgeBaseSettings } from "@envoymesh/api";
-import { resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
+import type { AiKnowledgeBaseSettings } from "@envoymesh/api/core";
+import { resolveAiKnowledgeBaseSettings } from "@envoymesh/api/core";
 import type { LocalChatLogStore, LocalTrustStore, HumanProfileStore } from "@envoymesh/local-store";
 import {
   formatThreadMessagesSection,

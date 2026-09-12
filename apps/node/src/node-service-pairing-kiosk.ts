@@ -19,7 +19,7 @@ import {
 } from "./pairing-kiosk-server.js";
 import { createCompanyInviteViaRuntime } from "./node-service-company-invite.js";
 import type { LocalTaskStore } from "@envoymesh/local-store";
-import type { PairingKioskStatus } from "@envoymesh/api";
+import type { PairingKioskStatus } from "@envoymesh/api/core";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 
 /**

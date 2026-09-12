@@ -14,8 +14,8 @@ import {
   transitionDocumentAcquisitionJob,
   type DocumentAcquisitionCandidate,
   type DocumentAcquisitionJob,
-} from "@envoymesh/api";
-import type { DiscoverPublishedLibraryPeerResult, LibraryItem, ShareOffer } from "@envoymesh/api";
+} from "@envoymesh/api/core";
+import type { DiscoverPublishedLibraryPeerResult, LibraryItem, ShareOffer } from "@envoymesh/api/core";
 import { tryExecuteDocumentAcquisitionRouteStep } from "./document-acquisition-route.js";
 
 export interface DocumentAcquisitionWorkerDeps {

@@ -3,7 +3,7 @@
  * Envoy-owned commands for mesh UX; curated expand prompts for mesh tools
  * and product feature guides.
  */
-import type { ExtAgentCommandCatalog, ExtAgentCommandDescriptor } from "@envoymesh/api";
+import type { ExtAgentCommandCatalog, ExtAgentCommandDescriptor } from "@envoymesh/api/core";
 import {
   mergeMmxMediaLimitations,
   mergeMmxMediaSlashCommands,

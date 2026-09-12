@@ -20,8 +20,8 @@ import type {
   ModelProviderConfig,
   PiModelOverride,
   PiSettings,
-} from "@envoymesh/api"
-import { MAX_PI_TERMINAL_SESSIONS } from "@envoymesh/api"
+} from "@envoymesh/api/core"
+import { MAX_PI_TERMINAL_SESSIONS } from "@envoymesh/api/core"
 import type { TerminalManager } from "./terminal-manager.js"
 import {
   buildPiSpawnConfig,

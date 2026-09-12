@@ -8,7 +8,7 @@ import {
   type AgentNetworkDiagnosticsSnapshot,
   type AgentNetworkSimulationParams,
   type AgentNetworkSimulationResult,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { LOCAL_AGENT_CARD_PROTOCOL_FEATURES } from "@envoymesh/protocol";
 import type { ChainOrchestrationContext } from "./node-service-chain-orchestration.js";
 import { findAgentNetworkWorkersRanked } from "./node-service-chain-orchestration.js";

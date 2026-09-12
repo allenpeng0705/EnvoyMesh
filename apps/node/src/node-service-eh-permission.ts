@@ -6,7 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { EhPermissionEvent } from "@envoymesh/api";
+import type { EhPermissionEvent } from "@envoymesh/api/core";
 
 import { buildEhPermissionPreview } from "./agent-runtime-envoy/permission-preview.js";
 

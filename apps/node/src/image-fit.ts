@@ -9,7 +9,7 @@
  * sharp is loaded lazily so a missing platform binary (common when packaging
  * omits optionalDeps) fails image ops instead of crashing the whole home node.
  */
-import { MAX_IMAGE_INPUT_BYTES } from "@envoymesh/api";
+import { MAX_IMAGE_INPUT_BYTES } from "@envoymesh/api/core";
 
 export { MAX_IMAGE_INPUT_BYTES };
 

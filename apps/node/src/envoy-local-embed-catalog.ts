@@ -5,11 +5,11 @@
  * node without multi-core idle cost; optional 4B for higher retrieval quality.
  * @see https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF
  */
-import type { EnvoyLocalCatalogModel } from "@envoymesh/api";
+import type { EnvoyLocalCatalogModel } from "@envoymesh/api/core";
 import {
   DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
   QWEN3_EMBEDDING_4B_MODEL_ID,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 /**
  * Default embed model (~0.6 GB Q8_0). Auto-downloaded on launch when missing.

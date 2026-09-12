@@ -24,9 +24,9 @@ import { createPublishedLibraryStore } from "./published-library-store.js";
 import { createPublishedExternalStore } from "./published-external-store.js";
 import { createWebContentStore, type WebContentVisibility } from "./web-content-store.js";
 import { join } from "node:path";
-import { responseHopDistance } from "@envoymesh/api";
-import { discoveryRequesterAuditLabel, isAnonymousDiscoveryOwnerId } from "@envoymesh/api";
-import { matchGeoDiscoveryTagHashes } from "@envoymesh/api";
+import { responseHopDistance } from "@envoymesh/api/core";
+import { discoveryRequesterAuditLabel, isAnonymousDiscoveryOwnerId } from "@envoymesh/api/core";
+import { matchGeoDiscoveryTagHashes } from "@envoymesh/api/core";
 import {
   requiresDiscoveryReferralAttestation,
   verifyDiscoveryReferralAttestation,

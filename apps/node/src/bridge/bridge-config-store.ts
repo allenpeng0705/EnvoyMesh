@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ExtAgentDefinition } from "@envoymesh/api";
-import { extAgentUsesProjectPath } from "@envoymesh/api";
+import type { ExtAgentDefinition } from "@envoymesh/api/core";
+import { extAgentUsesProjectPath } from "@envoymesh/api/core";
 import {
   applyActiveExtAgent,
   BridgeConfigSchema,

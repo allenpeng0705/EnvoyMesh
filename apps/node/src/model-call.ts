@@ -23,7 +23,7 @@ import {
   type ModelRoutingAuditEvent,
 } from "@envoymesh/models";
 import { routeModelRequestWithCostTracking } from "./model-cost-tracking.js";
-import type { ModelProviderConfig } from "@envoymesh/api";
+import type { ModelProviderConfig } from "@envoymesh/api/core";
 import type { Sensitivity } from "@envoymesh/protocol";
 import type { LocalTaskStore } from "@envoymesh/local-store";
 

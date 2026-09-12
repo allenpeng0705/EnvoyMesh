@@ -43,7 +43,7 @@ import {
   type TerminalWatchStepParams,
   type TerminalWatchStepResult,
   type TerminalWatchReadyEvent,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { createAuditEvent, type LocalTaskStore } from "@envoymesh/local-store";
 import {
   buildModelProviders,
@@ -95,7 +95,7 @@ interface SessionAssistState {
   lastGoal?: string;
   turnHistory: TerminalAssistTurnRecord[];
   proposalHistory: TerminalCommandProposal[];
-  activePlan?: import("@envoymesh/api").TerminalAssistPlan;
+  activePlan?: import("@envoymesh/api/core").TerminalAssistPlan;
   prepareModeEnabled?: boolean;
   watchGoal?: string;
   lastWatchScrollbackBytes?: number;
@@ -1031,7 +1031,7 @@ export class TerminalAgentAssist {
     sessionId: string;
     command: string;
     rationale?: string;
-    modelHint?: import("@envoymesh/api").TerminalCommandRiskTier;
+    modelHint?: import("@envoymesh/api/core").TerminalCommandRiskTier;
     settings: TerminalAssistSettingsSnapshot;
   }): StoredProposal {
     const allowPatterns = compileTerminalCommandPatterns(input.settings.terminalCommandAllowPatterns);

@@ -1,10 +1,10 @@
 import { z } from "zod";
-import type { ExtAgentDefinition } from "@envoymesh/api";
+import type { ExtAgentDefinition } from "@envoymesh/api/core";
 import {
   DEFAULT_EXT_AGENTS,
   mergeExtAgentPresets,
   resolveActiveExtAgent,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { openClawGatewayWebhookUrl } from "@envoymesh/node-core";
 
 export const ExtAgentDefinitionSchema = z.object({

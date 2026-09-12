@@ -14,9 +14,9 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { startDocumentAcquisitionJob, advanceDocumentAcquisitionJob, runDocumentAcquisitionWorkerTick } from "./document-acquisition-worker.js";
-import { transitionDocumentAcquisitionJob } from "@envoymesh/api";
+import { transitionDocumentAcquisitionJob } from "@envoymesh/api/core";
 import { startCapabilityProviderJob, advanceCapabilityProviderJob, runCapabilityProviderWorkerTick } from "./capability-provider-worker.js";
-import { transitionCapabilityProviderJob } from "@envoymesh/api";
+import { transitionCapabilityProviderJob } from "@envoymesh/api/core";
 import { randomUUID } from "node:crypto";
 
 export interface DocAcqCapProvDeps {

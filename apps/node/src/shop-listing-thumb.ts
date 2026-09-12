@@ -4,7 +4,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { ShopListing } from "@envoymesh/api";
+import type { ShopListing } from "@envoymesh/api/core";
 import {
   marketListingThumbStablePath,
   removeMarketListingThumbMirror,

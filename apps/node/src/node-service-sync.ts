@@ -1,5 +1,5 @@
-import type { SendSyncStateUpdateParams, SendSyncStateUpdateResult } from "@envoymesh/api";
-import type { NodeProfile } from "@envoymesh/api";
+import type { SendSyncStateUpdateParams, SendSyncStateUpdateResult } from "@envoymesh/api/core";
+import type { NodeProfile } from "@envoymesh/api/core";
 import { createSyncStatePayload, createUnsignedEnvelope } from "@envoymesh/protocol";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import type { EnvoyMesh } from "@envoymesh/network";

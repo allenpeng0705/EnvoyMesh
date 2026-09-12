@@ -8,7 +8,7 @@ import {
   type EnvoyEnvelope,
   type FeedEngagePayload,
 } from "@envoymesh/protocol";
-import type { NodeProfile } from "@envoymesh/api";
+import type { NodeProfile } from "@envoymesh/api/core";
 import type { EnvoyMesh } from "@envoymesh/network";
 import {
   sendEnvelopeWithRetry,

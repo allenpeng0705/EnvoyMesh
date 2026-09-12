@@ -19,7 +19,7 @@ import {
   type ChainInputDeliveryPhase,
   type ChainInputDeliveryPolicy,
   type ChainInputDeliveryRecord,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import type { ChainState } from "./chain-orchestrator.js";
 import { isSafeVaultPath } from "./share-inbound.js";
 

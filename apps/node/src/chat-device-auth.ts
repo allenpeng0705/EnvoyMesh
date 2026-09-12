@@ -1,7 +1,7 @@
 import {
   formatChatSenderDisplayName,
   verifyInboundChatDeviceAuthorization,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import type { DeviceAuthorizationStore } from "@envoymesh/local-store";
 import { verifyAuthorizedDeviceEnvelope } from "@envoymesh/identity";
 import type { ChatMessagePayload, ChatRoomMessagePayload, EnvoyEnvelope } from "@envoymesh/protocol";

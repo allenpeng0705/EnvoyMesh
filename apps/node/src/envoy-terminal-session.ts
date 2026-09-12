@@ -22,7 +22,7 @@ import type {
   ModelProviderConfig,
   PiSettings,
   TerminalSessionSummary,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 import type { TerminalManager } from "./terminal-manager.js";
 import { resolvePiProjectDir } from "./pi-terminal-session.js";

@@ -7,7 +7,7 @@ import {
   evaluateBondAutonomy,
   type BondAutonomyWorkerDeps,
 } from "./bond-autonomy-worker.js";
-import { resolveBondAutonomyPostureFromConfig, type BondAutonomyNodeConfig } from "@envoymesh/api";
+import { resolveBondAutonomyPostureFromConfig, type BondAutonomyNodeConfig } from "@envoymesh/api/core";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import type { BondLevel } from "@envoymesh/bonds";
 import { parseBondRequestPayload, type EnvoyEnvelope } from "@envoymesh/protocol";

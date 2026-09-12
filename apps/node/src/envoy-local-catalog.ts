@@ -11,7 +11,7 @@
  * - Llama 3.2 dense (Llama 4 MoE is not edge-sized — labeled clearly)
  * Qwen3.6+ via Hugging Face search until promoted here with `supersedes`.
  */
-import type { EnvoyLocalCatalogModel } from "@envoymesh/api";
+import type { EnvoyLocalCatalogModel } from "@envoymesh/api/core";
 import { DEFAULT_ENVOY_LOCAL_MODEL } from "./envoy-local-platform.js";
 import {
   detectEnvoyLocalModelRegion,

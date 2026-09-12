@@ -17,7 +17,7 @@
 import type {
   KbPluginMetadataMap,
   KnowledgeBasePlugin,
-} from "@envoymesh/api"
+} from "@envoymesh/api/core"
 
 /**
  * Create the MCP Knowledge KB plugin.

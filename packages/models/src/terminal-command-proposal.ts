@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { TerminalCommandRiskTier } from "@envoymesh/api";
+import type { TerminalCommandRiskTier } from "@envoymesh/api/core";
 
 export const TerminalCommandProposalSchema = z.object({
   command: z.string().min(1).max(4096),
@@ -140,7 +140,7 @@ export function classifyTerminalCommandRisk(command: string): TerminalCommandRis
 
 export function requiresConfirmationForRisk(
   tier: TerminalCommandRiskTier,
-  autoRunPolicy: import("@envoymesh/api").TerminalAutoRunPolicy = "always-confirm",
+  autoRunPolicy: import("@envoymesh/api/core").TerminalAutoRunPolicy = "always-confirm",
 ): boolean {
   if (tier === "safe") {
     return autoRunPolicy === "always-confirm" || autoRunPolicy === "off";
@@ -174,7 +174,7 @@ export function resolveProposalRisk(
     allowPatterns?: readonly RegExp[];
     denyPatterns?: readonly RegExp[];
     destructivePatterns?: readonly RegExp[];
-    autoRunPolicy?: import("@envoymesh/api").TerminalAutoRunPolicy;
+    autoRunPolicy?: import("@envoymesh/api/core").TerminalAutoRunPolicy;
   },
 ): { riskTier: TerminalCommandRiskTier; requiresConfirmation: boolean } {
   const normalized = command.trim();

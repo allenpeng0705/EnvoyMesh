@@ -1,4 +1,4 @@
-import type { TransferPhase, TransferStatus } from "@envoymesh/api";
+import type { TransferPhase, TransferStatus } from "@envoymesh/api/core";
 
 const TERMINAL_PHASES: TransferPhase[] = ["verified", "failed"];
 const DEFAULT_MAX_TERMINAL_ENTRIES = 500;

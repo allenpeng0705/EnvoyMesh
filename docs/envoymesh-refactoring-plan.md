@@ -1371,6 +1371,59 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 
 **Recommended order**, cheapest true unblock first: (1) the harness contract-symbol move — it is small, it is the V4 requirement, and it does not depend on the `api` decision; (2) re-measure, then decide the `api/core` subpath with real numbers; (3) the kernel `productStoreDir` gate as its own step; (4) the TS reuse host, which then becomes the acceptance test for all of it.
 
+#### 8.17.3 Three verification hazards this round exposed
+
+Recorded because each one silently changes what "the suite is green" means:
+
+1. **`vitest` exits 0 while dropping test files.** A full run reported
+   `8955 passed / 0 failed` and exit 0 while two files had never run — the log
+   contained `[vitest-pool]: Failed to start forks worker for test files …` for
+   `terminal-session-enrichment.test.ts` and `useAgentDraftAttachments.test.ts`.
+   Under a loaded host the pool cannot start workers and the affected files are
+   skipped, not failed. **Check the collected file count** (`Test Files … (N)`)
+   against a known baseline; the exit code is not sufficient. Baseline here: 961
+   files, 8,959 tests.
+2. **The kernel probe's flake is real, and it is not state pollution.** In a
+   loaded run it failed with `profile-coupled RPCs changed … getHumanProfile,
+   startNode, syncProfileToBonds`: `startNode`'s `_profile ?? loadHumanProfile()`
+   fallback is reached before its own work completes, so it reports the typed
+   profile-unavailable error instead of timing out. It passes 4/4 in isolation
+   and in unloaded full runs. The assertion is now split — the two calls that
+   always need a profile must always be present, anything else fails except
+   `startNode`, which is named as a known-under-load coupling. **`startNode`
+   needing a human profile at all is a genuine kernel finding**: a kernel should
+   be startable without one, so it joins the E8 extraction list.
+3. **Running `pnpm install` at the repo root contaminates `node_modules`.** It
+   is only ever needed for OpenClaw (`ci-smoke-openclaw-live.yml` runs it in that
+   directory), and a root-level run left 137 pnpm-only packages in place — after
+   which `tsc -b` reported 5 `PrivateKey` type errors from duplicate
+   `@libp2p/interface` copies. `npm install` restored the tree and the errors
+   vanished; no source change was involved. Refresh the pnpm lock with
+   `--lockfile-only` (or run it where CI does), not with a root install.
+
+#### 8.17.2 Step (2) done — `@envoymesh/api/core`, and the measurement that made it safe
+
+The review called this "the highest-leverage next work: resolve api core vs product split". It is done, and the way it was done is the part worth recording, because the first design was wrong in a way that only measurement exposed.
+
+**The blocker was in the classifier, not the code.** Specifiers were truncated to the package root (`@envoymesh/api/core` → `@envoymesh/api`), so *no* subpath could ever be declared core: the only lever was all-or-nothing, and the all-in version is unsafe — it would admit product types whose names the concept pattern misses (`ChatMessage`, `FeedPostSummary`, `BondRecord`) into reusable modules. Making **declared** subpath entry points their own specifier (the same test rule 2 already uses) is what unlocked it. Verified neutral on its own: totals unchanged, only the *reported reason* became more precise (the manifest now names the offending subpath, e.g. `@envoymesh/api/chat-room-service`, instead of the root).
+
+**`packages/api/src/core.ts` is generated from the barrel**, filtered to modules the manifest calls `reusable` — 106 of the barrel's 134 re-export statements, 28 product-bound modules deliberately absent (`NodeService` among them). Generating from the barrel rather than globbing `src/*.ts` inherits the barrel's conflict resolution instead of rediscovering it as TS2308. It is gated by `--check` like the E9 artifact.
+
+**The membership detail that matters:** a symbol is core only if `core.ts` actually exports it. The first version of the repoint tool asked "is any module declaring it reusable", and that is a different question — `BondLevel` is declared in the reusable `bond-trust-rank.ts` but reaches api's surface through the product-bound `node-service.ts`, so `core` does not export it. Repointing on the wrong rule produced 17 `TS2305` errors, caught by `tsc` in one shot rather than by a user.
+
+| Measure | `d599d1bb` baseline | After 8.17.1 | **After 8.17.2** |
+|---|---|---|---|
+| repo reusable | — | 463 | **547** |
+| repo product-bound | — | 338 | **256** |
+| `apps/node/src` reusable | 198 | 200 | **269** |
+| `packages/harness` reusable | 7 / 24 | 20 / 24 | **24 / 24** |
+| product-bound *only via a package* | 241 | 221 | **111** |
+| declared core packages | 5 | 12 | **17** |
+
+The last round of that came from **rule 6, automatically**: repointing made `harness`, `models`, `rag` and `kb-obsidian` fully reusable, the checker failed on all four ("importing it taints its consumers for no reason"), and they were promoted. One promotion round, then stable — the fixpoint converges, and it converges *because the rule is enforced* rather than because someone remembered.
+
+**A mistake of mine, worth its own line:** the repoint tool ran over every `.ts` file in the repo, including 106 test files and `apps/social` — none of which the classifier scans, so they were churn without classification benefit. They were reverted, narrowing the change from 271 files to 122. The scan roots are `apps/node/src` and `packages/**`; changes outside them cannot move the manifest.
+
 #### 8.17.1 Step (1) done — and the blocker was not where either review looked
 
 Two commits (`65f98f04`, `a6be0519`) and a measurement that corrected my own first hypothesis:

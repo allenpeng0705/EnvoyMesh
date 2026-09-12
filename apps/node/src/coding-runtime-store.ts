@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import {
   normalizeCodingHarnessProviderKind,
   type CodingHarnessProviderKind,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 const FILE_NAME = "coding-harness-runtime.json";
 

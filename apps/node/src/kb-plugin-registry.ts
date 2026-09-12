@@ -20,7 +20,7 @@ import type {
   KbPluginInfo,
   KbPluginMetadataMap,
   KbPluginStatus,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 // ---------------------------------------------------------------------------
 // Per-plugin config file envelope

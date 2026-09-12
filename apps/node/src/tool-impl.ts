@@ -12,7 +12,7 @@ import { searchVault, type VaultIndex } from "@envoymesh/vault";
 import type { LocalPeerDirectoryStore, LocalTrustStore, LocalTaskStore } from "@envoymesh/local-store";
 import type { ToolImplementation } from "@envoymesh/models";
 import { evaluatePolicy } from "@envoymesh/bonds";
-import { matchAgentCapabilityRoutes } from "@envoymesh/api";
+import { matchAgentCapabilityRoutes } from "@envoymesh/api/core";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import { createAuditEvent } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";

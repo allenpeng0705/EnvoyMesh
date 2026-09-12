@@ -7,7 +7,7 @@ import {
   encodeTerminalExit,
   decodeTerminalFrame,
   TerminalWireType,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import WebSocket, { WebSocketServer } from "ws";
 
 import type { TerminalManager } from "./terminal-manager.js";

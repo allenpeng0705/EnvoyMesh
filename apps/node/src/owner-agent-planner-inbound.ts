@@ -6,8 +6,8 @@ import {
 } from "@envoymesh/models";
 import { loadAgentIdentitySection } from "./agent-identity-context.js";
 import type { AgentIdentityStore, LocalTaskStore } from "@envoymesh/local-store";
-import type { ModelProviderConfig } from "@envoymesh/api";
-import { stripModelThinking } from "@envoymesh/api";
+import type { ModelProviderConfig } from "@envoymesh/api/core";
+import { stripModelThinking } from "@envoymesh/api/core";
 import { routeModelRequestWithCostTracking } from "./model-cost-tracking.js";
 
 /**

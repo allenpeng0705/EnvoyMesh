@@ -1,4 +1,4 @@
-import type { TerminalActivityBadge, TerminalSessionSummary } from "@envoymesh/api";
+import type { TerminalActivityBadge, TerminalSessionSummary } from "@envoymesh/api/core";
 
 export interface TerminalActivityContext {
   pendingApprovalCount: number;

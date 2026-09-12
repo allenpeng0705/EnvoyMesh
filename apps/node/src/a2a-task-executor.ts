@@ -21,7 +21,7 @@ import type {
   A2AOwnedTaskLookup,
   A2ATaskBridgeExecutor,
   TaskDispatcher,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { evaluatePolicy, type BondLevel } from "@envoymesh/bonds";
 import {
   createProofOfIntent,

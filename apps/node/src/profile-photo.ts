@@ -2,9 +2,9 @@ import {
   MAX_IMAGE_INPUT_BYTES,
   PROFILE_PHOTO_MIME_TYPES,
   type ProfilePhotoMime,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { createHash, randomUUID } from "node:crypto";
-import { stripImageMetadata } from "@envoymesh/api";
+import { stripImageMetadata } from "@envoymesh/api/core";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
 import { assertPathInsideVault, buildVaultIndex } from "@envoymesh/vault";

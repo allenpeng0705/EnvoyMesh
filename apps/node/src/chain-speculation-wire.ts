@@ -8,7 +8,7 @@
 import {
   resolveChainTeamStrategy,
   type ChainTeamStrategyId,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import {
   ChainSubtaskAwardSchema,
   type ChainSubtaskAward,

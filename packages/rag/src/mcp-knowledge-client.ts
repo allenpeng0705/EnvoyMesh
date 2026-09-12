@@ -1,5 +1,5 @@
-import type { AiKnowledgeBaseSettings } from "@envoymesh/api";
-import { resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
+import type { AiKnowledgeBaseSettings } from "@envoymesh/api/core";
+import { resolveAiKnowledgeBaseSettings } from "@envoymesh/api/core";
 
 export interface ExternalKnowledgeSnippet {
   title: string;

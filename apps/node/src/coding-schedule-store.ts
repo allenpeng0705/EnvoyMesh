@@ -15,7 +15,7 @@ import {
   type CodingSchedule,
   type CreateCodingScheduleInput,
   type UpdateCodingScheduleInput,
-} from "@envoymesh/api"
+} from "@envoymesh/api/core"
 import { isCronMatch } from "./trigger-store.js"
 
 const FILE_NAME = "coding-schedules.json"

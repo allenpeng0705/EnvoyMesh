@@ -20,7 +20,7 @@ import { evaluateEgressContent } from "@envoymesh/models"
 import type {
   PiExtensionUiRequest,
   PiToolProposal,
-} from "@envoymesh/api"
+} from "@envoymesh/api/core"
 
 // ---------------------------------------------------------------------------
 // Request → Proposal (the UI payload)

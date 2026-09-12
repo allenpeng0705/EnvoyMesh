@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import { DESKTOP_APP_SITE, type DesktopAppId } from "@envoymesh/api";
+import { DESKTOP_APP_SITE, type DesktopAppId } from "@envoymesh/api/core";
 
 export type { DesktopAppId };
 

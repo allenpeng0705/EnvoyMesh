@@ -9,7 +9,7 @@ import {
   type CapabilityProviderJob,
   type RouteExecutionProgress,
   type RouteStepExecutionRecord,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { executeCapabilityRouteStep } from "./capability-route-executor.js";
 
 export interface CapabilityProviderWorkerDeps {

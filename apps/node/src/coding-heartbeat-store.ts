@@ -15,7 +15,7 @@ import {
   type CodingHeartbeat,
   type CreateCodingHeartbeatInput,
   type UpdateCodingHeartbeatInput,
-} from "@envoymesh/api"
+} from "@envoymesh/api/core"
 import { isCronMatch } from "./trigger-store.js"
 
 const FILE_NAME = "coding-heartbeats.json"

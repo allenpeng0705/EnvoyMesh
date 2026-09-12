@@ -5,7 +5,7 @@
 
 import { readdir, stat } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
-import type { LocalFileItem } from "@envoymesh/api";
+import type { LocalFileItem } from "@envoymesh/api/core";
 
 const SKIP_DIR_NAMES = new Set([
   ".git",

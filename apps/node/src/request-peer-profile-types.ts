@@ -1,5 +1,5 @@
 /** Local type stubs for requestPeerProfile context. */
-import type { NodeProfile } from "@envoymesh/api";
+import type { NodeProfile } from "@envoymesh/api/core";
 
 export interface MeshLike {
   peerId: string;

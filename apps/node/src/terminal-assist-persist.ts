@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { TerminalAssistPlan } from "@envoymesh/api";
+import type { TerminalAssistPlan } from "@envoymesh/api/core";
 
 export interface PersistedGoalLoop {
   goal: string;

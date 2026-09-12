@@ -6,7 +6,7 @@
  * server-side `token` is the bearer secret a freshly-installed node presents
  * to complete `pairDevice`.
  */
-import type { CompanyInviteRecord } from "@envoymesh/api";
+import type { CompanyInviteRecord } from "@envoymesh/api/core";
 
 function appendOptional(params: URLSearchParams, key: string, value?: string): void {
   if (value && value.length > 0) {

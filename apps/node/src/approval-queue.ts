@@ -7,13 +7,13 @@ export {
   type EscalationReason,
   type PendingActionType,
   type PriorityLevel,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 import {
   ApprovalQueue,
   type ApprovalItem,
   type EscalationReason,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 export function buildListPendingTool(
   queue: ApprovalQueue,

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createAuditEvent, type ChatDraftStore, type LocalTaskStore } from "@envoymesh/local-store";
-import { stripModelThinking } from "@envoymesh/api";
+import { stripModelThinking } from "@envoymesh/api/core";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import type { ChatDraftFailure, ChatDraftResult } from "./chat-draft-inbound.js";
 

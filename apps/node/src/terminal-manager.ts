@@ -10,7 +10,7 @@ import type {
   TerminalAttachParams,
   TerminalAttachResult,
   TerminalSessionSummary,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { createAuditEvent, type LocalTaskStore } from "@envoymesh/local-store";
 import { TERMINAL_WS_PORT } from "@envoymesh/node-core";
 import type { IPty } from "node-pty";

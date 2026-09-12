@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { TerminalHerdrExportHintResult } from "@envoymesh/api";
+import type { TerminalHerdrExportHintResult } from "@envoymesh/api/core";
 
 /**
  * Writes scrollback to a profile-local export file for manual herdr import.

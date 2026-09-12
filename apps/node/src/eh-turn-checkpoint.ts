@@ -4,7 +4,7 @@ import { lstat, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeF
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
-import type { EhRevertTurnResult, EhTurnReview } from "@envoymesh/api";
+import type { EhRevertTurnResult, EhTurnReview } from "@envoymesh/api/core";
 
 const execFileAsync = promisify(execFile);
 const MAX_SNAPSHOT_BYTES = 10 * 1024 * 1024;

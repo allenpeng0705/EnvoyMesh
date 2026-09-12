@@ -8,7 +8,7 @@ import {
   type DraftAuthorContentParams,
   type DraftAuthorContentResult,
   type ModelProviderConfig,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { buildModelProviders } from "@envoymesh/models";
 import { createAuditEvent, type LocalTaskStore } from "@envoymesh/local-store";
 import { routeModelRequestWithCostTracking } from "./model-cost-tracking.js";

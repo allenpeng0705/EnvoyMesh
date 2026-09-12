@@ -28,14 +28,14 @@ import type {
   PiSettings,
   PiStatus,
   PiToolProposal,
-} from "@envoymesh/api"
+} from "@envoymesh/api/core"
 import {
   createPiTimelineTurnAcc,
   piEventToTimelineUpdates,
   piTimelineChatId,
   piUserPromptTimelineItem,
   piAgentStateUpdate,
-} from "@envoymesh/api"
+} from "@envoymesh/api/core"
 
 // ---------------------------------------------------------------------------
 // State + deps (mirror OpenClawRuntimeState / buildOpenClawRuntimeDeps)

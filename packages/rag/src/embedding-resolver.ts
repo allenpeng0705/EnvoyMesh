@@ -13,7 +13,7 @@ import type {
   AiEmbeddingSettings,
   EmbeddingResponseShape,
   ModelProviderConfig,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import {
   DEFAULT_AI_EMBEDDING,
   DEFAULT_ENVOY_LOCAL_EMBED_MODEL_ID,
@@ -25,7 +25,7 @@ import {
   ENVOY_LOCAL_EMBED_SOFT_TOKEN_RATIO,
   parseLoopbackServicePort,
   resolveEffectiveEmbeddingMaxInputTokens,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 
 export type EmbeddingProviderMode =
   | "mock"

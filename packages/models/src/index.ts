@@ -1,4 +1,4 @@
-import { stripModelThinking, type ModelProviderConfig } from "@envoymesh/api";
+import { stripModelThinking, type ModelProviderConfig } from "@envoymesh/api/core";
 import type { Sensitivity } from "@envoymesh/protocol";
 import {
   evaluateSemanticFirewall,

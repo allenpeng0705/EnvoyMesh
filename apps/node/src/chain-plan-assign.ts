@@ -18,7 +18,7 @@ import {
   type AgentNetworkRoleId,
   type ChainSubtask,
 } from "@envoymesh/protocol";
-import { assignWorkersToSteps } from "@envoymesh/api";
+import { assignWorkersToSteps } from "@envoymesh/api/core";
 import { extractJson } from "./chain-decomposer.js";
 import { isBriefOrReportGoal, planPromptAddonForGoal } from "./chain-deliverable-policy.js";
 

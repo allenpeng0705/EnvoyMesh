@@ -7,7 +7,7 @@ import { createAuditEvent, type LocalTaskStore } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { voucherJsonBytesFromObject } from "@envoymesh/network";
 import { ENVOY_DATA_PROTOCOL } from "@envoymesh/network/protocols";
-import type { NodeProfile, TransferStatus } from "@envoymesh/api";
+import type { NodeProfile, TransferStatus } from "@envoymesh/api/core";
 import { deliverDataTransferWithRetry } from "./chat-outbound-deliver.js";
 import { isSafeVaultPath } from "./share-inbound.js";
 

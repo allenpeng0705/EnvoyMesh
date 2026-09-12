@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { AgentCircle } from "@envoymesh/api";
+import type { AgentCircle } from "@envoymesh/api/core";
 
 export interface CircleProposerDeps {
   /** Get all bonded contacts. */

@@ -8,9 +8,9 @@ import {
   anonymizeDiscoveryRequesterOwnerId,
   canForwardDiscoveryHop,
   nextDiscoveryHop,
-} from "@envoymesh/api";
-import type { ApprovalQueue } from "@envoymesh/api";
-import { createApprovalItem } from "@envoymesh/api";
+} from "@envoymesh/api/core";
+import type { ApprovalQueue } from "@envoymesh/api/core";
+import { createApprovalItem } from "@envoymesh/api/core";
 
 export interface DiscoveryForwardContext {
   envelope: EnvoyEnvelope;

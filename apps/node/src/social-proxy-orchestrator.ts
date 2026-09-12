@@ -4,7 +4,7 @@ import {
   isSocialProxyTerminal,
   transitionSocialProxySession,
   type SocialProxySession,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
 import { runFriendAutopilotPass } from "./friend-autopilot-runner.js";
 

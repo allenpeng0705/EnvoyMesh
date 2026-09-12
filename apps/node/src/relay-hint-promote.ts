@@ -6,7 +6,7 @@
 import {
   isCommunityPresetRelayPeerId,
   peerIdFromBootstrapMultiaddr,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import type { RelayHint } from "@envoymesh/protocol";
 
 const MAX_VOUCHED = 16;

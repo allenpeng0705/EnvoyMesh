@@ -18,7 +18,7 @@ import {
   type ChainArtifactDeliveryRecord,
   type ChainArtifactGraph,
   type ChainArtifactKind,
-} from "@envoymesh/api";
+} from "@envoymesh/api/core";
 import type { NamedArtifact, TaskChainPartialPayload } from "@envoymesh/protocol";
 import type { ChainState } from "./chain-orchestrator.js";
 import { isSafeVaultPath } from "./share-inbound.js";
