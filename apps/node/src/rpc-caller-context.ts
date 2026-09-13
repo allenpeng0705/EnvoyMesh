@@ -12,6 +12,7 @@
 
 import { OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api"
 import { createCallerContextStore } from "@envoymesh/host-connect"
+import { productScopeKey } from "@envoymesh/node-core"
 
 export interface RpcCallerContext {
   /** Home owner mesh id (envoy:owner:…). */
@@ -78,7 +79,24 @@ export function sessionCallerFromToken(record: {
   deviceId?: string
   /** Optional override when the family store has resolved isOwner. */
   isOwnerProfile?: boolean
+  /**
+   * Set for a token issued to a local product (`attachLocalProduct`). Such a caller
+   * is **never** the owner: its scope is `product:<Name>`, and owner-only RPCs are
+   * refused by `requireOwnerProfile` — which is the whole point of giving a product
+   * a scope of its own instead of the owner's.
+   */
+  product?: string
 }): RpcCallerContext {
+  const product = typeof record.product === "string" ? record.product.trim() : ""
+  if (product) {
+    return {
+      ownerId: record.ownerId,
+      profileId: productScopeKey(product),
+      isOwnerProfile: false,
+      source: "session",
+      ...(record.deviceId ? { deviceId: record.deviceId } : {}),
+    }
+  }
   const binding =
     typeof record.boundFamilyProfileId === "string" &&
     record.boundFamilyProfileId.trim()

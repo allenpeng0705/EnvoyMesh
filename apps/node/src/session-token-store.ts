@@ -30,6 +30,15 @@ export interface SessionTokenRecord {
   boundFamilyProfileId?: string;
   /** Platform hint ("ios" | "android" | "flutter" | …). */
   platform?: string;
+  /**
+   * Set when this token was issued to a **local product** (`attachLocalProduct`)
+   * rather than to a paired device.
+   *
+   * A product session is not a family profile: it gets `product:<Name>` as its scope
+   * and `isOwnerProfile: false`, so owner-only RPCs stay refused. Absent on every
+   * existing token, which is why readers must treat it as optional.
+   */
+  product?: string;
   /** Human label for management UI ("Companion" / "Phone" etc.). */
   displayName?: string;
   /** ISO 8601 — when the token was created. */

@@ -37,6 +37,15 @@
 
 export { WsServer, isLoopbackAddress } from "./ws-server.js";
 
+// The client half of a local product attach — the exchange, not the policy.
+export {
+  DEFAULT_ATTACH_METHOD,
+  requestProductSession,
+  type AttachEndpoint,
+  type ProductSessionGrant,
+  type ProductSessionRequest,
+} from "./attach-client.js";
+
 export {
   // Event vocabulary and delivery
   CORE_EVENT_DISPOSITIONS,

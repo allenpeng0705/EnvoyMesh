@@ -243,6 +243,14 @@ export async function routeRpcMethod(
     }
   }
   switch (method as RpcMethods) {
+    case "attachLocalProduct":
+      // Loopback-only and pre-auth, both enforced by the transport: this hands out a
+      // session, so reachable from the network it would let a device issue itself a
+      // credential. The scope it grants is the product's own (`product:<Name>`).
+      return ns.attachLocalProduct({
+        product: params.product === undefined ? undefined : String(params.product),
+        version: params.version === undefined ? undefined : String(params.version),
+      });
     case "getProfile":
       return ns.getProfile();
     case "getOwnerDidPresentation":

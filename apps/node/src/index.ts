@@ -738,7 +738,12 @@ wsServer.start(createHostNodeService(nodeService), {
   // Product methods that proxy a second socket (OpenClaw core, terminal PTY).
   socketMethods: createSocialSocketMethods(nodeService),
   // Methods a client may call before authenticating.
-  preAuthMethods: ["pairThinClient", "previewFamilyInvite"],
+  // Before authentication — a product has no token yet, which is the point.
+  preAuthMethods: ["pairThinClient", "previewFamilyInvite", "attachLocalProduct"],
+  // …and additionally **only from this machine**. `attachLocalProduct` mints a
+  // session, so reachable from the network it would let any device issue itself a
+  // credential; a phone pairs instead, with a QR token.
+  loopbackOnlyMethods: ["attachLocalProduct"],
   // Which methods must run one at a time on a connection. The predicate, not a
   // list: the host must not learn 31 product method names (H5).
   shouldSerializeMethod: isSerializedWsRpcMethod,

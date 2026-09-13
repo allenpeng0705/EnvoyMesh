@@ -334,6 +334,8 @@ Reading the first S2 version back against §6 and §7 found more than the first 
 
 `ProfileSituation` gained `facts: { label, value }[]` (owner, where, created, last used *with* the app and version, device) so a UI has something to show beyond a sentence, and `ProfileSituationState` gained `"in-use"` — which an inspection can never report, because the files may be perfectly healthy; only the lock knows.
 
+### S2 review round 1 — the gate caught my own growth
+
 ### S3 (first slice) ◐ — one process owns a home (2026-09-13)
 
 **New module:** `packages/node-core/src/node-registry.ts` — **560 reusable modules**. Three pieces, and the failures they exist to prevent are the ones I could previously only describe:
@@ -447,7 +449,35 @@ Verified against the running node from the machine's LAN address — the same pr
 
 **Recorded for the next slice:** an attached product gets `scopeKey: "product:<Name>"`, not the owner's scope — least privilege, no key sharing, and it extends the per-scope gating the node already performs (`mayFamilyProfileUseCoding`). This change is what makes that meaningful, because until now "not the owner" and "no token" were the same thing.
 
-### S2 review round 1 — the gate caught my own growth, and a lie in the help text (2026-09-13)
+### S3 (sixth slice) ✅ — attach works, and it found a transport bug (2026-09-13)
+
+The exchange, end to end: a second app on this machine asks the running node for a session of its own.
+
+| Piece | Where | What it does |
+|---|---|---|
+| The convention | `node-core/src/product-attach.ts` | the method name and `product:<Name>` scope encoding, in one place so client and node cannot disagree |
+| The gate | `host-connect` `loopbackOnlyMethods` | a method that hands out a session is refused from the network **before the handler runs** |
+| The node | `attachLocalProduct` (+ `session-token-store`'s `product` field, `sessionCallerFromToken`) | mints a token against the product, never a family profile |
+| The exchange | `host-connect/src/attach-client.ts`, re-exported by `reuse-host` | one request over loopback, one session back, ready to dial |
+
+**Verified against a real node**, which is where the value shows:
+
+```
+resolveRunningNode      → running  ws://127.0.0.1:3030/ws
+LAN attach attempt      → {"code":"UNAUTHORIZED","message":"This can only be done from the machine running the node"}
+grant                   → scopeKey "product:EnvoyCoder", ownerId envoy:owner:8fIvWQay…, token 36 chars
+product session → getNodeStatus    → OK
+product session → updateNodeConfig → ERROR owner-only: Only the node owner can call updateNodeConfig
+stored record           → product "EnvoyCoder", deviceId "product:EnvoyCoder", no profileId, no family binding
+```
+
+That last line is the whole design in one result: a product attaches, works, and **cannot touch an owner-only RPC** — least privilege by construction, not by good intentions. `apps/node/test/product-attach.test.ts` (7 tests) pins the scope, the ownership refusal, token replacement and per-product isolation; `host-connect/test/attach-client.test.ts` (6) pins the exchange and both gates, including a raw socket to this machine's LAN address for the refusal.
+
+**And verifying it found a real transport bug.** The first attach worked, but *using* the session timed out. I assumed my probe was at fault — it wasn't. `handleConnection` attached its `message` listener **after** awaiting `resolveSession`, and `ws` is an EventEmitter: a frame that arrives during that await is emitted with no listener attached and **silently dropped**. A client that sends on `open` loses its first request and hangs. It only showed up because the attach path makes `resolveSession` do real work (a token-store read) rather than hitting a warm cache — under a fast resolver the window is too small to hit. Fixed by attaching the listener before the await, queueing anything that arrives before the dispatcher is installed, and awaiting the auth state inside the dispatcher. The regression test makes the resolver deliberately slow so the race is deterministic; before the fix it fails on the timeout, after it passes at ~305 ms.
+
+**A known gap, pinned rather than hidden.** Owner-only enforcement is a *deny-list* (`OWNER_ONLY_RPC_METHODS` plus the `terminal*` prefix), so a product session is refused everything on that list and **allowed everything else** — `getNodeStatus` is the proof in the run above. That is not least privilege; the honest follow-up is a product **allow-list** (what a product *may* call) rather than relying on the deny-list's coverage. A test asserts today's behaviour so the next slice has to change it deliberately.
+
+**One more thing the scope does not solve:** `mayFamilyProfileUseCoding()` is family-profile policy, and a product scope is not a family profile — so an attached EnvoyCoder would be refused the `coding`-gated RPCs it exists for. Wiring per-product capability grants (which product may use which capability) is the next slice, and it is policy the product owns, not the transport.
 
 Two things the seeded suite and a read-through found after S2 was written:
 

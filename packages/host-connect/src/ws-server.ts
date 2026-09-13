@@ -148,8 +148,21 @@ export interface WsServerOptions<TCaller = unknown> {
    *
    * Data, not code: the host must not know that `previewFamilyInvite` names a
    * family invite. Empty when not supplied, which is the strict default.
+   *
+   * Reachability is still subject to the access gate: a pre-auth method is callable
+   * from this machine without a token, and from the network only with a valid one.
    */
   preAuthMethods?: readonly string[];
+
+  /**
+   * Methods that additionally require the caller to be **on this machine**.
+   *
+   * The strongest of the gates, and the one a local attach belongs behind: it mints a
+   * session, so reachable from the network it would let any device issue itself a
+   * credential. Product data again — the host does not know what
+   * `attachLocalProduct` means, only that it must never be callable off-machine.
+   */
+  loopbackOnlyMethods?: readonly string[];
 
   /**
    * What one session may receive, when it differs from the raw payload.
@@ -200,6 +213,8 @@ export class WsServer<TCaller = unknown> {
   private _transformForSession: SessionPayloadTransform<TCaller> | undefined;
   private _socketMethods: SocketMethodPort<TCaller> | undefined;
   private _preAuthMethods: ReadonlySet<string> = new Set();
+  /** See `WsServerOptions.loopbackOnlyMethods`. */
+  private _loopbackOnlyMethods: ReadonlySet<string> = new Set();
   /** See `WsServerOptions.allowUnauthenticatedNonLoopback`. */
   private _requireAuthForNonLoopback = true;
   private _shouldSerializeMethod: (method: string) => boolean = () => false;
@@ -332,6 +347,7 @@ export class WsServer<TCaller = unknown> {
     this._transformForSession = options.transformForSession;
     this._socketMethods = options.socketMethods;
     this._preAuthMethods = new Set(options.preAuthMethods ?? []);
+    this._loopbackOnlyMethods = new Set(options.loopbackOnlyMethods ?? []);
     this._shouldSerializeMethod = options.shouldSerializeMethod ?? (() => false);
     this.onListenError = options.onListenError;
     this._requireAuthForNonLoopback = options.allowUnauthenticatedNonLoopback !== true;
@@ -722,6 +738,31 @@ export class WsServer<TCaller = unknown> {
     // network — see the gate in `dispatchRpc`.
     hostState(ws).isLoopbackPeer = isLoopbackAddress(req?.socket?.remoteAddress);
 
+    // The message handler is attached **now**, before the auth await, and the auth
+    // state is awaited inside it. Otherwise a frame that arrives while
+    // `resolveSession` is still running is emitted with no listener attached and is
+    // *silently dropped* — `ws` is an EventEmitter, and an event with no listener does
+    // not queue. A client that sends on `open` then loses its first request and hangs
+    // until it times out. (Found by verifying a real product attach against a running
+    // node: the socket authenticated, the request never arrived, the caller timed out.)
+    let settleAuth: () => void = () => undefined;
+    const authSettled = new Promise<void>((resolve) => {
+      settleAuth = resolve;
+    });
+    // The listener is attached *here*, and the dispatching handler is installed later
+    // (it is a big function that reads the auth state). Frames that arrive in between
+    // are queued rather than dropped, because an EventEmitter emits into nothing when
+    // no listener is attached.
+    let handleRpc: ((data: Buffer) => void) | null = null;
+    const queuedRpc: Buffer[] = [];
+    ws.on("message", (data: Buffer) => {
+      if (!handleRpc) {
+        queuedRpc.push(data);
+        return;
+      }
+      handleRpc(data);
+    });
+
     // Extract session token from query string.
     // Three states: no token (legacy client), valid token (thin-client), invalid token.
     let isAuthenticated = false;
@@ -752,6 +793,8 @@ export class WsServer<TCaller = unknown> {
       // URL parsing failed — treat as unauthenticated.
     }
 
+    // Release any message that arrived while the token was being resolved.
+    settleAuth();
     // Store auth state on the ws object.
     hostState(ws).isThinClientAuthenticated = isAuthenticated;
     // Track whether a token was attempted — only gate clients that
@@ -762,7 +805,10 @@ export class WsServer<TCaller = unknown> {
     // Initialize subscription tracking for this client
     this.clientSubscriptions.set(ws, new Set());
 
-    ws.on("message", (data: Buffer) => {
+    const onRpcMessage = async (data: Buffer): Promise<void> => {
+      // Wait for the token to be resolved: the gate below reads that state, and this
+      // handler may already be running for a frame that beat the resolver.
+      await authSettled;
       try {
         const message = JSON.parse(data.toString()) as JsonRpcRequest;
         // Thin-client RPC activity — drives push skip-if-online freshness.
@@ -790,7 +836,13 @@ export class WsServer<TCaller = unknown> {
         console.error("[ws-server] Error handling message:", error);
         this.sendError(ws, "unknown", "Failed to process message");
       }
-    });
+    };
+    handleRpc = (data: Buffer) => {
+      void onRpcMessage(data);
+    };
+    for (const pending of queuedRpc.splice(0)) {
+      handleRpc(pending);
+    }
 
     ws.on("close", () => {
       console.log(`[ws-server] Client ${clientId} disconnected`);
@@ -988,6 +1040,19 @@ export class WsServer<TCaller = unknown> {
     const isAuth = hostState(ws).isThinClientAuthenticated === true;
     const hadToken = hostState(ws).hadThinClientToken === true;
     const isLoopbackPeer = hostState(ws).isLoopbackPeer === true;
+    // The strongest gate: a method that hands out a session may not be reachable from
+    // the network at all, authenticated or not. Checked before the general gate so the
+    // refusal is unambiguous — "not from this machine" is a different answer from
+    // "authenticate first", and a caller should be able to tell them apart.
+    if (this._loopbackOnlyMethods.has(method) && !isLoopbackPeer) {
+      this.sendError(
+        ws,
+        id ?? "unknown",
+        "This can only be done from the machine running the node",
+        "UNAUTHORIZED",
+      );
+      return;
+    }
     // Methods a client may call before authenticating are **product data**
     // (`preAuthMethods`), not names written here — EnvoyMesh's are the pairing
     // call and the family-invite preview, and the host does not know that.

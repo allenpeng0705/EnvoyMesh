@@ -136,6 +136,21 @@ export function parsePairingUri(uri: string): PairWithHomeNodeParams | null {
   }
 }
 
+// ─── attaching to a running node ────────────────────────────────────────────
+//
+// How a product joins the group on a machine where a node is already running: it
+// asks that node for a session of its own instead of reading the owner's key or
+// starting a second mesh. The *discovery and verification* half is
+// `@envoymesh/node-core`'s `resolveRunningNode` (it returns `"running"` only for a
+// node whose identity it confirmed); this is the exchange.
+export {
+  DEFAULT_ATTACH_METHOD,
+  requestProductSession,
+  type AttachEndpoint,
+  type ProductSessionGrant,
+  type ProductSessionRequest,
+} from "@envoymesh/host-connect";
+
 // ─── the host ───────────────────────────────────────────────────────────────
 
 export interface ReuseHostOptions {

@@ -2828,6 +2828,21 @@ export interface NodeService extends CoreNodeService {
   pairThinClient(params: PairThinClientParams): Promise<PairThinClientResult>;
 
   /**
+   * Attach another EnvoyMesh app **on this machine**, granting it a session of its
+   * own (`scopeKey: "product:<Name>"`, never the owner's scope).
+   *
+   * Loopback-only, enforced by the transport (`loopbackOnlyMethods` in the
+   * composition root) and callable without a token for that reason: the trust basis
+   * is the same one the owner's own UI uses — being on this machine — and no key is
+   * ever handed over. See `docs/envoymesh-multi-product-design.md` §7.
+   */
+  attachLocalProduct(params: { product?: string; version?: string }): Promise<{
+    token: string;
+    scopeKey: string;
+    ownerId: string;
+  }>;
+
+  /**
    * Re-bind this thin-client session to a non-owner family profile when the
    * session token was missing profileId (legacy) or has boundFamilyProfileId
    * disagreeing with a corrupted profileId:"owner". Intentional owner QR

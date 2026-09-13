@@ -593,8 +593,10 @@ import {
 } from "@envoymesh/harness";
 import {
   getHomeFsInfo as readHomeFsInfo,
+  isValidProductName,
   listHomeFsEntries as readHomeFsEntries,
   previewHomeFsFile as readHomeFsPreview,
+  productScopeKey,
   resolveHomeFsDirectory,
 } from "@envoymesh/node-core";
 import { discoverObsidianVaults as scanObsidianVaults } from "./discover-obsidian-vaults.js";
@@ -16081,6 +16083,56 @@ class NodeServiceImpl implements NodeService {
       }),
     );
     throw new Error("Company invite token is revoked, expired, or already used by another device");
+  }
+
+  /**
+   * Attach a second EnvoyMesh app on this machine, granting it a **product scope**.
+   *
+   * Callable without a token *because* the transport makes it loopback-only
+   * (`loopbackOnlyMethods`, set in the composition root), so the trust basis is the
+   * same one the owner's own UI already uses — being on this machine — and **no key
+   * is ever handed over**. The token resolves to `scopeKey: "product:<name>"` with
+   * `isOwnerProfile: false`, so `requireOwnerProfile` keeps refusing owner-only RPCs:
+   * a product gets least privilege by construction rather than by good intentions.
+   *
+   * `setToken` upserts by device id, so one product has one live token and attaching
+   * again replaces it rather than accumulating credentials.
+   */
+  async attachLocalProduct(params: {
+    product?: string;
+    version?: string;
+  }): Promise<{ token: string; scopeKey: string; ownerId: string }> {
+    const product = params?.product?.trim() ?? "";
+    if (!isValidProductName(product)) {
+      throw new Error(
+        "product must be a short name beginning with a letter, for example EnvoyCoder",
+      );
+    }
+    if (!this._sessionTokenStore) {
+      throw new Error("Session token store is not available");
+    }
+    const ownerId = this._profile?.owner.ownerId ?? "";
+    if (!ownerId) {
+      throw new Error("This node has no owner identity yet");
+    }
+
+    const token = randomUUID();
+    const now = new Date().toISOString();
+    const version = params?.version?.trim();
+    await this._sessionTokenStore.setToken({
+      token,
+      ownerId,
+      deviceId: `product:${product}`,
+      product,
+      platform: process.platform,
+      displayName: version ? `${product} ${version} (this machine)` : `${product} (this machine)`,
+      createdAt: now,
+      lastUsedAt: now,
+    });
+    console.log(
+      `[node-service] attached local product ${product}${version ? ` ${version}` : ""} with scope ${productScopeKey(product)}`,
+    );
+    return { token, scopeKey: productScopeKey(product), ownerId };
   }
 
   async pairThinClient(params: import("@envoymesh/api").PairThinClientParams): Promise<import("@envoymesh/api").PairThinClientResult> {

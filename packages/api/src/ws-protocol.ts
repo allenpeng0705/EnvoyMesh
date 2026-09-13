@@ -85,6 +85,9 @@ export const WS_LOOPBACK_URL = `ws://127.0.0.1:${WS_PORT}${WS_PATH}`;
 // ============================================
 
 export type ProductRpcMethods =
+  // Attach another EnvoyMesh app on this machine (loopback-only, pre-auth).
+  // It hands out a session, so its gate is the address, not a token.
+  | "attachLocalProduct"
   // Identity
   | "getProfile"
   | "getOwnerDidPresentation"

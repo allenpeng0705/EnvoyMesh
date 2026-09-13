@@ -186,6 +186,8 @@ export interface SessionTokenRecordLike {
   deviceId?: string;
   profileId?: string;
   boundFamilyProfileId?: string;
+  /** Set for a local-product token (`attachLocalProduct`); see the resolver below. */
+  product?: string;
 }
 
 /**
@@ -208,6 +210,22 @@ export function createSocialSessionIdentityResolver(
     async resolveSession(token: string): Promise<HostSession<RpcCallerContext> | null> {
       const record = await host.lookupSessionToken?.(token);
       if (!record?.ownerId) return null;
+
+      // A product session is **not** a family profile, so it skips the lookup and the
+      // healing below entirely: there is no family profile called
+      // `product:EnvoyCoder`, and "healing" it could rewrite a product scope into a
+      // family one — handing the product the owner's scope, which is precisely what
+      // giving it a scope of its own exists to prevent.
+      if (record.product?.trim()) {
+        const productCaller = sessionCallerFromToken(record);
+        return {
+          scopeKey: productCaller.profileId,
+          ownerId: record.ownerId,
+          isOwnerScope: false,
+          deviceId: productCaller.deviceId,
+          caller: productCaller,
+        };
+      }
 
       // Prefer boundFamilyProfileId when profileId was corrupted to owner.
       let caller = sessionCallerFromToken(record);
