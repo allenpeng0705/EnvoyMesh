@@ -5,9 +5,11 @@ import { ActivityView } from "./ActivityView.js";
 import { AuthorizedDevicesSection } from "./AuthorizedDevicesSection.js";
 import {
   getTauriAppLogPaths,
+  getTauriHomeNodeMode,
   isTauriShell,
   revealTauriLogDir,
   type AppLogPaths,
+  type TauriHomeNodeMode,
 } from "../../lib/tauri-shell.js";
 import {
   checkDesktopUpdate,
@@ -24,6 +26,7 @@ export function SettingsAppTab() {
   const { theme, setTheme } = useTheme();
   const tauriShell = isTauriShell();
   const [logPaths, setLogPaths] = useState<AppLogPaths | null>(null);
+  const [homeMode, setHomeMode] = useState<TauriHomeNodeMode | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<DesktopUpdateHandle | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
@@ -33,6 +36,7 @@ export function SettingsAppTab() {
   useEffect(() => {
     if (!tauriShell) return;
     void getTauriAppLogPaths().then(setLogPaths);
+    void getTauriHomeNodeMode().then(setHomeMode);
   }, [tauriShell]);
 
   async function onCheckForUpdates() {
@@ -127,6 +131,25 @@ export function SettingsAppTab() {
           management is housekeeping/audit information and pairs
           naturally with the other App-shaped items in this tab. */}
       <AuthorizedDevicesSection />
+
+      {tauriShell && homeMode ? (
+        <div className="settings-card">
+          <h4>{t("settings.app.homeProfileTitle")}</h4>
+          <p className="settings-hint">
+            {homeMode.mode === "attached"
+              ? homeMode.headline ?? t("settings.app.homeAttached")
+              : homeMode.mode === "supervised"
+                ? t("settings.app.homeSupervised")
+                : homeMode.headline ?? t("settings.app.homeNone")}
+          </p>
+          {homeMode.detail ? <p className="settings-hint">{homeMode.detail}</p> : null}
+          {homeMode.holderApp ? (
+            <p className="settings-hint">
+              {t("settings.app.homeHolder", { app: homeMode.holderApp })}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {tauriShell ? (
         <div className="settings-card">

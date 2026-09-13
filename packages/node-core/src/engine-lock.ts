@@ -3,8 +3,9 @@
  *
  * ## What it prevents
  *
- * The shared local model engine is `llama-server` on a fixed port, and its assets live in
- * `<root>/runtime/` so the whole family shares one binary and one set of weights. What is
+ * The shared local model engine is `llama-server` on a fixed port, and its assets live under
+ * the **engine asset root** (normally `<home>/runtime/envoy-local`, via `resolveEngineRoot` /
+ * `engineRootFor`) so the whole family shares one binary and one set of weights. What is
  * *not* shared is the right to start it: two spawners that both decide the engine is down
  * will both start one, and the loser's port bind fails — or worse, both bind in sequence and
  * the first one's child is orphaned while the second one serves.
@@ -12,7 +13,7 @@
  * The mesh already has a lock per home (`acquireNodeLock`), and under D2 that covers the
  * common case: one process owns the mesh, so only one process spawns the engine. This lock
  * covers the case the node lock cannot: two *nodes* on one machine (a standalone product next
- * to EnvoyMesh, both pointed at the same root) racing for one shared set of engine assets.
+ * to EnvoyMesh, both pointed at the same asset root) racing for one shared set of engine assets.
  *
  * It is deliberately a separate file with separate semantics rather than a second use of the
  * node lock:
@@ -20,8 +21,10 @@
  *   * the node lock means "I own this identity and this mesh" and is held for the life of the
  *     process; the engine lock is held only while llama-server runs, and is released when the
  *     child exits — including a crash-restart cycle where the process stays up;
- *   * they live at different levels: `<home>/lock` is per home, `<root>/runtime/engine.lock`
- *     is per engine asset root, which is the thing actually being contended;
+ *   * they live at different levels: `<home>/lock` is per home;
+ *     `<engineAssetsRoot>/engine-<role>.lock` sits **beside the assets it guards** (not under a
+ *     nested `runtime/`); pass `resolveEngineRoot(…).dir` / `engineRootFor(…).dir`, **never**
+ *     the home directory alone — that would place the lock where no runtime looks for it;
  *   * the loser's behaviour differs. A node-lock loser must **not** serve the mesh; an
  *     engine-lock loser should **wait for the winner's engine** and then use it.
  *
@@ -37,7 +40,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { hostname as osHostname } from "node:os";
 import * as path from "node:path";
 import { isProcessAlive } from "./node-registry.js";
-import { runtimeDirIn } from "./envoymesh-home.js";
 
 /**
  * The engine **roles** that can each run one server. They are separate locks on purpose: the
@@ -195,15 +197,22 @@ export type AcquireEngineLockResult =
     }
   | { acquired: false; holder: EngineLockInfo | null };
 
-/** `<root>/runtime/engine-<role>.lock` — beside the assets it guards. */
-export function engineLockPath(rootDir: string, role: EngineRole = "chat"): string {
-  return path.join(runtimeDirIn(rootDir), engineLockFileName(role));
+/**
+ * `<engineAssetsRoot>/engine-<role>.lock` — beside the assets it guards.
+ *
+ * `engineAssetsRoot` must be the directory returned by `resolveEngineRoot` /
+ * `engineRootFor` (e.g. `<home>/runtime/envoy-local`), **not** the EnvoyMesh home.
+ */
+export function engineLockPath(engineAssetsRoot: string, role: EngineRole = "chat"): string {
+  return path.join(engineAssetsRoot, engineLockFileName(role));
 }
 
 /** Read the current claim for a role, or `null` when there is none (or it is unreadable). */
-export function readEngineLock(rootDir: string, role: EngineRole = "chat"): EngineLockInfo | null {
+export function readEngineLock(engineAssetsRoot: string, role: EngineRole = "chat"): EngineLockInfo | null {
   try {
-    const parsed = JSON.parse(nodeFs.readFileSync(engineLockPath(rootDir, role), "utf8")) as EngineLockInfo;
+    const parsed = JSON.parse(
+      nodeFs.readFileSync(engineLockPath(engineAssetsRoot, role), "utf8"),
+    ) as EngineLockInfo;
     if (typeof parsed?.pid !== "number") return null;
     return parsed;
   } catch {
@@ -213,19 +222,21 @@ export function readEngineLock(rootDir: string, role: EngineRole = "chat"): Engi
 
 /** The same, synchronously, for `process.on("exit")` — `exit` handlers cannot await. */
 export function releaseEngineLockSync(
-  rootDir: string,
+  engineAssetsRoot: string,
   pid: number = process.pid,
   role: EngineRole = "chat",
 ): boolean {
   let existing: EngineLockInfo | null = null;
   try {
-    existing = JSON.parse(readFileSync(engineLockPath(rootDir, role), "utf8")) as EngineLockInfo;
+    existing = JSON.parse(
+      readFileSync(engineLockPath(engineAssetsRoot, role), "utf8"),
+    ) as EngineLockInfo;
   } catch {
     return false;
   }
   if (!existing || existing.pid !== pid) return false;
   try {
-    nodeFs.unlinkSync(engineLockPath(rootDir, role));
+    nodeFs.unlinkSync(engineLockPath(engineAssetsRoot, role));
     return true;
   } catch {
     return false;
@@ -235,11 +246,13 @@ export function releaseEngineLockSync(
 /**
  * Claim the right to start the engine, or report who holds it.
  *
+ * `engineAssetsRoot` is the asset directory (`resolveEngineRoot` / `engineRootFor`), not home.
+ *
  * A stale claim (holder pid is gone) is taken over, and the caller is told — a takeover means
  * the previous engine did not stop cleanly, which is worth a log line.
  */
 export async function acquireEngineLock(
-  rootDir: string,
+  engineAssetsRoot: string,
   info: Omit<EngineLockInfo, "startedAt" | "role"> & { startedAt?: string; role?: EngineRole },
   opts: EngineLockOptions = {},
 ): Promise<AcquireEngineLockResult> {
@@ -256,7 +269,7 @@ export async function acquireEngineLock(
     ...(info.modelId ? { modelId: info.modelId } : {}),
     startedAt: info.startedAt ?? new Date().toISOString(),
   };
-  const file = engineLockPath(rootDir, role);
+  const file = engineLockPath(engineAssetsRoot, role);
   await nodeFs.promises.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -269,7 +282,7 @@ export async function acquireEngineLock(
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
     }
 
-    const existing = readEngineLock(rootDir, role);
+    const existing = readEngineLock(engineAssetsRoot, role);
     if (existing && existing.pid === record.pid) {
       // **Our own claim.** A restart path (watchdog, failed start) re-acquires in the same
       // process, and reporting *ourselves* as the holder would send the caller into the
@@ -281,7 +294,7 @@ export async function acquireEngineLock(
       // Written by a process on another machine (a home on a network mount, or a copied
       // directory). Its pid is meaningless here, so it cannot be our live holder.
       console.warn(
-        `[engine-lock] a claim from ${existing.host} was found in ${rootDir} — treating it as stale`,
+        `[engine-lock] a claim from ${existing.host} was found in ${engineAssetsRoot} — treating it as stale`,
       );
     } else if (existing && existing.pid !== record.pid && isProcessAlive(existing.pid)) {
       // Alive — but is it the same process that wrote this? If the OS can tell us the pid's
@@ -307,21 +320,21 @@ export async function acquireEngineLock(
     await nodeFs.promises.unlink(file).catch(() => undefined);
   }
 
-  return { acquired: false, holder: readEngineLock(rootDir, role) };
+  return { acquired: false, holder: readEngineLock(engineAssetsRoot, role) };
 }
 
 /** Release the claim — **only if this process holds it**. */
 export async function releaseEngineLock(
-  rootDir: string,
+  engineAssetsRoot: string,
   pid: number = process.pid,
   role: EngineRole = "chat",
 ): Promise<boolean> {
-  const existing = readEngineLock(rootDir, role);
+  const existing = readEngineLock(engineAssetsRoot, role);
   if (!existing || existing.pid !== pid) return false;
-  return releaseEngineLockSync(rootDir, pid, role);
+  return releaseEngineLockSync(engineAssetsRoot, pid, role);
 }
 
 /** Is a lock file present at all for this role? Used by the probe/diagnostics paths. */
-export function hasEngineLock(rootDir: string, role: EngineRole = "chat"): boolean {
-  return existsSync(engineLockPath(rootDir, role));
+export function hasEngineLock(engineAssetsRoot: string, role: EngineRole = "chat"): boolean {
+  return existsSync(engineLockPath(engineAssetsRoot, role));
 }

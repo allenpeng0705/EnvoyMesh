@@ -1,6 +1,6 @@
 # EnvoyMesh family — multi-product packaging design
 
-**Status:** design agreed in outline; **S0, S1, S2, S4's asset + spawn halves, §5's layout and D4 done; S3 started** (§13) · **Owner:** product / packaging · **Created:** 2026-09-12
+**Status:** design agreed in outline; **S0–S4, §5 layout, and D4 done** (§10 / §13) · **Owner:** product / packaging · **Created:** 2026-09-12
 
 > **Building a new app?** Start with `docs/envoymesh-new-app-guide.md` — the how-to for a new product (desktop + mobile), including the family rules it must not break and the upstream sync procedure. This document is the *why*: the decisions and the measurements behind them.
 >
@@ -209,9 +209,9 @@ The owner's rule: **check the common place; tell the user a profile exists; let 
 |---|---|---|
 | **S0** ✅ | Make the node runnable in a working checkout: refresh the sibling `envoy-harness` links (or vendor the remaining contract symbols into `packages/protocol`, which this refactor already did for five of them) | ✅ node starts; >2 GB attributed by process (§13) |
 | **S1** ✅ | Root resolution (`ENVOYMESH_HOME` → setting → per-OS default → legacy), `envoymesh.json` marker, detection helper, and move the node default off `./data/default` | ✅ starting from two different CWDs resolves to **one** identity; marker written on first run; 18 tests over found / missing / damaged / permissions (§13) |
-| **S2** ✅ | The discovery dialog: found / none / damaged / in-use, with end-user wording | ✅ all five states modelled (`profile-discovery.ts`, 13 tests); ✅ the node's damaged *and* in-use paths; ◻ the dialog rendering belongs to a product UI |
-| **S3** ◐ | `lock` + `node.json` + attach; health identity; ownership-checked supervisor cleanup | ✅ lock, endpoint, identity probe, refusal of a second owner (16 tests + a two-process run); ◻ attach (token exchange + client); ◻ `/health` carrying identity; ◻ the Rust supervisor's kill-by-port |
-| **S4** ◐ | Shared local engine: assets to `runtime/`, `/v1/models` probe, spawn lock, model lease; embeddings first | ✅ assets resolve to `<root>/runtime/envoy-local` with adoption (§13, S8); ✅ **spawn lock** — a live claim means no second engine is started and the loser is told who holds it (§13); ✅ the **model lease** — policy decided (§8): one agreed shared model, refused with an actionable message when the held engine serves a different one, port-as-arbiter for an unclaimed engine (§13) |
+| **S2** ✅ | The discovery dialog: found / none / damaged / in-use, with end-user wording | ✅ all five states modelled (`profile-discovery.ts`, 13 tests); ✅ the node's damaged *and* in-use paths; ✅ Tauri attach-or-spawn + Social `get_home_node_mode` (Setup wait banner + Settings → App) |
+| **S3** ✅ | `lock` + `node.json` + attach; health identity; ownership-checked supervisor cleanup | ✅ lock, endpoint, identity probe, refusal of a second owner; ✅ attach client (`host-connect` / `reuse-host`); ✅ `/health` carries identity; ✅ Rust supervisor kills only the pid named in this home's `node.json`; ✅ Tauri attaches when another family app already owns the home |
+| **S4** ✅ | Shared local engine: assets to `runtime/`, `/v1/models` probe, spawn lock, model lease; embeddings first | ✅ assets resolve to `<root>/runtime/envoy-local` with sticky `engine-root.json`; ✅ **spawn lock** beside assets (`<engineAssetsRoot>/engine-*.lock`); ✅ **model lease** — one agreed shared model, refuse mismatch |
 | **§5** ✅ | Product state moves to `<home>/<product>/`, kernel state stays in `profile/`; existing installs adopt in place | ✅ 134 → 59 references, 14 → 0 product stores on the profile dir, 21 kernel paths documented; ✅ a real service writes product state to the product dir and `node-config.json` to the profile; ✅ both roots checked for cross-leakage; ✅ 3 defects fixed (adoption markers, a kernel store through the product accessor, the standalone-profile case) (§13) |
 | **D4** ✅ | The harness stays a **peer** (§3, D4): every product clones or copies `envoy-harness` itself; EnvoyMesh makes a missing one legible instead of vendoring it | ✅ `scripts/check-peer-deps.mjs` resolves all four packages, prints what it measured, and fails if the sources import one it does not check; wired into `npm run node:dev` + `ci-node-hermetic.yml`; 8 seeded tests in `scripts/test/gates.test.mjs`, and the CI-shaped case (no sibling) verified (§13) |
 
@@ -318,7 +318,7 @@ Also added: `isHomeSchemaSupported()`, wired into the node as a warning — a ho
 
 Three properties the tests pin, beyond the wording: every reachable state offers **at least one** choice (a dialog with no way forward is worse than no dialog); **no choice deletes anything**, and the one that starts fresh says the existing files are kept; and the caller's real capabilities are honoured (`canCreate`, `canChooseFolder`), so the model never offers what the product cannot do.
 
-**Wired into the node.** Startup now reports the situation for a damaged profile and **exits 2 with a readable message** instead of printing a stack trace:
+**Wired into the node.** Startup now reports the situation for a damaged profile and **exits 4 with a readable message** instead of printing a stack trace (exit **2** stays reserved for `exitForNodeSupervisor`, so Tauri can auto-respawn a wedged healthy node without looping on a damaged profile):
 
 ```
 [home] A profile here looks incomplete.
@@ -332,11 +332,11 @@ EnvoyMesh cannot start with the profile in “…/profile”.
 Nothing was changed. Fix or move that folder (or restore a backup), then start EnvoyMesh again.
 ```
 
-Verified by corrupting a real profile and starting the node against it: the message appears, the exit code is 2, and the damaged file is still 11 bytes of truncated JSON — **not** replaced.
+Verified by corrupting a real profile and starting the node against it: the message appears, the exit code is 4, and the damaged file is still 11 bytes of truncated JSON — **not** replaced.
 
 **Review fixes inside S2 itself:** the damage list read "A, and B" (now "A and B" / "A, B and C" — the kind of detail that makes a product feel machine-written), and the node died with a `SyntaxError` *after* printing its readable message.
 
-**What is left of S2 is rendering, deliberately.** The dialog itself belongs to a product UI (Social/Tauri today, EnvoyKit later); this module is the part that can be tested without a browser and cannot drift into each product inventing its own wording. The **in-use** state (§6, state 4) needs the lock from S3 before it can be modelled honestly.
+**Product UI (Tauri + Social).** `get_home_node_mode` exposes attach / supervised / none with end-user headline and detail. Setup's wait banner and Settings → App render it. When another family app already owns the home, Tauri **attaches** (no second spawn, no port kill of the holder).
 
 **Also in this change:** `packages/node-core/src` joined the module-size gate in CI and in `scripts/test/gates.test.mjs` — a core package carrying product-facing modules should not grow unbounded unnoticed. Its only current finding is a pre-existing warning (`home-fs.ts`, 509 lines).
 
@@ -838,3 +838,12 @@ Boot 2 is the one that matters: the old rule checks `exists(shared)` *first*, so
 **Incidental evidence for S3's node lock**, from the same session: one of these boots was refused with *"EnvoyMesh is already using this profile … It started today. Close it, or use a different folder"* — because the previous run's child process had outlived the `npx` wrapper I killed. That is the ownership check working on a real second start, with the end-user wording it is supposed to produce.
 
 **Evidence.** `packages/node-core/test/engine-root.test.ts` (14) includes the race itself — decide on the legacy copy, create the shared root, resolve again, require the same answer — plus the `ps` parser's three shapes and a **real** `processStartedAt(process.pid)` check against `Date.now() - process.uptime()`, which exercises the `ps` path on macOS rather than only the injected one. `apps/node/test/engine-root.test.ts` (5) covers the marker on the real filesystem, two "processes" sharing a home agreeing, and the sentinel guard. The runtime tests now resolve through `engineRootFor` — the same call the engine makes — so a test cannot seed assets where the runtime will not look.
+
+### Review follow-up — engine lock path, Tauri attach, discovery UI (2026-09-13)
+
+Four residual gaps from the multi-product review:
+
+1. **Engine lock API footgun.** `engineLockPath` used `runtimeDirIn(root)`, so callers that correctly passed `engineRootFor().dir` (`…/runtime/envoy-local`) nested another `runtime/` segment. Locks now live at `<engineAssetsRoot>/engine-*.lock`; docs and the new-app guide say pass the asset root, never home alone.
+2. **Tauri always spawned.** Desktop now probes `node.json` + `/health` (identity) first and attaches when another family app already owns the home; guardian stays suppressed in attach mode; exit **3** (in use) retries attach; exit **4** (damaged) does not auto-respawn.
+3. **Discovery product surface.** Social Setup wait banner + Settings → App consume `get_home_node_mode`.
+4. **§10 table** updated: S2/S3/S4 marked complete for the acceptance rows above.

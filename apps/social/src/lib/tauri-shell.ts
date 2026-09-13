@@ -195,3 +195,42 @@ export async function getTauriOpenclawHealStatus(): Promise<OpenclawHealStatus |
     return null;
   }
 }
+
+/** Attach-or-spawn status from the Tauri shell (multi-product home discovery). */
+export type TauriHomeNodeMode = {
+  mode: "supervised" | "attached" | "none" | "unknown";
+  headline?: string;
+  detail?: string;
+  holderApp?: string;
+  holderPid?: number;
+  port?: number;
+};
+
+export async function getTauriHomeNodeMode(): Promise<TauriHomeNodeMode | null> {
+  const invoke = readTauriInvoke();
+  if (!invoke) return null;
+  try {
+    const raw = (await invoke("get_home_node_mode")) as {
+      mode?: string;
+      headline?: string | null;
+      detail?: string | null;
+      holderApp?: string | null;
+      holderPid?: number | null;
+      port?: number | null;
+    };
+    const mode =
+      raw.mode === "supervised" || raw.mode === "attached" || raw.mode === "none"
+        ? raw.mode
+        : "unknown";
+    return {
+      mode,
+      ...(raw.headline ? { headline: raw.headline } : {}),
+      ...(raw.detail ? { detail: raw.detail } : {}),
+      ...(raw.holderApp ? { holderApp: raw.holderApp } : {}),
+      ...(typeof raw.holderPid === "number" ? { holderPid: raw.holderPid } : {}),
+      ...(typeof raw.port === "number" ? { port: raw.port } : {}),
+    };
+  } catch {
+    return null;
+  }
+}

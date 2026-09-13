@@ -40,10 +40,46 @@ struct NodeProcessState {
     child: Mutex<Option<Child>>,
     config: NodeSpawnConfig,
     guardian: Mutex<NodeGuardianState>,
+    /// When set, this window did not spawn a child — another process owns the home
+    /// and we talk to its WebSocket (attach-first, design §7 / S3).
+    attached: Mutex<Option<AttachedHomeNode>>,
+}
+
+/// A verified home node we are using without supervising its process.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachedHomeNode {
+    app: String,
+    pid: u32,
+    port: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owner_id: Option<String>,
+}
+
+/// What Social shows for home discovery (S2) and attach-or-spawn (S3).
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HomeNodeModeStatus {
+    /// `supervised` | `attached` | `none`
+    mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    headline: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    holder_app: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    holder_pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    port: Option<u16>,
 }
 
 /// Home node `exitForNodeSupervisor` uses `process.exit(2)`.
 const NODE_SUPERVISOR_EXIT_CODE: i32 = 2;
+/// Damaged / unreadable profile (`apps/node` home discovery) — must not auto-respawn.
+const NODE_DAMAGED_HOME_EXIT_CODE: i32 = 4;
+/// Another process already owns the home (`acquireNodeLock` loser).
+const NODE_HOME_IN_USE_EXIT_CODE: i32 = 3;
 const NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR: usize = 3;
 const NODE_GUARDIAN_POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// Desktop Social WS port (Tauri home node). Alive-but-wedged detection.
@@ -643,8 +679,71 @@ const NODE_SIDECAR_PORTS: [u16; 3] = [3030, 3031, 3032];
 #[derive(serde::Deserialize)]
 struct NodeSidecarDescriptor {
     pid: u32,
+    #[serde(default)]
+    app: Option<String>,
+    #[serde(default)]
+    port: Option<u16>,
     #[serde(rename = "ownerId", default)]
     owner_id: Option<String>,
+}
+
+fn is_pid_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        // Signal 0: existence check without delivering a signal.
+        let status = Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        matches!(status, Ok(s) if s.success())
+    }
+    #[cfg(windows)]
+    {
+        // Best-effort: OpenProcess fails when the pid is gone.
+        let output = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output();
+        match output {
+            Ok(out) => {
+                let text = String::from_utf8_lossy(&out.stdout);
+                text.contains(&pid.to_string())
+            }
+            Err(_) => false,
+        }
+    }
+}
+
+/// Attach when another family app already owns this home and `/health` matches identity.
+///
+/// Mirrors `resolveRunningNode` → `status === "running"` on the TypeScript side: live claim,
+/// published endpoint, and a verified health body. Callers must **not** spawn (or kill ports)
+/// when this returns `Some`.
+fn try_attach_existing_home_node(profile_dir: &Path) -> Option<AttachedHomeNode> {
+    let desc = read_node_sidecar_descriptor(profile_dir)?;
+    if !is_pid_alive(desc.pid) {
+        return None;
+    }
+    let port = desc.port.unwrap_or(NODE_LIVENESS_PORT);
+    if !probe_home_node_liveness(
+        port,
+        NODE_LIVENESS_PROBE_TIMEOUT,
+        desc.owner_id.as_deref(),
+    ) {
+        return None;
+    }
+    Some(AttachedHomeNode {
+        app: desc
+            .app
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "another EnvoyMesh app".to_string()),
+        pid: desc.pid,
+        port,
+        owner_id: desc.owner_id,
+    })
 }
 
 /// `<home>/profile` → `<home>`; anything else is its own home. Mirrors
@@ -998,6 +1097,31 @@ fn start_node_guardian(app: tauri::AppHandle) {
                         &state,
                         &format!("supervisor exit code {NODE_SUPERVISOR_EXIT_CODE}"),
                     );
+                } else if exit_code == Some(NODE_DAMAGED_HOME_EXIT_CODE) {
+                    error!(
+                        "Home-node exited with damaged-profile code {} — not restarting (fix or move the profile folder)",
+                        NODE_DAMAGED_HOME_EXIT_CODE
+                    );
+                } else if exit_code == Some(NODE_HOME_IN_USE_EXIT_CODE) {
+                    // Race: another product claimed the home while we were spawning.
+                    if let Some(existing) = try_attach_existing_home_node(&state.config.profile_dir)
+                    {
+                        info!(
+                            "Home was already in use — attaching to {} (pid {})",
+                            existing.app, existing.pid
+                        );
+                        if let Ok(mut attached) = state.attached.lock() {
+                            *attached = Some(existing);
+                        }
+                        if let Ok(mut guardian) = state.guardian.lock() {
+                            guardian.suppress_respawn = true;
+                        }
+                    } else {
+                        warn!(
+                            "Home-node exited (code {}) — home in use but attach probe failed",
+                            NODE_HOME_IN_USE_EXIT_CODE
+                        );
+                    }
                 } else if exit_code == Some(NODE_SUPERVISOR_EXIT_CODE) {
                     error!(
                         "Home-node exited with supervisor code {} — not restarting (suppress or rate limit)",
@@ -1366,7 +1490,71 @@ fn reveal_log_dir(log_paths: State<'_, AppLogPaths>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_home_node_mode(state: State<'_, NodeProcessState>) -> Result<HomeNodeModeStatus, String> {
+    if let Ok(attached) = state.attached.lock() {
+        if let Some(info) = attached.as_ref() {
+            return Ok(HomeNodeModeStatus {
+                mode: "attached".to_string(),
+                headline: Some(format!(
+                    "{} is already using this profile.",
+                    info.app
+                )),
+                detail: Some(
+                    "This window is sharing that home node instead of starting a second one."
+                        .to_string(),
+                ),
+                holder_app: Some(info.app.clone()),
+                holder_pid: Some(info.pid),
+                port: Some(info.port),
+            });
+        }
+    }
+    let supervising = state
+        .child
+        .lock()
+        .map(|g| g.is_some())
+        .unwrap_or(false);
+    if supervising {
+        return Ok(HomeNodeModeStatus {
+            mode: "supervised".to_string(),
+            headline: None,
+            detail: None,
+            holder_app: Some("EnvoyMesh".to_string()),
+            holder_pid: None,
+            port: Some(NODE_LIVENESS_PORT),
+        });
+    }
+    Ok(HomeNodeModeStatus {
+        mode: "none".to_string(),
+        headline: Some("The home node is not running yet.".to_string()),
+        detail: Some(
+            "Wait a moment, or restart from this screen if it still does not connect.".to_string(),
+        ),
+        holder_app: None,
+        holder_pid: None,
+        port: None,
+    })
+}
+
+#[tauri::command]
 fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String> {
+    {
+        let attached = state.attached.lock().map_err(|e| e.to_string())?;
+        if let Some(info) = attached.as_ref() {
+            // Re-probe: if the other app is still healthy, keep attaching.
+            if try_attach_existing_home_node(&state.config.profile_dir).is_some() {
+                info!(
+                    "Restart skipped — still attached to {} (pid {})",
+                    info.app, info.pid
+                );
+                return Ok(());
+            }
+            return Err(format!(
+                "{} (pid {}) was using this profile and is no longer answering. Quit that app, then relaunch EnvoyMesh.",
+                info.app, info.pid
+            ));
+        }
+    }
     {
         let mut guardian = state.guardian.lock().map_err(|e| e.to_string())?;
         guardian.suppress_respawn = true;
@@ -1375,10 +1563,34 @@ fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String
     stop_node_child(&mut child_guard);
     #[cfg(unix)]
     kill_stale_listeners_on_node_ports(&state.config.profile_dir);
+
+    // Another product may have claimed the home while we were stopped.
+    if let Some(existing) = try_attach_existing_home_node(&state.config.profile_dir) {
+        info!(
+            "After stop, attaching to {} (pid {}) instead of spawning",
+            existing.app, existing.pid
+        );
+        *child_guard = None;
+        drop(child_guard);
+        if let Ok(mut attached) = state.attached.lock() {
+            *attached = Some(existing);
+        }
+        if let Ok(mut guardian) = state.guardian.lock() {
+            guardian.suppress_respawn = true;
+            guardian.consecutive_liveness_failures = 0;
+            guardian.child_started_at = None;
+            guardian.last_liveness_probe_at = None;
+        }
+        return Ok(());
+    }
+
     let child = spawn_node_process(&state.config)?;
     info!("Node process restarted from Social UI");
     *child_guard = Some(child);
     drop(child_guard);
+    if let Ok(mut attached) = state.attached.lock() {
+        *attached = None;
+    }
     if let Ok(mut guardian) = state.guardian.lock() {
         guardian.suppress_respawn = false;
         guardian.consecutive_liveness_failures = 0;
@@ -1841,6 +2053,7 @@ fn main() {
             append_social_log,
             reveal_log_dir,
             get_openclaw_heal_status,
+            get_home_node_mode,
             pick_directory,
             pick_files
         ])
@@ -1972,29 +2185,45 @@ fn main() {
                 node_log_file,
             };
 
-            let initial_child = match spawn_node_process(&spawn_config) {
-                Ok(child) => {
-                    info!(
-                        "Node process spawned — showing UI immediately; home node continues starting in background"
-                    );
-                    Some(child)
-                }
-                Err(e) => {
-                    error!("{}", e);
-                    None
+            let (initial_child, attached) = if let Some(existing) =
+                try_attach_existing_home_node(&profile_dir)
+            {
+                info!(
+                    "Attaching to home node already running ({} pid {} on port {}) — not spawning a second one",
+                    existing.app, existing.pid, existing.port
+                );
+                (None, Some(existing))
+            } else {
+                match spawn_node_process(&spawn_config) {
+                    Ok(child) => {
+                        info!(
+                            "Node process spawned — showing UI immediately; home node continues starting in background"
+                        );
+                        (Some(child), None)
+                    }
+                    Err(e) => {
+                        error!("{}", e);
+                        (None, None)
+                    }
                 }
             };
 
+            let suppress_respawn = attached.is_some();
             app.manage(NodeProcessState {
                 child: Mutex::new(initial_child),
                 config: spawn_config,
                 guardian: Mutex::new(NodeGuardianState {
-                    suppress_respawn: false,
+                    suppress_respawn,
                     recent_respawn_at: Vec::new(),
                     consecutive_liveness_failures: 0,
-                    child_started_at: Some(Instant::now()),
+                    child_started_at: if attached.is_none() {
+                        Some(Instant::now())
+                    } else {
+                        None
+                    },
                     last_liveness_probe_at: None,
                 }),
+                attached: Mutex::new(attached),
             });
 
             start_node_guardian(app.handle().clone());
@@ -2097,6 +2326,21 @@ mod tests {
         ));
         assert!(!should_auto_respawn_node(
             Some(1),
+            false,
+            &[],
+            now,
+            NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+        ));
+        // Damaged profile (exit 4) and home-in-use (exit 3) must not thrash.
+        assert!(!should_auto_respawn_node(
+            Some(NODE_DAMAGED_HOME_EXIT_CODE),
+            false,
+            &[],
+            now,
+            NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
+        ));
+        assert!(!should_auto_respawn_node(
+            Some(NODE_HOME_IN_USE_EXIT_CODE),
             false,
             &[],
             now,

@@ -51,11 +51,11 @@ afterEach(() => {
  * what a foreign process actually leaves behind: its own pid *and* its own start time.
  */
 function writeForeignClaim(
-  rootDir: string,
+  engineAssetsRoot: string,
   claim: { pid: number; app: string; port: number; pidStartedAt?: number; host?: string },
 ): void {
-  const file = engineLockPath(rootDir, "chat");
-  mkdirSync(join(rootDir, "runtime"), { recursive: true });
+  const file = engineLockPath(engineAssetsRoot, "chat");
+  mkdirSync(engineAssetsRoot, { recursive: true });
   writeFileSync(
     file,
     `${JSON.stringify(
@@ -76,9 +76,11 @@ function writeForeignClaim(
 }
 
 describe("engineLockPath", () => {
-  it("lives beside the engine assets it guards, under the shared runtime root", () => {
-    expect(engineLockPath("/home/owner/envoymesh")).toBe(
-      join("/home/owner/envoymesh", "runtime", "engine-chat.lock"),
+  it("lives beside the engine assets it guards (asset root, not home)", () => {
+    // Callers pass resolveEngineRoot / engineRootFor `.dir`, e.g. …/runtime/envoy-local —
+    // never the home alone, or the lock would sit where no runtime looks.
+    expect(engineLockPath("/home/owner/envoymesh/runtime/envoy-local")).toBe(
+      join("/home/owner/envoymesh/runtime/envoy-local", "engine-chat.lock"),
     );
   });
 
@@ -87,7 +89,7 @@ describe("engineLockPath", () => {
     // let the embeddings runtime adopt the chat engine's port as its own.
     expect(engineLockFileName("chat")).toBe("engine-chat.lock");
     expect(engineLockFileName("embed")).toBe("engine-embed.lock");
-    const root = "/home/owner/envoymesh";
+    const root = "/home/owner/envoymesh/runtime/envoy-local";
     expect(engineLockPath(root, "chat")).not.toBe(engineLockPath(root, "embed"));
   });
 

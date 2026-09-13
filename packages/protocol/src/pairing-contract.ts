@@ -104,6 +104,12 @@ export interface PairWithHomeNodeParams {
   agentPeerId?: string;
   agentPubKey?: string;
   relayPeerId?: string;
+  /**
+   * Extra Envoy relay WebSocket bases (optional) — same meaning as
+   * {@link PairingPayload.relayWsUrls}. Carried on the URI as a comma-joined
+   * `relayWsUrls` query value so a QR can advertise fallback relays.
+   */
+  relayWsUrls?: string[];
   homeNodePeerId?: string;
   agentName?: string;
 }

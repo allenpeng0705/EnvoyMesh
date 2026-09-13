@@ -499,7 +499,9 @@ try {
     `\nEnvoyMesh cannot start with the profile in \u201c${args.profileDir}\u201d.\n` +
     `Nothing was changed. Fix or move that folder (or restore a backup), then start EnvoyMesh again.\n`;
   writeSync(2, message);
-  process.exit(2);
+  // Exit 4 (not 2): 2 is reserved for `exitForNodeSupervisor` so Tauri can auto-respawn a
+  // wedged healthy node. A damaged profile must not be restarted in a loop.
+  process.exit(4);
 }
 
 // Second pass: the owner is known only now, and the marker is what a *second*
@@ -543,11 +545,10 @@ if (nodeLock.acquired) {
     // node that is killed while its engine is still up, so the next start does not have to
     // treat our claim as stale.
     //
-    // The root is **the engine asset root**, not `runtimeDirIn(home)`: the runtimes lock
-    // inside `engineRootFor(profileDir).dir` (= `<home>/runtime/envoy-local`), and releasing
-    // `runtimeDirIn(home)` resolved to `<home>/runtime/engine-*.lock` — a path that can never
-    // exist, so both calls were silent no-ops. This now goes through the *same* resolver the
-    // runtimes use, which is the only way the two can be guaranteed to agree.
+    // The root is **the engine asset root** (`engineRootFor` → e.g. `<home>/runtime/envoy-local`),
+    // not the home and not `runtimeDirIn(home)`. Locks live at
+    // `<engineAssetsRoot>/engine-*.lock`. Passing home would write/read a different path than
+    // the runtimes, so both exit releases would be silent no-ops.
     const engineRootDir = engineRootFor(args.profileDir).dir;
     releaseEngineLockSync(engineRootDir, process.pid, "chat");
     releaseEngineLockSync(engineRootDir, process.pid, "embed");

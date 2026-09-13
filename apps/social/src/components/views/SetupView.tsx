@@ -5,7 +5,7 @@ import { useNodeService, useModelProviderUiScope } from "../../hooks/useNodeServ
 import { useToastOptional } from "../../hooks/useToast.js";
 import { networkPresetById, type NetworkPresetId } from "../../lib/network-presets.js";
 import { markFirstRunSetupComplete } from "../../lib/storage.js";
-import { isTauriShell, restartTauriNodeProcess } from "../../lib/tauri-shell.js";
+import { isTauriShell, restartTauriNodeProcess, getTauriHomeNodeMode, type TauriHomeNodeMode } from "../../lib/tauri-shell.js";
 import { SUGGESTED_TOPICS, INTEREST_CATEGORIES } from "../../lib/display.js";
 import { getCurrentPosition } from "../../lib/geolocation-adapter.js";
 import type {
@@ -111,6 +111,23 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
   const [showRestartButton, setShowRestartButton] = useState(false);
   const [restartBusy, setRestartBusy] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
+  const [homeMode, setHomeMode] = useState<TauriHomeNodeMode | null>(null);
+
+  useEffect(() => {
+    if (!waitingForNode || isConnected || !tauriShell) return;
+    let cancelled = false;
+    const refresh = () => {
+      void getTauriHomeNodeMode().then((mode) => {
+        if (!cancelled) setHomeMode(mode);
+      });
+    };
+    refresh();
+    const timer = setInterval(refresh, 3_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [waitingForNode, isConnected, tauriShell]);
 
   useEffect(() => {
     if (!waitingForNode || isConnected) return;
@@ -380,12 +397,20 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
               <span>{t("setup.connectingBanner")}</span>
             </div>
             <p className="setup-connecting-banner__phase">
-              {waitElapsed < 12
-                ? t("setup.phaseStarting")
-                : waitElapsed < 45
-                  ? t("setup.phaseGateway")
-                  : t("setup.phaseSlow")}
+              {homeMode?.mode === "attached" && homeMode.headline
+                ? homeMode.headline
+                : waitElapsed < 12
+                  ? t("setup.phaseStarting")
+                  : waitElapsed < 45
+                    ? t("setup.phaseGateway")
+                    : t("setup.phaseSlow")}
             </p>
+            {homeMode?.mode === "attached" && homeMode.detail ? (
+              <p className="setup-connecting-banner__hint">{homeMode.detail}</p>
+            ) : null}
+            {homeMode?.mode === "none" && homeMode.detail && waitElapsed >= 20 ? (
+              <p className="setup-connecting-banner__hint">{homeMode.detail}</p>
+            ) : null}
             {showRestartButton ? (
               <div className="setup-connecting-banner__actions">
                 <span className="setup-connecting-banner__hint">{t("setup.stuckHint")}</span>

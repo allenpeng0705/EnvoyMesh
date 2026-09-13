@@ -286,6 +286,12 @@ Both harness names exist, and they are different things:
 
 Making those imports lazy was the alternative, and it was rejected: it would turn `node-service-impl.ts`'s call sites async — a large, invasive change to product code for a condition that only affects a **dev checkout**. The packaged desktop app stages the harness bundle at build time and is never affected.
 
+### 7.6 Shared local engine lock — pass the **asset root**, not home
+
+`acquireEngineLock` / `releaseEngineLock` take the **engine asset directory** returned by `resolveEngineRoot(…).dir` / `engineRootFor(…).dir` (normally `<home>/runtime/envoy-local`). The claim file is `<that-dir>/engine-chat.lock` (and `engine-embed.lock` for embeddings).
+
+Do **not** pass the EnvoyMesh home. That would place the lock where no runtime looks, so two products on one machine would each believe they own the engine. Sticky `engine-root.json` already makes every process agree on the asset directory; the lock API must use that same path.
+
 ## 8. Definition of done
 
 - [ ] `node scripts/check-workspace-wiring.mjs` — clean across all workspaces
