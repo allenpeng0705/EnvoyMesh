@@ -133,6 +133,7 @@ export interface ContinuityContextDeps {
 
 export interface FileShareContextDeps {
   getVaultDir: FileShareContext["getVaultDir"];
+  getProductDir: FileShareContext["getProductDir"];
   getProfileDir: FileShareContext["getProfileDir"];
   getNodeConfig: FileShareContext["getNodeConfig"];
   getTaskStore: FileShareContext["getTaskStore"];
@@ -215,7 +216,7 @@ export interface CapabilityDiscoveryContextDeps {
   syncPairingKioskFromConfig: CapabilityDiscoveryContext["syncPairingKioskFromConfig"];
   /** Load the owner's signed human profile (hobbies/knowledge/location). */
   loadHumanProfile: CapabilityDiscoveryContext["loadHumanProfile"];
-  getProfileDir: CapabilityDiscoveryContext["getProfileDir"];
+  getProductDir: CapabilityDiscoveryContext["getProductDir"];
   mergeAdvertisedDiscoveryTopics?: CapabilityDiscoveryContext["mergeAdvertisedDiscoveryTopics"];
   hasPublicMarketShop?: CapabilityDiscoveryContext["hasPublicMarketShop"];
 }
@@ -465,7 +466,7 @@ export interface OpenInHerdrContextDeps {
 }
 
 export interface TerminalGetHerdrExportHintContextDeps {
-  getProfileDir: TerminalGetHerdrExportHintContext["getProfileDir"];
+  getProductDir: TerminalGetHerdrExportHintContext["getProductDir"];
   requireTerminalManager: TerminalGetHerdrExportHintContext["requireTerminalManager"];
 }
 
@@ -502,7 +503,7 @@ export interface ChatRoomMessageContextDeps {
   getPeerDirectoryStore: ChatRoomMessageContext["getPeerDirectoryStore"];
   getStyleAdapter: ChatRoomMessageContext["getStyleAdapter"];
   getVaultDir: ChatRoomMessageContext["getVaultDir"];
-  getProfileDir?: ChatRoomMessageContext["getProfileDir"];
+  getProductDir?: ChatRoomMessageContext["getProductDir"];
   getConfigStore: ChatRoomMessageContext["getConfigStore"];
   getApprovalQueue: ChatRoomMessageContext["getApprovalQueue"];
   getAutoReplyLimitStore: ChatRoomMessageContext["getAutoReplyLimitStore"];
@@ -522,7 +523,7 @@ export interface ChatMessageContextDeps {
   getPeerDirectoryStore: ChatMessageContext["getPeerDirectoryStore"];
   getStyleAdapter: ChatMessageContext["getStyleAdapter"];
   getVaultDir: ChatMessageContext["getVaultDir"];
-  getProfileDir?: ChatMessageContext["getProfileDir"];
+  getProductDir?: ChatMessageContext["getProductDir"];
   getConfigStore: ChatMessageContext["getConfigStore"];
   getApprovalQueue: ChatMessageContext["getApprovalQueue"];
   getAutoReplyLimitStore: ChatMessageContext["getAutoReplyLimitStore"];
@@ -746,6 +747,7 @@ export function buildContinuityContext(deps: ContinuityContextDeps): ContinuityC
 export function buildFileShareContext(deps: FileShareContextDeps): FileShareContext {
   return {
     getVaultDir: () => deps.getVaultDir(),
+    getProductDir: () => deps.getProductDir(),
     getProfileDir: () => deps.getProfileDir(),
     getNodeConfig: () => deps.getNodeConfig(),
     getTaskStore: () => deps.getTaskStore(),
@@ -816,7 +818,7 @@ export function buildCapabilityDiscoveryContext(deps: CapabilityDiscoveryContext
     },
     syncPairingKioskFromConfig: () => deps.syncPairingKioskFromConfig(),
     loadHumanProfile: () => deps.loadHumanProfile(),
-    getProfileDir: () => deps.getProfileDir(),
+    getProductDir: () => deps.getProductDir(),
     mergeAdvertisedDiscoveryTopics: deps.mergeAdvertisedDiscoveryTopics
       ? (topics) => deps.mergeAdvertisedDiscoveryTopics!(topics)
       : undefined,
@@ -1237,7 +1239,7 @@ export function buildTerminalGetHerdrExportHintContext(
   deps: TerminalGetHerdrExportHintContextDeps,
 ): TerminalGetHerdrExportHintContext {
   return {
-    getProfileDir: () => deps.getProfileDir(),
+    getProductDir: () => deps.getProductDir(),
     requireTerminalManager: () => deps.requireTerminalManager(),
   };
 }
@@ -1284,7 +1286,7 @@ export function buildChatRoomMessageContext(deps: ChatRoomMessageContextDeps): C
     getPeerDirectoryStore: () => deps.getPeerDirectoryStore(),
     getStyleAdapter: () => deps.getStyleAdapter(),
     getVaultDir: () => deps.getVaultDir(),
-    getProfileDir: deps.getProfileDir ? () => deps.getProfileDir!() : undefined,
+    getProductDir: deps.getProductDir ? () => deps.getProductDir!() : undefined,
     getConfigStore: () => deps.getConfigStore(),
     getApprovalQueue: () => deps.getApprovalQueue(),
     getAutoReplyLimitStore: () => deps.getAutoReplyLimitStore(),
@@ -1307,7 +1309,7 @@ export function buildChatMessageContext(deps: ChatMessageContextDeps): ChatMessa
     getPeerDirectoryStore: () => deps.getPeerDirectoryStore(),
     getStyleAdapter: () => deps.getStyleAdapter(),
     getVaultDir: () => deps.getVaultDir(),
-    getProfileDir: deps.getProfileDir ? () => deps.getProfileDir!() : undefined,
+    getProductDir: deps.getProductDir ? () => deps.getProductDir!() : undefined,
     getConfigStore: () => deps.getConfigStore(),
     getApprovalQueue: () => deps.getApprovalQueue(),
     getAutoReplyLimitStore: () => deps.getAutoReplyLimitStore(),

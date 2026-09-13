@@ -420,8 +420,18 @@ if (flag("--check")) {
    * that was reported as an ungated product store in a tree where every store is
    * gated.
    */
-  const DIR_TO_STORE =
-    /(?:\b(?:create[A-Za-z0-9]*Store)|new\s+[A-Za-z_$][\w$]*Store)\s*\(\s*(?:this\._profileDir|\bprofileDir\b)|\.init\(\s*(?:this\._profileDir|\bprofileDir\b)/;
+  //
+  // **Both roots count (§5).** This matched only the profile directory until §5 split the
+  // layout, at which point a product store built from `productDir` without a guard stopped
+  // being visible here — and that is still a defect, for the same reason as before: without
+  // `hasProfileDir` the store is constructed even on a host with **no** profile, where
+  // `productDir` is the `/tmp/unknown` sentinel, so the first use writes to a real path that
+  // belongs to nobody. The negative control in `scripts/test/gates.test.mjs` is what found
+  // this: its sabotage (delete one guard) stopped failing the gate.
+  const DIR_ARG = "(?:this\\._profileDir|this\\._productDir|\\bprofileDir\\b|\\bproductDir\\b|args\\.profileDir)";
+  const DIR_TO_STORE = new RegExp(
+    `(?:\\b(?:create[A-Za-z0-9]*Store)|new\\s+[A-Za-z_$][\\w$]*Store)\\s*\\(\\s*${DIR_ARG}|\\.init\\(\\s*${DIR_ARG}`,
+  );
   /** The nearest line above with *less* indentation that opens an `if (…)`. */
   const enclosingIf = (lineNo) => {
     const indent = (l) => l.length - l.trimStart().length;
@@ -499,36 +509,193 @@ if (flag("--check")) {
     if (strict) process.exit(1);
   }
 
-  // ─── the §5 layout gap, reported rather than gated ──────────────────────────
+  // **Rule: the right root (§5).** The rule above asks "is this hand-off guarded?"; this one
+  // asks "is it pointed at the right directory?". Since §5 there are two roots — `profileDir`
+  // for the kernel (identity, config, trust, audit, vault) and `productDir` for everything the
+  // product owns (`apps/node/src/product-state-dir.ts`) — and getting the pair backwards fails
+  // in both directions, one harmless and one not:
+  //
+  //   * a **product** store on `profile/` is the split-state bug: on a fresh install the
+  //     feature writes one root and reads the other, and looks like it lost the user's data;
+  //   * a **kernel** store on `<home>/<product>/` is worse: the next product cannot see the
+  //     owner's identity, config or trust at all. This is the direction a rename gets wrong by
+  //     accident, and it is how `writeSensitivityOverride` (a *kernel* store) briefly followed
+  //     the product accessor — the tests caught that one, this rule keeps it caught.
+  //
+  // Scope, stated rather than implied: it reads `node-service-impl.ts` and `index.ts`, the two
+  // places that build stores from a directory at boot. Store constructions in the feature
+  // modules (e.g. `node-service-fileshare.ts`) are covered by their tests, not here.
+  {
+    const KERNEL_DIRS = /(?:this\._profileDir|\bprofileDir\b|args\.profileDir)/;
+    const PRODUCT_DIRS = /(?:this\._productDir|\bproductDir\b|productState\.dir)/;
+    const storeDirCalls = (text) => {
+      const out = [];
+      // `productStore(<dir>, "<field>"` / `requireProductStoreDir(<dir>, "<name>")`
+      for (const m of text.matchAll(/\b(?:productStore|requireProductStoreDir)\(\s*([A-Za-z_.$]+)/g)) {
+        const field = /"([^"]+)"/.exec(text.slice(m.index + m[0].length));
+        if (field) out.push({ dirToken: m[1], field: field[1] });
+      }
+      // `createX(<dir>)` / `new XStore(<dir>)`
+      for (const m of text.matchAll(
+        /\b(create[A-Za-z0-9]*Store|new\s+[A-Za-z_$][\w$]*Store)\s*\(\s*([A-Za-z_.$]+)/g,
+      )) {
+        out.push({ dirToken: m[2], factory: m[1].replace(/^new\s+/, "") });
+      }
+      return out;
+    };
+    const groupOf = (call) => {
+      if (call.field && STORE_GROUPS[call.field]) return STORE_GROUPS[call.field][0];
+      if (call.factory) {
+        const row = all.find((r) => r.factory === call.factory);
+        if (row && STORE_GROUPS[row.field]) return STORE_GROUPS[row.field][0];
+      }
+      return null;
+    };
+    const wrongRoot = [];
+    for (const rel of ["apps/node/src/node-service-impl.ts", "apps/node/src/index.ts"]) {
+      const text = await fs.readFile(path.join(root, rel), "utf8");
+      for (const stmt of text.split(/;\n/)) {
+        const flat = stmt.replace(/\s+/g, " ");
+        for (const call of storeDirCalls(flat)) {
+          const group = groupOf(call);
+          if (!group || group === "undecided") continue;
+          const token = call.dirToken;
+          const isKernelDir = KERNEL_DIRS.test(token);
+          const isProductDir = PRODUCT_DIRS.test(token);
+          if (!isKernelDir && !isProductDir) continue; // a local variable: not this rule's business
+          const label = call.field ?? call.factory;
+          if (group === "product" && isKernelDir) {
+            wrongRoot.push({ rel, label, group, dir: token, snippet: flat.slice(0, 110).trim() });
+          } else if (group === "kernel" && isProductDir) {
+            wrongRoot.push({ rel, label, group, dir: token, snippet: flat.slice(0, 110).trim() });
+          }
+        }
+      }
+    }
+    if (wrongRoot.length > 0) {
+      for (const w of wrongRoot) {
+        console.error(
+          `[fail] ${w.label} is a \`${w.group}\` store built from the ${w.group === "kernel" ? "product" : "profile"} ` +
+            `directory (${w.dir}) in ${w.rel}:\n        ${w.snippet}\n` +
+            (w.group === "kernel"
+              ? "      Kernel state must stay in the shared profile dir — a product directory is not shared."
+              : "      A product store must use `productDir`, not the shared profile dir (§5)."),
+        );
+      }
+      console.error(
+        `\n${wrongRoot.length} store(s) are built from the wrong root — §5's split is ` +
+          "incomplete while this list is non-empty (see apps/node/src/product-state-dir.ts).",
+      );
+      process.exit(1);
+    }
+  }
+
+  // **Rule: a kernel store is never built from a product token, in any file.** The rule above
+  // reads the two boot files; this one reads the whole node app for the *kernel* store
+  // factories specifically, because that is the direction that breaks identity rather than
+  // one feature. It is not hypothetical: `createSensitivityOverrideStore` was reached through
+  // a renamed product accessor twice during this work — in `node-service-fileshare.ts` (its
+  // `writeSensitivityOverride`, caught by the IPFS/vault tests) and at the Obsidian plugin
+  // registration in `node-service-impl.ts` (caught by an external review, after an earlier
+  // fix had been reverted by a file copy). Both would have written
+  // `vault-sensitivity-overrides.json` into the product root, where every kernel reader —
+  // `knowledge.query`, RAG, chat-draft inbound — would never look.
+  {
+    const KERNEL_FACTORIES = [
+      "createSensitivityOverrideStore",
+      "createAgentIdentityStore",
+      "createNodeConfigStore",
+      "createSessionTokenStore",
+      "createLocalTrustStore",
+      "createLocalPeerDirectoryStore",
+      "createHumanProfileStore",
+      "createCapabilityManifestStore",
+      "createDeviceAuthorizationStore",
+      "createContactOwnerKeyStore",
+      "createPeerProfileCacheStore",
+      "createLocalPeerReputationStore",
+      "createMultiHopDiscoveryStore",
+      "createDiscoverySeedStore",
+    ];
+    const PRODUCT_TOKENS = /(?:this\._productDir|\bproductDir\b|ctx\.getProductDir\(\)|deps\.getProductDir\(\)|productState\.dir)/;
+    const srcDir = path.join(root, "apps/node/src");
+    const offenders = [];
+    for (const entry of await fs.readdir(srcDir)) {
+      if (!entry.endsWith(".ts") || entry.endsWith(".d.ts")) continue;
+      const text = await fs.readFile(path.join(srcDir, entry), "utf8");
+      for (const factory of KERNEL_FACTORIES) {
+        // One level of nesting in the argument, so `createSensitivityOverrideStore(ctx.getProductDir())`
+        // is captured whole. `[^,)]*` stopped at the inner `)`, which is exactly the shape that
+        // slipped through the first version of this rule.
+        const re = new RegExp(`\\b${factory}\\(\\s*((?:[^(),]|\\([^()]*\\))*)`, "g");
+        let m;
+        while ((m = re.exec(text))) {
+          if (PRODUCT_TOKENS.test(m[1])) {
+            const line = text.slice(0, m.index).split("\n").length;
+            offenders.push({ file: entry, line, factory, arg: m[1].trim() });
+          }
+        }
+      }
+    }
+    if (offenders.length > 0) {
+      for (const o of offenders) {
+        console.error(
+          `[fail] ${o.factory} (a kernel store) is built from a product path: ` +
+            `apps/node/src/${o.file}:${o.line}  (${o.arg})`,
+        );
+      }
+      console.error(
+        `\n${offenders.length} kernel store(s) are pointed at a product directory — the shared ` +
+          "profile dir is the only correct argument for these (design §5).",
+      );
+      process.exit(1);
+    }
+  }
+
+  // ─── the §5 layout: measured live, and it says which half is done ───────────
   //
   // Design §5 puts a product's own state under `<home>/<product>/` and leaves the kernel
-  // stores in the shared `profile/`. Today **every** store is built from the profile
-  // directory, so a second product sharing the home would read and write this product's
-  // chat logs, family rooms, market cache and the rest. Reported with its real size,
-  // because the first estimate ("34 stores") understated it: the stores are the easy half,
-  // and the rest are direct `this._profileDir` path builds that have to move with them or
-  // the product's state ends up split across two roots — which is worse than either
-  // layout alone. Enumerating it here means the remainder is a list, not a feeling.
+  // stores in the shared `profile/`. This block used to *describe* that gap with three
+  // hard-coded numbers, and after the migration landed it still claimed "34 product stores
+  // are built from the profile directory" and "all 134 references" — a stale claim in the
+  // one report a reader checks to find out the layout's state. It now measures.
+  //
+  // What it can measure exactly is the thing that matters: a **product** store built from
+  // the *profile* directory. That is the bug this inventory exists to prevent, so a
+  // non-zero count is reported as such rather than as a worklist note.
   {
     const impl = await fs.readFile(path.join(root, "apps/node/src/node-service-impl.ts"), "utf8");
     const profileDirRefs = (impl.match(/this\._profileDir/g) ?? []).length;
-    const productStores = all.filter((r) => STORE_GROUPS[r.field]?.[0] === "product");
+    // A product store built from the profile dir: the store factories that take a
+    // directory, called with the profile dir instead of the product dir.
+    const productStoreOnProfileDir = [
+      ...impl.matchAll(/productStore\(\s*(this\._profileDir|profileDir)\s*,/g),
+      ...impl.matchAll(/requireProductStoreDir\(\s*(this\._profileDir|profileDir)\s*,/g),
+    ].length;
     console.log(
-      `\n[§5 layout] product state belongs under <home>/<product>/, not in the shared ` +
-        `profile/:`,
+      `\n[§5 layout] product state belongs under <home>/<product>/, the kernel stays in ` +
+        `the shared profile/:`,
     );
-    console.log(
-      `      ${productStores.length} product stores are built from the profile directory, ` +
-        `alongside ${profileDirRefs} direct \`this._profileDir\` references that must move ` +
-        `with them.`,
-    );
-    console.log(
-      `      Resolved already (not created, not yet used): \`resolveProductStateDir()\` in ` +
-        `node-core, which adopts the current location for existing installs.`,
-    );
+    if (productStoreOnProfileDir === 0) {
+      console.log(
+        `      ✅ no product store is built from the shared profile directory. ` +
+          `${profileDirRefs} \`this._profileDir\` references remain — the kernel ones.`,
+      );
+      console.log(
+        `      Where this product's state goes is decided once, in ` +
+          `\`apps/node/src/product-state-dir.ts\`; existing installs adopt the current ` +
+          `location, so the switch is a no-op for them (design §13, "§5 executed").`,
+      );
+    } else {
+      console.log(
+        `      ⚠ ${productStoreOnProfileDir} product store(s) are STILL built from the ` +
+          `profile directory, which is how a second product ends up reading this one's state.`,
+      );
+    }
     console.log(
       `      The per-reference worklist is \`node scripts/audit-profile-dir-usage.mjs\` — it ` +
-        `classifies all 134 \`this._profileDir\` references with this inventory's groups.`,
+        `classifies all ${profileDirRefs} \`this._profileDir\` references with this ` +
+        `inventory's groups (kernel stays, product moves).`,
     );
   }
 

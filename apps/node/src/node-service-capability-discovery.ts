@@ -55,7 +55,7 @@ export interface CapabilityDiscoveryContext {
   /** Load the owner's signed human profile (hobbies/knowledge/location), if any. */
   loadHumanProfile(): Promise<HumanProfileLite | undefined>;
   /** Profile directory — used to detect published web content for DHT advertise. */
-  getProfileDir(): string | undefined;
+  getProductDir(): string | undefined;
   /** Replace capability/publish topics on relay.checkin advertisements (cross-NAT lookup). */
   mergeAdvertisedDiscoveryTopics?(topics: string[]): void;
   /** True when local shop has ≥1 active/reserved public listing (advertise `market:shop`). */
@@ -101,7 +101,7 @@ export async function runCapabilityDiscoveryCycleViaRuntime(
   // Phase 45 — advertise envoymesh.web-content when the manifest has entries.
   // Phase 45E — also advertise publish:<slug> for tagged entries.
   let finalTopics = topics;
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (profileDir) {
     try {
       const store = createWebContentStore(join(profileDir, "web"));

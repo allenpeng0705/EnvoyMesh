@@ -160,6 +160,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
           },
       fileShare: {
             getVaultDir: () => host._vaultDir,
+            getProductDir: () => host._productDir,
             getProfileDir: () => host._profileDir,
             getNodeConfig: () => host.getNodeConfig(),
             getTaskStore: () => host._taskStore,
@@ -232,7 +233,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             },
             syncPairingKioskFromConfig: () => host._syncPairingKioskFromConfig(),
             loadHumanProfile: () => host._humanProfileStore.loadHumanProfile(),
-            getProfileDir: () => host._profileDir,
+            getProductDir: () => host._productDir,
             mergeAdvertisedDiscoveryTopics: (topics) =>
               host._mergeAdvertisedDiscoveryTopics(topics),
             hasPublicMarketShop: () => host._hasPublicMarketShop(),
@@ -329,6 +330,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
           },
       fileShareNetwork: {
             getVaultDir: () => host._vaultDir,
+            getProductDir: () => host._productDir,
             getProfileDir: () => host._profileDir,
             getNodeConfig: () => host.getNodeConfig() as never,
             getTaskStore: () => host._taskStore as never,
@@ -666,7 +668,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             resolveOpenClawWorkspaceDir: () => host._resolveOpenClawWorkspaceDir(),
           },
       terminalGetHerdrExportHint: {
-            getProfileDir: () => host._profileDir,
+            getProductDir: () => host._productDir,
             requireTerminalManager: () => host._requireTerminalManager(),
           },
       terminalExec: {
@@ -701,7 +703,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             getPeerDirectoryStore: () => host._peerDirectoryStore,
             getStyleAdapter: () => host._styleAdapter,
             getVaultDir: () => host._vaultDir,
-            getProfileDir: () => host._profileDir,
+            getProductDir: () => host._productDir,
             getConfigStore: () => host._configStore,
             getApprovalQueue: () => host._approvalQueue,
             getAutoReplyLimitStore: () => host._autoReplyLimitStore,
@@ -721,7 +723,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             getPeerDirectoryStore: () => host._peerDirectoryStore,
             getStyleAdapter: () => host._styleAdapter,
             getVaultDir: () => host._vaultDir,
-            getProfileDir: () => host._profileDir,
+            getProductDir: () => host._productDir,
             getConfigStore: () => host._configStore,
             getApprovalQueue: () => host._approvalQueue,
             getAutoReplyLimitStore: () => host._autoReplyLimitStore,

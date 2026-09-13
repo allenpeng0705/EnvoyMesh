@@ -238,6 +238,8 @@ import {
   isHomeSchemaSupported,
   profileDirHasProductState,
   profileDirIn,
+  releaseEngineLockSync,
+  runtimeDirIn,
   releaseNodeLockSync,
   resolveAppName,
   resolveProductStateDir,
@@ -246,6 +248,7 @@ import {
   writeNodeEndpoint,
   ENVOYMESH_HOME_SCHEMA,
 } from "@envoymesh/node-core";
+import { describeProductStateDir, resolveProductStateDirFor } from "./product-state-dir.js";
 import { createBridge } from "./bridge/index.js";
 import {
   createA2ATaskBridge,
@@ -467,25 +470,16 @@ if (damaged) {
   console.error(lines.join("\n"));
 }
 
-// §5 layout: **where this product's own state belongs**. `profile/` holds the identity and
-// the kernel stores, which every app shares; this node's 34 product stores belong in a
-// directory of their own so a second product cannot read or write them. Resolved — not
-// created, and not yet used for the stores themselves: an existing install keeps its state
-// inside `profile/` (adopted, and said out loud), and the move is its own slice because it
-// touches 34 stores and 134 `this._profileDir` references. Reported here so the resolved
-// layout is visible and the switch has one place to happen.
-const productState = resolveProductStateDir({
-  home: homeDir,
-  product: resolveAppName(),
-  legacyDir: args.profileDir,
-  legacyHasState: profileDirHasProductState(args.profileDir),
-});
-console.log(
-  `[home] product state: ${productState.dir}` +
-    (productState.adoptedLegacy
-      ? " (adopted from the pre-§5 location; moving it is a separate step)"
-      : ""),
-);
+// §5 layout: **where this product's own state belongs.** `profile/` holds the identity and
+// the kernel stores, which every app shares; this node's 34 product stores belong under a
+// directory of their own (`<home>/<product>/`) so a second product cannot read or write
+// them. Adoption, not migration: an install that already keeps product state inside
+// `profile/` keeps it there — `productDir === args.profileDir` for that install, which makes
+// every product-store switch a no-op for it. `product-state-dir.ts` owns the decision; this
+// is where it is taken once for the whole boot, and the report below is how a user sees it.
+const productState = resolveProductStateDirFor(args.profileDir, resolveAppName());
+const productDir = productState.dir;
+console.log(describeProductStateDir(productState));
 
 let profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
 try {
@@ -545,6 +539,11 @@ if (nodeLock.acquired) {
     // Synchronous: an `exit` handler cannot await, so the async version never
     // finished there and every clean shutdown looked like a crash to the next start.
     releaseNodeLockSync(homeDir, process.pid);
+    // The engine claim (§8 / S4) is normally released when llama-server exits; this covers a
+    // node that is killed while its engine is still up, so the next start does not have to
+    // treat our claim as stale.
+    releaseEngineLockSync(runtimeDirIn(homeDir), process.pid, "chat");
+    releaseEngineLockSync(runtimeDirIn(homeDir), process.pid, "embed");
   };
   process.once("exit", release);
   process.once("SIGINT", () => {
@@ -602,16 +601,16 @@ const trustStore = createLocalTrustStore(args.profileDir);
 const peerDirectoryStore = createLocalPeerDirectoryStore(args.profileDir);
 const humanProfileStore = createHumanProfileStore(args.profileDir);
 const agentIdentityStore = createAgentIdentityStore(args.profileDir);
-const chatLogStore = createLocalChatLogStore(args.profileDir);
-const chatDraftStore = createChatDraftStore(args.profileDir);
-const autoReplyLimitStore = createAutoReplyLimitStore(args.profileDir);
+const chatLogStore = createLocalChatLogStore(productDir);
+const chatDraftStore = createChatDraftStore(productDir);
+const autoReplyLimitStore = createAutoReplyLimitStore(productDir);
 const capabilityManifestStore = createCapabilityManifestStore(args.profileDir);
 const reputationStore = createLocalPeerReputationStore(args.profileDir);
 const contactOwnerKeyStore = createContactOwnerKeyStore(args.profileDir);
 const nodeConfigStore = createNodeConfigStore(args.profileDir);
 const bondAutonomyDailyCounter = createBondAutonomyDailyCounter(args.profileDir);
 const deviceAuthorizationStore = createDeviceAuthorizationStore(args.profileDir);
-const agentCardStore = createAgentCardStore(args.profileDir);
+const agentCardStore = createAgentCardStore(productDir);
 bindDeviceAuthorizationStore(deviceAuthorizationStore);
 const persistedNodeConfig = await nodeConfigStore.load();
 if (persistedNodeConfig) {
@@ -708,7 +707,7 @@ const nodeService = createNodeService(
 // Phase 31I — push must init on every startup (not only first-time initNode).
 // Without this, dispatchChatPush silently no-ops (`initialized === false`)
 // and tokens never persist to push-tokens.json.
-void pushNotificationService.init(args.profileDir).catch((err: unknown) => {
+void pushNotificationService.init(productDir).catch((err: unknown) => {
   console.warn("[node] push notification service init failed:", err);
 });
 void (async () => {
@@ -725,7 +724,7 @@ const sessionManager = new SessionManager(new FileSessionStore(join(args.profile
 const styleAdapter = new StyleAdapter();
 const triggerStore = new TriggerStore();
 const digestGenerator = new DigestGenerator(
-  createDefaultDigestConfig(join(args.profileDir, "digests")),
+  createDefaultDigestConfig(join(productDir, "digests")),
 );
 const wsServer = new WsServer<RpcCallerContext>(SOCIAL_WS_PORT, "/ws", {
   onConnectionChange: (connectedCount) => {
@@ -1797,7 +1796,7 @@ async function handleInboundMeshMessage({
       {
         handleDaemonAgentCardInbound,
         getProfile: () => profile,
-        getProfileDir: () => args.profileDir,
+        getProfileDir: () => productDir,
         getTaskStore: () => taskStore,
         getTrustStore: () => trustStore,
         getAgentCardStore: () => agentCardStore,
@@ -1883,7 +1882,7 @@ async function handleInboundMeshMessage({
         getTrustStore: () => trustStore,
         getPeerDirectoryStore: () => peerDirectoryStore,
         getProfile: () => profile,
-        getProfileDir: () => args.profileDir,
+        getProfileDir: () => productDir,
         appendAuditEvent: (event: any) => taskStore.appendAuditEvent(event),
         derivePeerId,
         createUnsignedEnvelope,
@@ -1914,7 +1913,7 @@ async function handleInboundMeshMessage({
     ];
     const result = await handleInboundFeedNotify({
       envelope,
-      profileDir: args.profileDir,
+      profileDir: productDir,
       remotePeerId,
       trustStore,
       peerDirectoryStore,
@@ -2069,7 +2068,7 @@ async function handleInboundMeshMessage({
     const { handleInboundFeedEngage } = await import("./content-engage-inbound.js");
     const result = await handleInboundFeedEngage({
       envelope,
-      profileDir: args.profileDir,
+      profileDir: productDir,
       profile,
       remotePeerId,
       trustStore,
@@ -2208,7 +2207,7 @@ async function handleInboundMeshMessage({
         derivePeerId,
         getProtocol: () => ENVOY_MESSAGE_PROTOCOL,
       },
-      { envelope, remotePeerId, receivedAt, correlationId, profileDir: args.profileDir, replyWithEnvelope: replyWithEnvelope as any },
+      { envelope, remotePeerId, receivedAt, correlationId, profileDir: productDir, replyWithEnvelope: replyWithEnvelope as any },
     );
     return;
   }
@@ -3983,10 +3982,13 @@ setInterval(() => {
 startEventLoopLagMonitor();
 
 const { loadPersistedAssistState } = await import("./terminal-assist-persist.js");
-const initialAssistPersist = await loadPersistedAssistState(args.profileDir);
+const initialAssistPersist = await loadPersistedAssistState(productDir);
 let terminalAgentAssist!: TerminalAgentAssist;
 const terminalManager = new TerminalManager({
-  profileDir: args.profileDir,
+  // `terminals/` is the product's own state (§5) — and `loadPersistedAssistState`
+  // above, the herdr export and the terminal RPCs are already on `productDir`. Pointing
+  // the manager at the kernel root would split the feature's state across two roots.
+  profileDir: productDir,
   taskStore,
   onSessionsChanged: () => {
     if (nodeService instanceof NodeServiceImpl) {
@@ -4010,7 +4012,9 @@ const execFileAsync = promisify(execFile);
 terminalAgentAssist = new TerminalAgentAssist({
   manager: terminalManager,
   taskStore,
-  profileDir: args.profileDir,
+  // Same root as the `loadPersistedAssistState(productDir)` above and the TerminalManager —
+  // otherwise the assist state is written to one root and read from the other (§5).
+  profileDir: productDir,
   initialPersistedSessions: initialAssistPersist.sessions,
   contextReaders:
     nodeService instanceof NodeServiceImpl
@@ -4322,7 +4326,7 @@ nodeService.on("bond:established", (data) => {
   wsServer.emitEvent("bond:established", data);
   // Seed peer Feed timeline from feeds/index.md (posts before bond never arrived via feed.notify).
   void backfillBondedPeerFeed({
-    profileDir: args.profileDir,
+    profileDir: productDir,
     peerOwnerId: data.peerOwnerId,
     libraryRead: (params) => nodeService.libraryRead(params),
     emit: (item) => {

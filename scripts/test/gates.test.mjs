@@ -660,8 +660,11 @@ test("node-store inventory: deleting a guard fails the gate (negative control)",
   // sabotage below is exactly that deletion — it must be caught, and the positive
   // control in the next test proves the same harness passes a correct tree.
   const IMPL = path.join(repoRoot, "apps", "node", "src", "node-service-impl.ts");
+  // §5 moved the *directory* a product store receives (`productDir`), while the guard is
+  // still the identity question (`hasProfileDir`). Both halves matter to this control: the
+  // sabotage removes the guard, and the rule must still see the hand-off.
   const GUARDED = `    this._shopStore =
-      hasProfileDir(profileDir) ? createShopStore(profileDir) : null;`;
+      hasProfileDir(profileDir) ? createShopStore(productDir) : null;`;
 
   async function runAgainst(patchedImpl) {
     const dir = await tmp("gating-");
@@ -701,7 +704,7 @@ test("node-store inventory: deleting a guard fails the gate (negative control)",
   const control = await runAgainst(impl);
   assert.equal(control.code, 0, `the unsabotaged copy must pass:\n${control.output}`);
 
-  const sabotaged = await runAgainst(impl.replace(GUARDED, `    this._shopStore =\n      createShopStore(profileDir);`));
+  const sabotaged = await runAgainst(impl.replace(GUARDED, `    this._shopStore =\n      createShopStore(productDir);`));
   assert.equal(sabotaged.code, 1, `the removed guard must fail the gate:\n${sabotaged.output}`);
   assert.match(sabotaged.output, /\[fail\] _shopStore/);
   assert.match(sabotaged.output, /unguarded/);
@@ -913,3 +916,50 @@ test("peer-deps: the scan ignores node_modules and build output", async () => {
   assert.match(stdout, /1 value import\(s\) in 1 file\(s\)/);
 });
 
+
+test("node-store inventory: a kernel store pointed at the product dir fails the gate", async () => {
+  // **§5's dangerous direction has to be able to fail.** A kernel store (identity, config,
+  // trust, sensitivity overrides) built from a product path writes state the next product
+  // cannot see — and this happened twice during the migration: `createSensitivityOverrideStore`
+  // followed a renamed product accessor in `node-service-fileshare.ts`, and again at the
+  // Obsidian plugin registration in `node-service-impl.ts` (an earlier fix there had been
+  // reverted by a file copy). The tests caught the first; the second was caught by reading.
+  // This control makes the rule's own sabotage permanent instead.
+  const FS = path.join(repoRoot, "apps", "node", "src", "node-service-fileshare.ts");
+  const GOOD = "const store = createSensitivityOverrideStore(profileDir);";
+  const source = await fs.readFile(FS, "utf8");
+  assert.ok(source.includes(GOOD), "the sensitivity-store anchor moved — update this fixture");
+
+  async function runWith(patch) {
+    const dir = await tmp("kernel-root-");
+    const scripts = path.join(dir, "scripts");
+    await fs.mkdir(scripts, { recursive: true });
+    await fs.copyFile(ROOT_STORES, path.join(scripts, "inventory-node-stores.mjs"));
+    await fs.symlink(path.join(repoRoot, "packages"), path.join(dir, "packages"), "dir");
+    // One real file (the patched copy) plus symlinks, so the sabotage is confined.
+    const srcDir = path.join(dir, "apps", "node", "src");
+    await fs.mkdir(srcDir, { recursive: true });
+    for (const entry of await fs.readdir(path.join(repoRoot, "apps", "node", "src"))) {
+      if (entry === "node-service-fileshare.ts") continue;
+      await fs.symlink(path.join(repoRoot, "apps", "node", "src", entry), path.join(srcDir, entry));
+    }
+    await fs.writeFile(path.join(srcDir, "node-service-fileshare.ts"), patch, "utf8");
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        process.execPath,
+        [path.join(scripts, "inventory-node-stores.mjs"), "--check"],
+        { cwd: repoRoot },
+      );
+      return { code: 0, output: `${stdout}${stderr}` };
+    } catch (error) {
+      return { code: error.code ?? 1, output: `${error.stdout ?? ""}${error.stderr ?? ""}` };
+    }
+  }
+
+  const control = await runWith(source);
+  assert.equal(control.code, 0, `the unsabotaged copy must pass:\n${control.output}`);
+
+  const sabotaged = await runWith(source.replace(GOOD, "const store = createSensitivityOverrideStore(ctx.getProductDir());"));
+  assert.equal(sabotaged.code, 1, `the product-rooted kernel store must fail the gate:\n${sabotaged.output}`);
+  assert.match(sabotaged.output, /\[fail\] createSensitivityOverrideStore/);
+});

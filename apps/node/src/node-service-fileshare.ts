@@ -119,7 +119,17 @@ import { sendExpectReplyWithRetry } from "./chat-outbound-deliver.js";
 export interface FileShareContext {
   /** Local vault dir, or null if not initialised. */
   getVaultDir(): string | null;
-  /** Local profile dir, or null if not initialised. */
+  /**
+   * The product's state root (§5): `<home>/<product>/`, or the shared profile dir for an
+   * install that adopted the old layout. Web content, OpenClaw workspaces, the published
+   * library and IPFS exports live here.
+   */
+  getProductDir(): string | null;
+  /**
+   * The shared profile dir — the **kernel** root. Needed here for the sensitivity-override
+   * store, which is a kernel store: putting it under the product would mean a second
+   * product could not see the overrides this one wrote.
+   */
   getProfileDir(): string | null;
   /** Local node config (for IPFS enablement, RAG, etc.). */
   getNodeConfig(): Promise<NodeConfig | undefined>;
@@ -153,7 +163,7 @@ export async function listLibraryItemsViaRuntime(
   params?: ListLibraryItemsParams,
 ): Promise<LibraryItem[]> {
   const vaultDir = ctx.getVaultDir();
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!vaultDir || !profileDir) return [];
   const index = await buildVaultIndex({ rootDir: vaultDir });
   const publishedIds = await createPublishedLibraryStore(profileDir).loadDocumentIds();
@@ -213,7 +223,7 @@ export async function listOpenClawWorkspaceFilesViaRuntime(
   ctx: FileShareContext,
   params?: { query?: string },
 ): Promise<WorkspaceFileItem[]> {
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!profileDir) return [];
   return listOpenClawWorkspaceFilesFromDir(openClawWorkspaceDir(profileDir), params?.query);
 }
@@ -339,7 +349,7 @@ export async function setLibraryItemPublishedViaRuntime(
   documentId: string,
   published: boolean,
 ): Promise<void> {
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!profileDir) return;
   await createPublishedLibraryStore(profileDir).setPublished(documentId, published);
   await writeSensitivityOverride(ctx, documentId, published ? "public" : false);
@@ -393,6 +403,7 @@ async function writeSensitivityOverride(
   sensitivity: VaultItemSensitivity | false,
 ): Promise<void> {
   try {
+    // Kernel store: the shared profile dir, never the product's (§5).
     const profileDir = ctx.getProfileDir();
     if (!profileDir) return;
     const store = createSensitivityOverrideStore(profileDir);
@@ -413,7 +424,7 @@ export async function resolveOpenClawWorkspacePathViaRuntime(
   ctx: FileShareContext,
   relativePath: string,
 ): Promise<{ absolutePath: string }> {
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!profileDir) throw new Error("Node profile dir not initialised");
   const absolutePath = assertPathInsideOpenClawWorkspace(
     openClawWorkspaceDir(profileDir),
@@ -426,7 +437,7 @@ export async function readOpenClawWorkspaceFileViaRuntime(
   ctx: FileShareContext,
   params: ReadLibraryItemContentParams,
 ): Promise<ReadLibraryItemContentResult> {
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!profileDir) {
     return {
       contentBase64: "",
@@ -537,7 +548,7 @@ export async function readLocalFileContentViaRuntime(
 export async function getIpfsEngineStatusViaRuntime(
   ctx: FileShareContext,
 ): Promise<IpfsEngineStatus> {
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!profileDir) {
     return {
       available: false,
@@ -579,7 +590,7 @@ export async function exportLibraryItemToIpfsViaRuntime(
 ): Promise<ExportLibraryItemToIpfsResult> {
   ctx.recordOwnerActivity();
   const vaultDir = ctx.getVaultDir();
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!vaultDir || !profileDir || !ctx.getTaskStore()) {
     throw new Error("Task store not initialized — node is not fully wired");
   }
@@ -602,7 +613,7 @@ export async function pinLibraryItemExternalViaRuntime(
   documentId: string,
 ): Promise<PinLibraryItemExternalResult> {
   ctx.recordOwnerActivity();
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!profileDir) return { ok: false, error: "Profile dir not initialised" };
   const config = await ctx.getNodeConfig();
   if (!config?.externalPublish?.allowIpfs) {
@@ -647,7 +658,7 @@ export async function verifyLibraryItemIpfsGatewayViaRuntime(
 ): Promise<VerifyLibraryItemIpfsGatewayResult> {
   ctx.recordOwnerActivity();
   const vaultDir = ctx.getVaultDir();
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!vaultDir || !profileDir || !ctx.getTaskStore()) {
     throw new Error("Task store not initialized — node is not fully wired");
   }
@@ -698,6 +709,8 @@ export async function importToLibraryViaRuntime(
   // notes/imports/ corpus — never create those for family imports.
   if (!familyProfileId && isVaultExtractableExtension(ext)) {
     const materialized = await materializeOfficeDocumentToNotes(vaultDir, norm, {
+      // The materializer only uses this directory for the *kernel* sensitivity-override
+      // store, so it must be the shared root even though the notes land in the vault.
       profileDir: ctx.getProfileDir(),
       sensitivity: "private",
     });
@@ -734,6 +747,7 @@ export async function convertLibraryItemToMarkdownViaRuntime(
   if (!relativePath) return { ok: false, reason: "not_found" };
 
   return materializeOfficeDocumentToNotes(vaultDir, relativePath, {
+    // Kernel store again (§5): see the note above.
     profileDir: ctx.getProfileDir(),
     sensitivity: "private",
   });
@@ -811,7 +825,7 @@ export async function syncBlogPostsToKnowledgeViaRuntime(
   ownerId?: string,
 ): Promise<{ written: number; failed: number }> {
   const vaultDir = ctx.getVaultDir();
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!vaultDir || !profileDir) return { written: 0, failed: 0 };
 
   const oid = ownerId?.trim() || "local";
@@ -962,7 +976,7 @@ export async function revealLibraryItemInFileManagerViaRuntime(
 export async function listAgentShareProposalsViaRuntime(
   ctx: FileShareContext,
 ): Promise<AgentShareProposal[]> {
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!profileDir) return [];
   return createAgentShareProposalStore(profileDir).list();
 }
@@ -971,7 +985,7 @@ export async function dismissAgentShareProposalViaRuntime(
   ctx: FileShareContext,
   proposalId: string,
 ): Promise<void> {
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!profileDir) return;
   await createAgentShareProposalStore(profileDir).remove(proposalId);
 }
@@ -988,7 +1002,7 @@ export async function submitAgentShareProposalViaRuntime(
     sensitivity: params.sensitivity,
     summary: params.summary?.trim() || undefined,
   };
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (profileDir) {
     await createAgentShareProposalStore(profileDir).upsert(proposal);
   }

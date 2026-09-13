@@ -4,6 +4,11 @@ import {
   productStore,
   requireProductStoreDir,
 } from "./product-store-availability.js";
+import {
+  type ProductStateDir,
+  currentProductName,
+  resolveProductStateDirFor,
+} from "./product-state-dir.js";
 import { resolveBundledOpenClawDir } from "./bundled-paths.js";
 import type {
   AiSettings,
@@ -1785,6 +1790,18 @@ class NodeServiceImpl implements NodeService {
   private readonly _capabilityManifestStore: CapabilityManifestStore | null;
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
   private readonly _profileDir: string;
+  /**
+   * §5 — where **this product's** state lives: `<home>/<product>/`, or the profile directory
+   * itself when an existing install's product state was adopted (`product-state-dir.ts`).
+   *
+   * The rule for the whole service: kernel state (identity, trust, config, audit, vault/RAG,
+   * the model engine) reads `_profileDir`; anything the *product* owns reads `_productDir`.
+   * For an existing install the two are the same string, so every switch is a no-op there —
+   * which is what makes this migration safe to land incrementally.
+   */
+  private readonly _productDir: string;
+  /** How `_productDir` was decided — reported once at boot, and asserted by tests. */
+  private readonly _productState: ProductStateDir;
   /** Lazily-built local verifier scoreboard (§9.2); undefined = not computed yet. */
   private _verifierScoreboard: VerifierScoreboard | undefined | null = undefined;
   /** Root directory for {@link listLibraryItems} (ENVOYMESH_VAULT or shared_vault). */
@@ -2401,16 +2418,27 @@ class NodeServiceImpl implements NodeService {
     this._agentIdentityStore =
       hasProfileDir(profileDir) ? createAgentIdentityStore(profileDir) : null;
     this._profileDir = profileDir ?? UNCONFIGURED_PROFILE_DIR;
+    // §5: one decision, made once, before anything is constructed from it. `productDir`
+    // equals `profileDir` for an existing install (adoption), so this block is a no-op
+    // there and decides the layout only for a fresh one.
+    const productState = resolveProductStateDirFor(profileDir);
+    this._productDir = productState.dir;
+    this._productState = productState;
     // Product stores: constructed only when a profile directory is configured.
     // Without one the field holds the typed stand-in, so the first use names the
     // store instead of writing to the sentinel path. §8.9 / §8.17.7.
-    this._codingHeartbeatStore = productStore(profileDir, "_codingHeartbeatStore", () => new CodingHeartbeatStore());
-    this._codingRuntimeStore = productStore(profileDir, "_codingRuntimeStore", () => new CodingRuntimeStore());
-    this._codingScheduleStore = productStore(profileDir, "_codingScheduleStore", () => new CodingScheduleStore());
-    this._chainStore = productStore(profileDir, "_chainStore", () => new ChainStore());
-    this._delegatedChainStore = productStore(profileDir, "_delegatedChainStore", () => new DelegatedChainStore());
+    //
+    // Note the two different directories, which are the point of §5: the *guard* stays on
+    // `profileDir` (it asks "is this host configured with an identity at all?"), while the
+    // directory handed to the store is the product's own.
+    const productDir = productState.dir;
+    this._codingHeartbeatStore = productStore(productDir, "_codingHeartbeatStore", () => new CodingHeartbeatStore());
+    this._codingRuntimeStore = productStore(productDir, "_codingRuntimeStore", () => new CodingRuntimeStore());
+    this._codingScheduleStore = productStore(productDir, "_codingScheduleStore", () => new CodingScheduleStore());
+    this._chainStore = productStore(productDir, "_chainStore", () => new ChainStore());
+    this._delegatedChainStore = productStore(productDir, "_delegatedChainStore", () => new DelegatedChainStore());
     this._publishedLibraryStore = productStore(
-      profileDir,
+      productDir,
       "_publishedLibraryStore",
       (dir) =>
         new PublishedLibraryStore({
@@ -2420,17 +2448,17 @@ class NodeServiceImpl implements NodeService {
     this._vaultDir = vaultDir ?? process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
     this._chatLogStore =
-      hasProfileDir(profileDir) ? createLocalChatLogStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createLocalChatLogStore(productDir) : null;
     this._chatRoomStore =
-      hasProfileDir(profileDir) ? createLocalChatRoomStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createLocalChatRoomStore(productDir) : null;
     this._bindOpenClawPersistence();
     this._chatRoomPendingSyncStore =
       hasProfileDir(profileDir)
-        ? createLocalChatRoomPendingSyncStore(profileDir)
+        ? createLocalChatRoomPendingSyncStore(productDir)
         : null;
     this._chatRoomPendingMessageStore =
       hasProfileDir(profileDir)
-        ? createLocalChatRoomPendingMessageStore(profileDir)
+        ? createLocalChatRoomPendingMessageStore(productDir)
         : null;
     if (this._chatRoomPendingSyncStore || this._chatRoomPendingMessageStore) {
       this._chatRoomSyncFlushTimer = setInterval(() => {
@@ -2484,7 +2512,7 @@ class NodeServiceImpl implements NodeService {
     // Phase 68-C6/C7 — Coding heartbeats + schedules (~60s shared ticker).
     if (hasProfileDir(profileDir)) {
       this._codingHeartbeatReady = this._codingHeartbeatStore
-        .init(profileDir)
+        .init(productDir)
         .then(() => {
           this._codingHeartbeatTimer = setInterval(() => {
             void this.tickCodingHeartbeats().catch((err) => {
@@ -2499,40 +2527,40 @@ class NodeServiceImpl implements NodeService {
           console.warn("[coding.heartbeat] store init failed:", err);
         });
       this._codingScheduleReady = this._codingScheduleStore
-        .init(profileDir)
+        .init(productDir)
         .catch((err) => {
           console.warn("[coding.schedule] store init failed:", err);
         });
       this._codingRuntimeReady = this._codingRuntimeStore
-        .init(profileDir)
+        .init(productDir)
         .catch((err) => {
           console.warn("[coding.runtime] store init failed:", err);
         });
     }
 
     this._agentActivityStore =
-      hasProfileDir(profileDir) ? createLocalAgentActivityStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createLocalAgentActivityStore(productDir) : null;
     this._agentCardStore =
-      hasProfileDir(profileDir) ? createAgentCardStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createAgentCardStore(productDir) : null;
     this._chatDraftStore =
-      hasProfileDir(profileDir) ? createChatDraftStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createChatDraftStore(productDir) : null;
     this._autoReplyLimitStore =
-      hasProfileDir(profileDir) ? createAutoReplyLimitStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createAutoReplyLimitStore(productDir) : null;
     this._capabilityManifestStore =
       hasProfileDir(profileDir) ? createCapabilityManifestStore(profileDir) : null;
     this._sessionTokenStore =
       hasProfileDir(profileDir) ? createSessionTokenStore(profileDir) : null;
     this._familyProfileStore =
-      hasProfileDir(profileDir) ? createFamilyProfileStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createFamilyProfileStore(productDir) : null;
     this._familyRoomStore =
-      hasProfileDir(profileDir) ? createFamilyRoomStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createFamilyRoomStore(productDir) : null;
     this._shopStore =
-      hasProfileDir(profileDir) ? createShopStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createShopStore(productDir) : null;
     this._marketCacheStore =
-      hasProfileDir(profileDir) ? createMarketCacheStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createMarketCacheStore(productDir) : null;
     this._marketSearchHistoryStore =
       hasProfileDir(profileDir)
-        ? createMarketSearchHistoryStore(profileDir)
+        ? createMarketSearchHistoryStore(productDir)
         : null;
     this._deviceAuthorizationStore =
       hasProfileDir(profileDir) ? createDeviceAuthorizationStore(profileDir) : null;
@@ -2542,26 +2570,26 @@ class NodeServiceImpl implements NodeService {
     this._peerProfileCacheStore =
       hasProfileDir(profileDir) ? createPeerProfileCacheStore(profileDir) : null;
     this._commerceReceiptStore =
-      hasProfileDir(profileDir) ? createCommerceReceiptStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createCommerceReceiptStore(productDir) : null;
     this._reputationAnchorStore =
-      hasProfileDir(profileDir) ? createReputationAnchorStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createReputationAnchorStore(productDir) : null;
     this._multihopDiscoveryStore =
       hasProfileDir(profileDir) ? createMultiHopDiscoveryStore(profileDir) : null;
     this._peerReputationStore =
       hasProfileDir(profileDir) ? createLocalPeerReputationStore(profileDir) : null;
     this._socialProxyStore =
-      hasProfileDir(profileDir) ? createSocialProxySessionStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createSocialProxySessionStore(productDir) : null;
     this._circleStore =
-      hasProfileDir(profileDir) ? new AgentCircleStore(profileDir) : null;
+      hasProfileDir(profileDir) ? new AgentCircleStore(productDir) : null;
     this._documentAcquisitionJobStore =
-      hasProfileDir(profileDir) ? createDocumentAcquisitionJobStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createDocumentAcquisitionJobStore(productDir) : null;
     this._capabilityProviderJobStore =
-      hasProfileDir(profileDir) ? createCapabilityProviderJobStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createCapabilityProviderJobStore(productDir) : null;
     if (hasProfileDir(profileDir)) {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
       this._capabilityIndexReady = this._capabilityIndex.init(profileDir);
-      void this._chainStore.init(profileDir).then(async () => {
-        await this._delegatedChainStore.init(profileDir);
+      void this._chainStore.init(productDir).then(async () => {
+        await this._delegatedChainStore.init(productDir);
         this._hydrateRemoteOwnershipFromStores();
         void this._beginRecoveryForRestoredChains().catch((err: unknown) => {
           console.warn("[team-jobs] begin recovery failed:", err);
@@ -3367,7 +3395,7 @@ class NodeServiceImpl implements NodeService {
     const profile = await removeProfileGalleryPhotoViaRuntime(this._identityContext(), params);
     if (removed) {
       try {
-        await removeGalleryPhotoWallMirror(this._profileDir, profile.ownerId, removed.photoId);
+        await removeGalleryPhotoWallMirror(this._productDir, profile.ownerId, removed.photoId);
       } catch (err) {
         console.warn(
           "[photowall] remove gallery mirror failed:",
@@ -3394,7 +3422,7 @@ class NodeServiceImpl implements NodeService {
       try {
         const mapped = await this._mapGalleryVisibilityToWeb(entry.visibility);
         const ok = await updateGalleryPhotoWallVisibility(
-          this._profileDir,
+          this._productDir,
           profile.ownerId,
           entry.photoId,
           mapped.visibility,
@@ -3429,7 +3457,7 @@ class NodeServiceImpl implements NodeService {
           /* avatar optional */
         }
       }
-      await publishProfilePortal(this._profileDir, {
+      await publishProfilePortal(this._productDir, {
         ownerId: profile.ownerId,
         displayName: profile.displayName,
         username: profile.username,
@@ -4194,7 +4222,7 @@ class NodeServiceImpl implements NodeService {
       throw new Error(`Vault document not found: ${documentId}`);
     }
 
-    const externalExports = await createPublishedExternalStore(requireProductStoreDir(this._profileDir, "createPublishedExternalStore")).loadAll();
+    const externalExports = await createPublishedExternalStore(requireProductStoreDir(this._productDir, "createPublishedExternalStore")).loadAll();
     const exportRecord = externalExports.get(documentId);
     const cid = params.cid?.trim() || exportRecord?.cid;
 
@@ -4320,7 +4348,7 @@ class NodeServiceImpl implements NodeService {
     const card = await buildLocalAgentCard({
       profile,
       humanProfileStore: this._humanProfileStore,
-      profileDir: this._profileDir,
+      profileDir: this._productDir,
       capabilityProviderEnabled: true,
       agentNetworkProfile: cfg.agentNetworkProfile,
     });
@@ -4431,7 +4459,7 @@ class NodeServiceImpl implements NodeService {
         agentCardStore: this._agentCardStore,
         humanProfileStore: this._humanProfileStore,
         bridgeIdentity: agentIdentity,
-        profileDir: this._profileDir,
+        profileDir: this._productDir,
       });
       if (!cardResult.ok) {
         return { ok: false, error: cardResult.reason };
@@ -4469,7 +4497,7 @@ class NodeServiceImpl implements NodeService {
     const card = await buildLocalAgentCard({
       profile,
       humanProfileStore: this._humanProfileStore,
-      profileDir: this._profileDir,
+      profileDir: this._productDir,
       capabilityProviderEnabled: cfg.capabilityProviderEnabled === true,
       agentNetworkProfile: cfg.agentNetworkProfile,
     });
@@ -5260,7 +5288,7 @@ class NodeServiceImpl implements NodeService {
     if (!hasProfileDir(this._profileDir)) {
       return;
     }
-    const path = join(this._profileDir, "openclaw-pending-replies.json");
+    const path = join(this._productDir, "openclaw-pending-replies.json");
     bindOpenClawPendingReplyPersistenceViaRuntime(this._openClawState, path);
     // Surface any cids that were orphaned by the last restart.
     loadAndReportOrphanedOpenClawPendingRepliesViaRuntime(path);
@@ -5749,7 +5777,7 @@ class NodeServiceImpl implements NodeService {
         if (!oldestTurnId) break;
         this._ehCompletedCheckpoints.delete(oldestTurnId);
       }
-      await persistEhTurnCheckpoint(this._profileDir, completed).catch(() => undefined);
+      await persistEhTurnCheckpoint(this._productDir, completed).catch(() => undefined);
       return effectiveChangedFiles;
     } catch {
       return [...changedFiles];
@@ -5760,7 +5788,7 @@ class NodeServiceImpl implements NodeService {
     turnId: string,
   ): Promise<import("@envoymesh/api").EhTurnReview | null> {
     const checkpoint = this._ehCompletedCheckpoints.get(turnId)
-      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+      ?? await loadEhTurnCheckpoint(this._productDir, turnId);
     if (checkpoint) this._ehCompletedCheckpoints.set(turnId, checkpoint);
     return checkpoint?.review ?? null;
   }
@@ -5769,12 +5797,12 @@ class NodeServiceImpl implements NodeService {
     turnId: string,
   ): Promise<import("@envoymesh/api").EhRevertTurnResult> {
     const checkpoint = this._ehCompletedCheckpoints.get(turnId)
-      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+      ?? await loadEhTurnCheckpoint(this._productDir, turnId);
     if (!checkpoint) return { reverted: false, files: [], reason: "checkpoint_not_found" };
     const result = await revertEhTurnCheckpoint(checkpoint);
     if (result.reverted) {
       this._ehCompletedCheckpoints.delete(turnId);
-      await deletePersistedEhTurnCheckpoint(this._profileDir, turnId);
+      await deletePersistedEhTurnCheckpoint(this._productDir, turnId);
       this.emit("eh:files_changed", {
         turnId,
         files: result.files,
@@ -5789,7 +5817,7 @@ class NodeServiceImpl implements NodeService {
     paths?: readonly string[],
   ): Promise<import("@envoymesh/api").EhAcceptTurnReviewResult> {
     const checkpoint = this._ehCompletedCheckpoints.get(turnId)
-      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+      ?? await loadEhTurnCheckpoint(this._productDir, turnId);
     if (!checkpoint) return { accepted: false, remainingFiles: 0 };
     const toAccept = paths ?? checkpoint.review.files.map((file) => file.path);
     acceptEhTurnFiles(checkpoint, toAccept);
@@ -5798,9 +5826,9 @@ class NodeServiceImpl implements NodeService {
       checkpoint.review.files.length === 0 && checkpoint.completedHashes.size === 0;
     if (cleared) {
       this._ehCompletedCheckpoints.delete(turnId);
-      await deletePersistedEhTurnCheckpoint(this._profileDir, turnId);
+      await deletePersistedEhTurnCheckpoint(this._productDir, turnId);
     } else {
-      await persistEhTurnCheckpoint(this._profileDir, checkpoint).catch(() => undefined);
+      await persistEhTurnCheckpoint(this._productDir, checkpoint).catch(() => undefined);
     }
     const remainingFiles = checkpoint.review.files.length;
     auditEhReviewAccepted(this._taskStore, { turnId, remainingFiles });
@@ -5816,7 +5844,7 @@ class NodeServiceImpl implements NodeService {
     paths: readonly string[],
   ): Promise<import("@envoymesh/api").EhRevertTurnResult> {
     const checkpoint = this._ehCompletedCheckpoints.get(turnId)
-      ?? await loadEhTurnCheckpoint(this._profileDir, turnId);
+      ?? await loadEhTurnCheckpoint(this._productDir, turnId);
     if (!checkpoint) return { reverted: false, files: [], reason: "checkpoint_not_found" };
     const result = await revertEhTurnFiles(checkpoint, paths);
     if (result.reverted) {
@@ -5825,9 +5853,9 @@ class NodeServiceImpl implements NodeService {
         checkpoint.review.files.length === 0 && checkpoint.completedHashes.size === 0;
       if (cleared) {
         this._ehCompletedCheckpoints.delete(turnId);
-        await deletePersistedEhTurnCheckpoint(this._profileDir, turnId);
+        await deletePersistedEhTurnCheckpoint(this._productDir, turnId);
       } else {
-        await persistEhTurnCheckpoint(this._profileDir, checkpoint).catch(() => undefined);
+        await persistEhTurnCheckpoint(this._productDir, checkpoint).catch(() => undefined);
       }
       this.emit("eh:files_changed", {
         turnId,
@@ -6535,7 +6563,7 @@ class NodeServiceImpl implements NodeService {
     if (!hasProfileDir(this._profileDir)) {
       throw new Error("coding_runtime_store_not_ready");
     }
-    this._codingRuntimeReady = this._codingRuntimeStore.init(requireProductStoreDir(this._profileDir, "_codingRuntimeStore"));
+    this._codingRuntimeReady = this._codingRuntimeStore.init(requireProductStoreDir(this._productDir, "_codingRuntimeStore"));
     await this._codingRuntimeReady;
   }
 
@@ -6783,7 +6811,7 @@ class NodeServiceImpl implements NodeService {
       autoRunPolicy =
         cfg?.envoyHarnessAutoRunPolicy ??
         "safe-only";
-      const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
+      const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
       const resolved = await resolveEhSessionIdForCwd({
         cwd,
         sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -6896,7 +6924,7 @@ class NodeServiceImpl implements NodeService {
       currentRevision > 0
     ) {
       const cfg = await this._configStore.load().catch(() => undefined);
-      const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
+      const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
       const resolved = await resolveEhSessionIdForCwd({
         cwd,
         sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -6913,7 +6941,7 @@ class NodeServiceImpl implements NodeService {
     }
 
     const cfg = await this._configStore.load().catch(() => undefined);
-    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
     const resolved = await resolveEhSessionIdForCwd({
       cwd,
       sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -6932,7 +6960,7 @@ class NodeServiceImpl implements NodeService {
       cwd,
     });
     const scoped = { ...history, ...(chat ? { chatId: chat.id } : {}) };
-    const checkpoints = await listEhTurnCheckpoints(this._profileDir, {
+    const checkpoints = await listEhTurnCheckpoints(this._productDir, {
       ...(chat ? { chatId: chat.id } : {}),
       cwd: normalized,
     });
@@ -6958,7 +6986,7 @@ class NodeServiceImpl implements NodeService {
     // Soft-deny: return [] when coding is disabled (not a hard CODING_GATED_RPC throw).
     if (!(await this._callerMayUseCoding())) return [];
     const { chats, sessionByCwd } = await this._loadEhChatState();
-    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
     const agentStateByChatId: Record<string, EhAgentStateName> = {};
     for (const [id, state] of this._ehAgentStateByChatId) {
       agentStateByChatId[id] = state;
@@ -7109,7 +7137,7 @@ class NodeServiceImpl implements NodeService {
     if (!hasProfileDir(this._profileDir)) {
       throw new Error("coding_heartbeat_store_not_ready");
     }
-    this._codingHeartbeatReady = this._codingHeartbeatStore.init(requireProductStoreDir(this._profileDir, "_codingHeartbeatStore"));
+    this._codingHeartbeatReady = this._codingHeartbeatStore.init(requireProductStoreDir(this._productDir, "_codingHeartbeatStore"));
     await this._codingHeartbeatReady;
   }
 
@@ -7243,7 +7271,7 @@ class NodeServiceImpl implements NodeService {
     if (!hasProfileDir(this._profileDir)) {
       throw new Error("coding_schedule_store_not_ready");
     }
-    this._codingScheduleReady = this._codingScheduleStore.init(requireProductStoreDir(this._profileDir, "_codingScheduleStore"));
+    this._codingScheduleReady = this._codingScheduleStore.init(requireProductStoreDir(this._productDir, "_codingScheduleStore"));
     await this._codingScheduleReady;
   }
 
@@ -7482,7 +7510,7 @@ class NodeServiceImpl implements NodeService {
     }
     const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
     const cfg = await this._configStore.load().catch(() => undefined);
-    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
     const resolved = await resolveEhSessionIdForCwd({
       cwd,
       sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -7534,7 +7562,7 @@ class NodeServiceImpl implements NodeService {
     } else {
       this._closeEnvoyHarnessPersistentAcpHost();
     }
-    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
     const created = await sessionStore.create({
       cwd: normalized,
       startedAt: new Date().toISOString(),
@@ -7566,7 +7594,7 @@ class NodeServiceImpl implements NodeService {
     }
     const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
     const normalized = normalizeEhWorkspaceCwd(cwd);
-    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
     if (!(await sessionStore.exists(sessionId))) {
       throw new Error(`envoy_harness_session_not_found: ${sessionId}`);
     }
@@ -7683,7 +7711,7 @@ class NodeServiceImpl implements NodeService {
     let messageCount = 0;
     if (chat.sessionId) {
       try {
-        const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
+        const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
         const history = await loadEhChatHistoryFromStore({
           sessionStore,
           sessionId: chat.sessionId,
@@ -7828,7 +7856,7 @@ class NodeServiceImpl implements NodeService {
       memoryRoot: join(cwd, "memories"),
     });
     const sessionStore = new SessionStore({
-      dir: join(this._profileDir, "envoy-harness", "sessions"),
+      dir: join(this._productDir, "envoy-harness", "sessions"),
     });
     let configLayer: ConfigLayer = {};
     try {
@@ -7949,7 +7977,7 @@ class NodeServiceImpl implements NodeService {
       },
     );
     const cfg = await this._configStore.load().catch(() => undefined);
-    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
     const resolved = await resolveEhSessionIdForCwd({
       cwd: normalized,
       sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -8022,7 +8050,7 @@ class NodeServiceImpl implements NodeService {
     const runtime = await this._getOrInitEnvoyHarnessRuntime();
     const backend = await this._buildEnvoyHarnessAcpBackend(runtime, cwd);
     const cfg = await this._configStore.load().catch(() => undefined);
-    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
     const resolved = await resolveEhSessionIdForCwd({
       cwd,
       sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -9399,7 +9427,7 @@ class NodeServiceImpl implements NodeService {
 
   private _resolveOpenClawWorkspaceDir(): string {
     const ownerId = this._profile?.owner?.ownerId ?? "unknown";
-    return resolveOpenClawWorkspaceDirFromProfile(this._profileDir, ownerId);
+    return resolveOpenClawWorkspaceDirFromProfile(this._productDir, ownerId);
   }
 
   private _clawHubContext(): ClawHubContext {
@@ -9726,7 +9754,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _publishedLibraryFilePath(): string | null {
-    return buildPublishedLibraryFilePath(this._profileDir);
+    return buildPublishedLibraryFilePath(this._productDir);
   }
 
   private async _persistPublishedLibrary(): Promise<void> {
@@ -10695,7 +10723,7 @@ class NodeServiceImpl implements NodeService {
         const { resetOpenClawEnvoyAiSessions } = await import(
           "./openclaw-envoyai-session-reset.js"
         );
-        const reset = await resetOpenClawEnvoyAiSessions(this._profileDir);
+        const reset = await resetOpenClawEnvoyAiSessions(this._productDir);
         if (reset.removedSessions > 0) {
           console.log(
             `[openclaw] EnvoyAI clear reset ${reset.removedSessions} session(s), ` +
@@ -11751,15 +11779,18 @@ class NodeServiceImpl implements NodeService {
 
   private _getOrCreatePluginRegistry(): PluginRegistry {
     if (!this._pluginRegistry) {
-      const profileDir = this._serviceContextDeps().fileShare.getProfileDir();
+      const profileDir = this._serviceContextDeps().fileShare.getProductDir();
       if (!profileDir) throw new Error("plugin registry requires a profile directory");
       const registry = createPluginRegistry(profileDir);
 
       // Phase 44D — register built-in Obsidian plugin.
       const vaultDir = this._serviceContextDeps().fileShare.getVaultDir();
       if (vaultDir) {
-        const sensitivityStore = createSensitivityOverrideStore(profileDir);
-        const publishedStore = createPublishedLibraryStore(requireProductStoreDir(profileDir, "createPublishedLibraryStore"));
+        // Kernel store (`vault-sensitivity-overrides.json`): the shared profile dir, never the
+        // product's — every kernel reader (knowledge.query, RAG, chat-draft inbound) loads it
+        // from there, so a product-rooted copy would be written and never read.
+        const sensitivityStore = createSensitivityOverrideStore(this._profileDir);
+        const publishedStore = createPublishedLibraryStore(requireProductStoreDir(this._productDir, "createPublishedLibraryStore"));
         const obsidian = createObsidianPlugin({
           readVaultFile: async (relativePath: string) => {
             try {
@@ -11803,7 +11834,7 @@ class NodeServiceImpl implements NodeService {
     params: ActivateKbPluginParams,
   ): Promise<{ ok: boolean; reason?: string }> {
     const registry = this._getOrCreatePluginRegistry();
-    const profileDir = this._serviceContextDeps().fileShare.getProfileDir();
+    const profileDir = this._serviceContextDeps().fileShare.getProductDir();
     const vaultDir = this._serviceContextDeps().fileShare.getVaultDir();
     const config: Record<string, unknown> = {
       ...(params.config ?? {}),
@@ -11988,13 +12019,13 @@ class NodeServiceImpl implements NodeService {
         err instanceof Error ? err.message : err,
       );
     });
-    const result = await publishWebContentEntryAuthor(this._profileDir, {
+    const result = await publishWebContentEntryAuthor(this._productDir, {
       ...params,
       ownerId,
     });
     if (params.template === "blog-post" && this._vaultDir) {
       try {
-        const webPath = join(this._profileDir, "web", result.path);
+        const webPath = join(this._productDir, "web", result.path);
         const markdown = await readFile(webPath, "utf8");
         const { materializeBlogPostToNotes } = await import("./vault-markdown-corpus.js");
         await materializeBlogPostToNotes(this._vaultDir, {
@@ -12030,7 +12061,7 @@ class NodeServiceImpl implements NodeService {
     if (!ownerId) {
       throw new Error("ensureDefaultWebSite: owner identity required");
     }
-    const result = await ensureDefaultWebSiteAuthor(this._profileDir, {
+    const result = await ensureDefaultWebSiteAuthor(this._productDir, {
       ownerId,
       displayName: human?.displayName,
       visibility: "bonded",
@@ -12049,7 +12080,7 @@ class NodeServiceImpl implements NodeService {
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
     if (!ownerId) return [];
-    return listWebContentSectionsAuthor(this._profileDir, ownerId);
+    return listWebContentSectionsAuthor(this._productDir, ownerId);
   }
 
   async listFeedPosts(): Promise<import("@envoymesh/api").FeedPostSummary[]> {
@@ -12060,7 +12091,7 @@ class NodeServiceImpl implements NodeService {
     if (!ownerId) {
       throw new Error("listFeedPosts: owner identity not ready");
     }
-    return listFeedPostsAuthor(this._profileDir, ownerId);
+    return listFeedPostsAuthor(this._productDir, ownerId);
   }
 
   async listFeedTimeline(
@@ -12077,14 +12108,14 @@ class NodeServiceImpl implements NodeService {
     }
     const bonds = await this.getBonds();
     const page = await listFeedTimelineMerged({
-      profileDir: this._profileDir,
+      profileDir: this._productDir,
       ownerId,
       bonds,
       params,
     });
     // Existing bonds: seed peer Feed if we have no local rows yet (push-only notify).
     scheduleFeedBackfillForMissingPeers({
-      profileDir: this._profileDir,
+      profileDir: this._productDir,
       bondedOwnerIds: bonds
         .filter((b) => b.level === "direct" || b.level === "referred")
         .map((b) => b.peerOwnerId),
@@ -12100,7 +12131,7 @@ class NodeServiceImpl implements NodeService {
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
     if (!ownerId) return [];
-    return listBlogPostsAuthor(this._profileDir, ownerId);
+    return listBlogPostsAuthor(this._productDir, ownerId);
   }
 
   async deleteWebContentEntry(
@@ -12114,7 +12145,7 @@ class NodeServiceImpl implements NodeService {
       params.ownerId?.trim() ||
       this._profile?.owner?.ownerId?.trim() ||
       human?.ownerId?.trim();
-    return deleteWebContentEntryAuthor(this._profileDir, {
+    return deleteWebContentEntryAuthor(this._productDir, {
       ...params,
       ...(ownerId ? { ownerId } : {}),
     });
@@ -12189,7 +12220,7 @@ class NodeServiceImpl implements NodeService {
     // Clear prior outbox rows that succeeded this round (avoids warm flush re-send).
     for (const ownerId of deliver.sentOwnerIds) {
       try {
-        await removeFeedNotifyOutboxItem(this._profileDir, ownerId, meta.url);
+        await removeFeedNotifyOutboxItem(this._productDir, ownerId, meta.url);
       } catch (err) {
         console.warn(
           `[feed.notify] outbox clear failed for ${ownerId.slice(0, 16)}…:`,
@@ -12200,7 +12231,7 @@ class NodeServiceImpl implements NodeService {
 
     for (const ownerId of deliver.missedOwnerIds) {
       try {
-        await enqueueFeedNotifyOutboxItem(this._profileDir, {
+        await enqueueFeedNotifyOutboxItem(this._productDir, {
           recipientOwnerId: ownerId,
           url: meta.url,
           meta,
@@ -12223,7 +12254,7 @@ class NodeServiceImpl implements NodeService {
     const trimmed = ownerId.trim();
     if (!trimmed) return;
 
-    const pending = await listFeedNotifyOutboxForRecipient(this._profileDir, trimmed);
+    const pending = await listFeedNotifyOutboxForRecipient(this._productDir, trimmed);
     if (pending.length === 0) return;
 
     for (const row of pending) {
@@ -12243,7 +12274,7 @@ class NodeServiceImpl implements NodeService {
         },
       });
       if (result.ok) {
-        await removeFeedNotifyOutboxItem(this._profileDir, trimmed, row.url);
+        await removeFeedNotifyOutboxItem(this._productDir, trimmed, row.url);
       } else {
         console.warn(
           `[feed.notify] outbox flush miss ${trimmed.slice(0, 16)}… ${row.url.slice(0, 40)}: ${result.reason}`,
@@ -12255,8 +12286,8 @@ class NodeServiceImpl implements NodeService {
   /** Best-effort: deliver all pending outbox rows (peer may still be offline). */
   private async _flushFeedNotifyOutbox(): Promise<void> {
     if (!hasProfileDir(this._profileDir)) return;
-    await compactFeedNotifyOutbox(this._profileDir);
-    const rows = await loadFeedNotifyOutbox(this._profileDir);
+    await compactFeedNotifyOutbox(this._productDir);
+    const rows = await loadFeedNotifyOutbox(this._productDir);
     if (rows.length === 0) return;
     const owners = [...new Set(rows.map((r) => r.recipientOwnerId))];
     for (const ownerId of owners) {
@@ -12267,17 +12298,17 @@ class NodeServiceImpl implements NodeService {
   async listFeedNotifications(): Promise<FeedNotification[]> {
     if (!hasProfileDir(this._profileDir)) return [];
     // Newest slice for Inbox / Feed; full history is listFeedTimeline.
-    return listFeedNotifyRecent(this._profileDir);
+    return listFeedNotifyRecent(this._productDir);
   }
 
   async dismissFeedNotification(id: string): Promise<void> {
     if (!hasProfileDir(this._profileDir)) return;
-    await dismissFeedNotifyInboxItem(this._profileDir, id);
+    await dismissFeedNotifyInboxItem(this._productDir, id);
   }
 
   async dismissAllFeedNotifications(): Promise<void> {
     if (!hasProfileDir(this._profileDir)) return;
-    await dismissAllFeedNotifyInboxItems(this._profileDir);
+    await dismissAllFeedNotifyInboxItems(this._productDir);
   }
 
   /** Persist inbound content engagement and emit WS/event (called from mesh inbound). */
@@ -12304,7 +12335,7 @@ class NodeServiceImpl implements NodeService {
 
   async listContentEngageNotifications(): Promise<ContentEngageNotification[]> {
     if (!hasProfileDir(this._profileDir)) return [];
-    return loadContentEngageInbox(this._profileDir);
+    return loadContentEngageInbox(this._productDir);
   }
 
   async dismissContentEngageNotifications(
@@ -12312,7 +12343,7 @@ class NodeServiceImpl implements NodeService {
   ): Promise<void> {
     if (!hasProfileDir(this._profileDir)) return;
     const surface = params?.surface ?? "all";
-    await dismissContentEngageInbox(this._profileDir, surface);
+    await dismissContentEngageInbox(this._productDir, surface);
   }
 
   /** Persist inbound feed.notify and emit WS/event (called from mesh inbound). */
@@ -12379,7 +12410,7 @@ class NodeServiceImpl implements NodeService {
     const profile = this._profile;
     if (!profile || !hasProfileDir(this._profileDir)) return;
     try {
-      await enqueueFeedEngageOutboxItem(this._profileDir, {
+      await enqueueFeedEngageOutboxItem(this._productDir, {
         targetOwnerId: input.targetOwnerId,
         url: input.url,
         action: input.action,
@@ -12403,7 +12434,7 @@ class NodeServiceImpl implements NodeService {
     const trimmed = ownerId.trim();
     if (!trimmed) return;
 
-    const pending = await listFeedEngageOutboxForRecipient(this._profileDir, trimmed);
+    const pending = await listFeedEngageOutboxForRecipient(this._productDir, trimmed);
     if (pending.length === 0) return;
 
     for (const row of pending) {
@@ -12427,7 +12458,7 @@ class NodeServiceImpl implements NodeService {
         },
       });
       if (result.sent) {
-        await removeFeedEngageOutboxItem(this._profileDir, row);
+        await removeFeedEngageOutboxItem(this._productDir, row);
       } else {
         console.warn(
           `[feed.engage] outbox flush miss ${trimmed.slice(0, 16)}… ${row.action} ${row.url.slice(0, 40)}`,
@@ -12438,8 +12469,8 @@ class NodeServiceImpl implements NodeService {
 
   private async _flushFeedEngageOutbox(): Promise<void> {
     if (!hasProfileDir(this._profileDir)) return;
-    await compactFeedEngageOutbox(this._profileDir);
-    const rows = await loadFeedEngageOutbox(this._profileDir);
+    await compactFeedEngageOutbox(this._productDir);
+    const rows = await loadFeedEngageOutbox(this._productDir);
     if (rows.length === 0) return;
     const owners = [...new Set(rows.map((r) => r.targetOwnerId))];
     for (const ownerId of owners) {
@@ -12466,7 +12497,7 @@ class NodeServiceImpl implements NodeService {
       // Best-effort pull; fall back to local mirror (UI also refreshes on snapshot).
       await this._sendEngageToContentOwner({ url, action: "get" });
     }
-    const record = await loadContentEngagement(this._profileDir, url);
+    const record = await loadContentEngagement(this._productDir, url);
     return summarizeEngagement(record, profile.owner.ownerId);
   }
 
@@ -12482,7 +12513,7 @@ class NodeServiceImpl implements NodeService {
     if (ownerId && ownerId !== me) {
       await this._requireBondForRemoteEngage(ownerId);
     }
-    const record = await toggleContentStarInStore(this._profileDir, url, me);
+    const record = await toggleContentStarInStore(this._productDir, url, me);
     const starred = record.stars.includes(me);
     if (ownerId && ownerId !== me) {
       const sent = await this._sendEngageToContentOwner({
@@ -12498,7 +12529,7 @@ class NodeServiceImpl implements NodeService {
         });
       }
     }
-    return summarizeEngagement(await loadContentEngagement(this._profileDir, url), me);
+    return summarizeEngagement(await loadContentEngagement(this._productDir, url), me);
   }
 
   async addContentComment(params: AddContentCommentParams): Promise<ContentEngagementSummary> {
@@ -12516,7 +12547,7 @@ class NodeServiceImpl implements NodeService {
       await this._requireBondForRemoteEngage(ownerId);
     }
     const commentId = randomUUID();
-    const record = await addContentCommentInStore(this._profileDir, url, me, text, commentId);
+    const record = await addContentCommentInStore(this._productDir, url, me, text, commentId);
     if (ownerId && ownerId !== me) {
       const sent = await this._sendEngageToContentOwner({
         url,
@@ -12553,7 +12584,7 @@ class NodeServiceImpl implements NodeService {
     }
     // Enforce: comment author OR post author only (store checks both).
     const record = await removeContentCommentInStore(
-      this._profileDir,
+      this._productDir,
       url,
       me,
       commentId,
@@ -14681,7 +14712,7 @@ class NodeServiceImpl implements NodeService {
     params: import("@envoymesh/api").RunMmxMediaCommandParams,
   ): Promise<import("@envoymesh/api").RunMmxMediaCommandResult> {
     requireOwnerProfile("run MiniMax media commands");
-    return executeMmxMediaCommand(this._profileDir, params);
+    return executeMmxMediaCommand(this._productDir, params);
   }
 
   async revealHomeFsPath(
@@ -14709,7 +14740,7 @@ class NodeServiceImpl implements NodeService {
     params: import("@envoymesh/api").UploadEnvoyAttachmentParams,
   ): Promise<import("@envoymesh/api").UploadEnvoyAttachmentResult> {
     requireOwnerProfile("upload agent attachment");
-    return saveEnvoyUpload(this._profileDir, params);
+    return saveEnvoyUpload(this._productDir, params);
   }
 
   async buildAgentAttachmentContext(
@@ -14821,7 +14852,7 @@ class NodeServiceImpl implements NodeService {
       try {
         const { mirrorShopListingThumb } = await import("./shop-listing-thumb.js");
         const mirrored = await mirrorShopListingThumb({
-          profileDir: this._profileDir,
+          profileDir: this._productDir,
           listing: result.listing,
           publish: (p) => this.publishWebContentEntry(p),
         });
@@ -14882,7 +14913,7 @@ class NodeServiceImpl implements NodeService {
     if (existing) {
       if (hasProfileDir(this._profileDir)) {
         const { unmirrorShopListingThumb } = await import("./shop-listing-thumb.js");
-        await unmirrorShopListingThumb(this._profileDir, existing.listingId);
+        await unmirrorShopListingThumb(this._productDir, existing.listingId);
       }
       void this._fanOutMarketAnnounce(
         {
@@ -14935,7 +14966,7 @@ class NodeServiceImpl implements NodeService {
       throw new Error("Profile directory is not ready");
     }
     const { saveShopListingMedia } = await import("./shop-listing-media.js");
-    return saveShopListingMedia(this._profileDir, params);
+    return saveShopListingMedia(this._productDir, params);
   }
 
   async shopGetListingMedia(
@@ -14959,7 +14990,7 @@ class NodeServiceImpl implements NodeService {
       return { ok: false, reason: "Media path not on this listing" };
     }
     const { readShopListingMediaFile } = await import("./shop-listing-media.js");
-    const file = await readShopListingMediaFile(this._profileDir, mediaPath);
+    const file = await readShopListingMediaFile(this._productDir, mediaPath);
     if (!file) return { ok: false, reason: "Media file missing" };
     return {
       ok: true,
@@ -15333,7 +15364,7 @@ class NodeServiceImpl implements NodeService {
     const { loadInlineListingThumbnail } = await import("./shop-listing-media.js");
     const thumb =
       hasProfileDir(this._profileDir)
-        ? await loadInlineListingThumbnail(this._profileDir, listing.mediaPaths)
+        ? await loadInlineListingThumbnail(this._productDir, listing.mediaPaths)
         : undefined;
     // Prefer explicit public envoy:// thumb; else deterministic path if media exists.
     const ownerId = listing.sellerOwnerId;
@@ -15823,7 +15854,7 @@ class NodeServiceImpl implements NodeService {
   /** EM-F1 — deps bundle for the family-media runtime (bytes stay local). */
   private _familyMediaContext(): FamilyMediaDeps {
     return {
-      profileDir: this._profileDir,
+      profileDir: this._productDir,
       familyProfileStore: this._familyProfileStore,
       familyRoomStore: this._familyRoomStore,
     };
@@ -18295,7 +18326,7 @@ class NodeServiceImpl implements NodeService {
     const profile = this.getProfile();
     if (!profile) return null;
     this._verifierScoreboard = new VerifierScoreboard({
-      filePath: join(this._profileDir, "verifier-scoreboard.jsonl"),
+      filePath: join(this._productDir, "verifier-scoreboard.jsonl"),
       ownerPublicKeyPem: profile.owner.publicKeyPem,
     });
     return this._verifierScoreboard;
@@ -18757,7 +18788,9 @@ class NodeServiceImpl implements NodeService {
     const { unlink } = await import("node:fs/promises");
     const targets: Array<{ path: string; empty: string }> = [
       { path: join(profileDir, "node-config.json"), empty: JSON.stringify({ version: "0.1" }) },
-      { path: join(profileDir, "published-library.json"), empty: JSON.stringify({ version: "0.1", snapshot: [] }) },
+      // The published library is product state (§5): wiping the profile copy would leave the
+      // real one untouched, so "clear all user data" would silently keep published documents.
+      { path: join(this._productDir, "published-library.json"), empty: JSON.stringify({ version: "0.1", snapshot: [] }) },
       { path: join(profileDir, "intent-history.json"), empty: JSON.stringify({ version: "0.1", history: [] }) },
       { path: join(profileDir, "continuity-sessions.json"), empty: JSON.stringify({ version: "0.1", sessions: [] }) },
       { path: join(profileDir, "profile.json"), empty: "" },

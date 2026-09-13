@@ -13,7 +13,7 @@ export interface OpenInHerdrContext {
 
 export interface TerminalGetHerdrExportHintContext {
   /** Resolve the profile dir (where herdr export files live). */
-  getProfileDir(): string | null;
+  getProductDir(): string | null;
   /** Resolve the terminal manager (or throw if not initialised). */
   requireTerminalManager(): {
     listTerminalSessions(): Array<{
@@ -83,7 +83,7 @@ export async function terminalGetHerdrExportHintViaRuntime(
     throw new Error("terminal.sessionNotRunning");
   }
   const scrollback = manager.getScrollbackTail(sessionId, 64 * 1024);
-  const profileDir = ctx.getProfileDir();
+  const profileDir = ctx.getProductDir();
   if (!profileDir) {
     throw new Error("terminal.profileNotInitialised");
   }

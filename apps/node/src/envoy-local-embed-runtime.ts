@@ -55,7 +55,10 @@ import {
 import { buildEnvoyLocalLlamaServerArgs } from "./envoy-local-server-args.js";
 import { listListeningPidsOnPort } from "./openclaw-gateway-port.js";
 import {
+  acquireEngineLock,
+  engineLockPath,
   localEngineAssetsDir,
+  releaseEngineLock,
   homeForProfileDir,
   runtimeDirIn,
   ENVOY_LOCAL_EMBED_PORT,
@@ -685,6 +688,12 @@ async function stopChild(state: EnvoyLocalEmbedRuntimeState): Promise<void> {
  */
 async function stopEmbedListenerHard(state: EnvoyLocalEmbedRuntimeState): Promise<void> {
   await stopChild(state);
+  // `stopChild` releases the claim for `state.engineRole`; this covers a claim taken without a
+  // child ever being spawned (a failed start), where that path has nothing to release.
+  if (state.engineRootDir) {
+    await releaseEngineLock(state.engineRootDir, process.pid, state.engineRole ?? "embed");
+    state.engineRootDir = undefined;
+  }
   const pids = listListeningPidsOnPort(ENVOY_LOCAL_EMBED_PORT).filter(
     (pid) => pid !== process.pid,
   );
@@ -1008,6 +1017,54 @@ async function startEmbedSidecar(
     );
   }
 
+  // §8 / S4 — the embeddings engine has its **own** claim (`engine-embed.lock`): chat and
+  // embed are two servers on two ports and both may legitimately run at once, so they must
+  // not share one lock. A same-role holder means somebody else is bringing up the embed
+  // engine — wait for it and use it instead of starting a second one on port
+  // ENVOY_LOCAL_EMBED_PORT.
+  const engineRoot = rootDir(profileDir);
+  state.engineRootDir = engineRoot;
+  state.engineRole = "embed";
+  const claim = await acquireEngineLock(engineRoot, {
+    role: "embed",
+    pid: process.pid,
+    app: process.env.ENVOYMESH_APP_NAME?.trim() || "EnvoyMesh",
+    port: ENVOY_LOCAL_EMBED_PORT,
+    modelId: model.id,
+  });
+  if (!claim.acquired) {
+    const holder = claim.holder;
+    const holderPort = holder?.port ?? ENVOY_LOCAL_EMBED_PORT;
+    const holderEndpoint = envoyLocalEmbedOpenAiBaseUrl(holderPort);
+    const deadlineForHolder = Date.now() + resolveStartupTimeoutMs(serverParams, 0);
+    while (Date.now() < deadlineForHolder) {
+      if (await probeEnvoyLocalEmbedInference(holderEndpoint, model.id)) {
+        state.phase = "ready";
+        state.download = null;
+        state.lastError = null;
+        state.lastEmbedSuccessAt = Date.now();
+        state.engineRootDir = undefined;
+        console.log(
+          `[envoy-local-embed] engine already running on port ${holderPort}` +
+            (holder?.app ? ` (started by ${holder.app})` : "") +
+            " — using it instead of starting a second one",
+        );
+        armEmbedWatchdog(state, deps);
+        await notifyEmbedReady(state, deps);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    state.engineRootDir = undefined;
+    throw new Error(
+      holder
+        ? `Another process (pid ${holder.pid}${holder.app ? `, ${holder.app}` : ""}) holds the ` +
+          `embeddings engine lock but is not answering on port ${holder.port}. Stop it, or remove ` +
+          `${engineLockPath(engineRoot, "embed")} if it crashed.`
+        : `The embeddings engine lock for ${engineRoot} is held but its holder is unreadable.`,
+    );
+  }
+
   await stopEmbedListenerHard(state);
 
   const child: ChildProcess = spawn(exe, args, {
@@ -1023,6 +1080,11 @@ async function startEmbedSidecar(
     if (state.child === child) {
       state.child = null;
       state.childPid = undefined;
+      // The engine is gone, so the claim must be too (§8 / S4).
+      if (state.engineRootDir) {
+        void releaseEngineLock(state.engineRootDir, process.pid, "embed");
+        state.engineRootDir = undefined;
+      }
       if (state.phase === "ready" || state.phase === "starting") {
         setError(
           state,

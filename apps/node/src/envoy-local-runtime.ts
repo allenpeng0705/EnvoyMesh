@@ -5,6 +5,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import {
+  acquireEngineLock,
+  engineLockPath,
+  releaseEngineLock,
+  releaseEngineLockSync,
+} from "@envoymesh/node-core";
 import { basename, join, resolve } from "node:path";
 import {
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
@@ -120,6 +126,19 @@ export interface EnvoyLocalRuntimeState {
   consecutiveHealthFailures: number;
   /** Soft note after automatic CUDA→CPU (or GPU→CPU) fallback. */
   accelFallbackNote: string | null;
+  /**
+   * The engine asset root we hold the **spawn lock** for (§8 / S4), or undefined when this
+   * process is not running the engine. Kept on the state so every path that ends the child —
+   * `stopChild`, a crash, `process.exit` — releases the claim rather than leaving a lock
+   * behind that the next start would have to take over.
+   */
+  engineRootDir?: string;
+  /**
+   * Which engine this state runs — `chat` or `embed`. Both runtimes share `stopChild`, so the
+   * role has to travel with the state; otherwise stopping the embeddings engine releases the
+   * chat claim (which it does not hold), clears the field, and leaks the embed claim.
+   */
+  engineRole?: "chat" | "embed";
 }
 
 export function createEnvoyLocalRuntimeState(): EnvoyLocalRuntimeState {
@@ -920,7 +939,13 @@ async function stopChild(state: EnvoyLocalRuntimeState): Promise<void> {
   const child = state.child;
   state.child = null;
   state.childPid = undefined;
-  if (!child?.pid) return;
+  if (!child?.pid) {
+    // No child, but we may still hold the engine claim (e.g. a failed start).
+    if (state.engineRootDir) {
+      await releaseEngineLock(state.engineRootDir, process.pid, state.engineRole ?? "chat");
+    }
+    return;
+  }
 
   await new Promise<void>((resolve) => {
     let done = false;
@@ -1047,6 +1072,52 @@ async function startSidecarOnce(
     forceCpu: opts.forceCpu,
   });
 
+  // §8 / S4 — one engine per root. Whoever wins the lock spawns it; a loser waits for that
+  // engine instead of starting a second one on the same port. The node lock already means
+  // there is one mesh owner per home, so this guards the case it cannot: two nodes sharing
+  // one root's engine assets.
+  const engineRoot = rootDir(profileDir);
+  state.engineRootDir = engineRoot;
+  state.engineRole = "chat";
+  const claim = await acquireEngineLock(engineRoot, {
+    role: "chat",
+    pid: process.pid,
+    app: process.env.ENVOYMESH_APP_NAME?.trim() || "EnvoyMesh",
+    port: ENVOY_LOCAL_PORT,
+    modelId: model.id,
+  });
+  if (!claim.acquired) {
+    const holder = claim.holder;
+    const endpointForHolder = envoyLocalOpenAiBaseUrl(holder?.port ?? ENVOY_LOCAL_PORT);
+    const deadlineForHolder = Date.now() + resolveStartupTimeoutMs(serverParams, 0);
+    while (Date.now() < deadlineForHolder) {
+      if (await probeOpenAiModels(endpointForHolder)) {
+        // Somebody else's engine is up and serving: use it rather than fighting over it.
+        state.phase = "ready";
+        state.download = { phase: "ready", label: "Ready", fraction: 1 };
+        state.lastError = null;
+        state.lastErrorAt = null;
+        state.engineRootDir = undefined;
+        console.log(
+          `[envoy-local] engine already running on port ${holder?.port ?? ENVOY_LOCAL_PORT}` +
+            (holder?.app ? ` (started by ${holder.app})` : "") +
+            " — using it instead of starting a second one",
+        );
+        armWatchdog(state, deps);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    state.engineRootDir = undefined;
+    throw new Error(
+      holder
+        ? `Another process (pid ${holder.pid}${holder.app ? `, ${holder.app}` : ""}) holds the local engine ` +
+          `lock for ${engineRoot} but is not answering on port ${holder.port}. Stop it, or remove ` +
+          `${engineLockPath(engineRoot)} if it crashed.`
+        : `The local engine lock for ${engineRoot} is held but its holder is unreadable.`,
+    );
+  }
+
   await stopChild(state);
 
   const stderrChunks: Buffer[] = [];
@@ -1076,6 +1147,12 @@ async function startSidecarOnce(
     if (state.child === child) {
       state.child = null;
       state.childPid = undefined;
+      // The engine is gone, so the claim must be too — otherwise the next start reports a
+      // live holder that is not serving.
+      if (state.engineRootDir) {
+        void releaseEngineLock(state.engineRootDir, process.pid, state.engineRole ?? "chat");
+        state.engineRootDir = undefined;
+      }
       if (state.phase === "ready" || state.phase === "starting") {
         const detail = stderrTail();
         setError(

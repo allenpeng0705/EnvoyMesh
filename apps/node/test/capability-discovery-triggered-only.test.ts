@@ -36,7 +36,7 @@ function makeCtx(): CapabilityDiscoveryContext {
     getCapabilityDiscoveryTimer: () => undefined,
     setCapabilityDiscoveryTimer: () => {},
     syncPairingKioskFromConfig: async () => {},
-    getProfileDir: () => undefined,
+    getProductDir: () => undefined,
   };
 }
 

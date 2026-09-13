@@ -19,6 +19,7 @@ export * from "./service-ports.js";
 export * from "./envoymesh-home.js";
 export * from "./profile-discovery.js";
 export * from "./node-registry.js";
+export * from "./engine-lock.js";
 export * from "./product-attach.js";
 export * from "./home-fs.js";
 export * from "./mmx-media-slash.js";

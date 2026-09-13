@@ -352,6 +352,58 @@ describe("resolveProductStateDir (§5 layout)", () => {
     writeFileSync(path.join(used, "family-profiles.json"), "{}");
     expect(profileDirHasProductState(used)).toBe(true);
   });
+
+  it("a first run's kernel files are not product state", () => {
+    // The hazard this test exists for: `node-config.json` and `audit-events.jsonl` are
+    // written by the *kernel* on a first run, before any product feature is used. When
+    // they counted as product markers, a brand-new install was judged "legacy", adopted
+    // the old layout, and the §5 migration silently did nothing — while looking correct.
+    const fresh = path.join(tmpRoot, "fresh-after-first-run");
+    mkdirSync(fresh, { recursive: true });
+    for (const name of [
+      "profile.json",
+      "human-profile.json",
+      "libp2p-private.key",
+      "node-config.json",
+      "audit-events.jsonl",
+      "task-journal.jsonl",
+      "trust-records.json",
+      "capability-manifest.json",
+      "intent-history.json",
+      "continuity-sessions.json",
+    ]) {
+      writeFileSync(path.join(fresh, name), "{}");
+    }
+    mkdirSync(path.join(fresh, "envoy-local"), { recursive: true });
+    mkdirSync(path.join(fresh, "rag-hnsw"), { recursive: true });
+    expect(profileDirHasProductState(fresh)).toBe(false);
+  });
+
+  it("counts anything it does not recognise as product state", () => {
+    // The direction of the mistake is deliberate: an unrecognised file means we adopt the
+    // legacy layout (harmless — the install keeps working exactly as before), never that we
+    // migrate away from real product state (which would leave it behind).
+    const unknown = path.join(tmpRoot, "unknown-kernel-file");
+    mkdirSync(unknown, { recursive: true });
+    writeFileSync(path.join(unknown, "profile.json"), "{}");
+    writeFileSync(path.join(unknown, "some-new-kernel-store.json"), "{}");
+    expect(profileDirHasProductState(unknown)).toBe(true);
+
+    const dotOnly = path.join(tmpRoot, "dot-only");
+    mkdirSync(dotOnly, { recursive: true });
+    writeFileSync(path.join(dotOnly, "profile.json"), "{}");
+    writeFileSync(path.join(dotOnly, ".DS_Store"), "");
+    expect(profileDirHasProductState(dotOnly)).toBe(false);
+  });
+
+  it("an absent or unreadable directory has no product state to preserve", () => {
+    expect(profileDirHasProductState(path.join(tmpRoot, "does-not-exist"))).toBe(false);
+    expect(
+      profileDirHasProductState("/whatever", () => {
+        throw new Error("EACCES");
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("localEngineAssetsDir (§8 / S4 — one engine per machine)", () => {

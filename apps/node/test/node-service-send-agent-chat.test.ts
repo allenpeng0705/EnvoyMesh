@@ -22,7 +22,7 @@ function mockAgentChatContext(overrides: Partial<SendAgentChatContext> = {}): Se
     loadConfig: vi.fn().mockResolvedValue(undefined),
     getReachableMesh: vi.fn(),
     getDiscoverySeedStore: vi.fn(),
-    getProfileDir: vi.fn(() => "/tmp/profile"),
+    getProductDir: vi.fn(() => "/tmp/profile"),
     peerDirectoryStore: {} as SendAgentChatContext["peerDirectoryStore"],
     getTransportCache: vi.fn(() => new Map()),
     setTransportCache: vi.fn(),

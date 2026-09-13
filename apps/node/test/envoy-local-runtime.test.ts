@@ -8,6 +8,11 @@ import { open, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  acquireEngineLock,
+  readEngineLock,
+  releaseEngineLock,
+} from "@envoymesh/node-core";
 import type { EnvoyLocalConfig } from "@envoymesh/api";
 import { DEFAULT_ENVOY_LOCAL_MODEL } from "../src/envoy-local-platform.js";
 import {
@@ -689,6 +694,58 @@ describe("envoy-local-runtime lifecycle", () => {
     const status = await restartEnvoyLocalViaRuntime(state, deps);
     expect(status.lastError).toMatch(/did not become ready within/);
     expect(status.phase).toBe("error");
+  });
+
+  it("does not start a second engine while another process holds the spawn lock", async () => {
+    // §8 / S4 — one engine per root. A live claim means somebody else is starting (or
+    // serving) llama-server; this process must wait for it, never spawn a competitor.
+    const { exePath } = await seedRuntimeAndModel();
+    const engineRoot = dirname(dirname(dirname(exePath))); // <root>/envoy-local
+    // A different live process (`process.ppid`): a claim naming *this* process would be
+    // re-acquired, because that is what a restart in the same process does.
+    await acquireEngineLock(engineRoot, { pid: process.ppid, app: "EnvoyCoder", port: 18790 });
+    cfg = { ...cfg, serverParams: { startupTimeoutMs: 100 } };
+    mockedSpawn.mockClear();
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503 })));
+
+    await enableEnvoyLocalViaRuntime(state, deps, { skipModelDownload: true });
+    // `enableEnvoyLocal` returns before the work is done; the failure lands on the state.
+    const status =
+      (await awaitEnvoyLocalOperation(state)) ??
+      (await getEnvoyLocalStatusViaRuntime(state, deps));
+
+    // The engine was never started by us…
+    expect(mockedSpawn).not.toHaveBeenCalled();
+    // …and the failure names who holds it, rather than a bare port error.
+    expect(status.lastError ?? "").toMatch(/holds the local engine lock/);
+    expect(status.lastError ?? "").toMatch(/EnvoyCoder/);
+    // The winner's claim is intact: the loser must not have taken it over.
+    expect(readEngineLock(engineRoot)?.app).toBe("EnvoyCoder");
+    await releaseEngineLock(engineRoot, process.ppid);
+  });
+
+  it("takes over the spawn lock when its holder is gone, and releases it when the child exits", async () => {
+    // A crashed engine must not lock the user out of their own model: the stale claim is
+    // taken over rather than waited on.
+    const { exePath } = await seedRuntimeAndModel();
+    const engineRoot = dirname(dirname(dirname(exePath)));
+    await acquireEngineLock(engineRoot, { pid: 2_147_483_646, app: "CrashedCoder", port: 18790 });
+    cfg = { ...cfg, serverParams: { startupTimeoutMs: 100 } };
+    mockedSpawn.mockClear();
+    mockedSpawn.mockImplementation(() => makeFakeChild(7777));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503 })));
+
+    await enableEnvoyLocalViaRuntime(state, deps, { skipModelDownload: true });
+    const status =
+      (await awaitEnvoyLocalOperation(state)) ??
+      (await getEnvoyLocalStatusViaRuntime(state, deps));
+
+    // We did start an engine — the stale claim did not block us…
+    expect(mockedSpawn).toHaveBeenCalled();
+    expect(status.lastError ?? "").not.toMatch(/holds the local engine lock/);
+    // …and the claim is not left behind once that child is gone, so the next start does not
+    // have to treat our own claim as stale.
+    expect(readEngineLock(engineRoot)).toBeNull();
   });
 
   it("user override of startupTimeoutMs is reflected in the error message", async () => {

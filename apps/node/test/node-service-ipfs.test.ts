@@ -13,6 +13,7 @@ import * as gateway from "../src/ipfs-gateway.js";
 import * as kubo from "../src/kubo-ipfs-export.js";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 import { createPublishedExternalStore } from "../src/published-external-store.js";
+import { resolveProductStateDirFor } from "../src/product-state-dir.js";
 
 vi.mock("../src/kubo-ipfs-engine.js", () => ({
   ensureKuboIpfsReady: vi.fn().mockResolvedValue(undefined),
@@ -25,10 +26,17 @@ vi.mock("../src/kubo-ipfs-engine.js", () => ({
 }));
 
 let profileDir: string;
+/**
+ * §5 — where the product's stores actually live. The service resolves this from the
+ * profile dir it is given: for a fresh install that is `<home>/<product>/`, so a test
+ * that asserted against `profileDir` directly would be asserting the pre-§5 layout.
+ */
+let productDir: string;
 let vaultDir: string;
 
 beforeEach(async () => {
   profileDir = await mkdtemp(join(tmpdir(), "envoy-node-ipfs-"));
+  productDir = resolveProductStateDirFor(profileDir).dir;
   vaultDir = await mkdtemp(join(tmpdir(), "envoy-vault-ipfs-"));
   await mkdir(vaultDir, { recursive: true });
   await writeFile(join(vaultDir, "export-me.txt"), "node service ipfs export", "utf8");
@@ -87,7 +95,7 @@ describe("NodeServiceImpl IPFS RPC", () => {
     expect(result.cid).toBe("bafynodeservice");
     expect(result.exportRevision).toBe(1);
 
-    const stored = await createPublishedExternalStore(profileDir).get(doc.documentId);
+    const stored = await createPublishedExternalStore(productDir).get(doc.documentId);
     expect(stored?.cid).toBe("bafynodeservice");
   });
 
@@ -99,7 +107,7 @@ describe("NodeServiceImpl IPFS RPC", () => {
 
     const index = await buildVaultIndex({ rootDir: vaultDir });
     const doc = index.documents[0]!;
-    await createPublishedExternalStore(profileDir).recordExport(doc.documentId, {
+    await createPublishedExternalStore(productDir).recordExport(doc.documentId, {
       cid: "bafyverifyrpc",
       ipfsInteropRecipe: "kubo-ipfs-export-v1",
       kuboVersion: "0.24.0",

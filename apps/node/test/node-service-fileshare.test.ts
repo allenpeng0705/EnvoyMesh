@@ -117,7 +117,7 @@ function makeContext(
 ): FileShareContext {
   return {
     getVaultDir: () => "/vault",
-    getProfileDir: () => "/profile",
+    getProductDir: () => "/profile",
     getNodeConfig: async () => ({}),
     getTaskStore: () => undefined,
     getRagService: async () => null,
@@ -147,7 +147,7 @@ describe("listLibraryItemsViaRuntime", () => {
       await listLibraryItemsViaRuntime(makeContext({ getVaultDir: () => null })),
     ).toEqual([]);
     expect(
-      await listLibraryItemsViaRuntime(makeContext({ getProfileDir: () => null })),
+      await listLibraryItemsViaRuntime(makeContext({ getProductDir: () => null })),
     ).toEqual([]);
   });
 
@@ -254,7 +254,7 @@ describe("listLibraryItemsViaRuntime", () => {
 describe("listOpenClawWorkspaceFilesViaRuntime", () => {
   it("returns [] when profile dir is missing", async () => {
     const items = await listOpenClawWorkspaceFilesViaRuntime(
-      makeContext({ getProfileDir: () => null }),
+      makeContext({ getProductDir: () => null }),
     );
     expect(items).toEqual([]);
   });
@@ -279,7 +279,7 @@ describe("listAllLocalFilesViaRuntime", () => {
 describe("setLibraryItemPublishedViaRuntime", () => {
   it("returns silently when profile dir is missing", async () => {
     await setLibraryItemPublishedViaRuntime(
-      makeContext({ getProfileDir: () => null }),
+      makeContext({ getProductDir: () => null }),
       "doc",
       true,
     );
@@ -296,7 +296,7 @@ describe("resolveOpenClawWorkspacePathViaRuntime", () => {
   it("throws if profile dir is missing", async () => {
     await expect(
       resolveOpenClawWorkspacePathViaRuntime(
-        makeContext({ getProfileDir: () => null }),
+        makeContext({ getProductDir: () => null }),
         "x.md",
       ),
     ).rejects.toThrow(/profile dir/);
@@ -311,7 +311,7 @@ describe("resolveOpenClawWorkspacePathViaRuntime", () => {
 describe("readOpenClawWorkspaceFileViaRuntime", () => {
   it("returns an empty result when profile dir is missing", async () => {
     const out = await readOpenClawWorkspaceFileViaRuntime(
-      makeContext({ getProfileDir: () => null }),
+      makeContext({ getProductDir: () => null }),
       { relativePath: "x.md" },
     );
     expect(out).toEqual({

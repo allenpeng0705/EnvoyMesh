@@ -628,6 +628,8 @@ export interface OpenClawRuntimeDeps extends EnvoyAiChatContext {
   loadBridgeConfigWebSearchEnabled(): Promise<boolean | undefined>;
   loadBridgeConfigSkillApiKeys(): Promise<Record<string, string> | undefined>;
   getProfileDir(): string;
+  /** §5 — `<home>/<product>`: OpenClaw workspaces and gateway state are product state. */
+  getProductDir(): string;
   getProfileOwnerId(): string | undefined;
   getMeshPeerId(): string;
   getVaultDir(): string;
@@ -667,6 +669,7 @@ export function buildOpenClawRuntimeDeps(host: any): OpenClawRuntimeDeps {
     loadBridgeConfigWebSearchEnabled: () => loadBridgeConfigWebSearchEnabled(),
     loadBridgeConfigSkillApiKeys: () => loadBridgeConfigSkillApiKeys(),
     getProfileDir: () => host._profileDir,
+    getProductDir: () => host._productDir,
     getProfileOwnerId: () => host._profile?.owner?.ownerId,
     getProfile: () => host._profile,
     getMeshPeerId: () => host._mesh?.peerId ?? "",
@@ -1349,13 +1352,22 @@ async function startOpenClawInner(
   const nodeCwd = process.cwd();
   const bundledSkillsDir = resolveBundledSkillsDir(nodeCwd);
 
-  const profileDir = deps.getProfileDir();
+  // Bridge config is a *kernel* file (identity-adjacent settings for the ext-agent bridge),
+  // while the gateway state directory and the workspace below are the product's own (§5).
+  // They were sharing one accessor, which put the gateway in the profile root while every
+  // node-side OpenClaw API looked in the product root.
+  const bridgeProfileDir = deps.getProfileDir();
+  const bridgeProfileDirAbs =
+    hasProfileDir(bridgeProfileDir)
+      ? resolve(nodeCwd, bridgeProfileDir)
+      : null;
+  const profileDir = deps.getProductDir();
   const profileDirAbs =
     hasProfileDir(profileDir)
       ? resolve(nodeCwd, profileDir)
       : null;
-  const cfgPath = profileDirAbs
-    ? join(profileDirAbs, "bridge-config.json")
+  const cfgPath = bridgeProfileDirAbs
+    ? join(bridgeProfileDirAbs, "bridge-config.json")
     : join(nodeCwd, "data", "default", "bridge-config.json");
   const defaultAssistantUrl = openClawGatewayWebhookUrl();
   let assistantUrl = defaultAssistantUrl;

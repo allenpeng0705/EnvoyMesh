@@ -25,7 +25,7 @@
  * to the callers; this module only resolves paths and reports what is on disk.
  */
 import * as nodeFs from "node:fs";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { homedir as osHomedir, platform as osPlatform } from "node:os";
 import path from "node:path";
@@ -425,21 +425,84 @@ export function resolveProductStateDir(input: {
 }
 
 /**
- * Does this directory look like it holds a product's state rather than a bare profile?
+ * Entries that only the **kernel** writes into `profile/` — identity, the 14 kernel stores,
+ * the audit trail and the local engine. Anything else in a profile directory is product state.
  *
- * Deliberately conservative: a handful of files that only a *product* writes. A kernel-only
- * profile (identity plus kernel stores) must not be mistaken for product state, or a fresh
- * install would adopt a directory it should have left alone.
+ * This is an *allowlist of the kernel*, deliberately, rather than a list of product files:
+ * see `profileDirHasProductState` for why the direction matters.
  */
-export function profileDirHasProductState(dir: string, exists = existsSync): boolean {
-  const productMarkers = [
-    "human-profile.json", // the owner's social profile (vs `profile.json`, kernel identity)
-    "chat-log.jsonl",
-    "family-profiles.json",
-    "node-config.json",
-    "audit-events.jsonl",
-  ];
-  return productMarkers.some((name) => exists(path.join(dir, name)));
+export const KERNEL_PROFILE_ENTRIES: readonly string[] = [
+  // Identity (§4.3) — its presence is what makes a directory a profile at all.
+  "profile.json",
+  "human-profile.json",
+  "libp2p-private.key",
+  // The kernel stores (inventory: 14 kernel / 34 product).
+  "node-config.json",
+  "capability-manifest.json",
+  "device-authorization.json",
+  "contact-owner-keys.json",
+  "peer-profile-cache.json",
+  "multihop-discovery-sessions.json",
+  "discovery-seeds.json",
+  "peer-reputation.json",
+  "vault-sensitivity-overrides.json",
+  "intent-history.json",
+  "continuity-sessions.json",
+  "capability-index.json",
+  "agent-identity.json",
+  "session-tokens.json",
+  // local-store kernel files: audit, journal, approvals, trust, peer directory.
+  "audit-events.jsonl",
+  "task-journal.jsonl",
+  "approval-queue.jsonl",
+  "trust-records.json",
+  "trust-store.json",
+  "peer-directory.json",
+  // The vault index lives with the identity (§5), so it is not product state.
+  "rag-hnsw",
+  "rag-vectors.json",
+  "rag-vectors.sqlite",
+  "rag-vault-manifest.json",
+  // The local model engine is shared runtime, not product state (§8 / S4).
+  "envoy-local",
+  "runtime",
+];
+
+/**
+ * Does this directory hold product state that would have to be *kept* if the layout changed?
+ *
+ * True when the directory contains an entry that is not a known kernel entry. The direction
+ * of this test is the whole point:
+ *
+ *   * **Wrong answer "yes"** (adopting the legacy layout when there is no product state)
+ *     costs nothing: the install keeps writing to `profile/`, which is exactly what it did
+ *     before §5. The only loss is that this install does not get the new layout.
+ *   * **Wrong answer "no"** (migrating when there *is* product state) leaves the user's
+ *     chats/published content behind and points the stores at a new, empty directory.
+ *
+ * So the list above is the *kernel* allowlist, and the test is its complement: an unknown
+ * kernel file makes us adopt unnecessarily (harmless), while an unknown product file cannot
+ * make us migrate by mistake (which is the failure that loses data).
+ *
+ * An earlier version listed five *product* markers and got this backwards — two of them
+ * (`node-config.json`, `audit-events.jsonl`) are kernel files written on a first run, so a
+ * brand-new install would have been judged "legacy" and the migration would have looked
+ * correct while doing nothing.
+ */
+export function profileDirHasProductState(
+  dir: string,
+  list: (candidate: string) => readonly string[] = (candidate) => readdirSync(candidate),
+): boolean {
+  let entries: readonly string[];
+  try {
+    entries = list(dir);
+  } catch {
+    // Unreadable or absent: nothing to preserve, so a new layout is safe.
+    return false;
+  }
+  return entries.some(
+    (name) => !name.startsWith(".") && !KERNEL_PROFILE_ENTRIES.includes(name),
+  );
 }
 
 /**

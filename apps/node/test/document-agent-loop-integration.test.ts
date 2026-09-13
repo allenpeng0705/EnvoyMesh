@@ -29,7 +29,11 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await rm(profileDir, { recursive: true, force: true });
+  // `NodeServiceImpl` has no `stop()`, and it keeps background timers and lazy store inits
+  // that write into the profile directory. Removing the directory while one of those lands is
+  // a race, and it surfaces as `ENOTEMPTY: directory not empty, rmdir …` — a teardown failure
+  // that has nothing to do with what the test asserted. `fs.rm` retries for exactly this case.
+  await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 function testProfile() {

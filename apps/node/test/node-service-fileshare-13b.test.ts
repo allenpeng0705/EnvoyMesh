@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 function makeContext(overrides: Partial<FileShareContext> = {}): FileShareContext {
   return {
     getVaultDir: () => "/vault",
-    getProfileDir: () => "/profile",
+    getProductDir: () => "/profile",
     getNodeConfig: async () => ({}),
     getTaskStore: () => ({}),
     getRagService: async () => null,
@@ -48,7 +48,7 @@ describe("listAgentShareProposalsViaRuntime + dismissAgentShareProposalViaRuntim
       "../src/node-service-fileshare.js"
     );
     const items = await listAgentShareProposalsViaRuntime(
-      makeContext({ getProfileDir: () => null }),
+      makeContext({ getProductDir: () => null }),
     );
     expect(items).toEqual([]);
   });
@@ -59,7 +59,7 @@ describe("listAgentShareProposalsViaRuntime + dismissAgentShareProposalViaRuntim
     );
     await expect(
       dismissAgentShareProposalViaRuntime(
-        makeContext({ getProfileDir: () => null }),
+        makeContext({ getProductDir: () => null }),
         "x",
       ),
     ).resolves.toBeUndefined();
@@ -113,7 +113,7 @@ describe("getIpfsEngineStatusViaRuntime", () => {
       "../src/node-service-fileshare.js"
     );
     const out = await getIpfsEngineStatusViaRuntime(
-      makeContext({ getProfileDir: () => null }),
+      makeContext({ getProductDir: () => null }),
     );
     expect(out.available).toBe(false);
     expect(out.running).toBe(false);
@@ -130,7 +130,7 @@ describe("exportLibraryItemToIpfsViaRuntime", () => {
       exportLibraryItemToIpfsViaRuntime(
         makeContext({
           getVaultDir: () => null,
-          getProfileDir: () => null,
+          getProductDir: () => null,
           getTaskStore: () => undefined,
         }),
         "doc-1",
@@ -148,7 +148,7 @@ describe("verifyLibraryItemIpfsGatewayViaRuntime", () => {
       verifyLibraryItemIpfsGatewayViaRuntime(
         makeContext({
           getVaultDir: () => null,
-          getProfileDir: () => null,
+          getProductDir: () => null,
           getTaskStore: () => undefined,
         }),
         { documentId: "doc-1", gatewayUrl: "https://example.com" },
