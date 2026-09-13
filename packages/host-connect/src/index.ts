@@ -35,7 +35,7 @@
  * latter because it re-exports `home-fs`).
  */
 
-export { WsServer, isLoopbackAddress } from "./ws-server.js";
+export { WsServer, canReceiveEvents, isLoopbackAddress } from "./ws-server.js";
 
 // The client half of a local product attach — the exchange, not the policy.
 export {

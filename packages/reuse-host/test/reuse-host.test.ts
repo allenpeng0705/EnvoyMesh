@@ -18,11 +18,14 @@ import {
   buildPairingUri,
   createBackend,
   createReuseHost,
+  createShellHostNodeService,
   decodePairingToken,
   encodePairingToken,
   parseEnvoyPairUri,
   parsePairingUri,
   probeExtAgentReachability,
+  type EventDisposition,
+  type HostNodeService,
   type HostRpcDispatcher,
   type PairWithHomeNodeParams,
   type SessionIdentityResolver,
@@ -224,5 +227,95 @@ describe("@envoymesh/reuse-host", () => {
 
     // This package itself must be reusable, or it is not a base for a second product.
     expect(reusable.has("packages/reuse-host/src/index.ts")).toBe(true);
+  });
+});
+
+/* ─────────────────── the product's own events reach its own clients ─────────────────── */
+
+/**
+ * A product's event vocabulary is half of what a host is for: the daemon owns the events, and the
+ * transport decides who receives them. That only works if the table a product passes in **arrives** —
+ * it used to be dropped here while `socketMethods`, `preAuthMethods` and `transformForSession` were
+ * forwarded, so declaring dispositions correctly still produced silence. Found by a product that had
+ * to route its own events around the host instead.
+ */
+describe("a product's event dispositions", () => {
+  /** A node surface whose emitted events the test can fire, and whose subscriptions it can inspect. */
+  function capturableNode(): {
+    service: HostNodeService;
+    emit: (event: string, data: unknown) => void;
+    /** A function, not a snapshot: the host registers its dispositions in `serve()`, which happens
+     *  after this object is built. Reading a captured array here reported "nothing registered" for a
+     *  host that had registered everything. */
+    subscribed: () => string[];
+  } {
+    const listeners = new Map<string, (data: unknown) => void>();
+    return {
+      service: {
+        ...createShellHostNodeService(),
+        on: (event: string, listener: (data: unknown) => void) => {
+          listeners.set(event, listener);
+        },
+      },
+      emit: (event, data) => listeners.get(event)?.(data),
+      subscribed: () => [...listeners.keys()],
+    };
+  }
+
+  it("registers the product's names with the transport, beside the core table", async () => {
+    const port = await freePort();
+    const node = capturableNode();
+    const host = createReuseHost({
+      port,
+      sessionIdentity: identity,
+      dispatch: dispatcher,
+      eventDispositions: { "coder:run-updated": { kind: "broadcast" } },
+    });
+    hosts.push(host);
+    await host.serve(node.service);
+
+    // The product's own name…
+    expect(node.subscribed()).toContain("coder:run-updated");
+    // …and the core's, because the transport merges rather than replaces. A forward that overwrote
+    // the core table would be a worse bug than the one this fixes.
+    expect(node.subscribed()).toContain("node:status");
+  });
+
+  it("delivers one of the product's events to a client that asked for it", async () => {
+    const port = await freePort();
+    const node = capturableNode();
+    const host = createReuseHost({
+      port,
+      sessionIdentity: identity,
+      dispatch: dispatcher,
+      eventDispositions: { "coder:run-updated": { kind: "broadcast" } satisfies EventDisposition },
+    });
+    hosts.push(host);
+    await host.serve(node.service);
+
+    const { WebSocket } = await import("ws");
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws?token=pair-token`);
+    const frames: string[] = [];
+    socket.on("message", (raw: Buffer) => frames.push(raw.toString()));
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve());
+      socket.once("error", reject);
+    });
+
+    // A product's names are not in the transport's auto-subscribe list — that list is EnvoyMesh's own
+    // vocabulary — so the client asks for what it wants. That is the documented contract, and this
+    // test is what keeps it true.
+    socket.send(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "on", params: { event: "coder:run-updated" } }));
+    await new Promise((done) => setTimeout(done, 200));
+
+    node.emit("coder:run-updated", { workspace: "feature-auth", status: "running" });
+    await new Promise((done) => setTimeout(done, 250));
+
+    const delivered = frames.map((frame) => JSON.parse(frame) as { event?: string; data?: unknown });
+    expect(delivered).toContainEqual({
+      event: "coder:run-updated",
+      data: { workspace: "feature-auth", status: "running" },
+    });
+    socket.close();
   });
 });

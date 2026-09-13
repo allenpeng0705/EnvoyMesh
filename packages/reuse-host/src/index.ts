@@ -42,6 +42,7 @@
 
 import {
   WsServer,
+  type EventDisposition,
   type HostNodeService,
   type HostRpcDispatcher,
   type SessionIdentityResolver,
@@ -53,6 +54,7 @@ import {
 // re-exported so a product imports them from here rather than from the transport
 // package directly (one fewer dependency in the product's graph).
 export type {
+  EventDisposition,
   HostNodeService,
   HostRpcDispatcher,
   SessionIdentityResolver,
@@ -170,6 +172,27 @@ export interface ReuseHostOptions {
   dispatch: HostRpcDispatcher;
   /** Optional extra ports, for products that need them. */
   socketMethods?: SocketMethodPort;
+  /**
+   * The **product's own event vocabulary** — what to do with each event this
+   * product's node surface emits.
+   *
+   * The transport merges this with its core table (`mergeEventDispositions`), and
+   * subscribes the node for every name it ends up holding — so an event that is not
+   * in this table is not merely undelivered, it is never subscribed to, and the
+   * product's windows see nothing.
+   *
+   * **It used to be dropped here.** `socketMethods`, `preAuthMethods` and
+   * `transformForSession` were forwarded and this was not, which made the composition
+   * root's half of the contract unreachable: a product could declare its events
+   * correctly and still emit into silence. Found by a product that then had to route
+   * its own events around the host.
+   *
+   * Note the client's half: a client receives an event it has *subscribed* to, and the
+   * transport auto-subscribes only its own core names. A product's client sends
+   * `on` for the names it wants — which is the right default, since a product's event
+   * vocabulary is the product's business.
+   */
+  eventDispositions?: Readonly<Record<string, EventDisposition>>;
   preAuthMethods?: readonly string[];
   transformForSession?: SessionPayloadTransform;
   /** Name shown in the pairing payload. */
@@ -245,6 +268,7 @@ export function createReuseHost(options: ReuseHostOptions): ReuseHost {
         sessionIdentity: options.sessionIdentity,
         dispatch: options.dispatch,
         ...(options.socketMethods ? { socketMethods: options.socketMethods } : {}),
+        ...(options.eventDispositions ? { eventDispositions: options.eventDispositions } : {}),
         ...(options.preAuthMethods ? { preAuthMethods: options.preAuthMethods } : {}),
         ...(options.transformForSession ? { transformForSession: options.transformForSession } : {}),
         // Reject `serve()` rather than `process.exit(1)`. This hook only has to

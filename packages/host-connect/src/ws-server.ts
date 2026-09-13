@@ -206,6 +206,31 @@ export interface WsServerOptions<TCaller = unknown> {
   onListenError?: (err: NodeJS.ErrnoException) => void;
 }
 
+/**
+ * Whether a socket may receive events at all.
+ *
+ * The same rule the RPC gate applies, in the one other place it has to hold: **the owner's own
+ * machine, or a session.** It exists separately because the event path never reached that gate —
+ * `on`/`off` answered before it, the connection handler auto-subscribed every socket regardless of
+ * where it came from, and `emitEvent` wrote to every subscriber without asking who they were.
+ *
+ * That combination is the bug class this file already documents once for RPCs: the host binds
+ * `0.0.0.0` so paired phones can reach it, and auth used to be enforced only for clients that
+ * *attempted* a token and failed. The same shape of hole on the push channel, measured: a tokenless
+ * client on the LAN received `node:status`, `node:ready` and every broadcast the node emitted, on a
+ * socket whose first RPC was correctly refused. Fixing the RPC side alone left this open.
+ *
+ * Loopback covers the owner's own UI (which carries no token by design); an authenticated session
+ * covers phones and family members, whose token is resolved at connect. Everything else receives
+ * nothing until it has a session.
+ */
+export function canReceiveEvents(state: {
+  isLoopbackPeer?: boolean;
+  isThinClientAuthenticated?: boolean;
+}): boolean {
+  return state.isLoopbackPeer === true || state.isThinClientAuthenticated === true;
+}
+
 export class WsServer<TCaller = unknown> {
   private wss!: WebSocketServer;
   private httpServer: HttpServer | null = null;
@@ -947,16 +972,26 @@ export class WsServer<TCaller = unknown> {
       "call:ice-candidate",
       "call:error",
     ];
-    for (const event of allEvents) {
-      this.subscribe(ws, event);
+    // Only for a socket that may receive events at all. A tokenless client from the network is not
+    // one: its subscription list would be filled the moment the node emitted. Authentication is
+    // resolved at connect from the query token (above), so nothing legitimate lands here later.
+    if (canReceiveEvents(hostState(ws))) {
+      for (const event of allEvents) {
+        this.subscribe(ws, event);
+      }
     }
 
-    // Send connected event
-    const status = this.nodeService.getConnectionStatus();
-    this.sendEvent(ws, "connected", {
-      peerId: status.peerId,
-      multiaddrs: status.multiaddrs,
-    });
+    // Send connected event — to a socket that may receive events, for the same reason as above: it
+    // carries the node's peer id and addresses, which is the owner's information, and an
+    // unauthenticated client on the network has no business learning it. A client that paired with a
+    // token is authenticated by this point (the token is resolved at connect), so phones still get it.
+    if (canReceiveEvents(hostState(ws))) {
+      const status = this.nodeService.getConnectionStatus();
+      this.sendEvent(ws, "connected", {
+        peerId: status.peerId,
+        multiaddrs: status.multiaddrs,
+      });
+    }
 
     // desktop clients register `on("node:status")` via RPC asynchronously; daemon may have
     // emitted running before WsServer listeners existed — replay snapshot after subscriptions settle.
@@ -968,7 +1003,12 @@ export class WsServer<TCaller = unknown> {
           status: this.nodeService.getNodeStatus(),
         };
         if (cs.peerId) payload.peerId = cs.peerId;
-        if (ws.readyState === WebSocket.OPEN) {
+        // Gated here too, and this one was found by a **consumer's** smoke test rather than by the
+        // tests written for this fix: `emitEvent` was guarded, but `node:ready` goes straight to the
+        // socket, so a tokenless client on the LAN still received it — the leak surviving in the one
+        // push that does not travel through the delivery table. A guard on the paths you thought of is
+        // not a guard on the path you did not.
+        if (ws.readyState === WebSocket.OPEN && canReceiveEvents(hostState(ws))) {
           this.emitEvent("node:status", payload);
           if (payload.status === "running") {
             this.sendEvent(ws, "node:ready", { timestamp: Date.now() });
@@ -1012,21 +1052,6 @@ export class WsServer<TCaller = unknown> {
   private async handleMessage(ws: WebSocket, message: JsonRpcRequest): Promise<void> {
     const { id, method, params } = message;
 
-    // Handle event subscription methods specially
-    if (method === "on") {
-      const eventName = (params?.event as string) ?? "";
-      this.subscribe(ws, eventName);
-      this.sendResponse(ws, id, { success: true });
-      return;
-    }
-
-    if (method === "off") {
-      const eventName = (params?.event as string) ?? "";
-      this.unsubscribe(ws, eventName);
-      this.sendResponse(ws, id, { success: true });
-      return;
-    }
-
     // Gate: a caller must be **the owner's machine** or hold a valid session.
     //
     // This used to be weaker: auth was enforced only for clients that *attempted* a
@@ -1066,6 +1091,24 @@ export class WsServer<TCaller = unknown> {
         this.sendError(ws, id ?? "unknown", "Authentication required", "UNAUTHORIZED");
         return;
       }
+    }
+
+    // Event subscription, **after** the gate. It used to sit at the top of this method, which made
+    // `on` a way to subscribe without ever authenticating — while `emitEvent` delivered to whatever
+    // was subscribed. A subscription is a standing request for data, so it answers to the same rule
+    // as a read: the owner's machine, or a session.
+    if (method === "on") {
+      const eventName = (params?.event as string) ?? "";
+      this.subscribe(ws, eventName);
+      this.sendResponse(ws, id, { success: true });
+      return;
+    }
+
+    if (method === "off") {
+      const eventName = (params?.event as string) ?? "";
+      this.unsubscribe(ws, eventName);
+      this.sendResponse(ws, id, { success: true });
+      return;
     }
 
     // Product methods that need the connection itself. The host does not know
@@ -1240,7 +1283,9 @@ export class WsServer<TCaller = unknown> {
     const listeners = this.subscriptions.get(event);
     if (listeners) {
       for (const ws of listeners) {
-        if (ws.readyState === WebSocket.OPEN) {
+        // Checked here as well as at subscription time: this is the line that actually writes the
+        // owner's data to a socket, and a subscription list is not a permission.
+        if (ws.readyState === WebSocket.OPEN && canReceiveEvents(hostState(ws))) {
           this.sendEvent(ws, event, data);
         }
       }
@@ -1257,6 +1302,7 @@ export class WsServer<TCaller = unknown> {
     if (!listeners) return;
     for (const ws of listeners) {
       if (ws.readyState !== WebSocket.OPEN) continue;
+      if (!canReceiveEvents(hostState(ws))) continue;
       const session = this.authenticatedSessions.get(ws);
       if (!session) {
         // Untokened local clients (desktop Social) → owner only.
