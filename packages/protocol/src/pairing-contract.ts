@@ -55,6 +55,16 @@ export interface PairingPayload {
   agentPubKey?: string;
   /** Bridge agent display name from bridge-config.json (optional) */
   agentName?: string;
+  /**
+   * Which app minted this code (`"EnvoyMesh"`, `"EnvoyCoder"`, …).
+   *
+   * A phone app belongs to the same product as the desktop app it pairs with, so the
+   * code says who made it and the node checks it on exchange. Without this, any
+   * EnvoyMesh-family phone app could pair with any desktop app — which is not what
+   * "EnvoyCoder's app pairs with EnvoyCoder" means. Absent on codes minted before the
+   * field existed, and treated as "any app" for exactly that reason.
+   */
+  app?: string;
   /** Pairing token for owner verification (optional) */
   token?: string;
   /** Owner's public key PEM (Phase 11 — for shared-identity pairing, public info safe for QR) */
@@ -81,6 +91,8 @@ export interface PairingPayload {
 /** Params decoded from an `envoy://pair` URI for mobile shared-identity pairing. */
 export interface PairWithHomeNodeParams {
   wsUrl: string;
+  /** Which app minted the code — see {@link PairingPayload.app}. */
+  app?: string;
   /**
    * Direct LAN WebSocket URL of the home node (optional).
    * When present, the mobile uses this for ongoing traffic when reachable, falling back to `wsUrl` (relay) otherwise.

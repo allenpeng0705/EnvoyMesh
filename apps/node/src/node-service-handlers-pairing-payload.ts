@@ -26,6 +26,7 @@ import {
   stripRelayWsParams,
 } from "@envoymesh/api";
 import type { BridgeStatus, PairingPayload } from "@envoymesh/api";
+import { resolveAppName } from "@envoymesh/node-core";
 import { reviewFamilyInviteToken } from "./review-pairing.js";
 
 export interface ReachableMeshLike {
@@ -229,7 +230,7 @@ export async function getPairingPayloadViaRuntime(
     wsUrl = lanWsUrl;
   }
 
-  const payload: PairingPayload = { wsUrl };
+  const payload: PairingPayload = { wsUrl, app: resolveAppName() };
   if (lanIp !== "localhost") {
     payload.lanWsUrl = lanWsUrl;
   }

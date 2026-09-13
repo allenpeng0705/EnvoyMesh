@@ -86,3 +86,40 @@ export interface AttachedProductSession {
  * as "the owner's node is there".
  */
 export type VerifiedRunningNode = RunningNode & { status: "running"; wsUrl: string };
+
+// ─── which app a pairing code belongs to ────────────────────────────────────────
+
+/**
+ * The app this process *is*, for pairing and identity purposes.
+ *
+ * Every product in the group mints its own pairing codes, and a phone app belongs to
+ * one product. `ENVOYMESH_APP_NAME` exists so a future product states it once, in its
+ * launcher, rather than a literal appearing in several places.
+ */
+export const DEFAULT_APP_NAME = "EnvoyMesh";
+
+export function resolveAppName(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env["ENVOYMESH_APP_NAME"]?.trim();
+  return raw && raw.length > 0 ? raw : DEFAULT_APP_NAME;
+}
+
+/**
+ * Why a pairing code from another app must be refused, or `null` when it is fine.
+ *
+ * Returns an **end-user sentence**, not a code: the person holding the phone is the
+ * one who has to act on it, and "app mismatch" tells them nothing. `codeApp`
+ * undefined means the code predates the field — accepted, because refusing it would
+ * break every QR already printed, and the phone app still has to authenticate.
+ */
+export function pairingAppMismatch(
+  codeApp: string | undefined,
+  nodeApp: string = resolveAppName(),
+): string | null {
+  const claimed = codeApp?.trim();
+  if (!claimed) return null;
+  if (claimed === nodeApp.trim()) return null;
+  return (
+    `That code was made by ${claimed}, and this is ${nodeApp}. ` +
+    `Open ${claimed} and show its pairing code, or install ${claimed} here.`
+  );
+}

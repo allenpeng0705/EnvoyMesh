@@ -20,6 +20,7 @@ function paramsToPairWithHomeNode(searchParams: URLSearchParams): PairWithHomeNo
 
   return {
     wsUrl: required("wsUrl"),
+    app: optional("app"),
     lanWsUrl: optional("lanWsUrl"),
     token: required("token"),
     ownerPublicKey: required("ownerPublicKey"),
@@ -52,6 +53,7 @@ export function buildEnvoyPairUri(params: PairWithHomeNodeParams): string {
   query.set("token", params.token);
   query.set("ownerPublicKey", params.ownerPublicKey);
   query.set("ownerId", params.ownerId);
+  if (params.app) query.set("app", params.app);
   for (const key of [
     "relayPeerId",
     "agentPeerId",

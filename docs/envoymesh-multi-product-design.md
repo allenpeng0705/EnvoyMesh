@@ -449,6 +449,26 @@ Verified against the running node from the machine's LAN address — the same pr
 
 **Recorded for the next slice:** an attached product gets `scopeKey: "product:<Name>"`, not the owner's scope — least privilege, no key sharing, and it extends the per-scope gating the node already performs (`mayFamilyProfileUseCoding`). This change is what makes that meaningful, because until now "not the owner" and "no token" were the same thing.
 
+### S4 (first slice) ✅ — one app per pairing code, and a product's own allow-list (2026-09-13)
+
+Three things the owner asked for, two of which were missing.
+
+**1. A dedicated mobile app pairs only with its corresponding desktop app.** It could not before: nothing tied a pairing code to a product, so any EnvoyMesh-family phone app could pair with any desktop app. The code now carries the app that minted it:
+
+| Layer | Change |
+|---|---|
+| `PairingPayload` / `PairWithHomeNodeParams` | `app?: string` — "which app made this code" |
+| the compact codec (`pairing-token.ts`) | `app` travels inside the gzip token, and stays **absent** when it was never set |
+| the URI (`envoy-pair-uri.ts`) | built and parsed with the rest |
+| the node | its pairing payload claims `resolveAppName()` (`ENVOYMESH_APP_NAME`, default `EnvoyMesh`), and `pairThinClient` refuses another app's code |
+| the rule | `pairingAppMismatch()` in `node-core`, returning an **end-user sentence**: *"That code was made by EnvoyCoder, and this is EnvoyMesh. Open EnvoyCoder and show its pairing code, or install EnvoyCoder here."* |
+
+A code minted before the field existed is accepted: refusing it would break every QR already printed, and the phone still authenticates afterwards.
+
+**2. A product is refused by default, not allowed by omission.** Owner-only enforcement is a deny-list, so a product scope was refused that list and allowed *everything else* — measured on a real node, a product session could call `getNodeStatus` and would have been allowed any other unlisted method too. `PRODUCT_ALLOWED_RPC_METHODS` now names what a product may do at all: diagnostics, plus the coding surface (each of which is *also* capability-gated, so the list is a boundary rather than a permission). Terminals stay owner-only — a product runs its own tooling in its own process. Where both gates cover a method, owner-only fires first.
+
+**3. Coding is granted per product, by the owner.** `mayFamilyProfileUseCoding()` is family-profile policy and a product scope is not a family profile, so an attached EnvoyCoder was refused the surface it exists for. `NodeConfig.productGrants` — owner-set through the already owner-only `updateNodeConfig` — now answers for products, with **nothing** as the default and a fail-closed read. Example: `{ "EnvoyCoder": ["coding"] }`. Pinned by test: denied before the grant, allowed after, unaffected for a *different* product, revoked by an empty list.
+
 ### S3 (sixth slice) ✅ — attach works, and it found a transport bug (2026-09-13)
 
 The exchange, end to end: a second app on this machine asks the running node for a session of its own.

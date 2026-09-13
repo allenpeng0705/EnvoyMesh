@@ -53,4 +53,23 @@ describe("pairing-token multi-relay", () => {
     const decoded = decodePairingToken(token);
     expect(decoded.relayWsUrls).toBeUndefined();
   });
+
+  it("carries the app that minted the code, so a phone app can refuse another product's QR", async () => {
+    const token = await encodePairingToken({
+      wsUrl: "ws://192.168.1.20:3030/ws",
+      token: "pair-token",
+      ownerId: "envoy:owner:alice",
+      app: "EnvoyCoder",
+    });
+    expect(decodePairingToken(token).app).toBe("EnvoyCoder");
+
+    // Absent stays absent: codes minted before the field existed must decode unchanged
+    // rather than inventing an app name.
+    const older = await encodePairingToken({
+      wsUrl: "ws://192.168.1.20:3030/ws",
+      token: "pair-token",
+      ownerId: "envoy:owner:alice",
+    });
+    expect(decodePairingToken(older).app).toBeUndefined();
+  });
 });

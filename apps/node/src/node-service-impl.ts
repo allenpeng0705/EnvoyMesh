@@ -591,10 +591,12 @@ import {
   getExtAgentProjectPathCwd,
   syncExtAgentProjectPathsFromAgents,
 } from "@envoymesh/harness";
+import { decodePairingToken } from "@envoymesh/api/core";
 import {
   getHomeFsInfo as readHomeFsInfo,
   isProductScope,
   isValidProductName,
+  pairingAppMismatch,
   productFromScope,
   listHomeFsEntries as readHomeFsEntries,
   previewHomeFsFile as readHomeFsPreview,
@@ -16169,6 +16171,21 @@ class NodeServiceImpl implements NodeService {
     const valid = await this.validatePairingToken(pairingToken);
     if (!valid) {
       throw new Error("Invalid or expired pairing token");
+    }
+    // A code belongs to the app that minted it: a phone app pairs with its own
+    // desktop app, not with the whole family. Codes minted before the field existed
+    // carry no `app` and are accepted (`pairingAppMismatch` says why).
+    let codeApp: string | undefined;
+    try {
+      codeApp = decodePairingToken(pairingToken).app;
+    } catch {
+      // Not decodable as a payload — `validatePairingToken` already accepted it, so
+      // this is a token shape from another path; nothing to check.
+      codeApp = undefined;
+    }
+    const appMismatch = pairingAppMismatch(codeApp);
+    if (appMismatch) {
+      throw new Error(appMismatch);
     }
 
     await this._ensureFamilyOwnerMigrated();

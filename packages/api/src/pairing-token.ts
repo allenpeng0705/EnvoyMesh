@@ -9,7 +9,7 @@
  *
  * V1 layout (JSON, then gzip, then base64url):
  *   { v:1, ws:"...", rel:"...", rels:[...], lan:"...", tid:"...", oid:"...",
- *     apid:"...", aname:"...", bpn:[...], tok:"..." }
+ *     apid:"...", aname:"...", bpn:[...], app:"...", tok:"..." }
  *
  * Field abbreviations (keep JSON small):
  *   v    — version (1)
@@ -22,6 +22,7 @@
  *   apid — agentPeerId
  *   aname— agentName
  *   bpn  — bootstrapPresetNames
+ *   app  — app (which product minted the code)
  *   tok  — token
  */
 
@@ -45,6 +46,7 @@ interface PairingTokenV1Payload {
   apid?: string;    // agentPeerId
   aname?: string;    // agentName
   bpn?: string[];   // bootstrapPresetNames
+  app?: string;      // app (which product minted the code)
   tok: string;       // token
 }
 
@@ -66,6 +68,7 @@ export async function encodePairingToken(payload: PairingPayload): Promise<strin
     apid: payload.agentPeerId,
     aname: payload.agentName,
     bpn: payload.bootstrapPresetNames,
+    app: payload.app,
   };
 
   const json = new TextEncoder().encode(JSON.stringify(obj));
@@ -119,6 +122,8 @@ export interface DecodedPairingToken {
   agentPeerId?: string;
   agentName?: string;
   bootstrapPresetNames?: string[];
+  /** Which app minted the code — see `PairingPayload.app` in the shared contract. */
+  app?: string;
   token: string;
 }
 
@@ -172,6 +177,7 @@ function parseDecodedObject(obj: Record<string, unknown>): DecodedPairingToken {
       Array.isArray(obj.bpn)
         ? obj.bpn.filter((s): s is string => typeof s === "string" && s.length > 0)
         : undefined,
+    app: typeof obj.app === "string" && obj.app ? obj.app.trim() : undefined,
     token: tok,
   };
 }

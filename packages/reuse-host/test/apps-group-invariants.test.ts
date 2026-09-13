@@ -117,6 +117,9 @@ describe("the EnvoyMesh apps group", () => {
       ownerPublicKey: "-----BEGIN PUBLIC KEY-----",
       ownerId: "envoy:owner:alice",
       homeNodePeerId: "12D3KooWHome",
+      // Which app minted the code travels with it: that is what lets a phone app
+      // refuse another product's QR instead of pairing with the wrong desktop app.
+      app: "EnvoyCoder",
     };
     const uri = buildPairingUri(params);
     expect(uri.startsWith("envoy://pair?")).toBe(true);
