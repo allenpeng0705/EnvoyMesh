@@ -1,4 +1,5 @@
 import type { Sensitivity } from "@envoymesh/protocol";
+import { profileDirIn, resolveHomeDir } from "@envoymesh/node-core";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
@@ -111,7 +112,12 @@ export interface NodeArgs {
 export function parseNodeArgs(argv: string[]): NodeArgs {
   argv = normalizeWin32NpmArgv(argv);
   const args: NodeArgs = {
-    profileDir: "./data/default",
+    // The shared root, not `./data/default`. That relative default resolved
+    // against the working directory, so starting the node from two different
+    // folders produced two identities and nothing could tell which one was the
+    // owner's (design: docs/envoymesh-multi-product-design.md §6, state 3).
+    // `ENVOYMESH_PROFILE`, the config file and `--profile` still override this.
+    profileDir: profileDirIn(resolveHomeDir()),
     discoveryProfile: "wan-default",
     connectivityStrict: false,
     enableMdnsExplicit: false,

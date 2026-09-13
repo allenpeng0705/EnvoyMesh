@@ -121,6 +121,7 @@ import {
   type RelayLookupResponsePayload,
   type RelayPeerCandidate,
   type HumanProfilePayload,
+  ENVOYMESH_VERSION,
 } from "@envoymesh/protocol";
 import { handleProfileIntentViaRuntime } from "./cli-mesh-inbound-profile-intent.js";
 import { handleDevicePairDeferredViaRuntime } from "./cli-mesh-inbound-device-pair-deferred.js";
@@ -228,6 +229,9 @@ import {
   socialWsLoopbackUrl,
   devServicePortsConfigured,
   effectiveBridgeListenPort,
+  ensureHomeDirs,
+  homeForProfileDir,
+  touchHomeMarker,
 } from "@envoymesh/node-core";
 import { createBridge } from "./bridge/index.js";
 import {
@@ -320,6 +324,33 @@ import {
 import { configureBondWarmFromConnectivity } from "./node-service-reachability.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
+
+// The shared root (design: docs/envoymesh-multi-product-design.md §4-5). Recording
+// which app last used this home is what lets a second product tell the user "there
+// is an existing profile, created by EnvoyMesh" instead of quietly starting a
+// second identity — and the marker is how a *human* can see which directory is
+// which, so it is written before anything else touches the profile.
+const homeDir = homeForProfileDir(args.profileDir);
+try {
+  // Root and profile created `0700` *before* the profile loader writes the owner
+  // key into it. The loader's own `mkdir` is subject to umask, which is how a
+  // profile directory ended up world-listable in the first run of this change.
+  ensureHomeDirs(homeDir);
+  const { marker, created } = await touchHomeMarker(homeDir, {
+    app: "EnvoyMesh",
+    version: ENVOYMESH_VERSION,
+  });
+  console.log(
+    `[home] ${created ? "created" : "using"} ${homeDir} (schema ${marker.schema}) — profile ${args.profileDir}`,
+  );
+} catch (err) {
+  // A read-only or missing home must not stop the node: the profile directory is
+  // the input that matters, and it may be an explicit path somewhere else.
+  console.warn(
+    `[home] could not record ${homeDir}: ${err instanceof Error ? err.message : String(err)}`,
+  );
+}
+
 const profile = await loadOrCreateNodeProfile(args.profileDir);
 const taskDispatcher = createTaskDispatcher();
 const taskStore = createLocalTaskStore(args.profileDir);

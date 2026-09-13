@@ -1,6 +1,6 @@
 # EnvoyMesh family — multi-product packaging design
 
-**Status:** design agreed in outline; **not implemented** · **Owner:** product / packaging · **Created:** 2026-09-12
+**Status:** design agreed in outline; **S0 and S1 implemented** (§13) · **Owner:** product / packaging · **Created:** 2026-09-12
 
 > **Why this is its own document.** `docs/envoymesh-refactoring-plan.md` §11 states "**No product design**" and §12's banner adds that "product design belongs in its own document … mixing it into an encapsulation plan is precisely how the §2.3 mixed surface came into being." This is that document. It decides nothing about the refactor and changes no module's classification; it *consumes* the refactor's split (556 `reusable` / 252 `product-bound`) and records how a family of products should be installed, configured and run next to each other.
 >
@@ -33,16 +33,18 @@ Measured by starting `EnvoyMesh` from `packages/network/dist` in three configura
 
 **An unattributed observation.** The owner reports a running EnvoyMesh costing **>2 GB**. That is not the mesh (≈186 MB) and not an empty host (≈136 MB), so it is the product surface: the Tauri WKWebView rendering the social SPA, the social stores, the external `@envoymesh/envoy-harness*` runtime, and/or a spawned `llama-server`. **This figure must be attributed before any packaging decision is justified by memory** (§11, O5), because if a resident agent runtime is 1.2 GB, the highest-value change is making *that* lazy, not splitting apps.
 
-**A blocker to measuring it here.** `npm run node:dev` does not start in this checkout:
+**Attributed so far (§13, S0).** The node process itself — the full social node, everything loaded, mDNS/DHT/relay off — starts at **~650 MB** and grew to **718 MB over 70 s** before a collection took it back to **513 MB**, holding 5 TCP sockets. A `tsx` wrapper adds a second process (~79–93 MB). So the node is the heavy component, and the rest of the 2 GB is the WebView and/or a model server. Two consequences: (a) a product that shares one node pays that node's full weight, which is an argument for *separating heavy runtimes* rather than sharing everything; (b) the honest comparison for D1 is "EnvoyCoder's node, built only from `reusable` + coder modules" against this 650 MB, which is measurable once EnvoyCoder exists.
+
+**The blocker, and its fix (§13, S0).** `npm run node:dev` did not start:
 
 ```
 node_modules/@envoymesh/envoy-harness          -> ../../../envoy-harness/packages/envoy-harness
 node_modules/@envoymesh/envoy-harness-adapter  -> ../../../envoy-harness/packages/envoy-harness-adapter
 ```
 
-`apps/node/src` imports those live (`node-service-eh-user-question.ts`, `agent-runtime-envoy/local-runtime-registry.ts`, `node-service-setup-sponsor-friend.ts`). They resolve into a **sibling checkout**, whose copy of `@envoymesh/protocol` predates this refactor — 10 compiled files, missing `ext-agent-contract.js` and `pairing-contract.js` — so the process dies at import with `ERR_MODULE_NOT_FOUND`.
+`apps/node/src` imports those live (`node-service-eh-user-question.ts`, `agent-runtime-envoy/local-runtime-registry.ts`, `node-service-setup-sponsor-friend.ts`). They resolve into a **sibling checkout**, whose copy of `@envoymesh/protocol` predates this refactor — 10 compiled files, missing `ext-agent-contract.js`, `pairing-contract.js`, `json-rpc-wire.js` and `version.js` — so the process died at import with `ERR_MODULE_NOT_FOUND`. The sibling's `@envoymesh/protocol` is a **copied directory** (not a link), and it is four modules behind.
 
-**No gate caught this, because `vitest.config.ts` aliases `@envoymesh/*` to in-repo sources.** The suite is green (966 files, 8,988 tests) while the real node cannot start. This is the same failure shape as the five broken `require()` calls in the shipped ESM build (§8.16 of the plan): the test path and the run path are not the same path. **Fix this before measuring anything** (S0).
+**No gate caught this, because `vitest.config.ts` aliases `@envoymesh/*` to in-repo sources.** The suite was green (966 files, 8,988 tests) while the real node could not start. This is the same failure shape as the five broken `require()` calls in the shipped ESM build (§8.16 of the plan): the test path and the run path are not the same path — which is why S0 was "make it run", not "write more tests".
 
 ## 3. The three decisions
 
@@ -188,8 +190,8 @@ The owner's rule: **check the common place; tell the user a profile exists; let 
 
 | # | Step | Acceptance |
 |---|---|---|
-| **S0** | Make the node runnable in a working checkout: refresh the sibling `envoy-harness` links (or vendor the remaining contract symbols into `packages/protocol`, which this refactor already did for five of them) | `npm run node:dev` starts; then attribute the >2 GB by process |
-| **S1** | Root resolution (`ENVOYMESH_HOME` → setting → per-OS default → legacy), `envoymesh.json` marker, detection helper, and move the node default off `./data/default` | Starting from two different CWDs resolves to **one** identity; marker written on first run; detection unit-tested against found / missing / damaged |
+| **S0** ✅ | Make the node runnable in a working checkout: refresh the sibling `envoy-harness` links (or vendor the remaining contract symbols into `packages/protocol`, which this refactor already did for five of them) | ✅ node starts; >2 GB attributed by process (§13) |
+| **S1** ✅ | Root resolution (`ENVOYMESH_HOME` → setting → per-OS default → legacy), `envoymesh.json` marker, detection helper, and move the node default off `./data/default` | ✅ starting from two different CWDs resolves to **one** identity; marker written on first run; 18 tests over found / missing / damaged / permissions (§13) |
 | **S2** | The discovery dialog: found / none / damaged / in-use, with end-user wording | A user can see which profile exists, who it belongs to, and choose; no silent creation in any state |
 | **S3** | `lock` + `node.json` + attach; health identity; ownership-checked supervisor cleanup | Two apps: second attaches, never double-owns; supervisor kills only its own sidecar; `/health` identifies the node |
 | **S4** | Shared local engine: assets to `runtime/`, `/v1/models` probe, spawn lock, model lease; embeddings first | Second app uses the running engine instead of spawning one; a racing start is resolved by the lock |
@@ -221,3 +223,54 @@ The owner's rule: **check the common place; tell the user a profile exists; let 
 | `deriveOwnerId` | `packages/identity/src/index.ts:621` |
 | Per-scope feature gates | `apps/node/src/node-service-impl.ts:8710`, `:8741` |
 | Sibling-link breakage | `node_modules/@envoymesh/envoy-harness*` symlinks + missing `ext-agent-contract.js` / `pairing-contract.js` in the sibling's `@envoymesh/protocol` copy |
+
+---
+
+## 13. Implementation log
+
+Chronological, newest last. Each entry says what was measured or observed, not just what was written.
+
+### S0 ✅ — the node runs again (2026-09-13)
+
+**What was wrong.** The sibling checkout's `@envoymesh/protocol` is a copied directory, four modules behind this repo (`ext-agent-contract.ts`, `json-rpc-wire.ts`, `pairing-contract.ts`, `version.ts`). Any path that resolved `@envoymesh/protocol` through `node_modules/@envoymesh/envoy-harness*` died at import.
+
+**Fix.** Replaced the stale copy with a symlink to `packages/protocol` (the original is preserved beside it as `protocol.stale-20260913`, so `pnpm install` in the sibling restores it or the symlink can be removed). Verified by starting the node, not by a test:
+
+```
+[config] config:updated: model=disabled …
+[openclaw] Built-in OpenClaw gateway at http://127.0.0.1:18789/webhook/envoymesh
+[rag] deferring vault reindex until Envoy Local embed sidecar is ready
+```
+
+**For other machines**, the right fix is to refresh that checkout (`pnpm install` in `envoy-harness`, or `npm run build:envoy-harness`, which is already a documented script here) — the symlink is a local repair of a broken environment, not a repo change.
+
+**Measured while doing it (O5, partial).** Full social node, mDNS/DHT/relay off: **652 MB → 718 MB over 70 s**, then a collection to **513 MB**, 5 TCP sockets. A `tsx` wrapper adds a second process (79–93 MB). The node — not the mesh, not the host — is the heavy component.
+
+### S1 ✅ — one root, one identity per machine (2026-09-13)
+
+**New module:** `packages/node-core/src/envoymesh-home.ts` (**557 reusable modules**, up from 556; classified `reusable` because it imports only `node:*`). It owns root resolution, the marker, and profile detection — paths and inspection only; which stores go where stays with the callers (§5).
+
+| Decision implemented | Behaviour |
+|---|---|
+| Per-OS default root | `~/Library/Application Support/EnvoyMesh` · `%LOCALAPPDATA%\EnvoyMesh` · `$XDG_DATA_HOME/EnvoyMesh` |
+| `ENVOYMESH_HOME` wins | Resolved (never used as-is), and used even when absent so a script can point anywhere |
+| Legacy adoption | `~/.envoymesh` is used **iff** the preferred root does not already hold a home, so an existing install keeps its identity instead of silently starting a second one |
+| Marker | `envoymesh.json` — `schema`, `createdAt`, `ownerId`, `lastUsedBy`; written atomically, mode `0600`, schema never downgraded |
+| Detection | `inspectProfile()` → `found` / `missing` / `damaged`, naming exactly which markers are absent or unreadable, and reporting **who** the profile belongs to even when damaged |
+| Safe product paths | `productDirIn(home, product)` rejects `..`, separators and empty names |
+
+**Wired in.** `apps/node/src/args.ts` no longer defaults to `./data/default`; `apps/node/src/index.ts` creates the root tree and writes the marker before the profile loader runs.
+
+**Acceptance, verified by running the node twice from different working directories:**
+
+```
+run 1 from /tmp/cwd-a:  [home] created /tmp/envoytest-home (schema 1) — profile …
+run 2 from /tmp/cwd-b:  [home] using   /tmp/envoytest-home (schema 1) — profile …
+owner key identical in both runs: YES
+```
+
+**A finding while verifying:** the first run left `<home>/profile` as `drwxr-xr-x` — the profile loader's `mkdir` is subject to umask, and that directory holds `libp2p-private.key` and the owner key inside `profile.json` (both `0600`, so only a directory listing leaked, but the listing is what names the owner). Fixed by creating the root and profile `0700` before the loader runs; re-verified on a fresh home: `0700` root, `0700` profile, `0600` key.
+
+**Tests:** `packages/node-core/test/envoymesh-home.test.ts` — 18 cases covering per-OS defaults, override precedence, legacy adoption (both directions), marker round-trip/0600/corrupt/loose-typed input, schema non-downgrade, and all three detection states including "damaged still reports its owner". One of them failed first and was right to: `inspectProfile` returned no owner for a damaged profile, which is exactly what a discovery dialog needs to display — the implementation was fixed rather than the assertion.
+
+**Not done here** (deliberately): the discovery dialog (S2), `node.json`/lock/attach (S3), and the shared engine (S4). O1–O5 remain open; O5 is partially answered above.
