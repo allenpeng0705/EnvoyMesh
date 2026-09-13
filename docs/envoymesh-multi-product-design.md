@@ -471,6 +471,22 @@ A code minted before the field existed is accepted: refusing it would break ever
 
 **3. Coding is granted per product, by the owner.** `mayFamilyProfileUseCoding()` is family-profile policy and a product scope is not a family profile, so an attached EnvoyCoder was refused the surface it exists for. `NodeConfig.productGrants` — owner-set through the already owner-only `updateNodeConfig` — now answers for products, with **nothing** as the default and a fail-closed read. Example: `{ "EnvoyCoder": ["coding"] }`. Pinned by test: denied before the grant, allowed after, unaffected for a *different* product, revoked by an empty list.
 
+### S8 — S4's asset half: one engine, one copy of the weights (2026-09-13)
+
+The design's D3 said a local engine is shared and provider credentials never are. The resource argument is concrete: `llama-server` is a multi-hundred-MB binary and a GGUF is multi-GB, and until now both lived at `{profile}/envoy-local/` — so a second product on the same machine downloaded all of it again.
+
+Both runtimes resolved that path with their own one-line `rootDir()` (chat and embeddings), so the change was small and the rule now lives where every product can reach it:
+
+* **`localEngineAssetsDir({ profileDir })`** in `@envoymesh/node-core` — `<root>/runtime/envoy-local` (the `runtimeDirIn()` that existed and was unused), with **adoption** for the third time and the same reasoning: an install that already has a profile-local copy keeps using it, because re-downloading gigabytes is a worse outcome than a directory in the old place. Both `rootDir()` implementations are now one call to the shared rule, so chat and embeddings cannot disagree about where the engine is.
+* Four tests: fresh install → shared; profile-local present → adopted; shared present → shared wins; and an explicit `--profile /tmp/scratch` resolves the rule without assuming a `<x>/profile` path shape.
+
+**What S4 still owes, with the mechanism now known rather than guessed.** The halves that remain are the **spawn lock** and the **model lease**:
+
+* the lock can reuse the node registry as-is — `acquireNodeLock(runtimeDir, …)` writes `<runtime>/lock` and `writeNodeEndpoint(runtimeDir, …)` publishes where the engine is, so a second product finds the running engine instead of starting a second one (`resolveRunningNode(runtimeDir)` already answers that question, verified, for a *node*);
+* the lease is the genuinely hard half and the reason S4 is not a single slice: **one `llama-server` serves one model**, so EnvoyMesh holding a chat model while EnvoyCoder wants a code model cannot both be satisfied without a reload (tens of seconds, GBs of churn). That is a policy — one agreed model, a lease with a queue, or embeddings-only sharing — and it needs deciding, not coding.
+
+**§5 and the harness packaging are unchanged from §S7.**
+
 ### S7 — §5 audited to the reference, plus the two outstanding small findings (2026-09-13)
 
 **§5's migration is now a classified worklist rather than an estimate.** Eyeballing 134 references is how a *kernel* file ends up in a product directory — which on a fresh install means an identity a second product cannot see, the exact opposite of the goal. So the classification is machine-made, from the inventory's own groups rather than a second opinion (`scripts/audit-profile-dir-usage.mjs`):

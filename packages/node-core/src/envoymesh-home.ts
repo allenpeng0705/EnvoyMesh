@@ -441,3 +441,29 @@ export function profileDirHasProductState(dir: string, exists = existsSync): boo
   ];
   return productMarkers.some((name) => exists(path.join(dir, name)));
 }
+
+/**
+ * Where the **local model engine** keeps its assets (design §8 / S4).
+ *
+ * One engine and one copy of the weights for the whole family: `llama-server` is a
+ * multi-hundred-MB binary and a GGUF is multi-GB, so a per-profile copy means a second
+ * product downloads all of it again. Assets therefore live under `<root>/runtime/`, shared
+ * the way the kernel stores are.
+ *
+ * Adoption, for the third time and for the same reason: an install that already has
+ * `{profile}/envoy-local/` keeps using it. Re-downloading gigabytes is a worse outcome than
+ * a directory in the old place, and the caller logs which one is in use.
+ */
+export function localEngineAssetsDir(input: {
+  /** The node's profile directory — where assets lived before S4. */
+  profileDir: string;
+  /** Injectable for tests. */
+  exists?: (candidate: string) => boolean;
+}): { dir: string; adoptedLegacy: boolean } {
+  const exists = input.exists ?? existsSync;
+  const shared = path.join(runtimeDirIn(homeForProfileDir(input.profileDir)), "envoy-local");
+  const legacy = path.resolve(input.profileDir, "envoy-local");
+  if (exists(shared)) return { dir: shared, adoptedLegacy: false };
+  if (exists(legacy)) return { dir: legacy, adoptedLegacy: true };
+  return { dir: shared, adoptedLegacy: false };
+}

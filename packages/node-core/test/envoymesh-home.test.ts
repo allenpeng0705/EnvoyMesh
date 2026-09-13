@@ -21,6 +21,7 @@ import {
   defaultHomeDir,
   ensureHomeDirs,
   homeForProfileDir,
+  localEngineAssetsDir,
   inspectProfile,
   legacyHomeDir,
   productDirIn,
@@ -350,6 +351,42 @@ describe("resolveProductStateDir (§5 layout)", () => {
     mkdirSync(used, { recursive: true });
     writeFileSync(path.join(used, "family-profiles.json"), "{}");
     expect(profileDirHasProductState(used)).toBe(true);
+  });
+});
+
+describe("localEngineAssetsDir (§8 / S4 — one engine per machine)", () => {
+  const PROFILE = "/home/alice/envoymesh/profile";
+  const SHARED = "/home/alice/envoymesh/runtime/envoy-local";
+
+  it("puts assets in the shared runtime root for a fresh install", () => {
+    // A second product must not download multi-GB weights again: that is the whole point.
+    expect(
+      localEngineAssetsDir({ profileDir: PROFILE, exists: () => false }),
+    ).toEqual({ dir: SHARED, adoptedLegacy: false });
+  });
+
+  it("adopts an existing profile-local copy rather than re-downloading it", () => {
+    const result = localEngineAssetsDir({
+      profileDir: PROFILE,
+      exists: (candidate) => candidate === path.join(PROFILE, "envoy-local"),
+    });
+    expect(result).toEqual({ dir: path.join(PROFILE, "envoy-local"), adoptedLegacy: true });
+  });
+
+  it("prefers the shared copy once it exists — the migration ran", () => {
+    const result = localEngineAssetsDir({
+      profileDir: PROFILE,
+      exists: (candidate) => candidate === SHARED || candidate === path.join(PROFILE, "envoy-local"),
+    });
+    expect(result).toEqual({ dir: SHARED, adoptedLegacy: false });
+  });
+
+  it("resolves from a legacy home too, so the rule is not path-shape dependent", () => {
+    // `homeForProfileDir` gives `<x>` for `<x>/profile` and `<x>` itself otherwise, so an
+    // explicit `--profile /tmp/scratch` keeps its engine under `/tmp/scratch/runtime/`.
+    expect(
+      localEngineAssetsDir({ profileDir: "/tmp/scratch", exists: () => false }).dir,
+    ).toBe("/tmp/scratch/runtime/envoy-local");
   });
 });
 });

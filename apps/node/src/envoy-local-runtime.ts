@@ -4,6 +4,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import {
   DEFAULT_ENVOY_LOCAL_SERVER_PARAMS,
@@ -73,7 +74,10 @@ import {
   detectEnvoyLocalPlatform,
   type EnvoyLocalPlatform,
 } from "./envoy-local-platform.js";
-import { ENVOY_LOCAL_PORT, envoyLocalOpenAiBaseUrl } from "@envoymesh/node-core";
+import {
+  localEngineAssetsDir,
+  homeForProfileDir,
+  runtimeDirIn, ENVOY_LOCAL_PORT, envoyLocalOpenAiBaseUrl} from "@envoymesh/node-core";
 
 export interface EnvoyLocalRuntimeDeps {
   getProfileDir: () => string;
@@ -133,9 +137,23 @@ export function createEnvoyLocalRuntimeState(): EnvoyLocalRuntimeState {
   };
 }
 
+/**
+ * The shared runtime root for local-engine assets (design §8 / S4).
+ *
+ * One engine, one copy of the weights. These live beside the home — `<root>/runtime/` —
+ * rather than inside a profile, so a second product on the same machine uses the same
+ * llama-server binary and the same GGUFs instead of downloading multi-GB weights again.
+ *
+ * **Adoption, like everywhere else in the layout work:** an install that already has
+ * `{profile}/envoy-local/` keeps using it, because re-downloading is a worse outcome than a
+ * directory in the old place. `sharedRuntimeRoot()` reports which of the two is in use, and
+ * the choice is observable in the log rather than silent.
+ */
 function rootDir(profileDir: string): string {
-  // Always absolute so llama-server (spawned with runtime cwd) can open models.
-  return resolve(profileDir, "envoy-local");
+  // Always absolute so llama-server (spawned with runtime cwd) can open models. The rule
+  // (shared `<root>/runtime/` first, profile-local copy adopted) lives in `@envoymesh/node-core`
+  // so every product resolves the same engine, not just this one.
+  return localEngineAssetsDir({ profileDir }).dir;
 }
 
 async function loadDownloadRegion(
