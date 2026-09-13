@@ -296,6 +296,87 @@ export interface NodeProbeResult {
 }
 
 /**
+ * What a second product needs to know about the node on this machine.
+ *
+ * `"running"` means **verified**: a claim is held by a live process *and* its
+ * endpoint answered `/health` naming the owner the descriptor claims. `"unverified"`
+ * covers everything weaker — a live claim with no descriptor, a descriptor whose
+ * endpoint does not answer, or one answered by a *different* node — which is the
+ * distinction the transport's identical `/health` body made impossible before
+ * `setHealthIdentity`.
+ */
+export type RunningNodeStatus = "none" | "running" | "unverified" | "stale";
+
+export interface RunningNode {
+  status: RunningNodeStatus;
+  /** The claim on disk, when there is one. */
+  holder?: NodeLockInfo;
+  endpoint?: NodeEndpoint;
+  probe?: NodeProbeResult;
+  /** Ready-to-dial local URL, present only when `status === "running"`. */
+  wsUrl?: string;
+  /** Why it is not `"running"`, in a form worth logging (not shown to end users). */
+  reason?: string;
+}
+
+/**
+ * Is a node running on this home, and is it the one the descriptor claims?
+ *
+ * The consumer `probeNodeEndpoint` was written for: a product deciding whether to
+ * attach, and the node itself deciding what to say when it finds the home taken.
+ * Nothing here authenticates — the token is minted by the pairing flow, which is
+ * the product's business — so this answers *discovery and verification* only, and
+ * `wsUrl` is deliberately absent unless both hold.
+ */
+export async function resolveRunningNode(
+  home: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<RunningNode> {
+  const holder = await readNodeLock(home);
+  if (!holder) return { status: "none" };
+  if (!isProcessAlive(holder.pid)) {
+    return { status: "stale", holder, reason: `pid ${holder.pid} is gone` };
+  }
+
+  const endpoint = await readNodeEndpoint(home);
+  if (!endpoint) {
+    return {
+      status: "unverified",
+      holder,
+      reason: "no endpoint descriptor: the node is running but did not publish where",
+    };
+  }
+
+  const probe = await probeNodeEndpoint(endpoint, { timeoutMs: opts.timeoutMs ?? 2_000 });
+  const wsUrl = `ws://127.0.0.1:${endpoint.port}${endpoint.path}`;
+
+  if (probe.reachable && probe.identityVerified) {
+    return { status: "running", holder, endpoint, probe, wsUrl };
+  }
+  if (probe.reachable && probe.identityUnknown) {
+    // Reachable, but it would not say who it is — so "my node is alive" cannot be
+    // claimed. This is the state an older build reports.
+    return { status: "unverified", holder, endpoint, probe, reason: "endpoint does not report identity" };
+  }
+  if (probe.reachable) {
+    return {
+      status: "unverified",
+      holder,
+      endpoint,
+      probe,
+      reason: `another node answered on port ${endpoint.port}`,
+    };
+  }
+  return {
+    status: "unverified",
+    holder,
+    endpoint,
+    probe,
+    reason: `endpoint did not answer (${probe.error ?? "unknown"})`,
+  };
+}
+
+/**
  * Ask a candidate endpoint who it is.
  *
  * Two questions, deliberately separate: *is something serving there* and *is it the

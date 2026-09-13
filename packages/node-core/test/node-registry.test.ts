@@ -24,6 +24,7 @@ import {
   probeNodeEndpoint,
   readNodeEndpoint,
   readNodeLock,
+  resolveRunningNode,
   releaseNodeLock,
   releaseNodeLockSync,
   writeNodeEndpoint,
@@ -206,6 +207,98 @@ describe("isProcessAlive", () => {
     expect(isProcessAlive(DEAD_PID)).toBe(false);
     expect(isProcessAlive(0)).toBe(false);
     expect(isProcessAlive(-1)).toBe(false);
+  });
+});
+
+describe("resolveRunningNode", () => {
+  /** A stand-in node: `/health` with whatever identity the test wants it to claim. */
+  async function withHealth(
+    payload: Record<string, unknown>,
+    run: (port: number) => Promise<void>,
+  ): Promise<void> {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, service: "envoymesh-home-ws", ...payload }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    try {
+      await run(port);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+
+  async function claim(port: number, ownerId?: string): Promise<void> {
+    await acquireNodeLock(home, { pid: process.pid, app: "EnvoyMesh", version: "0.5.0" });
+    await writeNodeEndpoint(home, {
+      pid: process.pid,
+      app: "EnvoyMesh",
+      version: "0.5.0",
+      startedAt: new Date().toISOString(),
+      port,
+      path: "/ws",
+      token: "",
+      ...(ownerId ? { ownerId } : {}),
+    });
+  }
+
+  it("reports none when nothing claims the home", async () => {
+    expect((await resolveRunningNode(home)).status).toBe("none");
+  });
+
+  it("reports stale when the claim's process is gone", async () => {
+    await acquireNodeLock(home, { pid: DEAD_PID, app: "EnvoyMesh", version: "0.5.0" });
+    const result = await resolveRunningNode(home);
+    expect(result.status).toBe("stale");
+    expect(result.reason).toContain(String(DEAD_PID));
+  });
+
+  it("verifies a running node and hands back a dialable URL", async () => {
+    await withHealth({ ownerId: "envoy:owner:abc" }, async (port) => {
+      await claim(port, "envoy:owner:abc");
+      const result = await resolveRunningNode(home);
+      expect(result.status).toBe("running");
+      expect(result.wsUrl).toBe(`ws://127.0.0.1:${port}/ws`);
+      expect(result.probe?.identityVerified).toBe(true);
+    });
+  });
+
+  it("refuses to call it running when another node answers on that port", async () => {
+    // The case the whole health-identity change exists for: the claim is real, the
+    // port answers, and the answer is somebody else's node.
+    await withHealth({ ownerId: "envoy:owner:someone-else" }, async (port) => {
+      await claim(port, "envoy:owner:abc");
+      const result = await resolveRunningNode(home);
+      expect(result.status).toBe("unverified");
+      expect(result.reason).toContain("another node");
+      expect(result.wsUrl).toBeUndefined();
+    });
+  });
+
+  it("refuses to call it running when the endpoint will not say who it is", async () => {
+    await withHealth({}, async (port) => {
+      await claim(port, "envoy:owner:abc");
+      const result = await resolveRunningNode(home);
+      expect(result.status).toBe("unverified");
+      expect(result.reason).toContain("does not report identity");
+    });
+  });
+
+  it("reports a live claim with no descriptor as unverified, not running", async () => {
+    await acquireNodeLock(home, { pid: process.pid, app: "EnvoyMesh", version: "0.5.0" });
+    const result = await resolveRunningNode(home);
+    expect(result.status).toBe("unverified");
+    expect(result.holder?.pid).toBe(process.pid);
+    expect(result.reason).toContain("no endpoint descriptor");
+  });
+
+  it("reports an unanswered endpoint as unverified, with why", async () => {
+    await claim(1); // nothing listens on port 1
+    const result = await resolveRunningNode(home, { timeoutMs: 500 });
+    expect(result.status).toBe("unverified");
+    expect(result.reason).toContain("did not answer");
   });
 });
 

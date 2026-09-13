@@ -231,6 +231,25 @@ describe("describeProfileSituation", () => {
     expect(attachable.choices.find((c) => c.id === "attach")?.recommended).toBe(true);
   });
 
+  it("tells the user when the holder is not answering, instead of saying 'close it'", () => {
+    // A live claim that does not answer is a different situation: the app may already
+    // be shutting down, so "close the app" is poor advice.
+    const unverified = describeProfileSituation({
+      ...BASE,
+      inspection: inspection(),
+      inUse: { app: "EnvoyMesh", pid: 1234, port: 3030, verified: false },
+    });
+    expect(unverified.detail).toContain("not answering on port 3030");
+    expect(unverified.detail).not.toContain("Close it");
+
+    const verified = describeProfileSituation({
+      ...BASE,
+      inspection: inspection(),
+      inUse: { app: "EnvoyMesh", pid: 1234, port: 3030, verified: true },
+    });
+    expect(verified.detail).toContain("Close it");
+  });
+
   it("reports an in-use home even when nothing else can be done", () => {
     const situation = describeProfileSituation({
       ...BASE,

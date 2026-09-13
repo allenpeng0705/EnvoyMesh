@@ -238,6 +238,7 @@ import {
   isHomeSchemaSupported,
   profileDirIn,
   releaseNodeLockSync,
+  resolveRunningNode,
   touchHomeMarker,
   writeNodeEndpoint,
   ENVOYMESH_HOME_SCHEMA,
@@ -392,6 +393,12 @@ const nodeLock = await acquireNodeLock(homeDir, {
 });
 const secondNodeAllowed = process.env["ENVOYMESH_ALLOW_SECOND_NODE"] === "1";
 if (!nodeLock.acquired && !secondNodeAllowed) {
+  // Verify before reporting: a live claim is not the same as a node that answers.
+  // `resolveRunningNode` probes the published endpoint and checks the identity it
+  // claims, which is what makes "EnvoyMesh is using this profile" a fact rather
+  // than a reading of a file — and "it is not answering" a distinction the user can
+  // act on.
+  const running = await resolveRunningNode(homeDir);
   const situation = describeProfileSituation({
     product: "EnvoyMesh",
     home: homeDir,
@@ -403,11 +410,15 @@ if (!nodeLock.acquired && !secondNodeAllowed) {
       pid: nodeLock.holder.pid,
       ...(nodeLock.endpoint?.port !== undefined ? { port: nodeLock.endpoint.port } : {}),
       startedAt: nodeLock.holder.startedAt,
+      verified: running.status === "running",
     },
     // Attaching is the next slice: the running node cannot yet accept a product
     // client, so the honest thing is not to offer it.
     canAttach: false,
   });
+  if (running.status !== "running") {
+    console.warn(`[home] the holder could not be verified: ${running.reason ?? running.status}`);
+  }
   writeSync(
     2,
     `\n${situation.headline}\n${situation.detail}\n` +

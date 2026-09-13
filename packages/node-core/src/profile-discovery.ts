@@ -59,6 +59,13 @@ export interface ProfileInUse {
   port?: number;
   /** When the holder started, ISO. */
   startedAt?: string;
+  /**
+   * Whether the holder's endpoint answered `/health` naming the owner it claims
+   * (`resolveRunningNode` → `status === "running"`). `false` means a live claim we
+   * could not prove is serving — worth saying, because "close the app" is the wrong
+   * advice if it has already stopped answering.
+   */
+  verified?: boolean;
 }
 
 /** What a user can choose. Product UIs map these onto buttons. */
@@ -256,7 +263,12 @@ export function describeProfileSituation(input: DescribeProfileSituationInput): 
       detail:
         `Only one ${inUse.app} can use a profile at a time, because two copies would ` +
         `compete for the same identity.${startedWhen ? ` It started ${startedWhen}.` : ""} ` +
-        `Close it, or use a different folder for ${product}.`,
+        // A live claim that is not answering is a different situation from a healthy
+        // one, and "close it" would be poor advice: it may already be shutting down.
+        (inUse.verified === false
+          ? `It is not answering on${inUse.port ? ` port ${inUse.port}` : " its port"} right now, so it may be ` +
+            `shutting down — try again in a moment, or use a different folder.`
+          : `Close it, or use a different folder for ${product}.`),
       facts,
       choices: choices.length > 0 ? choices : [quit],
     };

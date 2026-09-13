@@ -373,6 +373,21 @@ The Rust side is compile-verified (`cargo check`) and unit-tested (`cargo test -
 
 **What S3 still owes:** attach itself — the token exchange plus a client that connects to a running node instead of starting a second one. Both halves now exist to build on: the endpoint descriptor on disk says where the node is, and `/health` says whose it is.
 
+### S3 (third slice) ◐ — `resolveRunningNode`, and the probe gets a consumer (2026-09-13)
+
+`probeNodeEndpoint` was written in the first slice and had no production caller. That is the shape of a helper that rots, so the node now uses it: `resolveRunningNode(home)` answers the question a second product actually has — *is a node running here, and is it the one the descriptor claims?*
+
+| Status | Meaning |
+|---|---|
+| `none` | no claim on the home |
+| `stale` | a claim whose process is gone |
+| `unverified` | a live claim, but the endpoint would not prove it: no descriptor, nothing answering, no identity reported, or **a different node answering on that port** |
+| `running` | verified: the endpoint answered `/health` naming the owner the descriptor claims — only then is `wsUrl` returned |
+
+No authentication happens there, deliberately: the token comes from the pairing flow, which is the product's business. Discovery and verification are the shared part.
+
+**Where it shows up for the user.** The node's own in-use message now distinguishes "EnvoyMesh is using this profile — close it" from "…it is not answering on port 3030 right now, so it may be shutting down", because a live claim that does not answer is a different situation and "close the app" is poor advice for it. Verified in a two-process run: node 2 probed node 1, matched the owner id, and used the first wording with **zero** unverified warnings; `/health` on node 1 reports `{"app":"EnvoyMesh","ownerId":"envoy:owner:YQ1zCno…","port":3030}`.
+
 ### S2 review round 1 — the gate caught my own growth, and a lie in the help text (2026-09-13)
 
 Two things the seeded suite and a read-through found after S2 was written:
