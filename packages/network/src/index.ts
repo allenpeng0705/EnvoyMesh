@@ -5736,3 +5736,11 @@ function validateEnvelopeProtocol(protocol: string, envelope: EnvoyEnvelope): vo
     throw new Error("chat.message must be sent on chat protocol");
   }
 }
+
+// Mesh ports a reusable module may depend on — see `mesh-ports.ts` for why they
+// are declared here rather than beside their first product-side user.
+export {
+  isLibp2pPeerId,
+  type OutboundDeliverMesh,
+  type OutboundExpectReplyMesh,
+} from "./mesh-ports.js";

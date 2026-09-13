@@ -525,13 +525,8 @@ import {
   handleInboundProfileRequest,
   handleInboundProfileSync,
 } from "./profile-sync-inbound.js";
-import {
-  buildSignedProfilePayloadEnvelope,
-  sendProfileRequest,
-  sendProfileResponse,
-  sendProfileSyncToBonds,
-  isLibp2pPeerId,
-} from "./profile-sync-outbound.js";
+import { buildSignedProfilePayloadEnvelope, sendProfileRequest, sendProfileResponse, sendProfileSyncToBonds } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
 import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
 import { handleInboundAgentCardIntent } from "./agent-card-inbound.js";

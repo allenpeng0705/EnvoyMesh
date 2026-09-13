@@ -77,7 +77,7 @@ import {
   pickLibp2pFromConnectedPeers,
   resolveRecipientEnvelopePeerId,
 } from "./peer-transport-resolve.js";
-import { isLibp2pPeerId } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";

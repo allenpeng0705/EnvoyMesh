@@ -13,7 +13,7 @@ import {
   sendExpectReplyWithRetry,
   type OutboundExpectReplyMesh,
 } from "./chat-outbound-deliver.js";
-import { isLibp2pPeerId } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 import { anLog, anWarn, shortId } from "./agent-network-debug.js";
 /** Mesh / libp2p transport surface needed for same-stream agent.card expect-reply. */
 export type AgentCardAutoFetcherMesh = OutboundExpectReplyMesh & Pick<EnvoyMesh, "peerId">;

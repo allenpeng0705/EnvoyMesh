@@ -186,7 +186,7 @@ import { createPiAdapterFromHost, type PiMapHost } from "./pi-map-adapter.js";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { MeshToolContext } from "./tool-registry.js";
-import { isLibp2pPeerId } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 import { type ChainContext, type ChainRankedWorker, type ChainStore } from "./node-service-chains.js";
 
 /* ---------- context ---------- */

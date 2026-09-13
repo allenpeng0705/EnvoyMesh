@@ -23,7 +23,7 @@ import {
   sendEnvelopeWithRetry,
   type OutboundDeliverMesh,
 } from "./chat-outbound-deliver.js";
-import { isLibp2pPeerId } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 import {
   WORKER_LEASE_DEFAULT_TTL_MS,
   leaseRefreshIntervalMs,

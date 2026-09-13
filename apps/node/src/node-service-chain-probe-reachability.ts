@@ -10,7 +10,7 @@ import type {
 } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
 import type { PeerDirectoryRecord } from "@envoymesh/local-store";
-import { isLibp2pPeerId } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 import { raceWithTimeout } from "./outbound-warm-dial.js";
 import { sameLanFromListenAddrs } from "./node-service-chain-orchestration.js";
 import { evaluateWanPeerOnlineGate } from "./wan-peer-online-gate.js";

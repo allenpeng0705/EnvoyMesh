@@ -24,7 +24,7 @@ import {
   listAgentCardsIncludingLocal,
   type ChainOrchestrationContext,
 } from "./node-service-chain-orchestration.js";
-import { isLibp2pPeerId } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 
 function listenAddrsIncludeLoopback(addrs: readonly string[] | undefined): boolean {
   if (!addrs?.length) return false;

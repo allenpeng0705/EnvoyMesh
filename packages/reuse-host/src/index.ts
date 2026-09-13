@@ -49,6 +49,17 @@ import {
   type SocketMethodPort,
 } from "@envoymesh/host-connect";
 
+// The port types a consumer needs in order to implement the host contract —
+// re-exported so a product imports them from here rather than from the transport
+// package directly (one fewer dependency in the product's graph).
+export type {
+  HostNodeService,
+  HostRpcDispatcher,
+  SessionIdentityResolver,
+  SessionPayloadTransform,
+  SocketMethodPort,
+} from "@envoymesh/host-connect";
+
 // ─── the harness surface ────────────────────────────────────────────────────
 //
 // Re-exported rather than re-invented: `@envoymesh/harness` is 24/24 `reusable`

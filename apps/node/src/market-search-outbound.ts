@@ -16,7 +16,7 @@ import {
   sendExpectReplyWithRetry,
   type OutboundExpectReplyMesh,
 } from "./chat-outbound-deliver.js";
-import { isLibp2pPeerId } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 
 type MarketMesh = OutboundExpectReplyMesh &
   Pick<

@@ -1371,6 +1371,35 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 
 **Recommended order**, cheapest true unblock first: (1) the harness contract-symbol move — it is small, it is the V4 requirement, and it does not depend on the `api` decision; (2) re-measure, then decide the `api/core` subpath with real numbers; (3) the kernel `productStoreDir` gate as its own step; (4) the TS reuse host, which then becomes the acceptance test for all of it.
 
+#### 8.17.10 The `ModelProviderConfig`-style sweep, and a runnable second product
+
+**The sweep, with its own instrument.** The technique that found `ModelProviderConfig` and the pairing payloads is now a script (`/tmp/contract-candidates.mjs`, reproduced below in prose): a module is tainted *by propagation* when its own text is clean yet the manifest calls it product-bound, so the **relative imports that resolve to product-bound modules** are the coupling, and the names taken from them are candidates. For each candidate, compute the closure — the declaring module, the names its declaration references, whether any reaches product-bound code — and only move it if that closure is clean.
+
+Measured: **73 modules** are product-bound only through what they import, across **177 distinct candidate `name@module` pairs**, ranked by how many modules each blocks.
+
+Two clean moves came out of it:
+
+| Candidate | Declared in | Blocked modules | Verdict |
+|---|---|---|---|
+| `OutboundDeliverMesh`, `OutboundExpectReplyMesh` | `chat-outbound-deliver.ts` | 6 | **moved** → `network/src/mesh-ports.ts` (they are `Pick<EnvoyMesh, …>`; the mesh class is right there) |
+| `isLibp2pPeerId` | `profile-sync-outbound.ts` | 5 | **moved** → the same module (a pure predicate over peer-id strings) |
+
+Repointing the consumers added **+3 modules immediately** (`peer-directory-learn.ts`, `peer-transport-resolve.ts` and the new module itself; 552 → 555 reusable) — the two port moves alone were necessary but not sufficient, because those modules also imported the port *by its old path*.
+
+**And the sweep's most useful output is a negative result.** The largest remaining cluster — `broadcast-outbound`, `mesh-outbound-helper`, `agent-task-propose-send`, `agent-worker-lease-broadcast`, `chain-production`, `scoreboard-rule-broadcast`, `agent-card-auto-fetcher` (7 modules) — is blocked by `sendEnvelopeWithRetry` / `sendExpectReplyWithRetry`. Their closure is **not** clean: they branch on `isProfileIntent` and call `deliverProfileEnvelopeWithRetry` / `deliverMessageEnvelopeWithRetry`, i.e. profile-sync delivery policy. Moving them would put product delivery logic in a core package — the opposite of the goal. They stay product-bound, and that is the correct answer rather than an unfinished one.
+
+**The second product now runs.** `@envoymesh/reuse-host` gained `src/cli.ts` and a `bin` entry (`envoy-reuse-host`), serving `ping` / `whoami` / `hostInfo` and printing the pairing URI:
+
+```
+envoy-reuse-host 0.5.0 listening on ws://127.0.0.1:52431/ws
+methods: ping, whoami, hostInfo
+
+Pairing URI (encode this as a QR code):
+  envoy://pair?wsUrl=…&token=…&ownerPublicKey=…&ownerId=envoy%3Aowner%3Aalice
+```
+
+Two bugs it exposed by being *run* rather than read, both in the CLI and both mine: `--owner-public-key "-----BEGIN PUBLIC KEY-----"` was rejected as "needs a value" (the parser refused anything starting with `--`, which is exactly what a PEM starts with — now values are accepted, and `--owner-public-key-file` reads a multi-line PEM from disk); and `--port 0` printed `ws://127.0.0.1:0/ws` with a pairing URI nobody could dial, because `WsServer` binds a number it is given and exposes no bound-port accessor, so the CLI now resolves a free port first. The unit tests had asserted the *shape* of the URL, not that its port was reachable — which is the argument for running the artifact, not just testing it.
+
 #### 8.17.9 The pairing contract is shared — one QR format, two products
 
 §8.17.8 found the reason a second product could not use EnvoyMesh's pairing code: `PairingPayload` and `PairWithHomeNodeParams` were declared in `ws-protocol.ts`, the product-bound module that carries the RPC union, and `pairing-token.ts` / `envoy-pair-uri.ts` each imported **one type** from it. Two type imports were the entire coupling, and they made the token codec and the URI builder product-bound too.

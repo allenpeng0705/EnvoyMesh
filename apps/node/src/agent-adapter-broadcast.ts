@@ -28,7 +28,7 @@ import {
   sendEnvelopeWithRetry,
   type OutboundDeliverMesh,
 } from "./chat-outbound-deliver.js";
-import { isLibp2pPeerId } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 
 /** Broadcast interval: manifest TTL / 2 (default 2.5 min for a 5-min TTL). */
 export const MANIFEST_BROADCAST_INTERVAL_MS = 150_000;

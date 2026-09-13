@@ -175,16 +175,17 @@ function resolveSameSubnetLanFirst(input: {
   });
 }
 
-export type OutboundDeliverMesh = Pick<
-  EnvoyMesh,
-  "send" | "closeConnectionsToPeer" | "ensurePeerReachable" | "getPeerConnectionInfo"
->;
-
-export type OutboundExpectReplyMesh = OutboundDeliverMesh &
-  Pick<
-    EnvoyMesh,
-    "sendExpectReply" | "sendChatExpectEnvelopeReply" | "getConnectedPeerIds"
-  >;
+// Moved to `@envoymesh/network` (`mesh-ports.ts`): declaring the port here made
+// every module that needed it product-bound, because this file is chat delivery.
+// Imported for local use *and* re-exported, so this file's consumers are unchanged.
+import type {
+  OutboundDeliverMesh,
+  OutboundExpectReplyMesh,
+} from "@envoymesh/network";
+export type {
+  OutboundDeliverMesh,
+  OutboundExpectReplyMesh,
+} from "@envoymesh/network";
 
 function isProfileIntent(intent: string | undefined): boolean {
   return typeof intent === "string" && intent.startsWith("profile.");

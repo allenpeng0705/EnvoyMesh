@@ -13,16 +13,17 @@ import {
   sendEnvelopeWithRetry,
   sendExpectReplyWithRetry,
   logOutboundPrepareFailed,
-  type OutboundDeliverMesh,
   type OutboundExpectReplyMesh,
 } from "./chat-outbound-deliver.js";
 import { loadProfileThumbnailInline } from "./profile-thumbnail-inline.js";
 
-/** libp2p peer ids start with `12D3KooW` (base58btc); envelope ids use `envoy_`. */
-export function isLibp2pPeerId(peerId: string): boolean {
-  const id = peerId.trim();
-  return id.length > 0 && !id.startsWith("envoy_") && !id.startsWith("envoy:");
-}
+// Moved to `@envoymesh/network` (`mesh-ports.ts`): a pure predicate over peer-id
+// strings, which tainted five modules only because it was declared here.
+import {
+  isLibp2pPeerId,
+  type OutboundDeliverMesh,
+} from "@envoymesh/network";
+export { isLibp2pPeerId };
 
 type ProfileSyncMesh = OutboundDeliverMesh &
   Pick<EnvoyMesh, "mergePeerStoreDialHints">;

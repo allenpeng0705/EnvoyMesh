@@ -20,7 +20,7 @@ import {
   sendEnvelopeWithRetry,
   type OutboundDeliverMesh,
 } from "./chat-outbound-deliver.js";
-import { isLibp2pPeerId } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 import { scoreboardEntryToFederatedRule } from "./scoreboard-rule-inbound.js";
 import type { VerifierScoreboard } from "./verifier-scoreboard.js";
 

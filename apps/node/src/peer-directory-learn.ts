@@ -3,7 +3,7 @@ import {
   parseProfileRequestPayload,
   parseProfileSyncPayload,
 } from "@envoymesh/protocol";
-import { isLibp2pPeerId } from "./profile-sync-outbound.js";
+import { isLibp2pPeerId } from "@envoymesh/network";
 
 /** Owner id carried in profile intents (the profile subject / requester). */
 export function ownerIdFromProfileIntent(envelope: EnvoyEnvelope): string | undefined {
