@@ -70,7 +70,7 @@ const USAGE = [
   "",
   "Usage: envoy-reuse-host [options]",
   "",
-  "  --port <n>            port to bind (default 3030; 0 binds a free one and reports it)",
+  "  --port <n>            port to bind (default 0: a free port is picked and reported)",
   "  --path <p>            WebSocket path (default /ws)",
   "  --token <t>           session token clients present for the owner session (required)",
   "  --owner-id <id>       owner id for the pairing payload",
@@ -109,7 +109,12 @@ const KNOWN_FLAGS = new Set([
 ]);
 
 function parseArgs(argv: string[]): { ok: true; args: ParsedArgs } | { ok: false; error: string } {
-  const args: ParsedArgs = { port: 3030, path: "/ws", token: "", preAuth: [] };
+  // Default to an ephemeral port, **not 3030**. 3030 is EnvoyMesh's own social port:
+  // a second product defaulting to it means installing both and starting this one
+  // either dies with `EADDRINUSE` or — worse, before S3 — takes the port and makes
+  // EnvoyMesh's own liveness check believe its node is healthy. A host that reports
+  // the port it bound (see `serve()`) has no reason to guess.
+  const args: ParsedArgs = { port: 0, path: "/ws", token: "", preAuth: [] };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     // A value is only "missing" when there is none. An earlier version also

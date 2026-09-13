@@ -355,7 +355,23 @@ Reading the first S2 version back against §6 and §7 found more than the first 
 
 **And the full suite failed once, for a reason that had nothing to do with S3.** `apps/node/test/reuse-host.test.ts` — *"boots, authenticates a client and serves an RPC end to end"* — failed with `expected undefined to deeply equal { version: '0.5.0', … }` and passed in isolation. Cause: it resolved on the **first** WebSocket message, while the transport also pushes an unsolicited `connected` event; under load the push arrives first and the test reads it as its RPC reply. Message *order* is not part of the contract — correlating on the JSON-RPC `id` is — so the test now filters by id (the same discipline my own CLI probe needed, learned the same way). The suite's test count went **up** by one after the fix, because the racing assertion had been silently skipping.
 
-**What S3 still owes:** attach (token exchange + a client), `/health` carrying the node's identity so `probeNodeEndpoint` can verify instead of reporting `identityUnknown` (the server side is `host-connect`; the Rust guardian's probe must check the same fields), and making the desktop supervisor stop killing whatever owns 3030/3031/3032.
+### S3 (second slice) ◐ — the three found issues, fixed (2026-09-13)
+
+Everything S3's first slice named as owed, except attach itself.
+
+**1. `/health` says who it is.** Every EnvoyMesh-family product answered with the same body (`{"ok":true,"service":"envoymesh-home-ws",…}`), which made `200` mean "something is listening on the port" and nothing more. `WsServer.setHealthIdentity(fn)` now adds `app`/`ownerId`/`peerId` (lazily, and omitted entirely when unknown — a host with no identity must not look like a *named* node). The node publishes its owner id, which is what identifies the profile.
+
+One implementation detail worth keeping: the identity closure is set where the WS server starts, and deliberately does **not** read `meshStarted` or `lastKnownLibp2pPeerId` — both are declared ~700 lines below, so a closure touching them would throw a temporal-dead-zone error on any `/health` arriving during startup. The owner id is what identity matching needs, so the peer id is simply not claimed.
+
+**2. The CLI watchdog now requires that identity.** It treated **any** `200` as proof of life, so a different product holding :3030 would have kept a wedged node alive forever — the watchdog would never fire, and the user would see a frozen app with a healthy process. It is told the owner id and treats a foreign or identity-less reply as a failure (which is the truth: this process is then serving nobody). Verified in a live run: the watchdog logs `owner=envoy:owner:l3f2bO…`, and `/health` returns `"app":"EnvoyMesh","ownerId":"envoy:owner:l3f2bO4OOkkQzSZGlD8kv0LeCV0ncUymv3aoO_bis50"`.
+
+**3. The desktop supervisor no longer kills by port alone.** `kill_stale_listeners_on_node_ports()` ran `lsof -ti :3030|3031|3032` and SIGTERM-then-SIGKILLed **whatever it found**, with no check of whose process it was — so launching EnvoyMesh could kill a second product's host. It now reads this profile's `node.json`, and kills a listener only when the descriptor names **that pid**; anything else is logged and left alone, as is the case where no descriptor exists at all. The same descriptor supplies the owner id for the liveness probe, so a foreign node on 3030 no longer satisfies the guardian while the supervised node is wedged.
+
+The Rust side is compile-verified (`cargo check`) and unit-tested (`cargo test --bin envoymesh`, 17 passing, including two new cases: identity matching for same/other/absent owner, and the `home_dir_for_profile` rule mirrored from `homeForProfileDir`). What is *not* verified is the supervisor end to end — that needs a packaged desktop app.
+
+**4. `reuse-host` no longer defaults to 3030.** It defaulted to EnvoyMesh's own port, so a second product starting with no `--port` either died with `EADDRINUSE` or — before the health-identity work — took the port and made EnvoyMesh's own liveness check believe its node was healthy. It now defaults to `0` and reports the port it bound, which it can already do.
+
+**What S3 still owes:** attach itself — the token exchange plus a client that connects to a running node instead of starting a second one. Both halves now exist to build on: the endpoint descriptor on disk says where the node is, and `/health` says whose it is.
 
 ### S2 review round 1 — the gate caught my own growth, and a lie in the help text (2026-09-13)
 

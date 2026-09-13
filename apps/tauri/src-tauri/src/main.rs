@@ -631,62 +631,103 @@ fn is_port_in_use(port: u16) -> bool {
 #[cfg(unix)]
 const NODE_SIDECAR_PORTS: [u16; 3] = [3030, 3031, 3032];
 
-/// Terminate any process still listening on the home-node service ports (orphaned sidecars).
+/// What the node records about itself in `<home>/node.json`
+/// (`packages/node-core/src/node-registry.ts`).
+///
+/// Read for exactly one reason: before this app kills a process holding a node
+/// port — or believes a `/health` answer — it has to know whether that process is
+/// *its own* sidecar. Every EnvoyMesh-family product serves the same `/health` body
+/// and uses the same default ports, so with a second product installed on the same
+/// machine "something is listening on 3030" and "my node is alive" are different
+/// questions, and the code below used to treat them as one.
+#[derive(serde::Deserialize)]
+struct NodeSidecarDescriptor {
+    pid: u32,
+    #[serde(rename = "ownerId", default)]
+    owner_id: Option<String>,
+}
+
+/// `<home>/profile` → `<home>`; anything else is its own home. Mirrors
+/// `homeForProfileDir` in `@envoymesh/node-core` so both sides agree.
+fn home_dir_for_profile(profile_dir: &Path) -> PathBuf {
+    match profile_dir.file_name().and_then(|name| name.to_str()) {
+        Some("profile") => profile_dir
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| profile_dir.to_path_buf()),
+        _ => profile_dir.to_path_buf(),
+    }
+}
+
+/// The descriptor this profile's node wrote, if it is readable.
+fn read_node_sidecar_descriptor(profile_dir: &Path) -> Option<NodeSidecarDescriptor> {
+    let file = home_dir_for_profile(profile_dir).join("node.json");
+    let raw = std::fs::read_to_string(file).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+/// Kill a listener on the node ports — **only if this profile's `node.json` names
+/// that pid**.
+///
+/// It used to kill whatever held 3030/3031/3032, by pid from `lsof`, with no check
+/// of whose process it was. That is fine while EnvoyMesh is the only product on the
+/// machine and dangerous the moment it is not: launching the desktop app would kill
+/// a second product's host, and any process on those ports could be mistaken for the
+/// node this app supervises. Ownership is knowable — the node publishes its pid — so
+/// it is checked, and an unprovable case is left alone rather than guessed at.
+///
 /// Unix-only: uses `lsof` to discover listeners. On Windows the sidecar port
 /// cleanup is skipped (the Windows port-binding model is different and we
 /// don't have a reliable cross-platform equivalent in the build script).
 #[cfg(unix)]
-fn kill_stale_listeners_on_node_ports() {
+fn kill_stale_listeners_on_node_ports(profile_dir: &Path) {
+    let Some(owned_pid) = read_node_sidecar_descriptor(profile_dir).map(|d| d.pid) else {
+        if NODE_SIDECAR_PORTS.iter().any(|port| is_port_in_use(*port)) {
+            info!(
+                "Node ports are in use but this profile has no node.json — leaving the listeners alone \
+                 (they are not known to be this app's sidecar)"
+            );
+        }
+        return;
+    };
+
     #[cfg(unix)]
     {
-        for port in NODE_SIDECAR_PORTS {
-            if !is_port_in_use(port) {
-                continue;
-            }
-            let Ok(output) = Command::new("lsof")
-                .args(["-ti", &format!(":{}", port)])
-                .output()
-            else {
-                continue;
-            };
-            let pids = String::from_utf8_lossy(&output.stdout);
-            for pid_str in pids.lines() {
-                let pid = pid_str.trim();
-                if pid.is_empty() {
+        for pass in 0..2 {
+            let signal = if pass == 0 { "-TERM" } else { "-KILL" };
+            for port in NODE_SIDECAR_PORTS {
+                if !is_port_in_use(port) {
                     continue;
                 }
-                warn!(
-                    "Killing stale listener on port {} (pid {})",
-                    port, pid
-                );
-                let _ = Command::new("kill").args(["-TERM", pid]).status();
-            }
-        }
-        std::thread::sleep(Duration::from_millis(400));
-        for port in NODE_SIDECAR_PORTS {
-            if !is_port_in_use(port) {
-                continue;
-            }
-            let Ok(output) = Command::new("lsof")
-                .args(["-ti", &format!(":{}", port)])
-                .output()
-            else {
-                continue;
-            };
-            let pids = String::from_utf8_lossy(&output.stdout);
-            for pid_str in pids.lines() {
-                let pid = pid_str.trim();
-                if pid.is_empty() {
+                let Ok(output) = Command::new("lsof")
+                    .args(["-ti", &format!(":{}", port)])
+                    .output()
+                else {
                     continue;
+                };
+                let pids = String::from_utf8_lossy(&output.stdout);
+                for pid_str in pids.lines() {
+                    let Ok(pid) = pid_str.trim().parse::<u32>() else {
+                        continue;
+                    };
+                    if pid != owned_pid {
+                        info!(
+                            "Port {} is held by pid {} — not this app's node (pid {}); leaving it alone",
+                            port, pid, owned_pid
+                        );
+                        continue;
+                    }
+                    warn!(
+                        "{} stale listener on port {} (pid {}, from node.json)",
+                        if pass == 0 { "Terminating" } else { "Force-killing" },
+                        port,
+                        pid
+                    );
+                    let _ = Command::new("kill").args([signal, &pid.to_string()]).status();
                 }
-                warn!(
-                    "Force-killing stale listener on port {} (pid {})",
-                    port, pid
-                );
-                let _ = Command::new("kill").args(["-KILL", pid]).status();
             }
+            std::thread::sleep(Duration::from_millis(if pass == 0 { 400 } else { 200 }));
         }
-        std::thread::sleep(Duration::from_millis(200));
     }
 }
 
@@ -761,10 +802,32 @@ fn guardian_backoff_delay(recent_in_window: usize) -> Duration {
     Duration::from_secs(5u64.saturating_mul(2u64.saturating_pow(exp))).min(Duration::from_secs(120))
 }
 
+/// Does a `/health` response belong to the node this app supervises?
+///
+/// Split out of [`probe_home_node_liveness`] so the rule can be tested without a
+/// socket. Getting it wrong in either direction is expensive: a false "alive" leaves
+/// a wedged node unsupervised, a false "dead" respawns a healthy one.
+fn health_body_matches_identity(text: &str, expected_owner_id: Option<&str>) -> bool {
+    if !text.contains("200") || !text.contains("\"ok\":true") {
+        return false;
+    }
+    match expected_owner_id {
+        Some(expected) => text.contains(&format!("\"ownerId\":\"{expected}\"")),
+        None => true,
+    }
+}
+
 /// Probe `GET /health` on the home-node Social WS HTTP server.
-/// Returns false on connect/read timeout or non-OK body — including the
-/// alive-but-wedged case where the port LISTENs but the event loop never answers.
-fn probe_home_node_liveness(port: u16, timeout: Duration) -> bool {
+/// Returns false on connect/read timeout, non-OK body, or a reply from a node that
+/// is not *this* one — including the alive-but-wedged case where the port LISTENs
+/// but the event loop never answers.
+///
+/// The identity check is the point: every EnvoyMesh-family product answers `/health`
+/// with the same `{"ok":true,"service":"envoymesh-home-ws",…}` body, so a second
+/// product holding 3030 used to satisfy this probe while the supervised node was
+/// wedged — the guardian then never respawned, and the UI simply did not work. When
+/// the profile's `node.json` names an owner, the body must name the same one.
+fn probe_home_node_liveness(port: u16, timeout: Duration, expected_owner_id: Option<&str>) -> bool {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let mut stream = match TcpStream::connect_timeout(&addr, timeout) {
         Ok(s) => s,
@@ -778,11 +841,13 @@ fn probe_home_node_liveness(port: u16, timeout: Duration) -> bool {
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
     }
-    let mut buf = [0u8; 512];
+    // 512 bytes used to be enough for the body; identity is appended at the end, so
+    // a truncated read would silently look like a mismatch.
+    let mut buf = [0u8; 2048];
     match stream.read(&mut buf) {
         Ok(n) if n > 0 => {
             let text = String::from_utf8_lossy(&buf[..n]);
-            text.contains("200") && text.contains("\"ok\":true")
+            health_body_matches_identity(&text, expected_owner_id)
         }
         _ => false,
     }
@@ -990,7 +1055,13 @@ fn start_node_guardian(app: tauri::AppHandle) {
                 continue;
             }
 
-            let ok = probe_home_node_liveness(NODE_LIVENESS_PORT, NODE_LIVENESS_PROBE_TIMEOUT);
+            let expected_owner_id =
+                read_node_sidecar_descriptor(&state.config.profile_dir).and_then(|d| d.owner_id);
+            let ok = probe_home_node_liveness(
+                NODE_LIVENESS_PORT,
+                NODE_LIVENESS_PROBE_TIMEOUT,
+                expected_owner_id.as_deref(),
+            );
             let failures = {
                 let Ok(mut guardian) = state.guardian.lock() else {
                     continue;
@@ -1036,7 +1107,7 @@ fn start_node_guardian(app: tauri::AppHandle) {
 
 fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
     #[cfg(unix)]
-    kill_stale_listeners_on_node_ports();
+    kill_stale_listeners_on_node_ports(&config.profile_dir);
     if !config.node_path.is_file() {
         return Err(format!(
             "Node entry not found at {:?} (rebuild the app)",
@@ -1210,7 +1281,7 @@ fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String
     let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
     stop_node_child(&mut child_guard);
     #[cfg(unix)]
-    kill_stale_listeners_on_node_ports();
+    kill_stale_listeners_on_node_ports(&state.config.profile_dir);
     let child = spawn_node_process(&state.config)?;
     info!("Node process restarted from Social UI");
     *child_guard = Some(child);
@@ -1857,6 +1928,50 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
+
+    /// `{"ok":true,…}` is not proof of life when every EnvoyMesh-family product
+    /// answers the same way: the supervised node must be the one that answered.
+    #[test]
+    fn health_identity_must_match_the_recorded_owner() {
+        let body = r#"HTTP/1.1 200 OK
+{"ok":true,"service":"envoymesh-home-ws","port":3030,"app":"EnvoyMesh","ownerId":"envoy:owner:abc"}"#;
+
+        // No expectation recorded: a 200 with `ok:true` is all we can check.
+        assert!(health_body_matches_identity(body, None));
+        // The node we supervise.
+        assert!(health_body_matches_identity(body, Some("envoy:owner:abc")));
+        // A different product's node on the same port — this is the case that used to
+        // look healthy and stop the guardian from respawning a wedged node.
+        assert!(!health_body_matches_identity(body, Some("envoy:owner:someone-else")));
+        // Identity absent entirely (an older build): still "not ours", because we
+        // know which owner this profile belongs to.
+        assert!(!health_body_matches_identity(
+            r#"HTTP/1.1 200 OK
+{"ok":true,"service":"envoymesh-home-ws"}"#,
+            Some("envoy:owner:abc")
+        ));
+        // Junk, and a non-200.
+        assert!(!health_body_matches_identity("not http at all", Some("envoy:owner:abc")));
+        assert!(!health_body_matches_identity(
+            r#"HTTP/1.1 503 Service Unavailable
+{"ok":false}"#,
+            None
+        ));
+    }
+
+    /// The home a profile belongs to, matching `homeForProfileDir` in node-core: the
+    /// supervisor reads `<home>/node.json`, and reading the wrong directory would mean
+    /// silently having no descriptor — i.e. never being able to prove ownership.
+    #[test]
+    fn home_dir_for_profile_matches_the_node_core_rule() {
+        assert_eq!(
+            home_dir_for_profile(Path::new("/Users/alice/Library/Application Support/EnvoyMesh/profile")),
+            PathBuf::from("/Users/alice/Library/Application Support/EnvoyMesh")
+        );
+        // An explicit `--profile /tmp/scratch` keeps its descriptor beside it.
+        assert_eq!(home_dir_for_profile(Path::new("/tmp/scratch")), PathBuf::from("/tmp/scratch"));
+        assert_eq!(home_dir_for_profile(Path::new("relative/dir")), PathBuf::from("relative/dir"));
+    }
 
     #[test]
     fn guardian_respawns_only_on_supervisor_exit_code() {

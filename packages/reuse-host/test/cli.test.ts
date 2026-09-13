@@ -178,6 +178,21 @@ describe("envoy-reuse-host CLI", () => {
     expect(owner["result"]).toMatchObject({ ownerId: "envoy:owner:alice", isOwnerScope: true });
   }, 20_000);
 
+  it("does not default to EnvoyMesh's own port", async () => {
+    // 3030 is the social node's port. A second product defaulting to it either dies
+    // with EADDRINUSE or — before the health-identity work — takes the port and makes
+    // EnvoyMesh's own liveness check believe its node is healthy. The host reports
+    // the port it bound, so there is nothing to guess.
+    const { io, out } = capture();
+    const result = await runReuseHostCli(["--token", "t"], io);
+    expect(result.code).toBe(0);
+    hosts.push(result.host!);
+    const bound = Number(/listening on ws:\/\/127\.0\.0\.1:(\d+)/.exec(out.join("\n"))?.[1]);
+    expect(bound).toBeGreaterThan(0);
+    expect(bound).not.toBe(3030);
+    expect(out.join("\n")).not.toContain(":3030/ws");
+  }, 20_000);
+
   it("says so when no pairing URI can be printed", async () => {
     const { io, out } = capture();
     const result = await runReuseHostCli(["--port", "0", "--token", "t"], io);

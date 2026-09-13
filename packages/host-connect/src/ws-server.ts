@@ -79,6 +79,19 @@ interface RpcInvocation {
  * catalog. Each of those was once read directly out of the product, which is
  * what made the transport unpackageable (§6.1 H1–H5).
  */
+/**
+ * Who a host says it is on `/health`.
+ *
+ * Deliberately small and non-secret: a product name, a mesh peer id and the owner
+ * id — exactly what a second process needs to tell "my node" from "some other
+ * product's node on the same port".
+ */
+export interface HealthIdentity {
+  app?: string;
+  peerId?: string;
+  ownerId?: string;
+}
+
 export interface WsServerOptions<TCaller = unknown> {
   /**
    * Resolve a session token to a caller. **Required**: a host with no resolver
@@ -213,6 +226,8 @@ export class WsServer<TCaller = unknown> {
    * circuit-relay reservation on CGNAT/wan profiles.
    */
   private getReadyz?: () => { ready: boolean; reason?: string };
+  /** Who this host is, for `/health` — see {@link setHealthIdentity}. */
+  private getHealthIdentity?: () => HealthIdentity;
   /** Per-client queue tail for dial/send RPCs (reads run concurrently). */
   private readonly slowRpcTail = new WeakMap<WebSocket, Promise<void>>();
   /**
@@ -241,6 +256,24 @@ export class WsServer<TCaller = unknown> {
   /** Bind /readyz semantics (call after mesh identity is known). */
   setReadyzProbe(fn: () => { ready: boolean; reason?: string }): void {
     this.getReadyz = fn;
+  }
+
+  /**
+   * What `/health` says this host is.
+   *
+   * The endpoint's body is otherwise identical in **every** product built on this
+   * transport (`{"ok":true,"service":"envoymesh-home-ws",…}`), which makes
+   * "something answered on 3030" useless as a liveness signal: the desktop
+   * guardian and the CLI watchdog both accept any `200`, so a *different* product
+   * holding the port can convince them the node they care about is healthy — while
+   * it is actually wedged. Callers supply who they are once identity is known; the
+   * probe side then checks it (see `@envoymesh/node-core`'s `probeNodeEndpoint`).
+   *
+   * Optional on purpose: a host with no identity yet still serves `/health`, and
+   * the consumers report `identityUnknown` rather than pretending it matched.
+   */
+  setHealthIdentity(fn: () => HealthIdentity): void {
+    this.getHealthIdentity = fn;
   }
 
   /**
@@ -290,6 +323,9 @@ export class WsServer<TCaller = unknown> {
             port: this.boundPort,
             uptimeMs: Date.now() - startedAtMs,
             checkedAt: new Date().toISOString(),
+            // Identity, when the host knows it — what makes `200` mean *this* node
+            // rather than "something is listening on the port".
+            ...(this.getHealthIdentity?.() ?? {}),
           }),
         );
         return;

@@ -18,6 +18,16 @@ import { spawn, type ChildProcess } from "node:child_process";
 export interface HomeNodeLivenessWatchdogOptions {
   port: number;
   parentPid?: number;
+  /**
+   * Identity the probed host must report before `200` counts as healthy.
+   *
+   * Without it, "the port answers" is the whole test — and every EnvoyMesh-family
+   * product serves the same `/health` body, so a *different* product holding the
+   * port would keep a wedged node alive forever. Pass the owner id (and peer id
+   * once the mesh is up); the sibling script then treats a mismatch as a failure.
+   */
+  expectedOwnerId?: string;
+  expectedPeerId?: string;
   /** Startup grace before probes count (default 90s). */
   graceMs?: number;
   /** Probe interval (default 10s). */
@@ -49,6 +59,8 @@ export function buildLivenessWatchdogScript(input: {
   intervalMs: number;
   timeoutMs: number;
   maxFails: number;
+  expectedOwnerId?: string;
+  expectedPeerId?: string;
 }): string {
   // Keep this CommonJS + no deps so `node -e` works under tsx/production alike.
   return `
@@ -59,6 +71,8 @@ const graceMs = ${JSON.stringify(input.graceMs)};
 const intervalMs = ${JSON.stringify(input.intervalMs)};
 const timeoutMs = ${JSON.stringify(input.timeoutMs)};
 const maxFails = ${JSON.stringify(input.maxFails)};
+const expectedOwnerId = ${JSON.stringify(input.expectedOwnerId ?? null)};
+const expectedPeerId = ${JSON.stringify(input.expectedPeerId ?? null)};
 const started = Date.now();
 let fails = 0;
 
@@ -91,19 +105,58 @@ function maybeKill(reason) {
   process.exit(1);
 }
 
+/**
+ * A 200 only counts when the body is the node we were told to watch. Every
+ * EnvoyMesh-family product answers /health identically, so without this check a
+ * different product holding the port would keep a wedged node alive.
+ */
+function bodyMatchesIdentity(body) {
+  if (!expectedOwnerId && !expectedPeerId) return { ok: true };
+  let parsed = null;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return { ok: false, reason: "body not JSON" };
+  }
+  if (!parsed || typeof parsed !== "object") return { ok: false, reason: "body not an object" };
+  if (expectedOwnerId && parsed.ownerId !== expectedOwnerId) {
+    return {
+      ok: false,
+      reason: "different node (ownerId " + String(parsed.ownerId) + ")",
+    };
+  }
+  if (expectedPeerId && parsed.peerId !== expectedPeerId) {
+    return { ok: false, reason: "different node (peerId " + String(parsed.peerId) + ")" };
+  }
+  return { ok: true };
+}
+
 function probe() {
   if (!parentAlive()) process.exit(0);
   if (Date.now() - started < graceMs) return;
   const req = http.get(
     { host: "127.0.0.1", port, path: "/health", timeout: timeoutMs },
     (res) => {
-      res.resume();
-      if (res.statusCode === 200) {
-        fails = 0;
-        return;
-      }
-      fails += 1;
-      maybeKill("status=" + res.statusCode);
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        body += chunk;
+        if (body.length > 16384) req.destroy();
+      });
+      res.on("end", () => {
+        if (res.statusCode !== 200) {
+          fails += 1;
+          maybeKill("status=" + res.statusCode);
+          return;
+        }
+        const verdict = bodyMatchesIdentity(body);
+        if (verdict.ok) {
+          fails = 0;
+          return;
+        }
+        fails += 1;
+        maybeKill(verdict.reason);
+      });
     },
   );
   req.on("error", (err) => {
@@ -125,7 +178,8 @@ console.error(
     " graceMs=" +
     graceMs +
     " failKill=" +
-    maxFails,
+    maxFails +
+    (expectedOwnerId ? " owner=" + expectedOwnerId.slice(0, 18) + "…" : " (no identity check)"),
 );
 setInterval(probe, intervalMs);
 probe();
@@ -161,6 +215,8 @@ export function startHomeNodeLivenessWatchdog(
     intervalMs,
     timeoutMs,
     maxFails,
+    ...(options.expectedOwnerId ? { expectedOwnerId: options.expectedOwnerId } : {}),
+    ...(options.expectedPeerId ? { expectedPeerId: options.expectedPeerId } : {}),
   });
 
   let child: ChildProcess;

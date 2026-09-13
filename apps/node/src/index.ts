@@ -732,6 +732,21 @@ wsServer.start(createHostNodeService(nodeService), {
   // list: the host must not learn 31 product method names (H5).
   shouldSerializeMethod: isSerializedWsRpcMethod,
 });
+// **Who this node is, so `200` means *this* node.** Every EnvoyMesh-family product
+// serves the same `/health` body, so without identity a different product holding
+// :3030 is indistinguishable from ours — that is how the desktop guardian can
+// believe a wedged node is healthy, and how a second product could keep this
+// process alive while it serves nobody.
+//
+// The owner id, and only that: the mesh peer id lives in variables declared far
+// below this point (`meshStarted` at ~1466, `lastKnownLibp2pPeerId` at ~1478), so a
+// closure reading them here would throw a temporal-dead-zone error on any `/health`
+// arriving during startup. The owner id is what identifies the *profile*, which is
+// what a probe needs to tell "my node" from "another product's node".
+wsServer.setHealthIdentity(() => ({
+  app: "EnvoyMesh",
+  ownerId: profile.owner.ownerId,
+}));
 // CLI / headless home nodes: sibling /health probe kills a wedged process
 // (Tauri has its own guardian; set ENVOYMESH_LIVENESS_WATCHDOG=0 to disable).
 // Under the watchdog, also exit on sustained event-loop lag so launchd/systemd
@@ -743,7 +758,14 @@ wsServer.start(createHostNodeService(nodeService), {
   if (isHomeNodeLivenessWatchdogEnabled() && !process.env.ENVOYMESH_GUARDIAN_EXIT_ON_LAG) {
     process.env.ENVOYMESH_GUARDIAN_EXIT_ON_LAG = "1";
   }
-  const stopLivenessWatchdog = startHomeNodeLivenessWatchdog({ port: SOCIAL_WS_PORT });
+  // The watchdog is told which node to watch: a `200` from *any* process on the
+  // port is not proof of life, and every EnvoyMesh-family product answers the same
+  // way. With the owner id, a foreign node on :3030 counts as a failure — which is
+  // the truth, because this process then serves nobody.
+  const stopLivenessWatchdog = startHomeNodeLivenessWatchdog({
+    port: SOCIAL_WS_PORT,
+    expectedOwnerId: profile.owner.ownerId,
+  });
   if (stopLivenessWatchdog) {
     process.once("exit", () => {
       try {
