@@ -8,6 +8,8 @@ import { existsSync } from "node:fs";
 import {
   acquireEngineLock,
   engineLockPath,
+  isProcessAlive,
+  readEngineLock,
   releaseEngineLock,
   releaseEngineLockSync,
 } from "@envoymesh/node-core";
@@ -381,6 +383,29 @@ async function probeOpenAiModels(endpoint: string): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/**
+ * The model ids an engine on this port reports, or `null` when nothing answers sensibly.
+ *
+ * Needed because "is something on my port?" and "is it serving the model I need?" are different
+ * questions: under the §8 lease policy (one agreed model) an engine holding a *different* model
+ * must be refused, not adopted and not restarted.
+ */
+async function probeOpenAiModelIds(endpoint: string): Promise<string[] | null> {
+  try {
+    const res = await fetch(`${endpoint.replace(/\/$/, "")}/models`, {
+      signal: AbortSignal.timeout(2_500),
+    });
+    if (!res.ok) return null;
+    const payload = (await res.json()) as { data?: Array<{ id?: unknown }> };
+    const ids = (payload.data ?? [])
+      .map((entry) => (typeof entry?.id === "string" ? entry.id : null))
+      .filter((id): id is string => id !== null);
+    return ids;
+  } catch {
+    return null;
   }
 }
 
@@ -1101,6 +1126,42 @@ async function startSidecarOnce(
   await stopChild(state);
 
   const engineRoot = rootDir(profileDir);
+  // The port is the final arbiter: if something already answers here and no *live foreign*
+  // claim explains it (an orphan from a node that crashed, or an engine started by a process
+  // that resolved a different asset root), spawning a second one would just lose the bind race.
+  const preClaim = readEngineLock(engineRoot, "chat");
+  const foreignHolderLive =
+    !!preClaim && preClaim.pid !== process.pid && isProcessAlive(preClaim.pid);
+  if (!foreignHolderLive) {
+    const modelIds = await probeOpenAiModelIds(envoyLocalOpenAiBaseUrl(ENVOY_LOCAL_PORT));
+    if (modelIds) {
+      const servesOurModel =
+        modelIds.length === 0 ||
+        modelIds.some((id) => id === model.id || id.includes(model.id) || model.id.includes(id));
+      if (!servesOurModel) {
+        state.engineRootDir = engineRoot;
+        throw new Error(
+          `An engine is already running on port ${ENVOY_LOCAL_PORT} with a different model ` +
+            `(${modelIds.join(", ") || "unknown"}), but this app is set to “${model.id}”. One ` +
+            `engine can only serve one model at a time: set this app to the same model in ` +
+            `Settings → AI, or stop that engine first.`,
+        );
+      }
+      // Same model: use the engine that is already there instead of starting another.
+      state.phase = "ready";
+      state.download = { phase: "ready", label: "Ready", fraction: 1 };
+      state.lastError = null;
+      state.lastErrorAt = null;
+      state.engineRootDir = undefined;
+      state.engineBorrowed = true;
+      console.log(
+        `[envoy-local] engine already serving this model on port ${ENVOY_LOCAL_PORT} — using it`,
+      );
+      armWatchdog(state, deps);
+      return;
+    }
+  }
+
   state.engineRootDir = engineRoot;
   state.engineRole = "chat";
   const claim = await acquireEngineLock(engineRoot, {
@@ -1112,6 +1173,21 @@ async function startSidecarOnce(
   });
   if (!claim.acquired) {
     const holder = claim.holder;
+    // **The lease policy: one agreed shared model.** One `llama-server` serves one model, so
+    // when another live process holds the engine with a different model loaded, using it would
+    // answer this product's requests with the wrong model. Refuse, and say which model is
+    // loaded and how to agree — rather than silently degrading inference or fighting for the
+    // port. (The holder itself may switch models; it just restarts its own engine.)
+    if (holder?.modelId && holder.modelId !== model.id) {
+      state.engineRootDir = undefined;
+      const who = holder.app ? `${holder.app}` : "another EnvoyMesh app";
+      throw new Error(
+        `The shared local model engine is already running the model “${holder.modelId}” ` +
+          `(started by ${who}), but this app is set to “${model.id}”. One engine can only ` +
+          `serve one model at a time: set this app to the same model in Settings → AI, or stop ` +
+          `the engine first (${who} owns it until it stops).`,
+      );
+    }
     const endpointForHolder = envoyLocalOpenAiBaseUrl(holder?.port ?? ENVOY_LOCAL_PORT);
     const deadlineForHolder = Date.now() + resolveStartupTimeoutMs(serverParams, 0);
     while (Date.now() < deadlineForHolder) {

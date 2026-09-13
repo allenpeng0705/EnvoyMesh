@@ -33,6 +33,7 @@
 
 import * as nodeFs from "node:fs";
 import { existsSync, readFileSync } from "node:fs";
+import { hostname as osHostname } from "node:os";
 import * as path from "node:path";
 import { isProcessAlive } from "./node-registry.js";
 import { runtimeDirIn } from "./envoymesh-home.js";
@@ -57,6 +58,19 @@ export interface EngineLockInfo {
   role?: EngineRole;
   /** The process that started the engine. */
   pid: number;
+  /**
+   * The machine that wrote the claim. A home on a network mount (or a copied directory) can
+   * carry a claim whose pid means nothing locally, so a claim from another host is stale here.
+   */
+  host?: string;
+  /**
+   * When that process started, in ms since the epoch — the guard against **pid reuse**. A lock
+   * whose pid is now an unrelated process would otherwise look like a live holder, and the next
+   * start would wait out the whole startup timeout before failing. Recorded from the holder's
+   * own clock (`Date.now() - process.uptime()`) and compared against the OS's answer when the
+   * OS can give one.
+   */
+  pidStartedAt?: number;
   /** Which app did it, so the message can name the product rather than "a process". */
   app: string;
   /** The port the engine was started on. */
@@ -65,6 +79,47 @@ export interface EngineLockInfo {
    *  (§8), not a lock problem, but the holder is the only one who can report it. */
   modelId?: string;
   startedAt: string;
+}
+
+/**
+ * When a process started, in ms since the epoch, or `null` when this OS cannot say.
+ *
+ * Linux can (`/proc/<pid>/stat` field 22, clock ticks since boot, plus `btime` from
+ * `/proc/stat`); macOS and Windows have no cheap portable equivalent, so the caller falls back
+ * to plain pid liveness there — which is what the code did everywhere before, and is correct
+ * except under pid reuse. Returning `null` means "cannot tell", never "not alive".
+ */
+export function processStartedAt(pid: number, readFile: (path: string) => string = (p) => readFileSync(p, "utf8")): number | null {
+  if (process.platform !== "linux") return null;
+  try {
+    const stat = readFile(`/proc/${pid}/stat`);
+    // Field 22, 1-indexed, after the comm field — which itself may contain spaces and parens,
+    // so everything up to the last ')' is stripped first.
+    const afterComm = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    const startTicks = Number(afterComm[19]);
+    if (!Number.isFinite(startTicks)) return null;
+    const btime = /btime (\d+)/.exec(readFile("/proc/stat"))?.[1];
+    if (!btime) return null;
+    // CLK_TCK is 100 on every platform Linux supports in practice.
+    return (Number(btime) + startTicks / 100) * 1000;
+  } catch {
+    return null;
+  }
+}
+
+/** The calling process's own start time — portable, no syscalls. */
+export function currentProcessStartedAt(now = Date.now(), uptimeSeconds = process.uptime()): number {
+  return now - Math.round(uptimeSeconds * 1000);
+}
+
+/** How far two estimates of the same start time may differ before they are different processes. */
+const START_TIME_TOLERANCE_MS = 5_000;
+
+export interface EngineLockOptions {
+  /** Injectable for tests: the OS's start time for a pid. */
+  processStartTimeOf?: (pid: number) => number | null;
+  /** Injectable for tests: this machine's name. */
+  hostname?: string;
 }
 
 export type AcquireEngineLockResult =
@@ -123,11 +178,16 @@ export function releaseEngineLockSync(
 export async function acquireEngineLock(
   rootDir: string,
   info: Omit<EngineLockInfo, "startedAt" | "role"> & { startedAt?: string; role?: EngineRole },
+  opts: EngineLockOptions = {},
 ): Promise<AcquireEngineLockResult> {
   const role: EngineRole = info.role ?? "chat";
+  const hostname = opts.hostname ?? osHostname();
+  const processStartTimeOf = opts.processStartTimeOf ?? ((pid: number) => processStartedAt(pid));
   const record: EngineLockInfo = {
     role,
     pid: info.pid,
+    host: hostname,
+    pidStartedAt: currentProcessStartedAt(),
     app: info.app,
     port: info.port,
     ...(info.modelId ? { modelId: info.modelId } : {}),
@@ -154,8 +214,30 @@ export async function acquireEngineLock(
       // ends in a confusing "another process (pid <us>) holds the lock". Re-take it instead.
       return { acquired: true, lock: record, tookOverStale: false, reacquired: true };
     }
-    if (existing && isProcessAlive(existing.pid)) {
-      return { acquired: false, holder: existing };
+    if (existing && existing.host && existing.host !== hostname) {
+      // Written by a process on another machine (a home on a network mount, or a copied
+      // directory). Its pid is meaningless here, so it cannot be our live holder.
+      console.warn(
+        `[engine-lock] a claim from ${existing.host} was found in ${rootDir} — treating it as stale`,
+      );
+    } else if (existing && existing.pid !== record.pid && isProcessAlive(existing.pid)) {
+      // Alive — but is it the same process that wrote this? If the OS can tell us the pid's
+      // start time and it disagrees with what the claim recorded, the pid was reused by an
+      // unrelated process, and waiting for it would burn the whole startup timeout.
+      const actualStart = existing.pidStartedAt ? processStartTimeOf(existing.pid) : null;
+      const reused =
+        actualStart !== null &&
+        existing.pidStartedAt !== undefined &&
+        Math.abs(actualStart - existing.pidStartedAt) > START_TIME_TOLERANCE_MS;
+      if (reused) {
+        console.warn(
+          `[engine-lock] pid ${existing.pid} was reused by another process (claim says it started at ` +
+            `${new Date(existing.pidStartedAt ?? 0).toISOString()}, the OS says ` +
+            `${new Date(actualStart).toISOString()}) — treating the claim as stale`,
+        );
+      } else {
+        return { acquired: false, holder: existing };
+      }
     }
     // Stale or unreadable: remove and try once more. The second attempt can still lose to
     // another process doing the same thing, which is fine — the loser is told who won.

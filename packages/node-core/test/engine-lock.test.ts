@@ -11,11 +11,12 @@
  */
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname as osHostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   acquireEngineLock,
+  currentProcessStartedAt,
   engineLockFileName,
   engineLockPath,
   hasEngineLock,
@@ -121,6 +122,64 @@ describe("acquireEngineLock", () => {
     expect(first.acquired).toBe(true);
     expect(second.acquired).toBe(true);
     expect(second.acquired === true && second.reacquired).toBe(true);
+  });
+
+  it("treats a reused pid as stale instead of waiting for an unrelated process", async () => {
+    // A claim is only as good as its pid *and* the process behind it: pids are recycled, so a
+    // lock naming pid 4242 can end up pointing at an unrelated program that is very much alive.
+    // Without this check the next start waits out the whole startup timeout and then reports a
+    // holder that has nothing to do with the engine.
+    const root = tempRoot();
+    const claimedStart = Date.now() - 3_600_000;
+    await acquireEngineLock(root, { pid: process.ppid, app: "EnvoyMesh", port: 18790 }, {
+      processStartTimeOf: () => claimedStart,
+    });
+
+    // Same pid, but the OS now says that pid started two minutes ago: a different process.
+    const result = await acquireEngineLock(
+      root,
+      { pid: process.pid, app: "EnvoyCoder", port: 18790 },
+      { processStartTimeOf: () => Date.now() - 120_000 },
+    );
+    expect(result.acquired).toBe(true);
+    expect(result.acquired === true && result.tookOverStale).toBe(true);
+    expect(readEngineLock(root)?.pid).toBe(process.pid);
+  });
+
+  it("still honours a live holder whose start time agrees", async () => {
+    const root = tempRoot();
+    // The claim records *this* process's real start time (that is what the writer can know), so
+    // "agrees" means the OS reports that same value back within tolerance — the normal case.
+    await acquireEngineLock(root, { pid: process.ppid, app: "EnvoyMesh", port: 18790 });
+    const result = await acquireEngineLock(
+      root,
+      { pid: process.pid, app: "EnvoyCoder", port: 18790 },
+      { processStartTimeOf: () => currentProcessStartedAt() + 1_500 },
+    );
+    expect(result.acquired).toBe(false);
+    expect(result.acquired === false && result.holder?.app).toBe("EnvoyMesh");
+  });
+
+  it("treats a claim from another host as stale", async () => {
+    const root = tempRoot();
+    await acquireEngineLock(root, { pid: process.ppid, app: "EnvoyMesh", port: 18790 }, {
+      hostname: "someone-elses-laptop",
+    });
+    // The pid means nothing here — a shared home on a network mount must not block this machine.
+    const result = await acquireEngineLock(root, { pid: process.pid, app: "EnvoyMesh", port: 18790 }, {
+      hostname: osHostname(),
+    });
+    expect(result.acquired).toBe(true);
+  });
+
+  it("records this process's start time, so the next reader can detect reuse", async () => {
+    const root = tempRoot();
+    await acquireEngineLock(root, { pid: process.pid, app: "EnvoyMesh", port: 18790 });
+    const holder = readEngineLock(root);
+    expect(holder?.host).toBe(osHostname());
+    // `Date.now() - process.uptime()`: this process started before now, and not in 1970.
+    expect(holder?.pidStartedAt).toBeGreaterThan(Date.now() - 86_400_000);
+    expect(holder?.pidStartedAt).toBeLessThanOrEqual(Date.now());
   });
 
   it("takes over a claim whose holder is gone, and says that it did", async () => {

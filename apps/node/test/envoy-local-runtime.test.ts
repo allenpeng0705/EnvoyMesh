@@ -696,6 +696,51 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(status.phase).toBe("error");
   });
 
+  it("adopts an engine already serving this model on the port instead of starting a second", async () => {
+    // The port is the arbiter. An engine with no claim explains itself as an orphan from a node
+    // that crashed, or one started by a process that resolved a different asset root — either
+    // way, spawning a competitor just loses the bind race.
+    await seedRuntimeAndModel();
+    mockedSpawn.mockClear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ data: [{ id: DEFAULT_ENVOY_LOCAL_MODEL.id }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })),
+    );
+
+    await enableEnvoyLocalViaRuntime(state, deps, { skipModelDownload: true });
+    const status =
+      (await awaitEnvoyLocalOperation(state)) ??
+      (await getEnvoyLocalStatusViaRuntime(state, deps));
+
+    expect(mockedSpawn, "no second engine may be spawned").not.toHaveBeenCalled();
+    expect(status.phase).toBe("ready");
+    expect(state.engineBorrowed).toBe(true);
+  });
+
+  it("refuses an engine on the port that serves a different model (one agreed model)", async () => {
+    await seedRuntimeAndModel();
+    mockedSpawn.mockClear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ data: [{ id: "some-other-model" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })),
+    );
+
+    await enableEnvoyLocalViaRuntime(state, deps, { skipModelDownload: true });
+    const status =
+      (await awaitEnvoyLocalOperation(state)) ??
+      (await getEnvoyLocalStatusViaRuntime(state, deps));
+
+    expect(mockedSpawn).not.toHaveBeenCalled();
+    expect(status.lastError ?? "").toMatch(/different model/);
+    expect(status.lastError ?? "").toMatch(/some-other-model/);
+  });
+
   it("holds the spawn claim while its engine runs (the lock is not released by the start itself)", async () => {
     // The bug this exists for: the claim was taken, then `stopChild` — called *after* the
     // acquire, with no child yet — deleted it in its "no child, release the stale claim"

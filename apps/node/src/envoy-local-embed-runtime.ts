@@ -57,6 +57,8 @@ import { listListeningPidsOnPort } from "./openclaw-gateway-port.js";
 import {
   acquireEngineLock,
   engineLockPath,
+  isProcessAlive,
+  readEngineLock,
   localEngineAssetsDir,
   releaseEngineLock,
   homeForProfileDir,
@@ -1010,9 +1012,25 @@ async function startEmbedSidecar(
   });
 
   const endpoint = envoyLocalEmbedOpenAiBaseUrl(ENVOY_LOCAL_EMBED_PORT);
+  // §8 / S4 — the claim decides whether anything below may touch this port. The block after
+  // this one adopts an engine already answering on the port and, when it answers `/models` but
+  // not `/embeddings`, **reclaims the port by killing every non-self listener**. With the lock
+  // in place that "orphan" can be the live holder's engine, so the reclaim must not run while a
+  // live foreign process holds the claim.
+  const engineRoot = rootDir(profileDir);
+  const preClaim = readEngineLock(engineRoot, "embed");
+  const foreignHolderLive =
+    !!preClaim && preClaim.pid !== process.pid && isProcessAlive(preClaim.pid);
+  if (foreignHolderLive) {
+    console.info(
+      `[envoy-local-embed] engine is owned by another process (pid ${preClaim.pid}` +
+        `${preClaim.app ? `, ${preClaim.app}` : ""}) — not adopting or reclaiming its port`,
+    );
+  }
+
   // Orphan from a previous node process — reuse only if embeddings work too.
   // /v1/models alone can look healthy while the slot is wedged.
-  if (await probeEnvoyLocalEmbedModels(endpoint)) {
+  if (!foreignHolderLive && (await probeEnvoyLocalEmbedModels(endpoint))) {
     if (await probeEnvoyLocalEmbedInference(endpoint, model.id)) {
       state.phase = "ready";
       state.download = null;
@@ -1036,9 +1054,17 @@ async function startEmbedSidecar(
   // Stop the previous listener — and release its claim — *before* acquiring the new claim.
   // `stopEmbedListenerHard` releases whatever claim this process holds, so running it after
   // the acquire would delete the claim we just created.
-  await stopEmbedListenerHard(state);
+  //
+  // **But not when another live process owns the engine.** `stopEmbedListenerHard` also kills
+  // every non-self pid listening on the embed port; for a live holder that is *their*
+  // `llama-server`, so a start that is only going to wait for (or refuse to use) their engine
+  // would first destroy it. In that case stop only our own child and leave the port alone.
+  if (foreignHolderLive) {
+    await stopChild(state);
+  } else {
+    await stopEmbedListenerHard(state);
+  }
 
-  const engineRoot = rootDir(profileDir);
   state.engineRootDir = engineRoot;
   state.engineRole = "embed";
   const claim = await acquireEngineLock(engineRoot, {
@@ -1050,6 +1076,19 @@ async function startEmbedSidecar(
   });
   if (!claim.acquired) {
     const holder = claim.holder;
+    // Same lease policy as the chat engine: one agreed model. The embed model is a different
+    // artifact from the chat model, but the rule is identical — adopting an engine that holds
+    // a different model would compute embeddings with the wrong model.
+    if (holder?.modelId && holder.modelId !== model.id) {
+      state.engineRootDir = undefined;
+      const who = holder.app ? `${holder.app}` : "another EnvoyMesh app";
+      throw new Error(
+        `The shared local embeddings engine is already running the model “${holder.modelId}” ` +
+          `(started by ${who}), but this app is set to “${model.id}”. One engine can only ` +
+          `serve one model at a time: set this app to the same embeddings model in ` +
+          `Settings → AI, or stop the engine first (${who} owns it until it stops).`,
+      );
+    }
     const holderPort = holder?.port ?? ENVOY_LOCAL_EMBED_PORT;
     const holderEndpoint = envoyLocalEmbedOpenAiBaseUrl(holderPort);
     const deadlineForHolder = Date.now() + resolveStartupTimeoutMs(serverParams, 0);
