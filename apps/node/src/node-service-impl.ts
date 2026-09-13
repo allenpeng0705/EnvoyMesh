@@ -593,7 +593,9 @@ import {
 } from "@envoymesh/harness";
 import {
   getHomeFsInfo as readHomeFsInfo,
+  isProductScope,
   isValidProductName,
+  productFromScope,
   listHomeFsEntries as readHomeFsEntries,
   previewHomeFsFile as readHomeFsPreview,
   productScopeKey,
@@ -8733,11 +8735,34 @@ class NodeServiceImpl implements NodeService {
   private async _callerMayUseCoding(): Promise<boolean> {
     const caller = getRpcCaller();
     if (caller?.isOwnerProfile) return true;
+    // An attached product is not a family profile, so family-profile policy cannot
+    // describe it: the owner grants capabilities per product (`productGrants` in the
+    // node config, via the owner-only `updateNodeConfig`), and the default is none.
+    if (isProductScope(caller?.profileId)) {
+      const product = productFromScope(caller.profileId);
+      return product ? await this._productMayUse(product, "coding") : false;
+    }
     const profileId = this._callerFamilyProfileId();
     return this.mayFamilyProfileUseCoding(
       profileId,
       profileId === OWNER_FAMILY_PROFILE_ID,
     );
+  }
+
+  /**
+   * Whether the owner has granted this attached product a capability.
+   *
+   * Fail-closed on a config read error: a product that cannot be shown to hold a
+   * grant does not hold one.
+   */
+  private async _productMayUse(product: string, capability: string): Promise<boolean> {
+    try {
+      const config = await this._configStore.load();
+      return (config?.productGrants?.[product] ?? []).includes(capability);
+    } catch {
+      // Fail closed: a product that cannot be *shown* to hold a grant does not hold one.
+      return false;
+    }
   }
 
   async mayFamilyProfileUseCoding(

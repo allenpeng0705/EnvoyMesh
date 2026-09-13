@@ -33,7 +33,8 @@ import type {
   ChainDeleteRecipeParams,
   ChainProbeReachabilityParams,
 } from "@envoymesh/api";
-import { requireOwnerProfile } from "./rpc-caller-context.js";
+import { getRpcCaller, requireOwnerProfile } from "./rpc-caller-context.js";
+import { isProductScope, productFromScope } from "@envoymesh/node-core";
 import { parseEhuiInvokeRequest } from "./agent-runtime-envoy/ehui-invoke.js";
 
 /**
@@ -210,6 +211,37 @@ export const CODING_GATED_RPC = new Set<string>([
   "listHomeFsEntries",
 ])
 
+/**
+ * What an **attached product** may call.
+ *
+ * The owner-only list above is a *deny-list*, so before this a product scope was
+ * refused that list and allowed everything else — measured on a real node, a product
+ * session could call `getNodeStatus` and would have been allowed any other unlisted
+ * method too. A product is a different kind of caller from a family member: it is a
+ * separate application, not a person, so the honest default is **nothing**, plus what
+ * its job needs.
+ *
+ * The coding surface is listed because that is what an attached EnvoyCoder attaches
+ * *for* — and every one of those is *also* gated by the product's capability grant
+ * (`mayCallerUseCoding`), so this list is a boundary rather than a permission. Terminals
+ * stay owner-only: a product runs its own tooling in its own process.
+ */
+const PRODUCT_ALLOWED_RPC_METHODS = new Set<string>([
+  // Diagnostics: a product needs to know whether the node it attached to is healthy.
+  "getNodeStatus",
+  ...CODING_GATED_RPC,
+])
+
+/**
+ * True when an attached product must **not** call this RPC.
+ *
+ * Owner-only methods are refused by their own gate first, so this only has to answer
+ * "is this within what a product may do at all".
+ */
+export function isProductDeniedRpcMethod(method: string): boolean {
+  return !PRODUCT_ALLOWED_RPC_METHODS.has(method)
+}
+
 /** True when a thin-client family session must not call this RPC. */
 export function isOwnerOnlyRpcMethod(method: string): boolean {
   // Coding-gated RPCs (Pi / EH / project picker / close coding TUI) are
@@ -236,6 +268,13 @@ export async function routeRpcMethod(
 ): Promise<unknown> {
   if (isOwnerOnlyRpcMethod(method)) {
     requireOwnerProfile(`call ${method}`);
+  }
+  const productCallerProfile = getRpcCaller()?.profileId;
+  if (isProductScope(productCallerProfile) && isProductDeniedRpcMethod(method)) {
+    throw new Error(
+      `Attached apps cannot use ${method}. ${productFromScope(productCallerProfile)} can ask the ` +
+        `owner to grant it more, or do this in its own process.`,
+    );
   }
   if (CODING_GATED_RPC.has(method)) {
     if (!(await ns.mayCallerUseCoding())) {

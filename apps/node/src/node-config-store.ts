@@ -75,6 +75,11 @@ function isValidDiscoveryProfile(value: unknown): value is DiscoveryProfile {
 export interface PersistedNodeConfig {
   version: "0.1";
   profileDir: string;
+  /**
+   * Owner-set capabilities for attached local products — see `NodeConfig.productGrants`.
+   * Optional, so every existing `node-config.json` keeps parsing unchanged.
+   */
+  productGrants?: Record<string, string[]>;
   discoveryProfile: DiscoveryProfile;
   enableMdns?: boolean; // Optional, defaults to true if not set
   relayEnabled: boolean;

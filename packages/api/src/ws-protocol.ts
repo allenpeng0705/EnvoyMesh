@@ -616,6 +616,17 @@ export interface NodeConfig {
   relayRosterEnabled?: boolean;
   /** Roster poll interval in ms (min 60000). */
   relayRosterPollMs?: number;
+  /**
+   * What an attached local product (`attachLocalProduct`) is allowed to do.
+   *
+   * Owner-set, through the already owner-only `updateNodeConfig`. A product scope is
+   * not a family profile, so family-profile capability policy does not describe it;
+   * the default is **nothing**, and the vocabulary is open (`"coding"` today), because
+   * which capabilities exist is the products' business, not the transport's.
+   *
+   * Example: `{ "EnvoyCoder": ["coding"] }`.
+   */
+  productGrants?: Record<string, string[]>;
   /** Model provider configuration. Default: mock provider only. */
   modelProviders: ModelProviderConfig;
   /** Optional model name override for terminal assist (Phase 30I). Falls back to modelProviders.modelName. */

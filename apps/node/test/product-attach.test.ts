@@ -147,6 +147,62 @@ describe("attachLocalProduct", () => {
     expect((await resolver.resolveSession(agent.token))?.scopeKey).toBe("product:EnvoyAgent");
   });
 
+  it("is refused everything outside its allow-list, not merely owner-only RPCs", async () => {
+    // The gap this closes: owner-only enforcement is a deny-list, so before this a
+    // product could call any *unlisted* method (verified on a real node: it could call
+    // `getNodeStatus`, and would have been allowed anything else unlisted too). A
+    // product is an application, not a person, so the default is now "nothing, plus
+    // what its job needs".
+    const ns = await nodeWithProfile();
+    const grant = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+    const caller = sessionCallerFromToken((await ns.lookupSessionToken(grant.token))!);
+
+    const attempt = (method: string) =>
+      runWithRpcCaller(caller, () =>
+        routeRpcMethod(ns, method, {}).then(
+          () => "allowed",
+          (err: unknown) => (err instanceof Error ? err.message : String(err)),
+        ),
+      );
+
+    // Allowed: diagnostics, which is how a product knows the node is healthy.
+    expect(await attempt("getNodeStatus")).toBe("allowed");
+    // Refused by the product allow-list: owner-facing surfaces a product has no
+    // business in, which before this were merely "not on the owner-only list".
+    expect(await attempt("getHumanProfile")).toMatch(/Attached apps cannot use/);
+    expect(await attempt("listFamilyProfiles")).toMatch(/Attached apps cannot use/);
+    // Refused by *either* gate — and which one fires is deliberate: owner-only is
+    // checked first, so a method both lists cover reports the owner's rule. Either
+    // way the product does not get through, which is the property under test.
+    expect(await attempt("sendChat")).toMatch(/Only the node owner|Attached apps cannot use/);
+    expect(await attempt("updateNodeConfig")).toMatch(/Only the node owner|Attached apps cannot use/);
+  });
+
+  it("denies coding until the owner grants it", async () => {
+    // A product scope is not a family profile, so `mayFamilyProfileUseCoding` cannot
+    // describe it — the grant is per product, owner-set, and defaults to none.
+    const ns = await nodeWithProfile();
+    const grant = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+    const caller = sessionCallerFromToken((await ns.lookupSessionToken(grant.token))!);
+
+    const codingAllowed = () =>
+      runWithRpcCaller(caller, () => ns.mayCallerUseCoding());
+    expect(await codingAllowed()).toBe(false);
+
+    // The owner grants it through the already owner-only `updateNodeConfig`.
+    await ns.updateNodeConfig({ productGrants: { EnvoyCoder: ["coding"] } });
+    expect(await codingAllowed()).toBe(true);
+
+    // …and a *different* product is unaffected: grants are per product.
+    const other = await ns.attachLocalProduct({ product: "EnvoyAgent" });
+    const otherCaller = sessionCallerFromToken((await ns.lookupSessionToken(other.token))!);
+    expect(await runWithRpcCaller(otherCaller, () => ns.mayCallerUseCoding())).toBe(false);
+
+    // Revoking is the same call with an empty list.
+    await ns.updateNodeConfig({ productGrants: { EnvoyCoder: [] } });
+    expect(await codingAllowed()).toBe(false);
+  });
+
   it("refuses a missing or unusable product name", async () => {
     const ns = await nodeWithProfile();
     // The name becomes a stored field, a scope key and a log line, so it is validated
