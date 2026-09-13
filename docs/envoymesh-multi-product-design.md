@@ -2,6 +2,8 @@
 
 **Status:** design agreed in outline; **S0, S1 and S2 done; S3 started** (§13) · **Owner:** product / packaging · **Created:** 2026-09-12
 
+> **Building a new app?** Start with `docs/envoymesh-new-app-guide.md` — the how-to for a new product (desktop + mobile), including the family rules it must not break and the upstream sync procedure. This document is the *why*: the decisions and the measurements behind them.
+>
 > **Why this is its own document.** `docs/envoymesh-refactoring-plan.md` §11 states "**No product design**" and §12's banner adds that "product design belongs in its own document … mixing it into an encapsulation plan is precisely how the §2.3 mixed surface came into being." This is that document. It decides nothing about the refactor and changes no module's classification; it *consumes* the refactor's split (556 `reusable` / 252 `product-bound`) and records how a family of products should be installed, configured and run next to each other.
 >
 > Figures below were measured on 2026-09-12 at `90eb7523` unless labelled otherwise. Every one is annotated with the file and line it came from, so a later reader can re-derive it.

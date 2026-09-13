@@ -76,6 +76,7 @@ apps/envoygo/lib/l10n/untranslated.json
 /docs/*
 !/docs/envoymesh-refactoring-plan.md
 !/docs/envoymesh-multi-product-design.md
+!/docs/envoymesh-new-app-guide.md
 !/docs/evidence
 /docs/evidence/*
 !/docs/evidence/social-rpc-defaults.md

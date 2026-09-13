@@ -102,6 +102,9 @@ PairingData? _decodePairingToken(String token) {
   final homeNodePeerId = obj['tid'] as String?;
   final agentPeerId = obj['apid'] as String?;
   final agentName = obj['aname'] as String?;
+  // Which app minted the code (`app`). A phone app belongs to one product, so it must
+  // refuse another product's code — see `pairingAppMismatch` below.
+  final app = obj['app'] as String?;
   final bpnRaw = obj['bpn'];
   final relsRaw = obj['rels'];
 
@@ -143,6 +146,7 @@ PairingData? _decodePairingToken(String token) {
     bootstrapPeers: bootstrapPeers,
     bootstrapPresetNames: bootstrapPresetNames,
     relayWsUrls: relayWsUrls,
+    app: app?.isNotEmpty == true ? app : null,
     isInviteUri: false,
   );
 }
@@ -204,6 +208,7 @@ PairingData? _parseLegacyPairingUri(
     bootstrapPresetNames: _parseBootstrapPresetNames(
         parsed.queryParameters['bootstrapPresetNames']),
     relayWsUrls: rels,
+    app: _nullableTrim(parsed.queryParameters['app']),
     inviteId: _nullableTrim(parsed.queryParameters['inviteId']),
     profileId: _nullableTrim(parsed.queryParameters['profileId']),
     isInviteUri: isInviteUri,
@@ -262,6 +267,14 @@ class PairingData {
   final List<String>? bootstrapPresetNames;
   final List<String>? relayWsUrls;
 
+  /// Which app minted this code (`"EnvoyMesh"`, `"EnvoyCoder"`, …), when the code says.
+  ///
+  /// A phone app belongs to the same product as the desktop app it pairs with, so it
+  /// must refuse a code from another one. Check it with [pairingAppMismatch] **before**
+  /// dialling anything: the node cannot refuse it for you, because the token inside the
+  /// code is opaque and app-local, and all the node ever sees is its own token.
+  final String? app;
+
   /// True when URI was `envoy://invite` (family / company invite).
   final bool isInviteUri;
 
@@ -285,8 +298,49 @@ class PairingData {
     this.bootstrapPeers,
     this.bootstrapPresetNames,
     this.relayWsUrls,
+    this.app,
     this.isInviteUri = false,
     this.inviteId,
     this.profileId,
   });
+}
+
+/// The app this client *is*, unless its launcher says otherwise.
+///
+/// The Dart twin of `@envoymesh/protocol`'s `resolveAppName`: a phone app passes its own
+/// product name, and a product that renames itself does it in one place.
+const String kDefaultAppName = 'EnvoyMesh';
+
+/// Why a pairing code from another app must be refused, or `null` when it is fine.
+///
+/// The rule that makes "the dedicated mobile app pairs only with its corresponding
+/// desktop app" true. **The client is the only side that can enforce it**: the pairing
+/// token inside the code is opaque and app-local, so another product's node never
+/// validates it, and all this node ever sees is its own token. What actually happens
+/// without this check is that someone scans the wrong QR code and the app dutifully
+/// dials the `wsUrl` inside it.
+///
+/// Returns a sentence for the **user**, not a code — they are the one who has to act on
+/// it. `codeApp == null` means the code predates the field, and is accepted: refusing it
+/// would break every QR already printed, and the phone still has to authenticate.
+String? pairingAppMismatch(String? codeApp, String appName) {
+  final claimed = _boundedAppLabel(codeApp);
+  if (claimed == null) return null;
+  final mine = _boundedAppLabel(appName) ?? kDefaultAppName;
+  if (claimed == mine) return null;
+  return 'That code was made by $claimed, and this is $mine. '
+      'Open $claimed and show its pairing code, or install $claimed here.';
+}
+
+/// Bound untrusted text before it reaches a dialog.
+///
+/// The claimed name comes from a scanned code, so it is untrusted input on its way to a
+/// screen someone is being asked to trust: control characters removed, length capped.
+String? _boundedAppLabel(String? raw) {
+  final trimmed = raw?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  // ignore: unnecessary_raw_strings
+  final cleaned = trimmed.replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '').trim();
+  if (cleaned.isEmpty) return null;
+  return cleaned.length > 40 ? '${cleaned.substring(0, 40)}\u2026' : cleaned;
 }
