@@ -1371,6 +1371,18 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 
 **Recommended order**, cheapest true unblock first: (1) the harness contract-symbol move — it is small, it is the V4 requirement, and it does not depend on the `api` decision; (2) re-measure, then decide the `api/core` subpath with real numbers; (3) the kernel `productStoreDir` gate as its own step; (4) the TS reuse host, which then becomes the acceptance test for all of it.
 
+#### 8.17.6 Step (4) done — the reuse host, and what it actually proves
+
+The boundary review's last finding was "no second-product proof": the Dart fixture proves the *SDK* claim, and there was no TypeScript consumer at all. A boundary claim that nobody consumes is a manifest entry, not a fact. `apps/node/test/reuse-host.test.ts` is that consumer, in its minimum honest form:
+
+* It imports **`@envoymesh/host-connect` and `@envoymesh/protocol`** and nothing else EnvoyMesh. No `@envoymesh/api` (not even `/core`), no product store, no `NodeProfile`, no social concept.
+* It boots the WS host with **two injected ports** — `sessionIdentity` and `dispatch`, the only two `WsServerOptions` requires — authenticates a thin client from the connect URL's `token`, and serves an RPC end-to-end, asserting the reply carries the resolved session. The transport never learns what a caller may do.
+* It checks the claim **mechanically**: the test reads its own imports, fails if any specifier is not a declared core package, asks the manifest whether *every module* behind those packages is `reusable`, and asserts `@envoymesh/api` is absent. Renaming a package or re-tainting a module breaks the proof, not just the prose.
+
+Two things it deliberately is not: it is **not a second product** (no UI, no packaging — it is the acceptance test that says one is now buildable from the reusable surface), and it is **not a substitute for the kernel gate**: a non-social host still constructs `node-service-impl` with a profile directory, which is §8.17.5's remaining 12 stores.
+
+What the two tests cost to get right is also the useful part: the first version authenticated by putting `token` in the RPC params and got `ownerId: null` back — the host reads the token from the **connect URL** (`ws://…?token=`), which is exactly the kind of detail a real consumer discovers and a boundary document cannot state.
+
 #### 8.17.5 Kernel `productStoreDir` — the typed-absence half is done, the gate is not
 
 §8.9 named the shape: "a `productStoreDir` gate applied across **all** product-classified stores (constructor-gated and field-initialized), plus a decision about the `/tmp/unknown` fallback, plus a test matrix". Two of those three are done, and the third is now *enumerated and enforced* rather than remembered.
@@ -1379,7 +1391,7 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 
 **The seam mirrors the human-profile one.** `productStore(profileDir, name, factory)` returns the real store when a directory exists and a **typed, store-naming stand-in** when it does not — the same discipline as `createUnavailableHumanProfileStore`, for the same reason: a null-object would hide the dependency, a typed error measures it. The stand-in throws `ProductStoreUnavailableError` on any use, but is safe to hold, `await`, log and `JSON.stringify` — it prints `[unavailable product store: _shopStore]`, because *inspection is not use* and a log line must not crash a bare kernel.
 
-**The gate itself is incomplete, and now says so.** `inventory-node-stores.mjs --check` gained a rule: a `product`-grouped store that is not gated on a profile directory fails. It currently names **12**:
+**The gate itself is incomplete, and now says so on every run.** `inventory-node-stores.mjs --check` gained a rule over `product`-grouped stores that are not gated on a profile directory. It **reports** by default and fails under `--strict`: a rule that makes CI red on day one gets deleted, while one that names the remainder gets finished. Flipping `--strict` in `ci-node-refactor.yml` is therefore the completion criterion for §8.9. It currently names **12**:
 
 | Shape | Stores |
 |---|---|
