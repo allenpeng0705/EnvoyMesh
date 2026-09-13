@@ -1,6 +1,6 @@
 # EnvoyMesh family — multi-product packaging design
 
-**Status:** design agreed in outline; **S0 and S1 implemented** (§13) · **Owner:** product / packaging · **Created:** 2026-09-12
+**Status:** design agreed in outline; **S0, S1 and S2's model implemented** (§13) · **Owner:** product / packaging · **Created:** 2026-09-12
 
 > **Why this is its own document.** `docs/envoymesh-refactoring-plan.md` §11 states "**No product design**" and §12's banner adds that "product design belongs in its own document … mixing it into an encapsulation plan is precisely how the §2.3 mixed surface came into being." This is that document. It decides nothing about the refactor and changes no module's classification; it *consumes* the refactor's split (556 `reusable` / 252 `product-bound`) and records how a family of products should be installed, configured and run next to each other.
 >
@@ -192,7 +192,7 @@ The owner's rule: **check the common place; tell the user a profile exists; let 
 |---|---|---|
 | **S0** ✅ | Make the node runnable in a working checkout: refresh the sibling `envoy-harness` links (or vendor the remaining contract symbols into `packages/protocol`, which this refactor already did for five of them) | ✅ node starts; >2 GB attributed by process (§13) |
 | **S1** ✅ | Root resolution (`ENVOYMESH_HOME` → setting → per-OS default → legacy), `envoymesh.json` marker, detection helper, and move the node default off `./data/default` | ✅ starting from two different CWDs resolves to **one** identity; marker written on first run; 18 tests over found / missing / damaged / permissions (§13) |
-| **S2** | The discovery dialog: found / none / damaged / in-use, with end-user wording | A user can see which profile exists, who it belongs to, and choose; no silent creation in any state |
+| **S2** ◐ | The discovery dialog: found / none / damaged / in-use, with end-user wording | ✅ the model + the node's damaged-profile path (`profile-discovery.ts`, 8 tests); ◻ the dialog rendering belongs to a product UI; ◻ **in-use** needs S3's lock |
 | **S3** | `lock` + `node.json` + attach; health identity; ownership-checked supervisor cleanup | Two apps: second attaches, never double-owns; supervisor kills only its own sidecar; `/health` identifies the node |
 | **S4** | Shared local engine: assets to `runtime/`, `/v1/models` probe, spawn lock, model lease; embeddings first | Second app uses the running engine instead of spawning one; a racing start is resolved by the lock |
 
@@ -274,3 +274,64 @@ owner key identical in both runs: YES
 **Tests:** `packages/node-core/test/envoymesh-home.test.ts` — 18 cases covering per-OS defaults, override precedence, legacy adoption (both directions), marker round-trip/0600/corrupt/loose-typed input, schema non-downgrade, and all three detection states including "damaged still reports its owner". One of them failed first and was right to: `inspectProfile` returned no owner for a damaged profile, which is exactly what a discovery dialog needs to display — the implementation was fixed rather than the assertion.
 
 **Not done here** (deliberately): the discovery dialog (S2), `node.json`/lock/attach (S3), and the shared engine (S4). O1–O5 remain open; O5 is partially answered above.
+
+### S1 review — three defects in my own S1 code (2026-09-13)
+
+Reading the change back found three things the tests did not:
+
+1. **The marker never recorded `ownerId`** — the one field the whole discovery story rests on. `touchHomeMarker` ran *before* the profile was loaded, and the owner is only known after, so no call ever passed it. Fixed by making `ownerId` an optional argument and touching the marker a second time after the profile loads; an absent value never clears a recorded one. Verified: the marker now carries `ownerId` matching `profile.json`.
+2. **`ensureHomeDirs` created a nested `profile/` inside an explicit profile directory.** With `--profile /somewhere`, `homeForProfileDir` returns `/somewhere`, so the helper made `/somewhere/profile` — harmless but wrong. Now gated on the root layout (`resolve(profileDir) === profileDirIn(home)`).
+3. **Dead code**: `isWritableDir` was exported but never called. Removed rather than left for a future caller to wonder about, the same rule applied to `ensureHomeDirs` (now used).
+
+Also added: `isHomeSchemaSupported()`, wired into the node as a warning — a home written by a *newer* build is not fatal, but treating its layout as known would be.
+
+**What the review confirmed is already right:** the loader *refuses* to replace a damaged profile — a JSON parse failure is not a missing file, so `loadOrCreateNodeProfile` re-throws instead of generating a new identity (`packages/local-store/src/index.ts:163`). The failure mode was loud but ugly: a raw `SyntaxError` stack trace.
+
+### S2 (first half) ✅ — the discovery model, and what the node now says (2026-09-13)
+
+**New module:** `packages/node-core/src/profile-discovery.ts` — **558 reusable modules**. It turns an inspection into what a product should *say* and what the user can *choose*, with the wording in one place and a test that keeps it free of developer vocabulary (`profileDir`, `undefined`, `JSON`, `ENVOYMESH_`, `envoy:owner:`).
+
+| State | Headline (end-user wording) | Choices |
+|---|---|---|
+| `found` | "A profile for Alice was found on this computer." | Use it *(recommended)* · Create a new one · Choose a different folder |
+| `missing` | "No profile was found, so a new one will be created." | Create my profile *(recommended)* · Choose a different folder |
+| `damaged` | "The profile for Alice looks incomplete." | Choose a different folder *(recommended)* · Start a new profile here |
+
+Three properties the tests pin, beyond the wording: every reachable state offers **at least one** choice (a dialog with no way forward is worse than no dialog); **no choice deletes anything**, and the one that starts fresh says the existing files are kept; and the caller's real capabilities are honoured (`canCreate`, `canChooseFolder`), so the model never offers what the product cannot do.
+
+**Wired into the node.** Startup now reports the situation for a damaged profile and **exits 2 with a readable message** instead of printing a stack trace:
+
+```
+[home] A profile here looks incomplete.
+       In “…/profile”, some files are missing (human-profile.json) and some files
+       cannot be read (profile.json). Nothing has been changed. If you have a
+       backup, restore it; otherwise choose another folder, or start a new profile here.
+       • Choose a different folder — Use a backup or another profile you already have.
+       • Start a new profile here — The incomplete files are kept, but a new identity
+         is created beside them.
+EnvoyMesh cannot start with the profile in “…/profile”.
+Nothing was changed. Fix or move that folder (or restore a backup), then start EnvoyMesh again.
+```
+
+Verified by corrupting a real profile and starting the node against it: the message appears, the exit code is 2, and the damaged file is still 11 bytes of truncated JSON — **not** replaced.
+
+**Review fixes inside S2 itself:** the damage list read "A, and B" (now "A and B" / "A, B and C" — the kind of detail that makes a product feel machine-written), and the node died with a `SyntaxError` *after* printing its readable message.
+
+**What is left of S2 is rendering, deliberately.** The dialog itself belongs to a product UI (Social/Tauri today, EnvoyKit later); this module is the part that can be tested without a browser and cannot drift into each product inventing its own wording. The **in-use** state (§6, state 4) needs the lock from S3 before it can be modelled honestly.
+
+**Also in this change:** `packages/node-core/src` joined the module-size gate in CI and in `scripts/test/gates.test.mjs` — a core package carrying product-facing modules should not grow unbounded unnoticed. Its only current finding is a pre-existing warning (`home-fs.ts`, 509 lines).
+
+### S2 review — the gate caught my own growth, and a lie in the help text (2026-09-13)
+
+Two things the seeded suite and a read-through found after S2 was written:
+
+1. **`apps/node/src/args.ts` hit 802 lines — over the 800-line hard cap** — because of the six lines S1 added to it. `node --test scripts/test/gates.test.mjs` failed on the repo's own tree, which is precisely what that test is for ("the synthetic fixtures cannot catch drift in the real tree"). The allowlist is for *pre-existing v1.x* modules; adding an entry for growth I had just caused would be the rule inverted, so the 85 lines of static `--help` text moved to `apps/node/src/args-help.ts` and `args.ts` is **723** lines. Verified as CI runs it: **658 files scanned, 0 over the hard cap**.
+   The move also re-tested a trap this refactor has hit three times: `printHelp` is *called* inside `args.ts` **and** imported from `./args.js` by `discovery-dashboard.ts`, so it needed an import **and** a re-export — a re-export alone does not create local scope.
+2. **The help text still advertised `Default: ./data/default`** — stale the moment S1 changed the default, in the one place a user looks to find out where their profile went. Now:
+
+```
+  --profile <dir>       Profile directory for Envoy identity. Default: the shared EnvoyMesh home
+                        (macOS ~/Library/Application Support/EnvoyMesh; Windows %LOCALAPPDATA%\EnvoyMesh).
+                        Env: ENVOYMESH_HOME (the whole home) or ENVOYMESH_PROFILE (this directory);
+                        the flag also exists because npm eats --flags on Windows.
+```

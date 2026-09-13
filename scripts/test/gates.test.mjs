@@ -744,7 +744,15 @@ test("module-size: the repo's own allowlist has no dead entries", async () => {
   // This test is the missing link — it runs the gate against the repo itself.
   const { stdout } = await execFileAsync(
     process.execPath,
-    [SIZE, "apps/node/src", "packages/host-connect/src", "packages/harness/src"],
+    [
+      SIZE,
+      "apps/node/src",
+      "packages/host-connect/src",
+      "packages/harness/src",
+      // Same list CI uses — `node-core` joined it with the shared-home module, so a
+      // core package carrying product-facing modules is size-checked like the rest.
+      "packages/node-core/src",
+    ],
     { cwd: repoRoot },
   );
   assert.match(stdout, /module-size check OK/);

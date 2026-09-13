@@ -24,9 +24,8 @@
  * Kernel/product split (which stores go where) is §5 of that document and belongs
  * to the callers; this module only resolves paths and reports what is on disk.
  */
-import { constants as fsConstants } from "node:fs";
 import * as nodeFs from "node:fs";
-import { accessSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { homedir as osHomedir, platform as osPlatform } from "node:os";
 import path from "node:path";
@@ -236,16 +235,22 @@ export async function writeHomeMarker(home: string, marker: EnvoyMeshHomeMarker)
  * `schema` never moves backwards: an older build touching a newer home keeps the
  * newer number rather than downgrading the file to something it does not
  * understand.
+ *
+ * `ownerId` is optional because it is not known until the profile has been
+ * loaded — the node writes the marker first (so the root is claimed and named)
+ * and records the owner on a second pass. An absent value never clears a recorded
+ * one.
  */
 export async function touchHomeMarker(
   home: string,
-  used: { app: string; version: string; at?: string },
+  used: { app: string; version: string; at?: string; ownerId?: string },
 ): Promise<{ marker: EnvoyMeshHomeMarker; created: boolean }> {
   const existing = await readHomeMarker(home);
+  const ownerId = used.ownerId ?? existing?.ownerId;
   const marker: EnvoyMeshHomeMarker = {
     schema: Math.max(existing?.schema ?? ENVOYMESH_HOME_SCHEMA, ENVOYMESH_HOME_SCHEMA),
     createdAt: existing?.createdAt ?? new Date().toISOString(),
-    ...(existing?.ownerId ? { ownerId: existing.ownerId } : {}),
+    ...(ownerId ? { ownerId } : {}),
     lastUsedBy: {
       app: used.app,
       version: used.version,
@@ -254,6 +259,19 @@ export async function touchHomeMarker(
   };
   await writeHomeMarker(home, marker);
   return { marker, created: existing === null };
+}
+
+/**
+ * Whether this build understands the marker it found.
+ *
+ * A home written by a *newer* build is not an error — the profile itself may be
+ * perfectly readable — but the marker must not be treated as describing a layout
+ * this build knows. The design's "refuse politely" rule (§4.4) is this predicate:
+ * callers warn or stop, and only they know which is right.
+ */
+export function isHomeSchemaSupported(marker: EnvoyMeshHomeMarker | null | undefined): boolean {
+  if (!marker) return true;
+  return marker.schema <= ENVOYMESH_HOME_SCHEMA;
 }
 
 export type ProfileState = "missing" | "found" | "damaged";
@@ -340,16 +358,6 @@ export async function inspectProfile(profileDir: string): Promise<ProfileInspect
     ...(deviceId ? { deviceId } : {}),
     marker: await readHomeMarker(homeForProfileDir(dir)),
   };
-}
-
-/** True when the directory is writable — used before adopting a root. */
-export function isWritableDir(dir: string): boolean {
-  try {
-    accessSync(dir, fsConstants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Create the root (and the profile directory) with owner-only permissions. */

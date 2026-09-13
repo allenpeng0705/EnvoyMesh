@@ -145,7 +145,7 @@ import { handleSystemPingViaRuntime } from "./cli-mesh-inbound-system-ping.js";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, stat, unlink, writeFile } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { join, extname, resolve } from "node:path";
 import { parseNodeArgs, applyPersistedDiscoveryConfig, type NodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
@@ -229,9 +229,14 @@ import {
   socialWsLoopbackUrl,
   devServicePortsConfigured,
   effectiveBridgeListenPort,
+  describeProfileSituation,
   ensureHomeDirs,
   homeForProfileDir,
+  inspectProfile,
+  isHomeSchemaSupported,
+  profileDirIn,
   touchHomeMarker,
+  ENVOYMESH_HOME_SCHEMA,
 } from "@envoymesh/node-core";
 import { createBridge } from "./bridge/index.js";
 import {
@@ -325,23 +330,28 @@ import { configureBondWarmFromConnectivity } from "./node-service-reachability.j
 
 const args = parseNodeArgs(process.argv.slice(2));
 
-// The shared root (design: docs/envoymesh-multi-product-design.md §4-5). Recording
+// The shared root (design: docs/envoymesh-multi-product-design.md §4-6). Recording
 // which app last used this home is what lets a second product tell the user "there
 // is an existing profile, created by EnvoyMesh" instead of quietly starting a
 // second identity — and the marker is how a *human* can see which directory is
 // which, so it is written before anything else touches the profile.
 const homeDir = homeForProfileDir(args.profileDir);
+const profileLivesInRoot = resolve(args.profileDir) === profileDirIn(homeDir);
+let homeMarker: Awaited<ReturnType<typeof touchHomeMarker>>["marker"] | null = null;
 try {
   // Root and profile created `0700` *before* the profile loader writes the owner
   // key into it. The loader's own `mkdir` is subject to umask, which is how a
   // profile directory ended up world-listable in the first run of this change.
-  ensureHomeDirs(homeDir);
-  const { marker, created } = await touchHomeMarker(homeDir, {
+  // Only for the root layout: an explicit `--profile /somewhere` must not grow a
+  // nested `profile/` directory inside itself.
+  if (profileLivesInRoot) ensureHomeDirs(homeDir);
+  const touched = await touchHomeMarker(homeDir, {
     app: "EnvoyMesh",
     version: ENVOYMESH_VERSION,
   });
+  homeMarker = touched.marker;
   console.log(
-    `[home] ${created ? "created" : "using"} ${homeDir} (schema ${marker.schema}) — profile ${args.profileDir}`,
+    `[home] ${touched.created ? "created" : "using"} ${homeDir} (schema ${touched.marker.schema}) — profile ${args.profileDir}`,
   );
 } catch (err) {
   // A read-only or missing home must not stop the node: the profile directory is
@@ -351,7 +361,66 @@ try {
   );
 }
 
-const profile = await loadOrCreateNodeProfile(args.profileDir);
+// A home last used by a newer build: say so rather than assume its layout. The
+// marker keeps the newer schema (touch never downgrades), and the profile behind
+// it may still be perfectly readable — so this warns instead of refusing.
+if (!isHomeSchemaSupported(homeMarker)) {
+  console.warn(
+    `[home] ${homeDir} was last used by a newer EnvoyMesh (schema ${homeMarker?.schema} > ${ENVOYMESH_HOME_SCHEMA}). ` +
+      "Continuing, but a newer build may have written data this one does not understand.",
+  );
+}
+
+// Say what is on disk in the user's words *before* the loader can surface a raw
+// parse error, and never replace what is there: a damaged profile is reported,
+// not overwritten — those files are the owner's identity (design §6, state 5).
+const homeInspection = await inspectProfile(args.profileDir);
+const damaged =
+  homeInspection.state === "damaged"
+    ? describeProfileSituation({
+        product: "EnvoyMesh",
+        home: homeDir,
+        profileDir: args.profileDir,
+        inspection: homeInspection,
+        ...(homeMarker?.lastUsedBy?.app ? { lastUsedByApp: homeMarker.lastUsedBy.app } : {}),
+      })
+    : null;
+if (damaged) {
+  console.error(`[home] ${damaged.headline}\n       ${damaged.detail}`);
+  for (const choice of damaged.choices) {
+    console.error(`       • ${choice.label} — ${choice.description}`);
+  }
+}
+
+let profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
+try {
+  profile = await loadOrCreateNodeProfile(args.profileDir);
+} catch (err) {
+  if (!damaged) throw err;
+  // The loader re-throws a parse failure rather than replacing the file, which is
+  // the behaviour we want and a message no user should see: `SyntaxError:
+  // Expected property name …` after a paragraph of readable English, then a stack
+  // trace. Exit here with the readable half and a non-zero code.
+  console.error(
+    `\nEnvoyMesh cannot start with the profile in \u201c${args.profileDir}\u201d.\n` +
+      `Nothing was changed. Fix or move that folder (or restore a backup), then start EnvoyMesh again.`,
+  );
+  process.exit(2);
+}
+
+// Second pass: the owner is known only now, and the marker is what a *second*
+// product reads to say "there is an existing profile for Alice" (design §4.4).
+if (homeMarker && !homeMarker.ownerId) {
+  try {
+    await touchHomeMarker(homeDir, {
+      app: "EnvoyMesh",
+      version: ENVOYMESH_VERSION,
+      ownerId: profile.owner.ownerId,
+    });
+  } catch {
+    // Non-fatal: the marker without an owner still identifies the root.
+  }
+}
 const taskDispatcher = createTaskDispatcher();
 const taskStore = createLocalTaskStore(args.profileDir);
 try {

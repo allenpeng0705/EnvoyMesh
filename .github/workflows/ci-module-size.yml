@@ -15,4 +15,8 @@ jobs:
           node-version: 22
 
       - name: Module-size lint (Codex LOC rule)
-        run: node scripts/check-module-size.mjs apps/node/src packages/host-connect/src packages/harness/src packages/api/src packages/reuse-host/src
+        # `packages/node-core/src` joined the list when the shared home/marker module
+        # landed there: it is a core package now carrying modules that a product
+        # depends on, so it should not grow unbounded unnoticed. Its only current
+        # finding is a warning (`home-fs.ts`, 509 lines) — pre-existing, not gated.
+        run: node scripts/check-module-size.mjs apps/node/src packages/host-connect/src packages/harness/src packages/api/src packages/reuse-host/src packages/node-core/src
