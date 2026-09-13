@@ -11,6 +11,8 @@
  */
 
 import { execFile } from "node:child_process";
+import { promises as fs } from "node:fs";
+import * as os from "node:os";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -200,6 +202,80 @@ describe("envoy-reuse-host CLI", () => {
     expect(result.code).toBe(0);
     expect(out.join("\n")).toContain("no pairing URI was printed");
   });
+
+  it("attaches to a running node instead of starting a second one", async () => {
+    // The path the design calls D2 — and the one that had no caller outside unit tests.
+    // A fake node is enough: a real `WsServer` answering `attachLocalProduct`, plus the
+    // lock and `node.json` a real node writes via `@envoymesh/node-core`'s registry.
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "reuse-host-attach-"));
+    const { WsServer } = await import("@envoymesh/host-connect");
+    const { acquireNodeLock, writeNodeEndpoint } = await import("@envoymesh/node-core");
+    const node = new WsServer(0, "/ws");
+    node.start(
+      {
+        on: () => undefined,
+        onCallEvent: () => () => undefined,
+        getNodeStatus: () => "running",
+        getConnectionStatus: () => ({ peerId: "peer-1", multiaddrs: [] }),
+        noteClientActivity: () => undefined,
+      },
+      {
+        sessionIdentity: { localScopeKey: "owner", resolveSession: async () => null },
+        dispatch: async (method) =>
+          method === "attachLocalProduct"
+            ? { token: "granted", scopeKey: "product:ReuseHost", ownerId: "envoy:owner:alice" }
+            : null,
+        preAuthMethods: ["attachLocalProduct"],
+        loopbackOnlyMethods: ["attachLocalProduct"],
+      },
+    );
+    // The node must say *who it is*: `resolveRunningNode` returns `running` only for a
+    // verified node, so a fake without identity is `unverified` and the CLI correctly
+    // falls back to serving its own host. (That is how this test failed first.)
+    node.setHealthIdentity(() => ({ app: "EnvoyMesh", ownerId: "envoy:owner:alice" }));
+    await node.waitUntilListening();
+    await acquireNodeLock(home, { pid: process.pid, app: "EnvoyMesh", version: "0.5.0" });
+    await writeNodeEndpoint(home, {
+      pid: process.pid,
+      app: "EnvoyMesh",
+      version: "0.5.0",
+      startedAt: new Date().toISOString(),
+      port: node.boundPort,
+      path: "/ws",
+      token: "",
+      ownerId: "envoy:owner:alice",
+    });
+
+    const { io, out } = capture();
+    const result = await runReuseHostCli(["--token", "t", "--home", home], io);
+    node.stop();
+    await fs.rm(home, { recursive: true, force: true });
+
+    expect(result.code).toBe(0);
+    // It joined, and it did **not** serve its own host: two nodes on one profile is what
+    // the whole lock-and-attach design exists to avoid.
+    expect(result.host).toBeUndefined();
+    expect(result.attached?.grant.scopeKey).toBe("product:ReuseHost");
+    const printed = out.join("\n");
+    expect(printed).toContain("attached to the running EnvoyMesh");
+    expect(printed).toContain("product:ReuseHost");
+    expect(printed).toContain("--standalone");
+  }, 20_000);
+
+  it("serves its own host with --standalone, even when a node is running", async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "reuse-host-standalone-"));
+    const { acquireNodeLock } = await import("@envoymesh/node-core");
+    await acquireNodeLock(home, { pid: process.pid, app: "EnvoyMesh", version: "0.5.0" });
+
+    const { io } = capture();
+    const result = await runReuseHostCli(["--token", "t", "--home", home, "--standalone"], io);
+    hosts.push(result.host!);
+    await fs.rm(home, { recursive: true, force: true });
+
+    expect(result.code).toBe(0);
+    expect(result.host).toBeTruthy();
+    expect(result.attached).toBeUndefined();
+  }, 20_000);
 
   it("runs as a program: the bin entry exists, is executable and prints usage", async () => {
     // The build must have produced the entry the manifest points at.

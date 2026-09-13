@@ -7,6 +7,7 @@
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts"],
   "references": [
+    { "path": "../node-core" },
     { "path": "../api" },
     { "path": "../harness" },
     { "path": "../host-connect" },

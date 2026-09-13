@@ -412,8 +412,12 @@ if (!nodeLock.acquired && !secondNodeAllowed) {
       startedAt: nodeLock.holder.startedAt,
       verified: running.status === "running",
     },
-    // Attaching is the next slice: the running node cannot yet accept a product
-    // client, so the honest thing is not to offer it.
+    // **A node is not a client of itself**, so "connect to the running EnvoyMesh" is not
+    // something this process can offer: the attach path exists for *products*
+    // (`requestProductSession`, exercised end to end by the `envoy-reuse-host` CLI and by
+    // `packages/reuse-host/test/cli.test.ts`). Offering it here would advertise a
+    // capability this process does not have. What the user can do instead is in the
+    // message: find the running app, or run this one against a different home.
     canAttach: false,
   });
   if (running.status !== "running") {

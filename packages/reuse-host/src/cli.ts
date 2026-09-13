@@ -47,6 +47,8 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { ENVOYMESH_VERSION } from "@envoymesh/protocol";
+import { resolveHomeDir, resolveRunningNode } from "@envoymesh/node-core";
+import { requestProductSession } from "./index.js";
 import {
   createReuseHost,
   type HostNodeService,
@@ -77,6 +79,9 @@ const USAGE = [
   "  --owner-public-key <p>  owner public key (PEM) for the pairing payload",
   "  --owner-public-key-file <f>  read the PEM from a file (a PEM is multi-line)",
   "  --name <label>        human-readable name shown before pairing completes",
+  "  --home <dir>          shared EnvoyMesh home to look for a running node in",
+  "  --product <name>      product name to attach as (default ReuseHost)",
+  "  --standalone          always serve this host, even if a node is already running",
   "  --pre-auth <method>   allow a method before authentication (repeatable)",
   "  --help                print this",
   "",
@@ -87,6 +92,12 @@ interface ParsedArgs {
   port: number;
   path: string;
   token: string;
+  /** Shared EnvoyMesh home to look for a running node in; default: resolved. */
+  home?: string;
+  /** Attach as this product, when a node is already running. */
+  product?: string;
+  /** Always serve our own host, even when a node is running. */
+  standalone: boolean;
   ownerId?: string;
   ownerPublicKey?: string;
   ownerPublicKeyFile?: string;
@@ -104,6 +115,9 @@ const KNOWN_FLAGS = new Set([
   "--owner-public-key-file",
   "--name",
   "--pre-auth",
+  "--home",
+  "--product",
+  "--standalone",
   "--help",
   "-h",
 ]);
@@ -114,7 +128,7 @@ function parseArgs(argv: string[]): { ok: true; args: ParsedArgs } | { ok: false
   // either dies with `EADDRINUSE` or — worse, before S3 — takes the port and makes
   // EnvoyMesh's own liveness check believe its node is healthy. A host that reports
   // the port it bound (see `serve()`) has no reason to guess.
-  const args: ParsedArgs = { port: 0, path: "/ws", token: "", preAuth: [] };
+  const args: ParsedArgs = { port: 0, path: "/ws", token: "", preAuth: [], standalone: false };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     // A value is only "missing" when there is none. An earlier version also
@@ -142,6 +156,15 @@ function parseArgs(argv: string[]): { ok: true; args: ParsedArgs } | { ok: false
         }
         case "--path":
           args.path = value();
+          break;
+        case "--home":
+          args.home = value();
+          break;
+        case "--product":
+          args.product = value();
+          break;
+        case "--standalone":
+          args.standalone = true;
           break;
         case "--token":
           args.token = value();
@@ -206,6 +229,8 @@ export function createCliDispatcher(): HostRpcDispatcher {
 export interface CliResult {
   code: number;
   host?: ReuseHost;
+  /** Set when the CLI attached to a running node instead of serving its own host. */
+  attached?: { grant: { scopeKey: string; ownerId: string; wsUrl: string }; node: { port: number; app: string; pid: number } };
 }
 
 /**
@@ -245,6 +270,52 @@ export async function runReuseHostCli(argv: string[], io: Partial<CliIo> = {}): 
     getConnectionStatus: () => ({ peerId: "", multiaddrs: [] }),
     noteClientActivity: () => undefined,
   };
+
+  // ─── attach-first: the second product joins, it does not compete ──────────────
+  //
+  // This is the path the design calls D2, and the one that had no caller: a product on a
+  // machine where a node is already running asks **that** node for a session of its own,
+  // instead of starting a second mesh, holding a second copy of the key, or refusing to
+  // start. `resolveRunningNode` only returns `running` for a node whose identity it
+  // verified — the loser of a race for the lock is exactly who this is for.
+  if (!args.standalone) {
+    const home = args.home?.trim() || resolveHomeDir();
+    const product = args.product?.trim() || "ReuseHost";
+    try {
+      const running = await resolveRunningNode(home);
+      if (running.status === "running" && running.endpoint) {
+        const grant = await requestProductSession(
+          { port: running.endpoint.port, path: running.endpoint.path },
+          { product, version: ENVOYMESH_VERSION },
+        );
+        out(
+          `envoy-reuse-host ${ENVOYMESH_VERSION} attached to the running ${running.endpoint.app} ` +
+            `(pid ${running.endpoint.pid}) instead of starting a second node.`,
+        );
+        out(`session scope: ${grant.scopeKey}`);
+        out(`owner: ${grant.ownerId}`);
+        out("");
+        out("Connect with:");
+        out(`  ${grant.wsUrl}`);
+        out("");
+        out("This host serves nothing of its own — see --standalone to force one.");
+        return { code: 0, attached: { grant, node: running.endpoint } };
+      }
+      if (running.status !== "none") {
+        out(
+          `No usable node to attach to (${running.status}${running.reason ? `: ${running.reason}` : ""}); ` +
+            "starting this host instead.",
+        );
+      }
+    } catch (error) {
+      // Attaching is best-effort: a node that refuses (an old build, a permission) must
+      // not stop a product from serving its own surface.
+      err(
+        `Could not attach to the running node (${error instanceof Error ? error.message : String(error)}); ` +
+          "starting this host instead.",
+      );
+    }
+  }
 
   const host = createReuseHost({
     port: args.port,

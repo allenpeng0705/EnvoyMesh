@@ -1105,6 +1105,99 @@ fn start_node_guardian(app: tauri::AppHandle) {
     });
 }
 
+
+// ─── the shared EnvoyMesh home (mirrors @envoymesh/node-core) ───────────────────
+
+/// The conventional root for this OS.
+///
+/// **Mirrors `defaultHomeDir` in `@envoymesh/node-core`.** It has to: the node CLI and
+/// this app must resolve the *same* directory or one machine holds two identities
+/// depending on how EnvoyMesh was started, which is the bug this replaced —
+/// `app_data_dir.join("profile")` here against `profileDirIn(resolveHomeDir())` there.
+/// `LOCALAPPDATA`, not `APPDATA`, on Windows: the root holds the owner private key and
+/// roaming syncs it off the machine.
+fn default_home_dir(platform: &str, env: &std::collections::HashMap<String, String>, home: &Path) -> PathBuf {
+    let env_path = |key: &str| -> Option<PathBuf> {
+        env.get(key)
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
+    match platform {
+        "windows" => {
+            let base = env_path("LOCALAPPDATA").unwrap_or_else(|| home.join("AppData").join("Local"));
+            base.join("EnvoyMesh")
+        }
+        "macos" => home.join("Library").join("Application Support").join("EnvoyMesh"),
+        _ => env_path("XDG_DATA_HOME")
+            .unwrap_or_else(|| home.join(".local").join("share"))
+            .join("EnvoyMesh"),
+    }
+}
+
+/// Does this directory already hold an EnvoyMesh home? (Same three markers the node uses.)
+fn looks_like_home(dir: &Path) -> bool {
+    dir.join("envoymesh.json").exists() || dir.join("profile").is_dir() || dir.join("profile.json").is_file()
+}
+
+/// Where this app's profile lives, resolved the way the node resolves it.
+///
+/// `ENVOYMESH_HOME` wins, then an existing home at the per-OS default, then the legacy
+/// `~/.envoymesh`, then the default. Two desktop-specific additions on top of the node's
+/// rule, because the desktop app has been shipping since before the shared root existed:
+///
+///   * an existing **`app_data_dir/profile`** (where this app used to keep it) is
+///     adopted when the shared root has no home yet — so an installed user keeps their
+///     identity instead of appearing to lose their contacts;
+///   * the adopted legacy directory is logged, because moving it is the user's call.
+fn resolve_shared_home(app_data_dir: &Path) -> (PathBuf, Option<PathBuf>) {
+    let env: std::collections::HashMap<String, String> = std::env::vars().collect();
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let platform = if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    };
+    resolve_shared_home_with(platform, &env, &home, app_data_dir)
+}
+
+/// The resolution rule with everything injected, so it can be tested without touching the
+/// process environment — the same shape as the node's `resolveHomeDir({ env, platform,
+/// homeDir, exists })`, and for the same reason.
+fn resolve_shared_home_with(
+    platform: &str,
+    env: &std::collections::HashMap<String, String>,
+    home: &Path,
+    app_data_dir: &Path,
+) -> (PathBuf, Option<PathBuf>) {
+    if let Some(explicit) = env
+        .get("ENVOYMESH_HOME")
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+    {
+        return (PathBuf::from(explicit), None);
+    }
+    let preferred = default_home_dir(platform, env, home);
+    if looks_like_home(&preferred) {
+        return (preferred, None);
+    }
+    // The desktop app's own history: adopt it rather than start a second identity.
+    let legacy_desktop = app_data_dir.join("profile");
+    if legacy_desktop.join("profile.json").is_file() {
+        return (app_data_dir.to_path_buf(), Some(legacy_desktop));
+    }
+    let legacy_shared = home.join(".envoymesh");
+    if looks_like_home(&legacy_shared) {
+        return (legacy_shared, None);
+    }
+    (preferred, None)
+}
+
 fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
     #[cfg(unix)]
     kill_stale_listeners_on_node_ports(&config.profile_dir);
@@ -1766,9 +1859,21 @@ fn main() {
             let node_log_file = open_append_log(&log_paths.node_log).map(|f| Arc::new(Mutex::new(f)));
             app.manage(log_paths);
 
-            let profile_dir = app_data_dir.join("profile");
+            // The **shared** home, not this app's private data directory: the node CLI,
+            // a second product and this app must agree on one profile, or the same
+            // machine holds two identities depending on how EnvoyMesh was launched.
+            let (shared_home, adopted_legacy) = resolve_shared_home(&app_data_dir);
+            let profile_dir = shared_home.join("profile");
             std::fs::create_dir_all(&profile_dir).expect("Failed to create profile dir");
+            info!("Shared EnvoyMesh home: {:?}", shared_home);
             info!("Profile directory: {:?}", profile_dir);
+            if let Some(legacy) = adopted_legacy {
+                warn!(
+                    "Using the legacy profile at {:?} because the shared home has none yet. \
+                     Move it to {:?} to share it with the command-line node and other apps.",
+                    legacy, profile_dir
+                );
+            }
 
             let ipfs_repo_dir = profile_dir.join("ipfs-kubo");
             std::fs::create_dir_all(&ipfs_repo_dir).ok();
@@ -2036,6 +2141,84 @@ mod tests {
             now,
             NODE_GUARDIAN_MAX_RESPAWNS_PER_HOUR
         ));
+    }
+
+
+    /// The desktop app and the command-line node must resolve the **same** home.
+    ///
+    /// This is the defect the review found: the app used `app_data_dir/profile` while the
+    /// CLI used the shared root, so one machine held two identities depending on how
+    /// EnvoyMesh was started. These expectations are the same paths
+    /// `packages/node-core/test/envoymesh-home.test.ts` asserts, which is what keeps the
+    /// two implementations from drifting.
+    #[test]
+    fn the_shared_home_matches_the_nodes_rule() {
+        let env = std::collections::HashMap::new();
+        let home = Path::new("/Users/alice");
+        assert_eq!(
+            default_home_dir("macos", &env, home),
+            PathBuf::from("/Users/alice/Library/Application Support/EnvoyMesh")
+        );
+        assert_eq!(
+            default_home_dir("linux", &env, home),
+            PathBuf::from("/Users/alice/.local/share/EnvoyMesh")
+        );
+
+        // Windows: LOCALAPPDATA, never APPDATA — the root holds the owner private key and
+        // roaming syncs it off the machine.
+        let mut win = std::collections::HashMap::new();
+        win.insert("LOCALAPPDATA".to_string(), "C:\\Users\\alice\\AppData\\Local".to_string());
+        win.insert("APPDATA".to_string(), "C:\\Users\\alice\\AppData\\Roaming".to_string());
+        assert_eq!(
+            default_home_dir("windows", &win, Path::new("C:\\Users\\alice")),
+            PathBuf::from("C:\\Users\\alice\\AppData\\Local").join("EnvoyMesh")
+        );
+    }
+
+    #[test]
+    fn envoymesh_home_wins_over_everything() {
+        let (home, legacy) = resolve_shared_home_with(
+            "macos",
+            &std::collections::HashMap::from([(
+                "ENVOYMESH_HOME".to_string(),
+                "/tmp/custom-home".to_string(),
+            )]),
+            Path::new("/Users/alice"),
+            Path::new("/Users/alice/Library/Application Support/com.envoymesh.desktop"),
+        );
+        assert_eq!(home, PathBuf::from("/tmp/custom-home"));
+        assert!(legacy.is_none());
+    }
+
+    #[test]
+    fn an_installed_desktop_user_keeps_their_identity() {
+        // The app shipped before the shared root existed, so its own `profile/` is the
+        // only copy of an existing user's identity. Adopt it rather than start a second
+        // one, and say so — moving it is the user's call.
+        let base = std::env::temp_dir().join(format!("envoymesh-home-test-{}", std::process::id()));
+        let app_data = base.join("appdata");
+        std::fs::create_dir_all(app_data.join("profile")).expect("temp dir");
+        std::fs::write(app_data.join("profile").join("profile.json"), "{}").expect("temp profile");
+        let home_dir = base.join("home");
+        std::fs::create_dir_all(&home_dir).expect("temp home");
+
+        let (home, legacy) =
+            resolve_shared_home_with("macos", &std::collections::HashMap::new(), &home_dir, &app_data);
+        assert_eq!(home, app_data);
+        assert_eq!(legacy, Some(app_data.join("profile")));
+
+        // …and with a real home at the shared root, the shared one wins.
+        std::fs::create_dir_all(home_dir.join("Library/Application Support/EnvoyMesh/profile"))
+            .expect("shared home");
+        let (home2, legacy2) =
+            resolve_shared_home_with("macos", &std::collections::HashMap::new(), &home_dir, &app_data);
+        assert_eq!(
+            home2,
+            home_dir.join("Library/Application Support/EnvoyMesh")
+        );
+        assert!(legacy2.is_none());
+
+        std::fs::remove_dir_all(&base).ok();
     }
 
     #[test]

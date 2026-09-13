@@ -471,6 +471,35 @@ A code minted before the field existed is accepted: refusing it would break ever
 
 **3. Coding is granted per product, by the owner.** `mayFamilyProfileUseCoding()` is family-profile policy and a product scope is not a family profile, so an attached EnvoyCoder was refused the surface it exists for. `NodeConfig.productGrants` — owner-set through the already owner-only `updateNodeConfig` — now answers for products, with **nothing** as the default and a fail-closed read. Example: `{ "EnvoyCoder": ["coding"] }`. Pinned by test: denied before the grant, allowed after, unaffected for a *different* product, revoked by an empty list.
 
+### S5 — the shipping-path review: three of six findings fixed (2026-09-13)
+
+An external review of the branch split its findings into "library layer: strong" and "the shipping desktop path still diverges". Both halves were right, and its top three are fixed here.
+
+**1. The desktop app and the CLI resolved *different* homes — fixed.** `apps/tauri/src-tauri/src/main.rs` used `app_data_dir.join("profile")` while the node CLI used `profileDirIn(resolveHomeDir())`, so one machine held **two identities depending on how EnvoyMesh was launched**. The app now resolves the shared home with the same rule (per-OS default, `ENVOYMESH_HOME` override, `~/.envoymesh` fallback), plus the two desktop-specific steps the design's O4 asked for: an existing `app_data_dir/profile` is **adopted** when the shared root has no home yet (so an installed user keeps their identity instead of appearing to lose their contacts) and the adoption is logged, because moving it is the user's call. Three Rust tests pin the resolution and deliberately assert the *same paths* `packages/node-core/test/envoymesh-home.test.ts` asserts — that is what keeps two implementations of one rule from drifting. (`cargo test --bin envoymesh`: 20 passing.)
+
+**2. Attach existed with no caller — fixed, but not the way the review suggested.** It proposed flipping `canAttach: true`. That would be wrong: a node is not a client of itself, so the in-use message would advertise a capability this process does not have. The stranded investment was real though, and it is now wired where it belongs — **`envoy-reuse-host` attaches first**:
+
+```
+envoy-reuse-host --home <shared home> --token t
+→ attached to the running EnvoyMesh (pid 1234) instead of starting a second node.
+  session scope: product:ReuseHost
+  Connect with: ws://127.0.0.1:3030/ws?token=…
+```
+
+`--standalone` forces the old behaviour, and an attach failure (an old build, a permission) falls back to serving rather than exiting. Pinned by a test that stands up a real `WsServer` plus the real lock/`node.json`, runs the CLI, and asserts it **did not bind a port of its own** — a second node on one profile being what the whole design avoids. Writing that test re-proved the identity check: the first version failed because the fake node reported no identity, so `resolveRunningNode` correctly said `unverified` and the CLI correctly served its own host. `canAttach: false` stays, now with the reason written down.
+
+**3. EnvoyGo did not check which app a code belongs to — fixed.** The Social scanner did; the phone — the side that actually scans — did not, so an EnvoyCoder QR could still pair EnvoyGo with the wrong desktop app. `PairingService.appMismatch` applies the shared rule in the scan screen before anything is dialled; four Dart tests cover own-app, no-claim, other-app and the family default.
+
+**Also fixed while in there:** `ws` was a **devDependency** of `@envoymesh/reuse-host` although `attach-client.ts` imports it at runtime — the tests passed because the root hoists it, and a real install of that package would not have had it. Promoted to a dependency. Lockfiles refreshed with `npm install --package-lock-only`, per `AGENTS.md`.
+
+**Three findings left, each needing a decision rather than a patch:**
+
+| Finding | Why it is not done here |
+|---|---|
+| Product stores still live under `profileDir` (§5 layout) | it is a data migration: the stores, their readers and the inventory rule move together, and a wrong move loses a user's state |
+| S4 — local engine assets still under `{profile}/envoy-local/` | same shape, plus a spawn lock and a model lease; `runtimeDirIn()` exists and is unused |
+| `apps/node` still `file:`-depends on the sibling `envoy-harness` checkout | a packaging decision — vendor the harness into this repo, or degrade when it is absent — not a bug fix. The failure mode is real: vitest aliases hide it, and a clean clone can fail at run time |
+
 ### S4 (second slice) — the review, and five real defects (2026-09-13)
 
 Reviewing the stretch rather than trusting it. Every one of these was found by checking a claim I had written down, and four of the five were in code I had just described as done.
