@@ -18,10 +18,13 @@ import {
   buildPairingUri,
   createBackend,
   createReuseHost,
+  decodePairingToken,
+  encodePairingToken,
+  parseEnvoyPairUri,
   parsePairingUri,
   probeExtAgentReachability,
   type HostRpcDispatcher,
-  type PairingPayload,
+  type PairWithHomeNodeParams,
   type SessionIdentityResolver,
 } from "../src/index.js";
 
@@ -87,24 +90,44 @@ describe("@envoymesh/reuse-host", () => {
   }, 15_000);
 
   it("builds a QR payload that round-trips, and rejects a foreign one", () => {
-    const payload: PairingPayload = {
-      v: 1,
+    const params: PairWithHomeNodeParams = {
       wsUrl: "ws://192.168.1.20:3030/ws",
+      lanWsUrl: "ws://192.168.1.20:3030/ws",
       token: "pair-token",
-      displayName: "Studio Mac",
+      ownerPublicKey: "-----BEGIN PUBLIC KEY-----",
+      ownerId: "envoy:owner:alice",
+      homeNodePeerId: "12D3KooWHome",
     };
-    const uri = buildPairingUri(payload);
+    const uri = buildPairingUri(params);
     expect(uri.startsWith("envoy://pair?")).toBe(true);
-    expect(parsePairingUri(uri)).toEqual(payload);
+    expect(parsePairingUri(uri)).toEqual(params);
+
+    // **The interoperability proof.** This package builds the URI; EnvoyMesh's own
+    // parser reads it. If the two ever drift apart, a second product's QR code stops
+    // pairing with the product's app — a failure no package-local round-trip would
+    // catch.
+    expect(parseEnvoyPairUri(uri)).toEqual(params);
 
     // A scanner meets QR codes that are not ours.
     expect(parsePairingUri("https://example.com")).toBeNull();
     expect(parsePairingUri("not a uri")).toBeNull();
-    expect(parsePairingUri("envoy://pair?ws=ws://x&v=2")).toBeNull(); // wrong version
-    expect(parsePairingUri("envoy://pair?ws=ws://x")).toBeNull(); // no token
+    expect(parsePairingUri("envoy://pair?wsUrl=ws://x")).toBeNull(); // missing token
   });
 
-  it("hands the host's own pairing URI out without a token in the clear", async () => {
+  it("encodes the same compressed token the product reads", async () => {
+    // The token codec moved to the reusable layer with the payload contract, so a
+    // second product produces tokens the product's own decoder accepts.
+    const token = await encodePairingToken({
+      wsUrl: "ws://192.168.1.20:3030/ws",
+      token: "pair-token",
+      ownerId: "envoy:owner:alice",
+    });
+    const decoded = decodePairingToken(token);
+    expect(decoded.ownerId).toBe("envoy:owner:alice");
+    expect(decoded.token).toBe("pair-token");
+  });
+
+  it("hands the host's own pairing URI out with the caller's identity", async () => {
     const port = await freePort();
     const host = createReuseHost({
       port,
@@ -113,9 +136,11 @@ describe("@envoymesh/reuse-host", () => {
       dispatch: dispatcher,
     });
     hosts.push(host);
-    const parsed = parsePairingUri(host.pairingUri("pair-token"));
+    const parsed = parsePairingUri(
+      host.pairingUri("pair-token", { ownerPublicKey: "PEM", ownerId: "envoy:owner:alice" }),
+    );
     expect(parsed?.wsUrl).toBe(`ws://127.0.0.1:${port}/ws`);
-    expect(parsed?.displayName).toBe("Studio Mac");
+    expect(parsed?.ownerId).toBe("envoy:owner:alice");
   });
 
   it("exposes the harness surface a second product needs", () => {
@@ -141,8 +166,18 @@ describe("@envoymesh/reuse-host", () => {
     const nonCore = specifiers.filter((s) => !core.has(s));
     expect(nonCore, "a second product must import declared core packages only").toEqual([]);
 
+    // **Entry points, not whole packages.** `@envoymesh/api/core` is a declared
+    // subpath of a package that *does* hold product-bound modules; what matters is
+    // that the entry point this package imports is reusable (rules 6a/6b). A root
+    // specifier has to be clean throughout, because importing it reaches every
+    // module the barrel exports.
     for (const spec of [...new Set(specifiers)]) {
-      const dir = `packages/${spec.replace("@envoymesh/", "")}`;
+      const [pkg, sub] = [spec.split("/").slice(0, 2).join("/"), spec.split("/")[2]];
+      const dir = `packages/${pkg.replace("@envoymesh/", "")}`;
+      if (sub) {
+        expect(reusable.has(`${dir}/src/${sub}.ts`), `${spec} entry point is not reusable`).toBe(true);
+        continue;
+      }
       const files = readdirSync(path.join(repoRoot, dir, "src"))
         .filter((f) => f.endsWith(".ts"))
         .map((f) => `${dir}/src/${f}`);

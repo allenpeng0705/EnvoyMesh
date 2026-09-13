@@ -1031,83 +1031,18 @@ export interface OpenClawStatus {
   consecutiveRestartFailures?: number;
 }
 
-/**
- * Pairing payload for QR-code mobile pairing (Phase 10A).
- *
- * Encoded as `envoy://pair?wsUrl=...&relayPeerId=...&agentPeerId=...`
- * Displayed as a QR code in the Social UI for the mobile app to scan.
- */
-export interface PairingPayload {
-  /** WebSocket URL the mobile app connects to. Either the home node's direct LAN WS URL, or the relay's public WS URL when relay-proxy is configured. */
-  wsUrl: string;
-  /**
-   * Direct LAN WebSocket URL of the home node (e.g. `ws://192.168.x.x:3030/ws`).
-   * When present, the mobile app will prefer this URL for ongoing traffic (lowest latency, no relay).
-   * The relay URL is used as a fallback when the LAN is unreachable (e.g. mobile on cellular).
-   */
-  lanWsUrl?: string;
-  /**
-   * Home node's libp2p peer ID (optional).
-   * When connecting through a relay, this is passed as the `target` query param so the relay knows which node to proxy to.
-   */
-  relayPeerId?: string;
-  /**
-   * Relay's public WebSocket URL (optional).
-   * When present, the QR encodes this relay URL instead of the direct LAN wsUrl, so mobile can connect from any network.
-   */
-  relayWsUrl?: string;
-  /**
-   * Additional Envoy relay WebSocket base URLs (optional).
-   * Compact QR field so EnvoyGo can try US/EU/… relays when the primary
-   * `relayWsUrl` is unreachable. Does not include the built-in community relay.
-   */
-  relayWsUrls?: string[];
-  /** Bridge agent peer ID (optional — present when bridge is enabled) */
-  agentPeerId?: string;
-  /** Bridge agent public key PEM (optional) */
-  agentPubKey?: string;
-  /** Bridge agent display name from bridge-config.json (optional) */
-  agentName?: string;
-  /** Pairing token for owner verification (optional) */
-  token?: string;
-  /** Owner's public key PEM (Phase 11 — for shared-identity pairing, public info safe for QR) */
-  ownerPublicKey?: string;
-  /** Owner ID e.g. envoy:owner:... (Phase 11 — for shared-identity pairing) */
-  ownerId?: string;
-  /** Home node's libp2p peer ID for mobile → home routing (bridge agent transport). */
-  homeNodePeerId?: string;
-  /**
-   * Bootstrap peer multiaddrs the home node uses (optional).
-   * When present, EnvoyGo tries these as last-resort fallback candidates
-   * when the relay URL is unreachable. Useful when the operator has
-   * configured additional relay or bootstrap peers that are WebSocket-accessible.
-   */
-  bootstrapPeers?: string[];
-  /**
-   * Bootstrap preset names for compact QR encoding (optional).
-   * EnvoyGo resolves these to full multiaddr strings using the same
-   * preset registry as the home node. E.g. "public-libp2p-am6".
-   */
-  bootstrapPresetNames?: string[];
-}
-
-/** Params decoded from an `envoy://pair` URI for mobile shared-identity pairing. */
-export interface PairWithHomeNodeParams {
-  wsUrl: string;
-  /**
-   * Direct LAN WebSocket URL of the home node (optional).
-   * When present, the mobile uses this for ongoing traffic when reachable, falling back to `wsUrl` (relay) otherwise.
-   */
-  lanWsUrl?: string;
-  token: string;
-  ownerPublicKey: string;
-  ownerId: string;
-  agentPeerId?: string;
-  agentPubKey?: string;
-  relayPeerId?: string;
-  homeNodePeerId?: string;
-  agentName?: string;
-}
+// Moved to `@envoymesh/protocol` (`pairing-contract.ts`): keeping them here made
+// every module that needed a pairing payload product-bound (`pairing-token.ts`,
+// `envoy-pair-uri.ts`, and anything that imported them). Imported for local use
+// *and* re-exported, so this file's consumers are unchanged.
+import type {
+  PairingPayload,
+  PairWithHomeNodeParams,
+} from "@envoymesh/protocol";
+export type {
+  PairingPayload,
+  PairWithHomeNodeParams,
+} from "@envoymesh/protocol";
 
 /** Result of mobile {@link pairWithHomeNode} after QR pairing succeeds. */
 export interface PairWithHomeNodeResult {

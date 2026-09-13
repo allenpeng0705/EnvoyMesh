@@ -24,16 +24,14 @@
  * Every module here is `reusable` under the Axis-1 manifest, and the package is
  * declared core, so nothing in the graph above can reach product code.
  *
- * ## Why the pairing contract is local
+ * ## The pairing contract is shared, not local
  *
- * EnvoyMesh's own pairing token (`@envoymesh/api/pairing-token`, `envoy-pair-uri`)
- * is **product-bound**: both modules reach `ws-protocol.ts` through relative
- * imports, and that module is product-bound because it carries the RPC method
- * union. A second product therefore declares its own QR payload — small enough to
- * state in one type — rather than importing a product contract. (Moving the
- * pairing contract into `protocol`, as was done for the ext-agent contract and for
- * `ModelProviderConfig`, is the alternative, and it is a contract move with its own
- * migration.)
+ * EnvoyMesh's pairing payloads were declared in the product-bound `ws-protocol.ts`,
+ * which made the token codec and the URI builder product-bound too and forced a
+ * second product to invent its own QR format. They now live in
+ * `@envoymesh/protocol` (`pairing-contract.ts`), both modules are `reusable`, and
+ * this package imports them from `@envoymesh/api/core` — one format, one parser,
+ * and a test that proves a URI built here parses there.
  *
  * ## What it deliberately does not do
  *
@@ -66,56 +64,61 @@ export {
 } from "@envoymesh/harness";
 
 // ─── pairing (QR) ───────────────────────────────────────────────────────────
+//
+// **The shared contract, not a local copy.** EnvoyMesh's pairing payloads used to
+// be declared in the product-bound `ws-protocol.ts`, so the token codec and URI
+// builder that depended on them were product-bound too, and a second product had
+// to invent its own QR format. Both payload types now live in
+// `@envoymesh/protocol` (`pairing-contract.ts`) and both modules are `reusable`,
+// so this package speaks **the same** QR format as the product — which is the
+// only way a pairing code is worth anything.
+// Imported for local use (this file builds and parses with them) *and*
+// re-exported, so a consumer of this package gets the pairing surface too.
+import { parseEnvoyPairUri } from "@envoymesh/api/core";
+import type { PairWithHomeNodeParams } from "@envoymesh/api/core";
+export {
+  decodePairingToken,
+  decodePairingTokenAsync,
+  encodePairingToken,
+  parseEnvoyPairUri,
+  type PairingPayload,
+  type PairWithHomeNodeParams,
+} from "@envoymesh/api/core";
+
+/** Build the `envoy://pair?…` URI that EnvoyMesh's own parser reads. */
+export function buildPairingUri(params: PairWithHomeNodeParams): string {
+  const query = new URLSearchParams();
+  query.set("wsUrl", params.wsUrl);
+  if (params.lanWsUrl) query.set("lanWsUrl", params.lanWsUrl);
+  query.set("token", params.token);
+  query.set("ownerPublicKey", params.ownerPublicKey);
+  query.set("ownerId", params.ownerId);
+  for (const key of [
+    "relayPeerId",
+    "agentPeerId",
+    "agentPubKey",
+    "agentName",
+    "homeNodePeerId",
+  ] as const) {
+    const value = params[key];
+    if (value) query.set(key, value);
+  }
+  return `envoy://pair?${query.toString()}`;
+}
 
 /**
- * The pairing payload a second product puts in its QR code.
+ * Parse a pairing URI, returning `null` for anything that is not one.
  *
- * Deliberately minimal and product-agnostic: where to dial, a token to dial with,
- * and a label for the human reading the screen. EnvoyMesh's own payload adds
- * social fields (owner id, relay list); a product without social features does
- * not need them, and this type is the shape a *non-social* host can promise.
+ * Delegates to the product's parser so there is exactly one definition of the
+ * format; the only difference is the failure mode — a scanner meets foreign QR
+ * codes, and should not have to catch an exception to reject one.
  */
-export interface PairingPayload {
-  /** WebSocket URL the client should dial, including scheme and path. */
-  wsUrl: string;
-  /** Opaque token the client presents to authenticate. */
-  token: string;
-  /** Human-readable name of the host, shown before pairing completes. */
-  displayName?: string;
-  /** Wire version of this payload. */
-  v: 1;
-}
-
-export const PAIRING_URI_SCHEME = "envoy";
-
-/** Build the `envoy://pair?...` URI a QR code encodes. */
-export function buildPairingUri(payload: PairingPayload): string {
-  const params = new URLSearchParams();
-  params.set("v", String(payload.v));
-  params.set("ws", payload.wsUrl);
-  params.set("tok", payload.token);
-  if (payload.displayName) params.set("name", payload.displayName);
-  return `${PAIRING_URI_SCHEME}://pair?${params.toString()}`;
-}
-
-/**
- * Parse a pairing URI back. Returns `null` for anything that is not one, so a
- * scanner can reject a foreign QR code without a thrown error.
- */
-export function parsePairingUri(uri: string): PairingPayload | null {
-  let parsed: URL;
+export function parsePairingUri(uri: string): PairWithHomeNodeParams | null {
   try {
-    parsed = new URL(uri);
+    return parseEnvoyPairUri(uri);
   } catch {
     return null;
   }
-  if (parsed.protocol !== `${PAIRING_URI_SCHEME}:` || parsed.hostname !== "pair") return null;
-  const wsUrl = parsed.searchParams.get("ws") ?? "";
-  const token = parsed.searchParams.get("tok") ?? "";
-  const version = Number(parsed.searchParams.get("v"));
-  if (!wsUrl || !token || version !== 1) return null;
-  const displayName = parsed.searchParams.get("name");
-  return { wsUrl, token, v: 1, ...(displayName ? { displayName } : {}) };
 }
 
 // ─── the host ───────────────────────────────────────────────────────────────
@@ -167,8 +170,8 @@ export interface ReuseHost {
   readonly path: string;
   /** Serve using the given node surface. Throws without `sessionIdentity`/`dispatch`. */
   serve(nodeService?: HostNodeService): void;
-  /** The pairing URI for the running host, using the given token. */
-  pairingUri(token: string): string;
+  /** The pairing URI for the running host, using the given token and identity. */
+  pairingUri(token: string, identity: { ownerPublicKey: string; ownerId: string }): string;
   /** Stop serving, if started. */
   stop(): void;
 }
@@ -200,12 +203,16 @@ export function createReuseHost(options: ReuseHostOptions): ReuseHost {
       });
       started = true;
     },
-    pairingUri(token: string) {
+    /**
+     * The pairing URI for the running host. `ownerPublicKey`/`ownerId` are the
+     * product's identity and arrive through `identity`, not from this package.
+     */
+    pairingUri(token: string, identity: { ownerPublicKey: string; ownerId: string }) {
       return buildPairingUri({
-        v: 1,
         wsUrl: `ws://127.0.0.1:${options.port}${path}`,
         token,
-        ...(options.displayName ? { displayName: options.displayName } : {}),
+        ownerPublicKey: identity.ownerPublicKey,
+        ownerId: identity.ownerId,
       });
     },
     stop() {

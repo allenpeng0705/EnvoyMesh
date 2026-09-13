@@ -512,6 +512,9 @@ importers:
 
   packages/reuse-host:
     dependencies:
+      '@envoymesh/api':
+        specifier: 0.5.0
+        version: link:../api
       '@envoymesh/harness':
         specifier: 0.5.0
         version: link:../harness

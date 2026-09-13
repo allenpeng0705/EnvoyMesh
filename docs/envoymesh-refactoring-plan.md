@@ -1371,6 +1371,25 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 
 **Recommended order**, cheapest true unblock first: (1) the harness contract-symbol move — it is small, it is the V4 requirement, and it does not depend on the `api` decision; (2) re-measure, then decide the `api/core` subpath with real numbers; (3) the kernel `productStoreDir` gate as its own step; (4) the TS reuse host, which then becomes the acceptance test for all of it.
 
+#### 8.17.9 The pairing contract is shared — one QR format, two products
+
+§8.17.8 found the reason a second product could not use EnvoyMesh's pairing code: `PairingPayload` and `PairWithHomeNodeParams` were declared in `ws-protocol.ts`, the product-bound module that carries the RPC union, and `pairing-token.ts` / `envoy-pair-uri.ts` each imported **one type** from it. Two type imports were the entire coupling, and they made the token codec and the URI builder product-bound too.
+
+Both interfaces — plain data, no dependencies — now live in `protocol/src/pairing-contract.ts`, `@envoymesh/api` re-exports them, and the two api modules import from `protocol`. Measured effect:
+
+| | before | after |
+|---|---|---|
+| `pairing-token.ts`, `envoy-pair-uri.ts` | `product-bound` | **`reusable`** |
+| modules | 805 | 806 |
+| reusable / product-bound | 549 / 256 | **552 / 254** |
+| `api/core` modules re-exported | 106 | **109** |
+
+**`@envoymesh/reuse-host` now speaks the product's format rather than its own.** Its local payload is gone; it builds the `envoy://pair?…` query that EnvoyMesh's parser reads, and its test asserts the interoperability directly: *a URI built by this package is parsed by `parseEnvoyPairUri`* — because a QR code only its issuing product can read is not a pairing code. The compressed token codec came along with the contract, so a second product's tokens decode in the product.
+
+Two details worth recording, because both were mine: the test's reuse check was too coarse for a **subpath** import — it demanded that every module of `@envoymesh/api` be reusable, when `api/core` is precisely the declared entry point *of* a package that still holds product-bound modules. It now checks the entry point for a subpath and the whole package for a root specifier, which is rules 6a/6b stated in a test. And a line-slicing edit of the test file destroyed two of its tests; the file was restored from git and rewritten with anchored text replacements.
+
+**§8.17.8's second open item is closed by the same change.** The question was what to do with `local-store`'s subpath discipline once its product modules had moved out; the answer is that there is nothing left to discipline — the package declares a single entry point (`.`) that is `reusable`, nothing imports a subpath, and rule 6b would fail if a product-bound module were ever re-exported from that entry point again.
+
 #### 8.17.8 The second product exists — `@envoymesh/reuse-host`
 
 The acceptance test proved a core-only consumer can boot a host; this is the artifact a reviewer asked for instead of a test: a real package, with its own `package.json`, project references, workspace entries and lockfile lines, that a product which is *not* EnvoyMesh social can depend on.

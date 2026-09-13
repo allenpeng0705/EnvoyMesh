@@ -108,6 +108,9 @@ export * from "./discovery-privacy.js";
 export type { UnsignedDiscoveryReferralAttestation } from "./discovery-referral-attestation.js";
 export * from "./sync-state.js";
 export * from "./ws-protocol.js";
+// Explicit rather than star-only: `ws-protocol.js` is product-bound and stays out of
+// `api/core`, so the shared pairing payloads are re-exported from `protocol` directly.
+export type { PairingPayload, PairWithHomeNodeParams } from "@envoymesh/protocol";
 // Explicit rather than `export *`: `ws-protocol.js` re-exports these two as well,
 // and two star-exports of the same name is TS2308. The explicit form wins, and
 // it is what puts them on `@envoymesh/api/core` (that file is filtered from this

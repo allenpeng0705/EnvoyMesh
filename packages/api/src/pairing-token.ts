@@ -25,7 +25,11 @@
  *   tok  — token
  */
 
-import type { PairingPayload } from "./ws-protocol.js";
+// From `@envoymesh/protocol`, not `./ws-protocol.js`: the payload contract moved
+// there, and importing it from the product-bound module made this file
+// product-bound too — which is the whole reason a second product could not
+// speak the same QR format.
+import type { PairingPayload } from "@envoymesh/protocol";
 
 // ─── Encoding ────────────────────────────────────────────────────────────────
 

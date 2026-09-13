@@ -14,8 +14,8 @@
  * any part of it was tainted.
  *
  * This entry point is the alternative. It re-exports **only** the modules the
- * Axis-1 manifest calls `reusable` (106 of the barrel's 134 re-export
- * statements; 28 product-bound modules are deliberately absent — `NodeService`
+ * Axis-1 manifest calls `reusable` (109 of the barrel's 135 re-export
+ * statements; 26 product-bound modules are deliberately absent — `NodeService`
  * itself among them). A reusable module can therefore import the contract it
  * needs from `@envoymesh/api/core`, while importing `@envoymesh/api` still
  * means "the whole product surface" and still taints.
@@ -38,6 +38,8 @@ export * from "./rag-index-status.js";
 export * from "./chat-model-probe.js";
 export * from "./auto-reply-limits.js";
 export * from "./agent-circle.js";
+export * from "./envoy-pair-uri.js";
+export * from "./pairing-token.js";
 export * from "./envoy-contact-link.js";
 export * from "./envoy-url.js";
 export * from "./setup-sponsor-friend.js";
@@ -102,6 +104,7 @@ export * from "./discovery-hop.js";
 export * from "./discovery-privacy.js";
 export type { UnsignedDiscoveryReferralAttestation } from "./discovery-referral-attestation.js";
 export * from "./sync-state.js";
+export type { PairingPayload, PairWithHomeNodeParams } from "@envoymesh/protocol";
 export type { ModelProviderConfig, ModelProviderMode } from "./model-provider-config.js";
 export * from "./terminal.js";
 export * from "./terminal-agent.js";
