@@ -38,7 +38,7 @@ import {
   parseFamilyThreadKey,
 } from "@envoymesh/api"
 import type { FamilyRoomStore } from "@envoymesh/local-store"
-import type { FamilyProfileStore } from "@envoymesh/local-store/family-profile-store"
+import type { FamilyProfileStore } from "./family-profile-store.js"
 import { getRpcCaller, type RpcCallerContext } from "./rpc-caller-context.js"
 
 /** EM-F1 caps. 25 MiB per file; reads default to 1 MiB slices. */

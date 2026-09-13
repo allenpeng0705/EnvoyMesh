@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { createFamilyProfileStore } from "@envoymesh/local-store/family-profile-store"
+import { createFamilyProfileStore } from "../src/family-profile-store.js"
 import { runWithRpcCaller } from "../src/rpc-caller-context.js"
 import {
   createFamilyProfileViaRuntime,

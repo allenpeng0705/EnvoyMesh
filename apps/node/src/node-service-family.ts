@@ -17,8 +17,8 @@ import type {
 } from "@envoymesh/api"
 import { threadVisibleTo } from "@envoymesh/api"
 import type { FamilyRoomStore, LocalChatLogStore } from "@envoymesh/local-store"
-import type { FamilyProfileRecord, FamilyProfileStore } from "@envoymesh/local-store/family-profile-store"
-import type { SessionTokenStore } from "@envoymesh/local-store/session-token-store"
+import type { FamilyProfileRecord, FamilyProfileStore } from "./family-profile-store.js"
+import type { SessionTokenStore } from "./session-token-store.js"
 import { getRpcCaller, requireOwnerProfile } from "./rpc-caller-context.js"
 import { reviewFamilyInviteToken } from "./review-pairing.js"
 

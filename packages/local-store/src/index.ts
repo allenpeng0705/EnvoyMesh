@@ -2904,14 +2904,13 @@ export * from "./cost-rollup-store.js";
 export * from "./chain-recipes-store.js";
 export * from "./sensitivity-overrides.js";
 
-// ─── deliberately NOT re-exported ────────────────────────────────────────────
+// ─── moved out, not merely hidden ────────────────────────────────────────────
 // `family-profile-store.ts` and `session-token-store.ts` name a product concept
 // (`FamilyProfile`, `boundFamilyProfileId`), so they are `product-bound` under
-// Axis 1 — and while they were re-exported here, this barrel reached product code
-// too, which made the whole package's declared core status a lie. They live
-// behind their own declared subpaths instead:
+// Axis 1. While they lived here, this package's barrel reached product code and
+// its declared core status was a lie; behind declared subpaths it was honest but
+// still the only product code in a shared library.
 //
-//     import { createFamilyProfileStore } from "@envoymesh/local-store/family-profile-store";
-//     import { createSessionTokenStore } from "@envoymesh/local-store/session-token-store";
-//
-// Importing *this* entry point can no longer reach them.
+// They now live with the product that uses them (`apps/node/src/`), which is
+// where Axis 1 says a product-bound module belongs. Nothing in this package can
+// reach them, and the package has no product-bound module at all.

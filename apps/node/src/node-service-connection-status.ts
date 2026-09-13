@@ -6,7 +6,7 @@ import type {
   ConnectionStatus,
   OpenClawStatus,
 } from "@envoymesh/api";
-import type { SessionTokenRecord } from "@envoymesh/local-store/session-token-store";
+import type { SessionTokenRecord } from "./session-token-store.js";
 
 export interface ConnectionStatusContext {
   /** The last-error context string (or undefined). */

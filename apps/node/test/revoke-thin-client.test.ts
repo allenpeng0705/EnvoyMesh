@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import type { SessionTokenRecord } from "@envoymesh/local-store/session-token-store"
+import type { SessionTokenRecord } from "../src/session-token-store.js"
 import type { RevokeThinClientParams } from "@envoymesh/api"
 import { runWithRpcCaller } from "../src/rpc-caller-context.js"
 import {

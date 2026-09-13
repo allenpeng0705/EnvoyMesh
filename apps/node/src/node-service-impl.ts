@@ -337,10 +337,10 @@ import {
   generateAgentIdentity,
 } from "@envoymesh/identity";
 import { createAuditEvent, createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore, createHumanProfileStore, createAgentIdentityStore, createLocalChatLogStore, createLocalChatRoomStore, createLocalChatRoomPendingSyncStore, createLocalChatRoomPendingMessageStore, type LocalChatRoomPendingSyncStore, type LocalChatRoomPendingMessageStore, createLocalAgentActivityStore, createChatDraftStore, createAutoReplyLimitStore, type AutoReplyLimitStore, createTaskRuntimeStateStore, createRelayStateStore, createCapabilityManifestStore, createFamilyRoomStore, createShopStore, createMarketCacheStore, createMarketSearchHistoryStore, createDeviceAuthorizationStore, createAgentCardStore, createContactOwnerKeyStore, createCommerceReceiptStore, type CommerceReceiptStore, createReputationAnchorStore, createMultiHopDiscoveryStore, createLocalPeerReputationStore, type AgentCardStore, type ContactOwnerKeyStore, type ReputationAnchorStore, type MultiHopDiscoveryStore, type MultiHopDiscoverySession, type PeerReputationStore, loadOrCreateNodeProfile, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type LocalChatLogStore, type LocalChatRoomStore, type LocalAgentActivityStore, type ChatDraftStore, type HumanProfileStore, type AgentIdentityStore, type TaskRuntimeStateStore, type RelayStateStore, type CapabilityManifestStore, type FamilyRoomStore, type ShopStore, type MarketCacheStore, type MarketSearchHistoryStore, type DeviceAuthorizationStore, buildMorningReportDigest, createPeerProfileCacheStore, type PeerProfileCacheStore, type CachedPeerProfile, createSocialProxySessionStore, type SocialProxySessionStore, createDocumentAcquisitionJobStore, createCapabilityProviderJobStore, type DocumentAcquisitionJobStore, type CapabilityProviderJobStore, type AuditEvent, type PeerDirectoryRecord } from "@envoymesh/local-store";
-import { createFamilyProfileStore } from "@envoymesh/local-store/family-profile-store";
-import type { FamilyProfileStore } from "@envoymesh/local-store/family-profile-store";
-import { createSessionTokenStore } from "@envoymesh/local-store/session-token-store";
-import type { SessionTokenRecord, SessionTokenStore } from "@envoymesh/local-store/session-token-store";
+import { createFamilyProfileStore } from "./family-profile-store.js";
+import type { FamilyProfileStore } from "./family-profile-store.js";
+import { createSessionTokenStore } from "./session-token-store.js";
+import type { SessionTokenRecord, SessionTokenStore } from "./session-token-store.js";
 import {
   listFamilyProfilesViaRuntime,
   createFamilyProfileViaRuntime,
