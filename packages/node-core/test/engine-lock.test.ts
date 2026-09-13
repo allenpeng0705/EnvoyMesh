@@ -22,6 +22,7 @@ import {
   hasEngineLock,
   readEngineLock,
   releaseEngineLock,
+  processStartedAt,
   releaseEngineLockSync,
 } from "../src/engine-lock.js";
 
@@ -39,6 +40,40 @@ const DEAD_PID = 2_147_483_646;
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+/**
+ * Write a claim the way **another process** would have written it.
+ *
+ * `acquireEngineLock` always records the *calling* process's start time, so it cannot fabricate
+ * a foreign claim: it would pair someone else's pid with our start time, and the pid-reuse guard
+ * would (correctly) reject the pair — which made an earlier version of these tests pass or fail
+ * depending on how long before the worker its parent process had started. Seeding the file is
+ * what a foreign process actually leaves behind: its own pid *and* its own start time.
+ */
+function writeForeignClaim(
+  rootDir: string,
+  claim: { pid: number; app: string; port: number; pidStartedAt?: number; host?: string },
+): void {
+  const file = engineLockPath(rootDir, "chat");
+  mkdirSync(join(rootDir, "runtime"), { recursive: true });
+  writeFileSync(
+    file,
+    `${JSON.stringify(
+      {
+        role: "chat",
+        pid: claim.pid,
+        host: claim.host ?? osHostname(),
+        pidStartedAt: claim.pidStartedAt ?? processStartedAt(claim.pid) ?? currentProcessStartedAt(),
+        app: claim.app,
+        port: claim.port,
+        startedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
 
 describe("engineLockPath", () => {
   it("lives beside the engine assets it guards, under the shared runtime root", () => {
@@ -98,7 +133,7 @@ describe("acquireEngineLock", () => {
     // A *different* live process holds it. `process.pid` would not do: a claim naming this
     // process is re-acquired on purpose (a restart in the same process), which is the
     // neighbouring test. `process.ppid` is alive and is not us.
-    await acquireEngineLock(root, { pid: process.ppid, app: "EnvoyMesh", port: 18790 });
+    writeForeignClaim(root, { pid: process.ppid, app: "EnvoyMesh", port: 18790 });
 
     const second = await acquireEngineLock(root, {
       pid: process.pid,
@@ -130,12 +165,14 @@ describe("acquireEngineLock", () => {
     // Without this check the next start waits out the whole startup timeout and then reports a
     // holder that has nothing to do with the engine.
     const root = tempRoot();
-    const claimedStart = Date.now() - 3_600_000;
-    await acquireEngineLock(root, { pid: process.ppid, app: "EnvoyMesh", port: 18790 }, {
-      processStartTimeOf: () => claimedStart,
+    // The claim says the holder started an hour ago; the OS now says that pid started two
+    // minutes ago. Same pid, different process.
+    writeForeignClaim(root, {
+      pid: process.ppid,
+      app: "EnvoyMesh",
+      port: 18790,
+      pidStartedAt: Date.now() - 3_600_000,
     });
-
-    // Same pid, but the OS now says that pid started two minutes ago: a different process.
     const result = await acquireEngineLock(
       root,
       { pid: process.pid, app: "EnvoyCoder", port: 18790 },
@@ -148,13 +185,14 @@ describe("acquireEngineLock", () => {
 
   it("still honours a live holder whose start time agrees", async () => {
     const root = tempRoot();
-    // The claim records *this* process's real start time (that is what the writer can know), so
-    // "agrees" means the OS reports that same value back within tolerance — the normal case.
-    await acquireEngineLock(root, { pid: process.ppid, app: "EnvoyMesh", port: 18790 });
+    // "Agrees" means the OS reports the recorded start time back within tolerance — the normal
+    // case for a claim that is genuinely alive.
+    const recorded = Date.now() - 60_000;
+    writeForeignClaim(root, { pid: process.ppid, app: "EnvoyMesh", port: 18790, pidStartedAt: recorded });
     const result = await acquireEngineLock(
       root,
       { pid: process.pid, app: "EnvoyCoder", port: 18790 },
-      { processStartTimeOf: () => currentProcessStartedAt() + 1_500 },
+      { processStartTimeOf: () => recorded + 1_500 },
     );
     expect(result.acquired).toBe(false);
     expect(result.acquired === false && result.holder?.app).toBe("EnvoyMesh");
@@ -162,8 +200,11 @@ describe("acquireEngineLock", () => {
 
   it("treats a claim from another host as stale", async () => {
     const root = tempRoot();
-    await acquireEngineLock(root, { pid: process.ppid, app: "EnvoyMesh", port: 18790 }, {
-      hostname: "someone-elses-laptop",
+    writeForeignClaim(root, {
+      pid: process.ppid,
+      app: "EnvoyMesh",
+      port: 18790,
+      host: "someone-elses-laptop",
     });
     // The pid means nothing here — a shared home on a network mount must not block this machine.
     const result = await acquireEngineLock(root, { pid: process.pid, app: "EnvoyMesh", port: 18790 }, {

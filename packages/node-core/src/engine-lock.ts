@@ -32,6 +32,7 @@
  */
 
 import * as nodeFs from "node:fs";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { hostname as osHostname } from "node:os";
 import * as path from "node:path";
@@ -82,26 +83,88 @@ export interface EngineLockInfo {
 }
 
 /**
+ * Parse `ps -o etime=` output (`[[dd-]hh:]mm:ss`) into seconds, or `null` if it is not that.
+ *
+ * Exported because the format is the fiddly part: it is locale-independent (unlike
+ * `ps -o lstart=`, whose date format follows the user's locale and would break parsing on a
+ * non-English machine), and it is the reason macOS can answer this question at all.
+ */
+export function parsePsElapsedSeconds(raw: string): number | null {
+  const text = raw.trim();
+  if (!text) return null;
+  const dash = text.indexOf("-");
+  const days = dash >= 0 ? Number(text.slice(0, dash)) : 0;
+  const clock = dash >= 0 ? text.slice(dash + 1) : text;
+  if (!Number.isFinite(days) || days < 0) return null;
+  const parts = clock.split(":").map((piece) => Number(piece));
+  if (parts.length < 2 || parts.length > 3) return null;
+  if (parts.some((value) => !Number.isFinite(value) || value < 0)) return null;
+  const [a, b, c] = parts;
+  const seconds = parts.length === 3 ? a * 3600 + b * 60 + c : a * 60 + b;
+  return days * 86_400 + seconds;
+}
+
+function psElapsed(pid: number): string | null {
+  try {
+    const out = execFileSync("ps", ["-o", "etime=", "-p", String(pid)], {
+      encoding: "utf8",
+      timeout: 2_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * When a process started, in ms since the epoch, or `null` when this OS cannot say.
  *
- * Linux can (`/proc/<pid>/stat` field 22, clock ticks since boot, plus `btime` from
- * `/proc/stat`); macOS and Windows have no cheap portable equivalent, so the caller falls back
- * to plain pid liveness there — which is what the code did everywhere before, and is correct
- * except under pid reuse. Returning `null` means "cannot tell", never "not alive".
+ * Three answers, in order of how much we can trust them:
+ *
+ *   * **Linux** — `/proc/<pid>/stat` field 22 (clock ticks since boot) plus `btime` from
+ *     `/proc/stat`. Exact and cheap.
+ *   * **macOS / BSD / other POSIX** — `ps -o etime=` (elapsed), subtracted from now. Good to a
+ *     second, which is why the comparison tolerance is five. This is what makes the pid-reuse
+ *     guard work on the platform this project is developed on, rather than only on CI.
+ *   * **Windows** — `null`: there is no cheap, dependable equivalent, so there the guard falls
+ *     back to plain pid liveness (documented, not silent).
+ *
+ * Returning `null` means "cannot tell", never "not alive".
  */
-export function processStartedAt(pid: number, readFile: (path: string) => string = (p) => readFileSync(p, "utf8")): number | null {
-  if (process.platform !== "linux") return null;
+export function processStartedAt(
+  pid: number,
+  opts: {
+    readFile?: (path: string) => string;
+    elapsed?: (pid: number) => string | null;
+    now?: number;
+  } = {},
+): number | null {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  const readFile = opts.readFile ?? ((p: string) => readFileSync(p, "utf8"));
+  if (process.platform === "linux") {
+    try {
+      const stat = readFile(`/proc/${pid}/stat`);
+      // Field 22, 1-indexed, after the comm field — which itself may contain spaces and parens,
+      // so everything up to the last ')' is stripped first.
+      const afterComm = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      const startTicks = Number(afterComm[19]);
+      if (!Number.isFinite(startTicks)) return null;
+      const btime = /btime (\d+)/.exec(readFile("/proc/stat"))?.[1];
+      if (!btime) return null;
+      // CLK_TCK is 100 on every platform Linux supports in practice.
+      return (Number(btime) + startTicks / 100) * 1000;
+    } catch {
+      return null;
+    }
+  }
+  if (process.platform === "win32") return null;
   try {
-    const stat = readFile(`/proc/${pid}/stat`);
-    // Field 22, 1-indexed, after the comm field — which itself may contain spaces and parens,
-    // so everything up to the last ')' is stripped first.
-    const afterComm = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-    const startTicks = Number(afterComm[19]);
-    if (!Number.isFinite(startTicks)) return null;
-    const btime = /btime (\d+)/.exec(readFile("/proc/stat"))?.[1];
-    if (!btime) return null;
-    // CLK_TCK is 100 on every platform Linux supports in practice.
-    return (Number(btime) + startTicks / 100) * 1000;
+    const raw = (opts.elapsed ?? psElapsed)(pid);
+    if (raw === null) return null;
+    const seconds = parsePsElapsedSeconds(raw);
+    if (seconds === null) return null;
+    return (opts.now ?? Date.now()) - seconds * 1000;
   } catch {
     return null;
   }
