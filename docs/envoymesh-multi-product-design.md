@@ -1,6 +1,6 @@
 # EnvoyMesh family — multi-product packaging design
 
-**Status:** design agreed in outline; **S0, S1 and S2 done; S3 started** (§13) · **Owner:** product / packaging · **Created:** 2026-09-12
+**Status:** design agreed in outline; **S0, S1, S2 and D4 done; S3 started** (§13) · **Owner:** product / packaging · **Created:** 2026-09-12
 
 > **Building a new app?** Start with `docs/envoymesh-new-app-guide.md` — the how-to for a new product (desktop + mobile), including the family rules it must not break and the upstream sync procedure. This document is the *why*: the decisions and the measurements behind them.
 >
@@ -76,6 +76,20 @@ The rule is already a type in the tree: `packages/models/src/index.ts:45` — `e
 - **`cloud` / `peer`** → **never shared.** Each app keeps its own provider config and credentials; "sharing" a cloud key across apps would mean one app's quota and one app's revocation surface controlling another's.
 
 **An app must be able to tell whether the local engine is running when its own model setting is local.** The mechanism exists: `apps/node/src/envoy-local-runtime.ts:951` already probes **`/v1/models`** (`"[envoy-local] watchdog: /v1/models unreachable — restarting chat sidecar"`), and `packages/node-core/src/service-ports.ts` fixes the endpoints (`ENVOY_LOCAL_PORT` 18790 chat, `ENVOY_LOCAL_EMBED_PORT` 18791 embeddings, both offsettable).
+
+### D4 — The Envoy Harness is a peer, not a component EnvoyMesh distributes
+
+D1–D3 say what the family **shares**. D4 says what it deliberately does **not** hand around.
+
+**The rule.** `@envoymesh/envoy-harness*` (the sibling checkout: `envoy-harness`, `-adapter`, `-peer`, `-client`) is a **peer** of every product in the family. EnvoyMesh keeps its own `file:../envoy-harness/…` link because it cannot run without it, but that link is a **local development arrangement, not a distribution channel**. A product that wants the harness — EnvoyCoder, EnvoyAgent, anything later — **clones or copies `envoy-harness` directly**, exactly as EnvoyMesh does.
+
+**Why.** (a) If EnvoyCoder reached the harness *through* EnvoyMesh, EnvoyCoder would depend on **this repo** for somebody else's package, and inherit this repo's release cadence for code this repo does not own — the same coupling D1 exists to remove. (b) It would make EnvoyMesh a de-facto registry that nothing tests as one: the link is created by a local checkout, so "EnvoyMesh ships the harness" would be true on my machine and false on a fresh clone. (c) Vendoring it here inverts ownership: this repo would then be the place the harness is fixed, and its upstream would become a fork.
+
+**What EnvoyMesh owes the family instead is an honest failure.** **Sixteen static value imports across ten files sit on the node's boot path** — measured with the TypeScript parser, walking static relative imports from `apps/node/src/index.ts` (429 files reachable): `node-service-impl.ts` (×3), `agent-runtime-envoy/persistent-acp-host.ts` (×2), `node-service-setup-sponsor-friend.ts`, `envoy-harness-workspace.ts`, `agent-runtime-envoy/factory.ts`, `agent-runtime-envoy/manifest.ts`, `agent-runtime-envoy/local-runtime-registry.ts` (×2), `agent-runtime-envoy/runtime.ts` (×2), `agent-runtime-envoy/bridge-to-envoy-harness-skill.ts`, `agent-runtime-envoy/acp-host.ts` (×2). Across the workspace there are 19 such imports in 13 files (8 more are type-only and erased), and the boot path is what decides whether the process starts. So a missing sibling surfaced as `ERR_MODULE_NOT_FOUND` from four directories deep inside a `file:` path — the same test-path/run-path split that made S0 necessary (§2). `scripts/check-peer-deps.mjs` now resolves all four packages ahead of the dev entry points and, on failure, names the missing package, distinguishes "no link" from "link exists, no built entry", and prints the clone + build commands. It prints the counts it measured, and **fails if the sources import a harness package it does not check** — reporting OK for a package nobody resolved would be worse than not checking. Wired into `npm run node:dev` and `ci-node-hermetic.yml`.
+
+**Rejected: making the imports lazy.** It would turn `node-service-impl.ts`'s call sites `async` — an invasive change to product code for a condition that only affects a **dev checkout**; the packaged desktop app stages the harness bundle at build time and is never affected. Recorded because it is the obvious alternative and it was measured, not assumed.
+
+**How those numbers were established — and got wrong three times.** The figures above are the ones the log entry (§13, D4) records the history of; treat them as measured, not estimated.
 
 ## 4. The shared root
 
@@ -197,6 +211,7 @@ The owner's rule: **check the common place; tell the user a profile exists; let 
 | **S2** ✅ | The discovery dialog: found / none / damaged / in-use, with end-user wording | ✅ all five states modelled (`profile-discovery.ts`, 13 tests); ✅ the node's damaged *and* in-use paths; ◻ the dialog rendering belongs to a product UI |
 | **S3** ◐ | `lock` + `node.json` + attach; health identity; ownership-checked supervisor cleanup | ✅ lock, endpoint, identity probe, refusal of a second owner (16 tests + a two-process run); ◻ attach (token exchange + client); ◻ `/health` carrying identity; ◻ the Rust supervisor's kill-by-port |
 | **S4** | Shared local engine: assets to `runtime/`, `/v1/models` probe, spawn lock, model lease; embeddings first | Second app uses the running engine instead of spawning one; a racing start is resolved by the lock |
+| **D4** ✅ | The harness stays a **peer** (§3, D4): every product clones or copies `envoy-harness` itself; EnvoyMesh makes a missing one legible instead of vendoring it | ✅ `scripts/check-peer-deps.mjs` resolves all four packages, prints what it measured, and fails if the sources import one it does not check; wired into `npm run node:dev` + `ci-node-hermetic.yml`; 8 seeded tests in `scripts/test/gates.test.mjs`, and the CI-shaped case (no sibling) verified (§13) |
 
 ## 11. What this design does not change
 
@@ -653,3 +668,33 @@ Two things the seeded suite and a read-through found after S2 was written:
                         Env: ENVOYMESH_HOME (the whole home) or ENVOYMESH_PROFILE (this directory);
                         the flag also exists because npm eats --flags on Windows.
 ```
+
+### D4 ✅ — the harness stays a peer, and its absence becomes legible (2026-09-13)
+
+**The decision (§3, D4).** `@envoymesh/envoy-harness*` is a peer of the whole family: each product clones or copies `envoy-harness` itself. EnvoyMesh keeps its own `file:` link for local development but is not the distribution channel, and will not vendor it.
+
+**What was actually done, and why only this much.** The gap D4 creates is a *dev-checkout* gap: a fresh clone with no sibling gets `ERR_MODULE_NOT_FOUND` from four directories deep inside a `file:` path — the failure shape that made S0 necessary (§2), where the suite stayed green while the real process could not start. `scripts/check-peer-deps.mjs` closes it:
+
+| Situation | What the developer sees now |
+|---|---|
+| all four resolvable | `peer import scan: 4 harness package(s) imported by 19 value import(s) in 13 file(s)` then `peer dependencies OK (…)` — exit 0 |
+| link absent | each missing package, `(no link)`, the expected entry, the clone + `npm run build:envoy-harness` commands — exit 1 |
+| link present, never built | the same report, but `(link exists, but no built entry)` — the two cases have different fixes |
+| a fifth `@envoymesh/envoy-harness-*` imported | `A harness package is imported but not covered by this check` — exit 1, with the list to add it to |
+
+It is wired into `npm run peer:deps:check` and therefore ahead of `npm run node:dev`, and into `ci-node-hermetic.yml` before the module-size lint.
+
+**Verified by doing it, not by reading the script.** Hid the five `node_modules/@envoymesh/envoy-harness*` links and re-ran: exit 1 with the actionable report, naming each package and the `no link` case. Restored them and re-ran: exit 0. The first restore silently did **not** complete (the two steps ran in one shell and the failure path exited first), so the links were confirmed back in place by listing them and by the exit-0 re-run — a reminder that this refactor's own rule applies to its tooling: check the artifact, not the intent. The CI case was verified too: with the links hidden, `node --test scripts/test/gates.test.mjs` still passes 44/44, because the seeded tests assert on the scan line and the coverage verdict rather than on an exit code that a machine without the sibling cannot have.
+
+**The number in this entry was wrong three times, and the third error found the gate.** "How many places can fail at run time" is the claim the whole entry rests on:
+
+| Attempt | Claimed | Why it was wrong |
+|---|---|---|
+| first draft | "seven value imports across six files", listing `developer-cli.ts` and `harness-submit-transport.ts` as boot-path files | neither file is statically reachable from `index.ts`; `acp-host.ts` and `persistent-acp-host.ts` are, and were missing from the list |
+| a regex scan of the workspace | 23 value imports / 16 files | the regex let an import body span a statement with no `from` clause (a side-effect `import "./x.js";`), so a match began at one statement and picked up the next one's specifier |
+| a regex walk of the boot path | 9 value imports / 5 files, 418 files reachable | same regex, same defect, and now undercounting |
+| **the TypeScript parser** | **19 value imports / 13 files; 16 of them on the boot path across 10 files; 429 files reachable; 8 type-only** | — |
+
+The lesson is not "use a parser"; it is the one this document keeps rediscovering — a number is a claim, and the *instrument* needs checking as much as the claim. The third error only surfaced because the second was used to write the coverage gate, and that gate's seeded test disagreed with it. Two things now keep it honest: the check prints the counts it measured, so drift is visible on every `node:dev`, and `scripts/test/gates.test.mjs` seeds the case that fails on the unbounded-regex version of the scan (confirmed by reintroducing the bound's removal: exactly one test fails).
+
+**Rejected alternative, measured rather than assumed.** Making the sixteen boot-path value imports lazy removes the failure entirely. It also makes `node-service-impl.ts`'s call sites `async` — invasive product-code churn for a condition that only affects a dev checkout, since the packaged desktop app stages the harness bundle at build time. The check therefore buys the legibility D4 promises without touching product behaviour, which is the smaller change and the one that keeps the promise honest.

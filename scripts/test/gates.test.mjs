@@ -816,3 +816,100 @@ test("comment stripping: directives survive, prose does not", () => {
   const identifiers = stripCommentsAndStrings(source);
   assert.doesNotMatch(identifiers, /@envoymesh\//);
 });
+
+// ─── the peer-dependency check ──────────────────────────────────────────────
+
+const PEER_DEPS = path.join(repoRoot, "scripts", "check-peer-deps.mjs");
+
+/**
+ * Run the peer check over a fixture source root. The fixture has no `node_modules`, and the
+ * resolution half always inspects the *real* repo root — which has no harness sibling in CI —
+ * so these tests assert on the scan line and the coverage verdict, never on the exit code
+ * (except where coverage fails first and decides it).
+ */
+async function runPeerDeps(sourceRoot) {
+  const env = { ...process.env, PEER_DEPS_SOURCE_ROOT: sourceRoot };
+  try {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [PEER_DEPS], { cwd: repoRoot, env });
+    return { code: 0, stdout, stderr };
+  } catch (error) {
+    return { code: error.code ?? 1, stdout: error.stdout ?? "", stderr: error.stderr ?? "" };
+  }
+}
+
+async function peerFixture(source) {
+  const dir = await tmp("peer-deps-");
+  await write(path.join(dir, "index.ts"), source);
+  return dir;
+}
+
+test("peer-deps: an imported harness package the check does not cover fails", async () => {
+  const dir = await peerFixture('import { x } from "@envoymesh/envoy-harness-brandnew";\n');
+  const { code, stderr } = await runPeerDeps(dir);
+  assert.equal(code, 1);
+  assert.match(stderr, /not covered by this check/);
+  assert.match(stderr, /@envoymesh\/envoy-harness-brandnew/);
+  assert.match(stderr, /Add it to PEERS/);
+});
+
+test("peer-deps: a covered harness package passes the coverage gate", async () => {
+  const dir = await peerFixture('import { x } from "@envoymesh/envoy-harness-adapter";\n');
+  const { stdout, stderr } = await runPeerDeps(dir);
+  assert.doesNotMatch(stderr, /not covered by this check/);
+  assert.match(stdout, /^peer import scan: 1 harness package\(s\) imported by 1 value import\(s\) in 1 file\(s\)$/m);
+});
+
+test("peer-deps: a type-only import is erased, so an unlisted one is not a failure", async () => {
+  const dir = await peerFixture('import type { T } from "@envoymesh/envoy-harness-brandnew";\n');
+  const { stderr } = await runPeerDeps(dir);
+  assert.doesNotMatch(stderr, /not covered by this check/);
+});
+
+test("peer-deps: a side-effect import does not swallow the next statement", async () => {
+  // Without the `[^;]*?` bound on the import body, a match starting at a side-effect
+  // statement (which carries no `from`) absorbs the statement after it, and the `type`
+  // keyword inside that absorbed text is never seen — so a *type-only* import is
+  // misread as a value import and reported as an uncovered package. The bound keeps
+  // each statement's own `type` marking attached to its own specifier. Verified by
+  // reintroducing the unbounded body: this test is the only one that fails.
+  const dir = await peerFixture(
+    ['import "./setup.js";', 'import type { T } from "@envoymesh/envoy-harness-brandnew";', ""].join("\n"),
+  );
+  const { stderr } = await runPeerDeps(dir);
+  assert.doesNotMatch(stderr, /not covered by this check/);
+});
+
+test("peer-deps: the same statement is still read correctly without the side-effect import", async () => {
+  // The control for the test above: on its own, the type-only import is erased.
+  const dir = await peerFixture('import type { T } from "@envoymesh/envoy-harness-brandnew";\n');
+  const { stderr } = await runPeerDeps(dir);
+  assert.doesNotMatch(stderr, /not covered by this check/);
+});
+
+test("peer-deps: a value import after a side-effect import is still caught", async () => {
+  // The bound must not be so tight that it hides a real value import.
+  const dir = await peerFixture(
+    ['import "./setup.js";', 'import { x } from "@envoymesh/envoy-harness-brandnew";', ""].join("\n"),
+  );
+  const { stderr } = await runPeerDeps(dir);
+  assert.match(stderr, /@envoymesh\/envoy-harness-brandnew/);
+});
+
+test("peer-deps: the real tree is covered (every harness import is a checked package)", async () => {
+  const { stdout, stderr } = await runPeerDeps(undefined);
+  assert.doesNotMatch(stderr, /not covered by this check/);
+  assert.match(stdout, /^peer import scan: 4 harness package\(s\) imported by 19 value import\(s\) in 13 file\(s\)$/m, `${stdout}${stderr}`);
+  // The count is measured, not invented: it is the number the design doc quotes, so a
+  // mismatch here means the doc is wrong — which is how the first three counts were caught.
+});
+
+test("peer-deps: the scan ignores node_modules and build output", async () => {
+  const dir = await tmp("peer-deps-skip-");
+  await write(path.join(dir, "index.ts"), 'import { x } from "@envoymesh/envoy-harness";\n');
+  await write(path.join(dir, "node_modules/dep/index.ts"), 'import { y } from "@envoymesh/envoy-harness-brandnew";\n');
+  await write(path.join(dir, "dist/index.ts"), 'import { z } from "@envoymesh/envoy-harness-brandnew";\n');
+  const { stdout, stderr } = await runPeerDeps(dir);
+  assert.doesNotMatch(stderr, /not covered by this check/);
+  assert.match(stdout, /1 value import\(s\) in 1 file\(s\)/);
+});
+

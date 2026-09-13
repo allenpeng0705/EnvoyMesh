@@ -258,6 +258,34 @@ node scripts/generate-core-surface.mjs           # if you touched the RPC surfac
 npx tsc -b && npx vitest run
 ```
 
+### 7.5 The Envoy Harness is a peer — clone it, do not get it from EnvoyMesh
+
+Everything in §7.2 assumes the thing you need is **core**, so vendoring or `file:`-linking *this* repo is the right move. `@envoymesh/envoy-harness*` is the one exception, and the rule is explicit:
+
+> **A product that wants the Envoy Harness clones or copies `envoy-harness` directly — never through EnvoyMesh's link, and never vendored into EnvoyMesh.**
+
+EnvoyMesh keeps its own `file:../envoy-harness/…` link because it needs the harness to run at all; that link is a **local development arrangement, not a distribution channel**. If EnvoyCoder reached the harness *through* EnvoyMesh, then EnvoyCoder would depend on this repo for someone else's package — and inherit this repo's release cadence for code this repo does not own.
+
+The task is entirely yours to do:
+
+```bash
+git clone <envoy-harness> ../envoy-harness        # sibling, or anywhere you like
+# then point your OWN package.json at YOUR copy:
+#   "@envoymesh/envoy-harness": "file:../envoy-harness/packages/envoy-harness"
+npm run build:envoy-harness                        # its build, not ours
+```
+
+Both harness names exist, and they are different things:
+
+| Name | What it is | How to get it |
+|---|---|---|
+| `@envoymesh/harness` | **in-repo package** — ext-agent adapters + Pi runtime, extracted from `apps/node`; declared core, classified `reusable` | it is part of the core you vendor (§7.2) |
+| `@envoymesh/envoy-harness*` | **external sibling checkout** — `envoy-harness`, `-adapter`, `-peer`, `-client` | clone/copy it yourself, per this section |
+
+**What EnvoyMesh owes you is an honest failure, not a working import.** Sixteen static *value* imports across ten files sit on the node's **boot path** — measured with the TypeScript parser, walking static relative imports from `apps/node/src/index.ts` (429 files reachable): `node-service-impl.ts` (×3), `agent-runtime-envoy/persistent-acp-host.ts` (×2), `node-service-setup-sponsor-friend.ts`, `envoy-harness-workspace.ts`, `agent-runtime-envoy/factory.ts`, `agent-runtime-envoy/manifest.ts`, `agent-runtime-envoy/local-runtime-registry.ts` (×2), `agent-runtime-envoy/runtime.ts` (×2), `agent-runtime-envoy/bridge-to-envoy-harness-skill.ts`, `agent-runtime-envoy/acp-host.ts` (×2). Across the workspace there are 19 such imports in 13 files (8 more are type-only and erased). It is the boot path that decides whether the process starts at all — so a missing harness surfaces as `ERR_MODULE_NOT_FOUND` from four directories deep inside a `file:` path, before any of it runs. `node scripts/check-peer-deps.mjs` runs ahead of that — it resolves the four packages, prints the counts it measured (so a stale number in this guide is visible), and on failure prints exactly which package is missing, whether the link or only the build output is absent, and the clone + build commands above. It also **refuses to check a subset**: import a fifth `@envoymesh/envoy-harness-*` package and it fails rather than reporting OK for something nobody resolved. Wired into `npm run node:dev` and into `ci-node-hermetic.yml`, so the reason arrives before the four-second stack trace does.
+
+Making those imports lazy was the alternative, and it was rejected: it would turn `node-service-impl.ts`'s call sites async — a large, invasive change to product code for a condition that only affects a **dev checkout**. The packaged desktop app stages the harness bundle at build time and is never affected.
+
 ## 8. Definition of done
 
 - [ ] `node scripts/check-workspace-wiring.mjs` — clean across all workspaces
@@ -265,6 +293,7 @@ npx tsc -b && npx vitest run
 - [ ] `node scripts/check-module-boundary.mjs` — rules 1–6 pass
 - [ ] `node scripts/inventory-node-stores.mjs --check` — your stores grouped, 0 ungated
 - [ ] `node scripts/generate-core-surface.mjs --check` — generated artifacts current
+- [ ] If your app imports the Envoy Harness: `node scripts/check-peer-deps.mjs` resolves it from **your own** clone, not from EnvoyMesh's link (§7.5)
 - [ ] `npx tsc -b` — 0 errors, and **`vite build`** for any web UI (a green unit suite does not prove a bundle builds)
 - [ ] `npx vitest run` — the whole suite, and check the **collected file count**, not just the exit code
 - [ ] **Run the real thing**: your app attaching to a real node, over loopback, and from the LAN (which must be refused a tokenless call)

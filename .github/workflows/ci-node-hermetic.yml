@@ -30,6 +30,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # The harness is a peer, not a dependency of this repo: fail with instructions here
+      # rather than with ERR_MODULE_NOT_FOUND from inside a `file:` path mid-test-run.
+      - name: Peer dependencies (envoy-harness) resolve
+        run: node scripts/check-peer-deps.mjs
+
       - name: Module-size lint (Codex LOC rule)
         run: node scripts/check-module-size.mjs apps/node/src packages/host-connect/src packages/harness/src packages/api/src packages/reuse-host/src packages/node-core/src
 
