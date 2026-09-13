@@ -24,6 +24,8 @@ import {
   productScopeKey,
   resolveAppName,
 } from "../src/product-attach.js";
+// The rule itself moved to `@envoymesh/protocol` (browser-safe) and is re-exported
+// here for node-side consumers; this test keeps the re-export path working.
 
 describe("product scopes", () => {
   it("encodes and decodes a product name", () => {

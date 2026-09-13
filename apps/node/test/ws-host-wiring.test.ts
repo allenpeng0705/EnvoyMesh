@@ -69,8 +69,18 @@ function localReq(url: string) {
   return { url, socket: { remoteAddress: "127.0.0.1" } };
 }
 
-function session(scopeKey: string): HostSession<Caller> {
-  return { scopeKey, ownerId: "acct-1", isOwnerScope: false, caller: { tag: scopeKey } };
+function session(scopeKey: string, opts: { owner?: boolean } = {}): HostSession<Caller> {
+  return {
+    scopeKey,
+    ownerId: "acct-1",
+    // Default false: most tests here are about what a *non-owner* session may do.
+    // Socket methods are the exception — they hand over a live stream (a terminal, an
+    // agent core) and the transport requires the owner's scope for them, so the tests
+    // about *wiring* that port use an owner session, and the refusal of everyone else
+    // lives in `packages/host-connect/test/access-gate.test.ts`.
+    isOwnerScope: opts.owner === true,
+    caller: { tag: scopeKey },
+  };
 }
 
 const servers: WsServer<Caller>[] = [];
@@ -267,7 +277,7 @@ describe("socket methods run after the gate and before the dispatcher", () => {
       return true;
     });
     const { api } = makeServer({
-      resolveSession: async () => session("dad"),
+      resolveSession: async () => session("owner", { owner: true }),
       socketMethods: { handle: handle as never },
     });
     const ws = new FakeSocket();
@@ -278,7 +288,7 @@ describe("socket methods run after the gate and before the dispatcher", () => {
     expect(seen[0]?.connection).toBe(ws);
     expect(seen[0]?.method).toBe("homeClawCoreWsSend");
     expect(seen[0]?.params).toEqual({ text: "hi" });
-    expect((seen[0]?.session as HostSession<Caller>).scopeKey).toBe("dad");
+    expect((seen[0]?.session as HostSession<Caller>).scopeKey).toBe("owner");
     expect(typeof seen[0]?.send).toBe("function");
   });
 

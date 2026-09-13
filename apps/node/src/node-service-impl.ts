@@ -16172,15 +16172,37 @@ class NodeServiceImpl implements NodeService {
     if (!valid) {
       throw new Error("Invalid or expired pairing token");
     }
-    // A code belongs to the app that minted it: a phone app pairs with its own
-    // desktop app, not with the whole family. Codes minted before the field existed
-    // carry no `app` and are accepted (`pairingAppMismatch` says why).
+
+    // A **product token is not a pairing token.** `validatePairingToken` accepts any
+    // record in the session-token store, and product sessions live in that same store —
+    // so without this, an attached product could present its own token here and be handed
+    // a thin-client session bound to the owner profile (`getOwner()` below). That is the
+    // escalation the product scope exists to prevent, and it is refused at this call
+    // rather than in the validator, which cannot know which callers are allowed to pair.
+    const ownSession = await this.lookupSessionToken(pairingToken);
+    if (ownSession?.product) {
+      throw new Error(
+        `${ownSession.product} cannot pair as a device. Attached apps keep their own session; ` +
+          `ask the owner for a pairing code if a phone needs one.`,
+      );
+    }
+    // Which app a code belongs to is **the client's decision**, not this one's, and
+    // saying otherwise would be worse than not checking. The `pairingToken` here is
+    // opaque (`validatePairingToken` resolves it against *this node's* in-memory QR
+    // token, review token, or invite), so a token minted by another app's node does
+    // not validate here at all — the cross-app case cannot arrive through this door.
+    // It arrives when a *phone* scans another product's code and dutifully dials the
+    // `wsUrl` inside it, which only the phone can refuse, because only the phone
+    // knows both the name in the code and its own.
+    //
+    // The check below therefore covers the shape where the encoded payload *is*
+    // presented (`app` is inside `encodePairingToken`'s output, which is what the QR
+    // holds) and is a no-op otherwise. `pairingAppMismatch` is the shared rule both
+    // sides use; the enforcement lives in the clients.
     let codeApp: string | undefined;
     try {
       codeApp = decodePairingToken(pairingToken).app;
     } catch {
-      // Not decodable as a payload — `validatePairingToken` already accepted it, so
-      // this is a token shape from another path; nothing to check.
       codeApp = undefined;
     }
     const appMismatch = pairingAppMismatch(codeApp);

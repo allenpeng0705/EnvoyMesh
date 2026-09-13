@@ -251,6 +251,11 @@ export default defineConfig({
     // Prevent duplicate React copies when linking file: packages (envoy-harness-ehui, etc.).
     dedupe: ["react", "react-dom"],
     alias: {
+      // The refactor's reusable half of `api`. It needs its own entry because Vite's
+      // alias matches by prefix: without this, `@envoymesh/api/core` resolves to
+      // `packages/api/src/index.ts/core` and the whole SPA build fails. Every *other*
+      // package that bundles into this app (rag, notably) imports it.
+      "@envoymesh/api/core": resolve(repoRoot, "packages/api/src/core.ts"),
       "@envoymesh/api/did-import": resolve(repoRoot, "packages/api/src/did-import.ts"),
       "@envoymesh/api/community-relay-join": resolve(
         repoRoot,

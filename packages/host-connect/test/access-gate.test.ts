@@ -170,6 +170,44 @@ describe("the access gate", () => {
     expect(reply["error"]).toMatchObject({ code: "UNAUTHORIZED" });
   });
 
+  it("refuses a live stream to a family session, and allows it to the owner's UI", async () => {
+    // Socket methods (a terminal, an agent core) run *before* the dispatcher, so the
+    // product allow-list never sees them: the owner-scope check has to be here. Found by
+    // reviewing that claim rather than trusting it — `homeTerminalWsOpen` had no caller
+    // check of its own either.
+    const handled: string[] = [];
+    const socketMethods = {
+      handle: async (ctx: { method: string }) => {
+        handled.push(ctx.method);
+        return false;
+      },
+    };
+    const server = new WsServer(0, "/ws");
+    servers.push(server);
+    server.start(nodeService, {
+      sessionIdentity: {
+        localScopeKey: "owner",
+        // A family member: an authenticated session that is *not* the owner.
+        resolveSession: async (token) =>
+          token === "family-token"
+            ? { scopeKey: "mom", ownerId: "owner-1", isOwnerScope: false, caller: undefined }
+            : null,
+      },
+      dispatch: async (method) => ({ ok: method }),
+      socketMethods: socketMethods as never,
+    });
+    await server.waitUntilListening();
+
+    const family = await ask("127.0.0.1", server.boundPort, "family-token", "homeTerminalWsOpen");
+    expect(family["error"]).toMatchObject({ code: "UNAUTHORIZED" });
+    expect(handled).toEqual([]); // never reached the handler
+
+    // The owner's own UI (no token, loopback) still gets through.
+    const owner = await ask("127.0.0.1", server.boundPort, null, "homeTerminalWsOpen");
+    expect(owner["error"]).toBeUndefined();
+    expect(handled).toEqual(["homeTerminalWsOpen"]);
+  });
+
   it("still refuses a wrong token from loopback", async () => {
     // A token that is present but invalid is never silently downgraded to anonymous.
     const { port } = await boot();

@@ -1,4 +1,5 @@
 import { parseEnvoyJoinUri } from "@envoymesh/api";
+import { pairingAppMismatch, resolveAppName } from "@envoymesh/protocol";
 import { parseEnvoyContactUri } from "@envoymesh/api";
 
 export type ParsedContactCode =
@@ -55,6 +56,24 @@ function parseEnvoyInvite(input: string): {
   };
 }
 
+
+/**
+ * The app named in an `envoy://pair` code, or `undefined` when it names none.
+ *
+ * Total by construction: this runs on pasted text, so a malformed code must produce
+ * `undefined` (fall back to accepting, matching the node) rather than an exception in
+ * a paste handler.
+ */
+function readPairingApp(uri: string): string | undefined {
+  try {
+    const url = new URL(uri);
+    const app = url.searchParams.get("app")?.trim();
+    return app && app.length > 0 ? app : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** True for typical libp2p peer IDs (base58btc, often starting with Qm or 12D3). */
 export function looksLikePeerId(value: string): boolean {
   const trimmed = value.trim();
@@ -76,6 +95,17 @@ export function parseContactCode(input: string): ParsedContactCode {
   }
 
   if (trimmed.startsWith("envoy://pair")) {
+    // **The only place a cross-app pairing can be refused.** The code names the app
+    // that minted it (`app`), and this app is one product; the node on the other end
+    // cannot tell, because it only ever sees the opaque token *inside* the code, which
+    // its own store minted. So the check belongs here, before a connection is
+    // attempted at all — and it uses the same rule the node uses, so the sentence a
+    // user reads is the same one.
+    const claimedApp = readPairingApp(trimmed);
+    const mismatch = pairingAppMismatch(claimedApp, resolveAppName());
+    if (mismatch) {
+      return { kind: "invalid", message: mismatch };
+    }
     return { kind: "pair", inviteUri: trimmed, pairUri: trimmed };
   }
 

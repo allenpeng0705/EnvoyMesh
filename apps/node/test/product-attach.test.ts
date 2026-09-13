@@ -203,6 +203,24 @@ describe("attachLocalProduct", () => {
     expect(await codingAllowed()).toBe(false);
   });
 
+  it("cannot launder its own session token into a family session", async () => {
+    // `validatePairingToken` accepts **any** record in the session-token store, and a
+    // product token lives in that same store — so without an explicit refusal a product
+    // could present its own token as a `pairingToken`, and `pairThinClient` would mint
+    // it a thin-client session bound to a family profile. That is an escalation out of
+    // the product scope, which is exactly what the scope exists to prevent.
+    const ns = await nodeWithProfile();
+    const grant = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+
+    await expect(
+      ns.pairThinClient({
+        pairingToken: grant.token,
+        deviceName: "EnvoyCoder",
+        platform: "node",
+      } as never),
+    ).rejects.toThrow(/cannot pair as a device/i);
+  });
+
   it("refuses a missing or unusable product name", async () => {
     const ns = await nodeWithProfile();
     // The name becomes a stored field, a scope key and a log line, so it is validated

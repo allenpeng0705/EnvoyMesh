@@ -1071,6 +1071,18 @@ export class WsServer<TCaller = unknown> {
     // Product methods that need the connection itself. The host does not know
     // what they are or how many there are: `socketMethods.handle` answers, and
     // `true` means "already replied, stop" (§2.5 (c)).
+    //
+    // They hand the caller a **live stream** — a terminal, an agent core — so they
+    // require the owner's scope, and that check has to live here rather than in the
+    // dispatcher: `socketMethods` runs *before* it, which is also where a product's
+    // allow-list lives. Without this, an attached product or a family session could open
+    // a terminal through the one path that has no allow-list at all. A tokenless client
+    // is the owner's own UI, which is why an absent session is allowed.
+    const socketSession = this.authenticatedSessions.get(ws);
+    if (this._socketMethods && socketSession && socketSession.isOwnerScope !== true) {
+      this.sendError(ws, id ?? "unknown", "Only the node owner can do that", "UNAUTHORIZED");
+      return;
+    }
     if (this._socketMethods) {
       const handled = await this._socketMethods.handle({
         connection: ws,

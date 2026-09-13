@@ -4555,3 +4555,4 @@ export * from "./pairing-contract.js";
 // The repo version constant lives with the other core contracts so reusable
 // packages can read it without importing `@envoymesh/api` (see `version.js`).
 export * from "./version.js";
+export * from "./app-identity.js";

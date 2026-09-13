@@ -469,6 +469,24 @@ A code minted before the field existed is accepted: refusing it would break ever
 
 **3. Coding is granted per product, by the owner.** `mayFamilyProfileUseCoding()` is family-profile policy and a product scope is not a family profile, so an attached EnvoyCoder was refused the surface it exists for. `NodeConfig.productGrants` — owner-set through the already owner-only `updateNodeConfig` — now answers for products, with **nothing** as the default and a fail-closed read. Example: `{ "EnvoyCoder": ["coding"] }`. Pinned by test: denied before the grant, allowed after, unaffected for a *different* product, revoked by an empty list.
 
+### S4 (second slice) — the review, and five real defects (2026-09-13)
+
+Reviewing the stretch rather than trusting it. Every one of these was found by checking a claim I had written down, and four of the five were in code I had just described as done.
+
+**1. The app check I added was dead code that pretended otherwise.** A pairing token is **opaque** — `validatePairingToken` resolves it against *this node's* in-memory QR token, review token or invite — so `decodePairingToken(pairingToken)` always threw, `codeApp` was always `undefined`, and the "enforcement" ran nothing. Worse, the comment implied the node enforced per-app pairing, which it *cannot*: a token minted by another app's node does not validate here at all, and cross-app pairing arrives when someone **scans** the wrong code and the app dials the `wsUrl` inside it. The rule is therefore the **client's**, and it now lives in `@envoymesh/protocol` (`app-identity.ts`, browser-safe and dependency-free) so a web UI can apply it without pulling a node runtime into its bundle. The Social scanner refuses another app's code with the same sentence the node would use, and the server-side call is documented for what it actually covers.
+
+**2. A product token could be laundered into an owner session.** `validatePairingToken` accepts **any** record in the session-token store, and product sessions live in that store — so an attached product could hand its own token to `pairThinClient` as a `pairingToken` and be minted a thin-client session bound to `getOwner()`. Proved with a test that *resolved* where it should have thrown, then refused at that call: a product token is not a pairing token.
+
+**3. Terminal and agent-core streams were open to any authenticated non-owner.** `socketMethods` (`homeTerminalWsOpen`, `homeClawCoreWs*`) runs **before** the dispatcher, which is where the product allow-list lives — so an attached product, or a registered family session, could open a live terminal through the one path with no allow-list at all. `homeTerminalWsOpen`'s own implementation has no caller check either. The transport now requires the **owner's scope** for socket methods, which is the right layer: it uses the host's own vocabulary (`isOwnerScope`), not product names.
+
+**4. The Social app could not build.** Vite's alias matches by **prefix**, and the SPA enumerates subpaths explicitly — `@envoymesh/api/core`, the reusable entry this refactor created, was never added. Every package bundled into the SPA that imports it (`rag` among them, 7 call sites) failed the build with `Could not load …/src/index.ts/core`. Fixed by adding the alias before the generic one; `vite build` now completes. **This is the `social-build` phase of the test orchestrator, so it was a green-CI red-product gap** — the unit suite never runs a bundle.
+
+**5. A scanned code could put arbitrary text in a user's dialog.** The app-mismatch sentence embeds the name from the code, which is untrusted input on its way to a screen someone is being asked to trust. Labels are now stripped of control characters and capped at 40 characters with an ellipsis.
+
+Also corrected: the note that "terminals stay owner-only" was wrong when written — they were owner-only for *RPC* names (the `terminal*` prefix) but not for the socket-method path, which is defect 3.
+
+Verified after all five: `tsc -b` 0 errors; **`vite build` completes** for the Social app; suite 977 files (972 passed, 5 skipped), 9,100 tests, 0 failed; manifest 815 modules (563 reusable); boundary rules 1–6; wiring R1–R6; core-surface `--check`; inventory 48 stores 0 ungated.
+
 ### S3 (sixth slice) ✅ — attach works, and it found a transport bug (2026-09-13)
 
 The exchange, end to end: a second app on this machine asks the running node for a session of its own.
