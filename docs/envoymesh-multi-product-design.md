@@ -471,6 +471,30 @@ A code minted before the field existed is accepted: refusing it would break ever
 
 **3. Coding is granted per product, by the owner.** `mayFamilyProfileUseCoding()` is family-profile policy and a product scope is not a family profile, so an attached EnvoyCoder was refused the surface it exists for. `NodeConfig.productGrants` — owner-set through the already owner-only `updateNodeConfig` — now answers for products, with **nothing** as the default and a fail-closed read. Example: `{ "EnvoyCoder": ["coding"] }`. Pinned by test: denied before the grant, allowed after, unaffected for a *different* product, revoked by an empty list.
 
+### S9 — §5's migration: the check that says it is a slice, not an edit (2026-09-13)
+
+I went to execute the migration and checked one thing first: whether anything **outside** `node-service-impl.ts` reads the same paths. It does, and the number changes the plan.
+
+`scripts/audit-profile-dir-usage.mjs` now reports the fan-out — modules that read product directories through a handed-over `profileDir` — and it is **26 modules**:
+
+```
+discovery-inbound.ts: web          library-read-inbound.ts: web
+node-service-capability-discovery.ts: web    node-service-fileshare.ts: web
+openclaw-workspace.ts: openclaw-gateway, openclaw-workspace
+feed-notify-outbox.ts, feed-engage-outbox.ts, content-engage-inbox-store.ts, …
+herdr-export.ts: terminals         kb-plugin-registry.ts: plugins
+mmx-media.ts: mmx-output           envoy-uploads.ts: envoy-uploads
+chain-remote-reclaim.ts: team-jobs …
+```
+
+So the migration is not "45 lines in the impl". Moving the impl's sites without moving the hand-offs would write one root and read the other — the web-content root alone has four readers, so published pages would be written to `<home>/EnvoyMesh/web` and served from `profile/web`. **It has to move whole features, hand-off included.**
+
+And one module settles the shape of the fix: `node-service-persistence.ts` reads `intent-history.json` (**kernel**) and `published-library.json` (**product**) through the *same* `profileDir` parameter. A per-module hand-off cannot express that; the resolution has to be **per store**, decided where each store is constructed — which is exactly what the inventory's groups already are, and why the two tools are worth having before the change rather than after it.
+
+I did not execute it. Improvising a 45-site edit plus 26 hand-off rewrites, with one module mixing kernel and product state in a single parameter, at the end of a long session, is how a user's identity ends up in a directory a second product cannot see. The worklist is now complete enough to be executed deliberately — with the two-root verification on a fresh home and, this time, the fan-out in hand.
+
+**S4's spawn lock and lease, and the harness packaging, are unchanged from §S8.**
+
 ### S8 — S4's asset half: one engine, one copy of the weights (2026-09-13)
 
 The design's D3 said a local engine is shared and provider credentials never are. The resource argument is concrete: `llama-server` is a multi-hundred-MB binary and a GGUF is multi-GB, and until now both lived at `{profile}/envoy-local/` — so a second product on the same machine downloaded all of it again.

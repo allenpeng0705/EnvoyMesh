@@ -25,7 +25,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -129,6 +129,36 @@ const show = (title, rows, limit) => {
   if (rows.length > limit) console.log(`  … and ${rows.length - limit} more`);
   console.log("");
 };
+
+// ─── the fan-out: modules that read the same paths through a handed-over directory ───
+//
+// This is the part the first worklist missed, and it changes the shape of the migration:
+// product state is not only built inside `node-service-impl.ts`. Helper modules take a
+// `profileDir` parameter and read the *same* directories (`join(profileDir, "web")` for
+// published pages, `envoy-harness/sessions` for harness state, the OpenClaw workspace).
+// Moving the impl's lines without moving the hand-offs writes one root and reads the other
+// — which is why the migration has to move whole *features*, and why this section exists.
+const handoffModules = [];
+for (const rel of readdirSync(path.join(root, "apps/node/src")).filter((n) => n.endsWith(".ts"))) {
+  if (rel === "node-service-impl.ts" || rel.endsWith(".test.ts")) continue;
+  const text = readFileSync(path.join(root, "apps/node/src", rel), "utf8");
+  const reads = [
+    ...text.matchAll(/join\(\s*profileDir\s*,\s*"([^"]+)"/g),
+    ...text.matchAll(/join\(\s*this\._profileDir\s*,\s*"([^"]+)"/g),
+  ].map((m) => m[1]);
+  if (reads.length === 0) continue;
+  handoffModules.push({ file: rel, reads: [...new Set(reads)].sort() });
+}
+if (handoffModules.length > 0) {
+  const features = new Set();
+  for (const m of handoffModules) for (const r of m.reads) features.add(r);
+  console.log(`## fan-out: modules reading the same directories via a handed-over profileDir (${handoffModules.length})`);
+  for (const m of handoffModules) console.log(`  ${m.file}: ${m.reads.join(", ")}`);
+  console.log(
+    `\n  Every directory above must move with its feature, hand-off included, or a fresh\n` +
+      `  install writes one root and reads the other. Affected roots: ${[...features].sort().join(", ")}\n`,
+  );
+}
 
 show("product stores to move", buckets.storeProduct, 40);
 show("path sites to decide", buckets.path, 60);
