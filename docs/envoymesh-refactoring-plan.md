@@ -2,7 +2,7 @@
 
 **Status:** **Steps 0–6, H1–H5 and E9 are implemented in code** (commits `2a5e6083` → `ada65b03`); §8.9 (kernel decomposition) and §10 E10 (per-area ownership) remain **deferred by decision**, and §8.17 lists what is left before a second product can treat the packages as reusable · **Owner:** platform / node runtime
 
-> **✅ Tracked (since 2026-09-12).** This file and the evidence it cites are force-included through the `.gitignore` contents pattern, so they survive a clean checkout and are visible on other machines. Everything else under `docs/` remains local scratch — see **E7**, which recorded the original decision and why it was reversed.
+> **✅ Tracked (since 2026-09-12).** This file and the evidence it cites are force-included through the `.gitignore` contents pattern, so they survive a clean checkout and are visible on other machines. Everything else under `docs/` remains local scratch — see **E7**, which recorded the original decision and why it was reversed. The one companion document is `docs/envoymesh-multi-product-design.md` (product packaging, deliberately outside this plan's scope — §11).
 >
 > Figures are annotated with the revision they describe — the *baseline* measurements are `d599d1bb`, and section-level corrections say when they supersede an earlier number. A few figures in this header were stale for a while ("no implementation started" while Steps 1–6 had landed, and a manifest count that still included committed declaration files); they are fixed here, and §8.13–§8.16 record what each review round caught. The manifest itself is regenerated per change and gated by `--check` in CI, so its numbers cannot drift silently.
 
@@ -1799,7 +1799,7 @@ The plan asks each module to have a "declared owner" (§2.4, Step 4). The repo h
 
 ## 11. Explicitly out of scope
 
-- **No product design.** EnvoyCoder and EnvoyAgent are motivation and future validation only; no scope, surface, or topology is specified for them.
+- **No product design.** EnvoyCoder and EnvoyAgent are motivation and future validation only; no scope, surface, or topology is specified for them. **Where that work now lives:** `docs/envoymesh-multi-product-design.md` (tracked) — the packaging design for installing the three products next to each other (separate apps, one shared profile root, one mesh owner at a time, local-model sharing). It is a separate document precisely because of the rule above; it consumes this plan's 556/252 split and changes nothing in it.
 - **No changes to `apps/social` behaviour or feature set.** The Coding tab work in flight is a feature addition to Social, not part of this refactor.
 - **No removal of social identity, bonds, roster, or family profiles.** Encapsulation keeps them reachable from `product-bound` modules; it only stops them leaking into `reusable` ones.
 - **No reassignment of product capabilities.** Capability tags are labels; reusability is the only enforced axis (§3).

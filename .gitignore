@@ -69,11 +69,13 @@ envoymesh.key.password
 # ignored above (apps/tauri/src-tauri/resources/node/).
 apps/envoygo/lib/l10n/untranslated.json
 # `docs/` is local scratch — everything in it is ignored **except** the durable
-# design record: the refactoring plan and the evidence file it cites. Un-ignoring
+# design record: the refactoring plan, the product-packaging design, and the
+# evidence file they cite. Un-ignoring
 # a path inside an ignored directory requires re-including the directory first
 # (`/docs/*` rather than `/docs`), which is why this is written in two steps.
 /docs/*
 !/docs/envoymesh-refactoring-plan.md
+!/docs/envoymesh-multi-product-design.md
 !/docs/evidence
 /docs/evidence/*
 !/docs/evidence/social-rpc-defaults.md
