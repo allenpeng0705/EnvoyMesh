@@ -60,6 +60,11 @@ EnvoyMesh/
 │   ├── api/           # Shared TypeScript interfaces (NodeService, types)
 │   ├── node-core/     # Ports, home-fs and shared slash descriptors — used by node + harness
 │   ├── harness/       # Ext-agent adapters + Pi runtime (extracted from apps/node)
+│   │                  # ⚠ NOT the same thing as `@envoymesh/envoy-harness*`, which lives in a
+│   │                  # SIBLING checkout (../envoy-harness): a **peer** every product in the
+│   │                  # family clones or copies itself, never vendored into this repo. This
+│   │                  # repo keeps only a local `file:` link; `node scripts/check-peer-deps.mjs`
+│   │                  # (wired into `npm run node:dev`) reports it clearly when absent.
 │   └── host-connect/  # ★ Reusable host/connect layer: the JSON-RPC WebSocket host,
 │                      #   its ports (`WsServerOptions`), the scoped-caller mechanism
 │                      #   and the wire error-code catalog. Depends on protocol + ws ONLY
