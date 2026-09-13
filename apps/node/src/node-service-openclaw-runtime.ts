@@ -1220,6 +1220,7 @@ async function buildEnvoyMeshOpenClawPrompts(
           knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
           profile: retrievedProfile,
           profileDir: deps.getProfileDir(),
+          productDir: deps.getProductDir(),
           knowledgeAccess: scope?.knowledgeAccess,
           knowledgeScope: scope?.knowledgeScope,
           contactThreadOwnerId: scope?.contactThreadOwnerId,

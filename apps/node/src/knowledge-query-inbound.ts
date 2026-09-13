@@ -104,6 +104,8 @@ export async function handleInboundKnowledgeQuery(input: {
   contactSyndicationMaxSensitivity?: KnowledgeSyndicationSensitivity;
   /** Profile dir for Published-toggle sensitivity overrides (57B). */
   profileDir?: string;
+  /** §5 — the product root: where the Obsidian plugin's link graph is written. */
+  productDir?: string;
 }): Promise<KnowledgeQueryInboundResult> {
   const {
     envelope,
@@ -127,6 +129,7 @@ export async function handleInboundKnowledgeQuery(input: {
     knowledgeSyndicationMaxSensitivity,
     contactSyndicationMaxSensitivity,
     profileDir,
+    productDir,
   } = input;
 
   let payload: ReturnType<typeof parseKnowledgeQueryPayload>;
@@ -285,6 +288,7 @@ export async function handleInboundKnowledgeQuery(input: {
         const { enrichOwnerVaultAskContext } = await import("./obsidian-ask-context.js");
         const enriched = await enrichOwnerVaultAskContext({
           profileDir,
+          productDir,
           vaultRoot: vaultIndex.rootDir,
           query: payload.query,
           vaultResults: vaultSnippets,

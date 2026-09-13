@@ -816,6 +816,17 @@ async function restartEmbedSidecarFromWatchdog(
       await state.enablePromise;
       return;
     }
+    if (state.engineBorrowed) {
+      // The engine belongs to another process (we lost the spawn lock and adopted it). This
+      // path kills every non-self pid on the embed port, which would be *their* llama-server —
+      // the borrower would kill the engine it is using. A borrowed engine is recovered by its
+      // owner; all we can do is report.
+      console.warn(
+        "[envoy-local-embed] watchdog: the engine on this port belongs to another process — " +
+          "not restarting it (only its owner can)",
+      );
+      return;
+    }
     try {
       await stopEmbedListenerHard(state);
       await startEmbedSidecar(state, deps);
@@ -1022,6 +1033,11 @@ async function startEmbedSidecar(
   // not share one lock. A same-role holder means somebody else is bringing up the embed
   // engine — wait for it and use it instead of starting a second one on port
   // ENVOY_LOCAL_EMBED_PORT.
+  // Stop the previous listener — and release its claim — *before* acquiring the new claim.
+  // `stopEmbedListenerHard` releases whatever claim this process holds, so running it after
+  // the acquire would delete the claim we just created.
+  await stopEmbedListenerHard(state);
+
   const engineRoot = rootDir(profileDir);
   state.engineRootDir = engineRoot;
   state.engineRole = "embed";
@@ -1044,6 +1060,7 @@ async function startEmbedSidecar(
         state.lastError = null;
         state.lastEmbedSuccessAt = Date.now();
         state.engineRootDir = undefined;
+        state.engineBorrowed = true;
         console.log(
           `[envoy-local-embed] engine already running on port ${holderPort}` +
             (holder?.app ? ` (started by ${holder.app})` : "") +
@@ -1065,16 +1082,23 @@ async function startEmbedSidecar(
     );
   }
 
-  await stopEmbedListenerHard(state);
-
-  const child: ChildProcess = spawn(exe, args, {
-    cwd: join(exe, ".."),
-    stdio: ["ignore", "ignore", "pipe"],
-    windowsHide: true,
-    env: { ...process.env },
-  });
+  let child: ChildProcess;
+  try {
+    child = spawn(exe, args, {
+      cwd: join(exe, ".."),
+      stdio: ["ignore", "ignore", "pipe"],
+      windowsHide: true,
+      env: { ...process.env },
+    });
+  } catch (err) {
+    // Nothing started: do not leave a claim behind for the next attempt to wait on.
+    await releaseEngineLock(engineRoot, process.pid, "embed");
+    state.engineRootDir = undefined;
+    throw err;
+  }
   state.child = child;
   state.childPid = child.pid;
+  state.engineBorrowed = false;
 
   child.on("exit", (code, signal) => {
     if (state.child === child) {

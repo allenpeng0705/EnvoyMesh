@@ -11922,7 +11922,11 @@ class NodeServiceImpl implements NodeService {
 
   async libraryRead(params: LibraryReadParams): Promise<LibraryReadResult> {
     const profile = this._profile;
-    const profileDir = this._profileDir;
+    // The only use of this directory downstream is `join(dir, "web")` — published web
+    // content, which is the product's own state (§5). Publishing writes it under
+    // `_productDir`, and the remote path below passes the same, so a kernel-rooted value
+    // here made the owner's own preview the one reader that could not find the site.
+    const profileDir = this._productDir;
     // Owner preview / self-browse must not go through the mesh — remote policy
     // treats the owner as a stranger (no self trust record) and returns not_found
     // for bonded/private paths.
@@ -16888,6 +16892,7 @@ class NodeServiceImpl implements NodeService {
       agentIdentityStore: this._agentIdentityStore,
       ragService,
       profileDir: this._profileDir,
+      productDir: this._productDir,
     });
 
     if (!result.ok) {

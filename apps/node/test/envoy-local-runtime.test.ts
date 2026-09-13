@@ -696,6 +696,28 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(status.phase).toBe("error");
   });
 
+  it("holds the spawn claim while its engine runs (the lock is not released by the start itself)", async () => {
+    // The bug this exists for: the claim was taken, then `stopChild` — called *after* the
+    // acquire, with no child yet — deleted it in its "no child, release the stale claim"
+    // branch, and only then was the engine spawned. The engine therefore ran unclaimed and a
+    // second process could take the free lock and start a competitor: the exact race S4 is
+    // about, and invisible to a test that only checks "spawn was not called".
+    const { exePath } = await seedRuntimeAndModel();
+    const engineRoot = dirname(dirname(dirname(exePath)));
+    mockedSpawn.mockImplementation(() => makeFakeChild(4242));
+    // The engine answers, so the start completes "ready" rather than timing out.
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200 })));
+
+    await enableEnvoyLocalViaRuntime(state, deps, { skipModelDownload: true });
+    await awaitEnvoyLocalOperation(state);
+
+    const held = readEngineLock(engineRoot);
+    expect(held, "the claim must survive a successful start").not.toBeNull();
+    expect(held?.pid).toBe(process.pid);
+    expect(held?.role).toBe("chat");
+    await releaseEngineLock(engineRoot, process.pid);
+  });
+
   it("does not start a second engine while another process holds the spawn lock", async () => {
     // §8 / S4 — one engine per root. A live claim means somebody else is starting (or
     // serving) llama-server; this process must wait for it, never spawn a competitor.
@@ -743,9 +765,12 @@ describe("envoy-local-runtime lifecycle", () => {
     // We did start an engine — the stale claim did not block us…
     expect(mockedSpawn).toHaveBeenCalled();
     expect(status.lastError ?? "").not.toMatch(/holds the local engine lock/);
-    // …and the claim is not left behind once that child is gone, so the next start does not
-    // have to treat our own claim as stale.
-    expect(readEngineLock(engineRoot)).toBeNull();
+    // …and the claim is ours now, for as long as that child runs. (This assertion used to
+    // read `toBeNull()`, which passed only because of the release-after-acquire bug: the claim
+    // was deleted before the spawn, so a timed-out start left no file behind. A claim that
+    // disappears while the engine runs is the defect, not the expected state.)
+    expect(readEngineLock(engineRoot)?.pid).toBe(process.pid);
+    await releaseEngineLock(engineRoot, process.pid);
   });
 
   it("user override of startupTimeoutMs is reflected in the error message", async () => {

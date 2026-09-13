@@ -139,6 +139,13 @@ export interface EnvoyLocalRuntimeState {
    * chat claim (which it does not hold), clears the field, and leaks the embed claim.
    */
   engineRole?: "chat" | "embed";
+  /**
+   * True when the engine we are using belongs to **another process** (we lost the spawn lock
+   * and adopted theirs). The watchdog must not "recover" it: its restart path kills every
+   * other pid listening on the port, which for a borrowed engine is the owner's llama-server
+   * — the borrower would kill the holder's child and then blame the holder for not answering.
+   */
+  engineBorrowed?: boolean;
 }
 
 export function createEnvoyLocalRuntimeState(): EnvoyLocalRuntimeState {
@@ -990,6 +997,16 @@ function armWatchdog(
       state.consecutiveHealthFailures = 0;
       const cfg = normalizeEnvoyLocalConfig(await deps.loadEnvoyLocalConfig());
       if (!cfg.enabled) return;
+      if (state.engineBorrowed) {
+        // Another process is running this engine, and the restart path below kills every other
+        // pid on the port — that is the *owner's* llama-server. "Recovering" it here would kill
+        // the engine we are using and leave the owner's watchdog to restart it.
+        console.warn(
+          "[envoy-local] watchdog: the engine on this port belongs to another process — " +
+            "not restarting it (only its owner can)",
+        );
+        return;
+      }
       try {
         console.warn("[envoy-local] watchdog: /v1/models unreachable — restarting chat sidecar");
         await stopChild(state);
@@ -1076,6 +1093,13 @@ async function startSidecarOnce(
   // engine instead of starting a second one on the same port. The node lock already means
   // there is one mesh owner per home, so this guards the case it cannot: two nodes sharing
   // one root's engine assets.
+  // **Order matters.** Stop the old child (and release its claim) *before* taking the new
+  // claim: `stopChild` releases whatever claim this process holds — for a child it just
+  // killed that is correct, but when it runs after the acquire it deletes the claim we just
+  // created, and the engine then runs unclaimed while a second process takes the free lock
+  // and spawns a competitor. That is exactly what this lock exists to prevent.
+  await stopChild(state);
+
   const engineRoot = rootDir(profileDir);
   state.engineRootDir = engineRoot;
   state.engineRole = "chat";
@@ -1098,6 +1122,7 @@ async function startSidecarOnce(
         state.lastError = null;
         state.lastErrorAt = null;
         state.engineRootDir = undefined;
+        state.engineBorrowed = true;
         console.log(
           `[envoy-local] engine already running on port ${holder?.port ?? ENVOY_LOCAL_PORT}` +
             (holder?.app ? ` (started by ${holder.app})` : "") +
@@ -1118,18 +1143,26 @@ async function startSidecarOnce(
     );
   }
 
-  await stopChild(state);
-
   const stderrChunks: Buffer[] = [];
   let stderrBytes = 0;
-  const child = spawn(exe, args, {
-    cwd: join(exe, ".."),
-    stdio: ["ignore", "ignore", "pipe"],
-    windowsHide: true,
-    env: { ...process.env },
-  });
+  let child: ChildProcess;
+  try {
+    child = spawn(exe, args, {
+      cwd: join(exe, ".."),
+      stdio: ["ignore", "ignore", "pipe"],
+      windowsHide: true,
+      env: { ...process.env },
+    });
+  } catch (err) {
+    // Nothing was started, so the claim must go: otherwise the next start waits for a holder
+    // that is not serving, and the claim outlives the attempt that took it.
+    await releaseEngineLock(engineRoot, process.pid, "chat");
+    state.engineRootDir = undefined;
+    throw err;
+  }
   state.child = child;
   state.childPid = child.pid;
+  state.engineBorrowed = false;
   child.stderr?.on("data", (chunk: Buffer | string) => {
     const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
     if (stderrBytes > 48_000) return;

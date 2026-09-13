@@ -130,6 +130,8 @@ export async function buildEnvoyMeshRetrievedContext(input: {
   profile?: OpenClawRetrievedContextProfile;
   /** Profile dir for Published-toggle sensitivity overrides (57B). */
   profileDir?: string;
+  /** §5 — the product root, for the Obsidian link graph in the owner enrichment. */
+  productDir?: string;
   /**
    * Vault sensitivity ceiling. Default `private` (owner EnvoyAI).
    * Contact-facing Agent Mode drafts should pass contact prefs (often `public`).
@@ -180,6 +182,7 @@ export async function buildEnvoyMeshRetrievedContext(input: {
           const { enrichOwnerVaultAskContext } = await import("./obsidian-ask-context.js");
           const enriched = await enrichOwnerVaultAskContext({
             profileDir: input.profileDir,
+            productDir: input.productDir,
             vaultRoot: vaultIndex.rootDir,
             query: input.message,
             vaultResults,

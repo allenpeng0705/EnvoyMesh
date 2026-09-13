@@ -238,8 +238,8 @@ import {
   isHomeSchemaSupported,
   profileDirHasProductState,
   profileDirIn,
+  localEngineAssetsDir,
   releaseEngineLockSync,
-  runtimeDirIn,
   releaseNodeLockSync,
   resolveAppName,
   resolveProductStateDir,
@@ -542,8 +542,15 @@ if (nodeLock.acquired) {
     // The engine claim (§8 / S4) is normally released when llama-server exits; this covers a
     // node that is killed while its engine is still up, so the next start does not have to
     // treat our claim as stale.
-    releaseEngineLockSync(runtimeDirIn(homeDir), process.pid, "chat");
-    releaseEngineLockSync(runtimeDirIn(homeDir), process.pid, "embed");
+    //
+    // The root is **the engine asset root**, not `runtimeDirIn(home)`: the runtimes lock
+    // inside `localEngineAssetsDir({ profileDir }).dir` (= `<home>/runtime/envoy-local`), and
+    // releasing `runtimeDirIn(home)` resolved to `<home>/runtime/engine-*.lock` — a path that
+    // can never exist, so both calls were silent no-ops. Verified by running the two
+    // resolvers side by side.
+    const engineRootDir = localEngineAssetsDir({ profileDir: args.profileDir }).dir;
+    releaseEngineLockSync(engineRootDir, process.pid, "chat");
+    releaseEngineLockSync(engineRootDir, process.pid, "embed");
   };
   process.once("exit", release);
   process.once("SIGINT", () => {
@@ -707,7 +714,7 @@ const nodeService = createNodeService(
 // Phase 31I — push must init on every startup (not only first-time initNode).
 // Without this, dispatchChatPush silently no-ops (`initialized === false`)
 // and tokens never persist to push-tokens.json.
-void pushNotificationService.init(productDir).catch((err: unknown) => {
+void pushNotificationService.init(args.profileDir).catch((err: unknown) => {
   console.warn("[node] push notification service init failed:", err);
 });
 void (async () => {
@@ -1842,6 +1849,7 @@ async function handleInboundMeshMessage({
         getKnowledgeBase: () => currentAiSettings?.knowledgeBase,
         getRagService: () => ragService,
         getProfileDir: () => args.profileDir,
+        getProductDir: () => productDir,
         getKnowledgeSyndicationMaxSensitivity: () =>
           currentKnowledgeSyndicationMaxSensitivity,
         appendAuditEvent: (event: any) => taskStore.appendAuditEvent(event),

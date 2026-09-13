@@ -49,6 +49,13 @@ export function buildTitleToVaultPathMap(docs: VaultDocumentMetadata[]): Map<str
  * Adds neighbor snippets from vault files when under maxExtra neighbors.
  */
 export async function expandWikiLinkNeighbors(params: {
+  /**
+   * Where the Obsidian plugin keeps `plugins/obsidian/link-graph.json` (§5). The plugin
+   * writes it into the **product** root; the kernel dir is what callers used to pass, which
+   * is the same directory for an install that adopted the old layout and a different one for
+   * a fresh install — where the graph then read as empty and the neighbour section silently
+   * disappeared.
+   */
   profileDir: string
   vaultRoot: string
   hits: AskContextHit[]
@@ -179,6 +186,8 @@ export function formatWikiLinkNeighborSection(hits: AskContextHit[], maxSnippetC
  */
 export async function enrichOwnerVaultAskContext(params: {
   profileDir: string
+  /** §5 — the product root, where the plugin's link graph lives. Falls back to `profileDir`. */
+  productDir?: string
   vaultRoot: string
   query: string
   vaultResults: VaultSearchResult[]
@@ -212,7 +221,7 @@ export async function enrichOwnerVaultAskContext(params: {
     .sort((a, b) => b.score - a.score)
 
   const expanded = await expandWikiLinkNeighbors({
-    profileDir: params.profileDir,
+    profileDir: params.productDir ?? params.profileDir,
     vaultRoot: params.vaultRoot,
     hits: boosted,
     docs: params.docs,
