@@ -8,10 +8,11 @@
   },
   "workspaces": [
     "apps/*",
-    "packages/api",
     "packages/agent-adapter",
+    "packages/api",
     "packages/bonds",
     "packages/harness",
+    "packages/host-connect",
     "packages/identity",
     "packages/ipfs-helia",
     "packages/kb-obsidian",
@@ -20,10 +21,10 @@
     "packages/models",
     "packages/network",
     "packages/node-core",
-    "packages/host-connect",
     "packages/openclaw-runtime",
     "packages/protocol",
     "packages/rag",
+    "packages/reuse-host",
     "packages/vault"
   ],
   "bin": {

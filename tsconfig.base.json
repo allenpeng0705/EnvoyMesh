@@ -7,6 +7,7 @@
     "moduleResolution": "NodeNext",
     "paths": {
       "@envoymesh/protocol": ["./packages/protocol/src/index.ts"],
+    "@envoymesh/reuse-host": ["./packages/reuse-host/src/index.ts"],
       "@envoymesh/identity": ["./packages/identity/src/index.ts"],
       "@envoymesh/bonds": ["./packages/bonds/src/index.ts"],
       "@envoymesh/network/capability-topic-cid": ["./packages/network/src/capability-topic-cid.ts"],

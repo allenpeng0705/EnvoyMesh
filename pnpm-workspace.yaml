@@ -29,6 +29,7 @@ packages:
   - 'packages/node-core'
   - 'packages/openclaw-runtime'
   - 'packages/protocol'
+  - 'packages/reuse-host'
   - 'packages/rag'
   - 'packages/vault'
 

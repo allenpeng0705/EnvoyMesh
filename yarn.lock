@@ -621,6 +621,14 @@
     "@libp2p/utils" "^7.0.0"
     ws "^8.20.0"
 
+"@envoymesh/reuse-host@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/reuse-host":
+  version "0.5.0"
+  resolved "file:packages/reuse-host"
+  dependencies:
+    "@envoymesh/harness" "0.5.0"
+    "@envoymesh/host-connect" "0.5.0"
+    "@envoymesh/protocol" "0.5.0"
+
 "@envoymesh/social@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social":
   version "0.5.0"
   resolved "file:apps/social"

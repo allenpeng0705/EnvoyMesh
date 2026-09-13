@@ -1371,6 +1371,31 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 
 **Recommended order**, cheapest true unblock first: (1) the harness contract-symbol move — it is small, it is the V4 requirement, and it does not depend on the `api` decision; (2) re-measure, then decide the `api/core` subpath with real numbers; (3) the kernel `productStoreDir` gate as its own step; (4) the TS reuse host, which then becomes the acceptance test for all of it.
 
+#### 8.17.8 The second product exists — `@envoymesh/reuse-host`
+
+The acceptance test proved a core-only consumer can boot a host; this is the artifact a reviewer asked for instead of a test: a real package, with its own `package.json`, project references, workspace entries and lockfile lines, that a product which is *not* EnvoyMesh social can depend on.
+
+```
+product (EnvoyCoder, …) → @envoymesh/reuse-host → host-connect · harness · protocol
+```
+
+Three surfaces, all from the reusable layer:
+
+* **transport** — `createReuseHost()` wires a `WsServer` from the two ports the contract requires (`sessionIdentity`, `dispatch`) and nothing else; a product supplies its own node surface, or takes the shell.
+* **pairing (QR)** — `buildPairingUri` / `parsePairingUri` over a three-field payload, with a scanner-shaped parser that returns `null` for a foreign URI rather than throwing.
+* **harness** — the ext-agent adapters, daemon supervisor and reachability probe re-exported as-is, which is only possible because harness reached 24/24 reusable in §8.17.1.
+
+**The interesting finding is why the QR contract is local.** EnvoyMesh's own pairing modules (`api/pairing-token.ts`, `api/envoy-pair-uri.ts`) are `product-bound` — not because they name a product concept (they do not) but because they reach `ws-protocol.ts` through *relative* imports, and that module carries the RPC method union. A second product therefore declares its own QR payload. Moving the pairing contract into `protocol` — as was done for the ext-agent contract and for `ModelProviderConfig` — is the alternative, and it is a contract move with its own migration.
+
+**Rule 6a demanded the declaration.** The moment the package's entry point classified `reusable`, the boundary check failed with *"importing it taints its consumers for no reason"* until `@envoymesh/reuse-host` was added to `declaredInputs.corePackages`. That is the third time this round the rule fired on something a human had not yet noticed.
+
+| | before | after |
+|---|---|---|
+| modules | 804 | **805** |
+| reusable | 548 | **549** |
+| declared core packages | 17 | **18** |
+| workspaces (wiring gate) | 23 | **24** |
+
 #### 8.17.7 The kernel gate is complete — 0 ungated product stores, 0 undecided groups
 
 §8.9's completion criterion was "a `productStoreDir` gate applied across all product-classified stores, plus a decision about the `/tmp/unknown` fallback, plus a test matrix". All three are now true, and the inventory is enforced rather than advisory.

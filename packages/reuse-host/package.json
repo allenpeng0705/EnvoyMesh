@@ -1,0 +1,25 @@
+{
+  "name": "@envoymesh/reuse-host",
+  "version": "0.5.0",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@envoymesh/harness": "0.5.0",
+    "@envoymesh/host-connect": "0.5.0",
+    "@envoymesh/protocol": "0.5.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "ws": "^8.20.0"
+  }
+}

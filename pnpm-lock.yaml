@@ -510,6 +510,25 @@ importers:
         specifier: ^3.0.0
         version: 3.0.0
 
+  packages/reuse-host:
+    dependencies:
+      '@envoymesh/harness':
+        specifier: 0.5.0
+        version: link:../harness
+      '@envoymesh/host-connect':
+        specifier: 0.5.0
+        version: link:../host-connect
+      '@envoymesh/protocol':
+        specifier: link:../protocol
+        version: link:../protocol
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      ws:
+        specifier: ^8.20.0
+        version: 8.21.3
+
   packages/vault:
     dependencies:
       '@firecrawl/anydoc':

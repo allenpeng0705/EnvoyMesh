@@ -118,6 +118,10 @@ export const CORE_PACKAGES = [
   "@envoymesh/kb-obsidian",
   "@envoymesh/models",
   "@envoymesh/rag",
+  // The second-product host: a package whose whole point is to be depend-able by
+  // a product that is not EnvoyMesh social. Rule 6a demanded this entry the moment
+  // the package's own entry point came out `reusable` — the rule earning its keep.
+  "@envoymesh/reuse-host",
 ];
 
 /**
