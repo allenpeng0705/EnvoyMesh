@@ -55,8 +55,18 @@ class FakeSocket extends EventEmitter {
 }
 
 interface Internals {
-  handleConnection(ws: unknown, req?: { url: string }): Promise<void>;
+  handleConnection(ws: unknown, req?: { url: string; socket?: { remoteAddress?: string } }): Promise<void>;
   handleMessage(ws: unknown, message: { id: string; method: string; params?: Record<string, unknown> }): Promise<void>;
+}
+
+/**
+ * A request from **this machine**, which is what every connection in this file
+ * stands for: it drives `handleConnection` with a synthetic socket, and the
+ * transport (correctly) treats an unknown peer address as *not* local. Without the
+ * address these tests would be asserting the behaviour of a client on the network.
+ */
+function localReq(url: string) {
+  return { url, socket: { remoteAddress: "127.0.0.1" } };
 }
 
 function session(scopeKey: string): HostSession<Caller> {
@@ -106,7 +116,7 @@ describe("the dispatcher receives the session the host authenticated", () => {
       resolveSession: async (token) => (token === "good" ? session("mom") : null),
     });
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws?token=good" });
+    await api.handleConnection(ws, localReq("/ws?token=good"));
 
     await api.handleMessage(ws, { id: "1", method: "getProfile", params: {} });
 
@@ -123,7 +133,7 @@ describe("the dispatcher receives the session the host authenticated", () => {
   it("passes no session for an untokened client (the legacy Social path)", async () => {
     const { dispatch, api } = makeServer({});
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws" });
+    await api.handleConnection(ws, localReq("/ws"));
 
     await api.handleMessage(ws, { id: "2", method: "getNodeStatus" });
 
@@ -136,7 +146,7 @@ describe("the dispatcher receives the session the host authenticated", () => {
     });
     const { api } = makeServer({ dispatch });
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws" });
+    await api.handleConnection(ws, localReq("/ws"));
 
     await api.handleMessage(ws, { id: "3", method: "getProfile" });
 
@@ -150,7 +160,7 @@ describe("the pre-auth list is data the product supplies", () => {
   it("refuses a bad-token client for a normal method, without dispatching", async () => {
     const { dispatch, api } = makeServer({});
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws?token=stale" });
+    await api.handleConnection(ws, localReq("/ws?token=stale"));
 
     await api.handleMessage(ws, { id: "4", method: "getProfile" });
 
@@ -170,7 +180,7 @@ describe("the pre-auth list is data the product supplies", () => {
       preAuthMethods: ["previewFamilyInvite", "pairThinClient"],
     });
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws?token=stale" });
+    await api.handleConnection(ws, localReq("/ws?token=stale"));
 
     await api.handleMessage(ws, { id: "5", method: "previewFamilyInvite", params: {} });
 
@@ -183,7 +193,7 @@ describe("the pre-auth list is data the product supplies", () => {
     const handle = vi.fn(async () => true);
     const { api } = makeServer({ socketMethods: { handle }, preAuthMethods: ["previewFamilyInvite"] });
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws?token=stale" });
+    await api.handleConnection(ws, localReq("/ws?token=stale"));
 
     await api.handleMessage(ws, { id: "6", method: "pairThinClient" });
 
@@ -200,7 +210,7 @@ describe("socket methods run after the gate and before the dispatcher", () => {
     });
     const { dispatch, api } = makeServer({ socketMethods: { handle } });
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws" });
+    await api.handleConnection(ws, localReq("/ws"));
 
     await api.handleMessage(ws, { id: "7", method: "homeTerminalWsOpen", params: { pathWithQuery: "/x" } });
 
@@ -209,11 +219,39 @@ describe("socket methods run after the gate and before the dispatcher", () => {
     expect(ws.responses()[0]).toEqual({ id: "7", error: undefined, result: { ok: false, error: "proxy refused" } });
   });
 
+  it("refuses a client from the network with no token, before any handler", async () => {
+    // The gate, at the wiring level: a caller that is neither on this machine nor
+    // authenticated may not reach the dispatcher or a socket method at all. Before
+    // this, "no token" meant "trusted" and the host binds 0.0.0.0 for paired phones.
+    const handle = vi.fn(async () => true);
+    const { dispatch, api } = makeServer({ socketMethods: { handle } });
+    const ws = new FakeSocket();
+    await api.handleConnection(ws, { url: "/ws", socket: { remoteAddress: "192.168.1.20" } });
+
+    await api.handleMessage(ws, { id: "9", method: "getProfile" });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(handle).not.toHaveBeenCalled();
+    expect(ws.responses()[0]).toMatchObject({ id: "9", error: { code: "UNAUTHORIZED" } });
+  });
+
+  it("still lets a network client reach a pre-auth method (pairing)", async () => {
+    // Otherwise the fix would break the only way a new device gets in.
+    const { dispatch, api } = makeServer({ preAuthMethods: ["pairThinClient"] });
+    const ws = new FakeSocket();
+    await api.handleConnection(ws, { url: "/ws", socket: { remoteAddress: "192.168.1.20" } });
+
+    await api.handleMessage(ws, { id: "10", method: "pairThinClient", params: {} });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(ws.responses()[0]).toEqual({ id: "10", result: { ok: "dispatched" } });
+  });
+
   it("falls through to the dispatcher when the port declines the method", async () => {
     const handle = vi.fn(async () => false);
     const { dispatch, api } = makeServer({ socketMethods: { handle } });
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws" });
+    await api.handleConnection(ws, localReq("/ws"));
 
     await api.handleMessage(ws, { id: "8", method: "getProfile" });
 
@@ -233,7 +271,7 @@ describe("socket methods run after the gate and before the dispatcher", () => {
       socketMethods: { handle: handle as never },
     });
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws?token=good" });
+    await api.handleConnection(ws, localReq("/ws?token=good"));
 
     await api.handleMessage(ws, { id: "9", method: "homeClawCoreWsSend", params: { text: "hi" } });
 
@@ -251,7 +289,7 @@ describe("socket methods run after the gate and before the dispatcher", () => {
     const closed = vi.fn();
     const { api } = makeServer({ socketMethods: { handle: async () => false, closed } });
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws" });
+    await api.handleConnection(ws, localReq("/ws"));
 
     ws.emit("close");
 
@@ -264,7 +302,7 @@ describe("the host's own methods never reach the product", () => {
   it("handles on/off itself", async () => {
     const { dispatch, api } = makeServer({});
     const ws = new FakeSocket();
-    await api.handleConnection(ws, { url: "/ws" });
+    await api.handleConnection(ws, localReq("/ws"));
 
     await api.handleMessage(ws, { id: "10", method: "on", params: { event: "terminal:watch-ready" } });
     await api.handleMessage(ws, { id: "11", method: "off", params: { event: "terminal:watch-ready" } });

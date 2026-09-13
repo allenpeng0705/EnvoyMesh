@@ -420,6 +420,33 @@ The fix is small and preserves every legitimate flow — require `loopback OR a 
 
 **Why this gates attach.** Both come down to one question: *what may a caller who is not the owner do?* Attaching a second product means deciding whether it gets the owner's scope (as the tokenless Social UI does today) or a product scope of its own. Building the token exchange before that decision would hardcode the answer by accident.
 
+### S3 (fifth slice) ✅ — the LAN exposure is closed (2026-09-13)
+
+The owner's call on both questions: require **loopback or a valid session**, and give an attached product **a scope of its own**.
+
+The transport now records whether a socket's peer is on this machine (`127.0.0.1`, `::1`, `::ffff:127.0.0.1`, `127.x`) and refuses everything else unless the caller authenticated. The predicate deliberately treats `0.0.0.0` and `::` as **not** local — those are bind addresses, and a real peer never has them, so accepting them would be a hole dressed as a convenience.
+
+| Flow | Before | After |
+|---|---|---|
+| Owner's UI — loopback, no token | allowed | **allowed** (unchanged: the SPA connects to `ws://127.0.0.1:3030/ws` with no token) |
+| Paired phone — any address, valid token | allowed | **allowed** (unchanged) |
+| Pairing a new device — pre-auth method, no token, from the network | allowed | **allowed** |
+| A device on the network — no token | **served the owner's data** | **`UNAUTHORIZED`** |
+| Wrong token, any address | refused | refused (unchanged) |
+
+Verified against the running node from the machine's LAN address — the same probe that exposed the hole:
+
+```
+1) loopback, no token  → {"profiles":[{"id":"owner","name":"TgWvaDfksR1k","isOwner":true,…}]}
+2) LAN, no token       → {"error":{"code":"UNAUTHORIZED","message":"Authentication required"}}
+3) LAN, wrong token    → {"error":{"code":"UNAUTHORIZED",…}}
+4) LAN, pairThinClient → {"error":{"message":"pairingToken is required"}}   ← pre-auth path intact
+```
+
+`packages/host-connect/test/access-gate.test.ts` pins all four flows plus the predicate itself (7 tests). The non-loopback cases connect to this machine's own LAN address, so the server really does see a non-loopback peer — a test that only ever connects to `127.0.0.1` cannot fail for the right reason here. An escape hatch (`allowUnauthenticatedNonLoopback: true`) exists for a host that is *meant* to serve an open surface; nothing in this repo sets it.
+
+**Recorded for the next slice:** an attached product gets `scopeKey: "product:<Name>"`, not the owner's scope — least privilege, no key sharing, and it extends the per-scope gating the node already performs (`mayFamilyProfileUseCoding`). This change is what makes that meaningful, because until now "not the owner" and "no token" were the same thing.
+
 ### S2 review round 1 — the gate caught my own growth, and a lie in the help text (2026-09-13)
 
 Two things the seeded suite and a read-through found after S2 was written:

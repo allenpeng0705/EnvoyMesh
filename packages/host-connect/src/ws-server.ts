@@ -45,6 +45,30 @@ interface HostSocketState {
   isThinClientAuthenticated?: boolean;
   /** Set when a token was attempted (valid or not), for gate decisions. */
   hadThinClientToken?: boolean;
+  /**
+   * Set when the socket's peer is on this machine (`127.0.0.1`, `::1`, or the
+   * IPv4-mapped form).
+   *
+   * This is the fact the transport has and the product does not: the resolver is
+   * handed a *token*, never a socket, so a product cannot tell the owner's own UI
+   * from a device on the network. Without it, "no token" had to mean "trusted" —
+   * see the gate in `dispatchRpc`.
+   */
+  isLoopbackPeer?: boolean;
+}
+
+/**
+ * Is this address on the machine the host runs on?
+ *
+ * `::ffff:127.0.0.1` is what a dual-stack Node socket reports for an IPv4 loopback
+ * peer, and `0.0.0.0`/`::` are bind addresses, not peers — a peer never has them, so
+ * treating either as local would be a hole rather than a convenience.
+ */
+export function isLoopbackAddress(address: string | undefined): boolean {
+  const raw = address?.trim();
+  if (!raw) return false;
+  const bare = raw.startsWith("::ffff:") ? raw.slice("::ffff:".length) : raw;
+  return bare === "127.0.0.1" || bare === "::1" || bare.startsWith("127.");
 }
 
 /** View a socket as carrying the host's per-socket state. */
@@ -136,6 +160,16 @@ export interface WsServerOptions<TCaller = unknown> {
   transformForSession?: SessionPayloadTransform<TCaller>;
 
   /**
+   * Whether a caller that is neither on this machine nor authenticated may call
+   * non-pre-auth methods. Default `true`.
+   *
+   * Set to `false` only for a host that is *meant* to serve an open network surface
+   * — and say why in the code, because the default is the difference between "my
+   * paired phone can reach me" and "anyone on the Wi-Fi can read my profile".
+   */
+  allowUnauthenticatedNonLoopback?: boolean;
+
+  /**
    * Whether this method must run **one at a time** on its connection.
    *
    * The predicate, not a list: `@envoymesh/node-core`'s predecessor named 31
@@ -166,6 +200,8 @@ export class WsServer<TCaller = unknown> {
   private _transformForSession: SessionPayloadTransform<TCaller> | undefined;
   private _socketMethods: SocketMethodPort<TCaller> | undefined;
   private _preAuthMethods: ReadonlySet<string> = new Set();
+  /** See `WsServerOptions.allowUnauthenticatedNonLoopback`. */
+  private _requireAuthForNonLoopback = true;
   private _shouldSerializeMethod: (method: string) => boolean = () => false;
   /**
    * H2 — the session-identity port. The host resolves a token through this and
@@ -298,6 +334,7 @@ export class WsServer<TCaller = unknown> {
     this._preAuthMethods = new Set(options.preAuthMethods ?? []);
     this._shouldSerializeMethod = options.shouldSerializeMethod ?? (() => false);
     this.onListenError = options.onListenError;
+    this._requireAuthForNonLoopback = options.allowUnauthenticatedNonLoopback !== true;
     this._boundPort = null;
     this.listening = new Promise<void>((resolve, reject) => {
       this.listeningPending = { resolve, reject };
@@ -680,6 +717,11 @@ export class WsServer<TCaller = unknown> {
     // Notify connection change
     this.onConnectionChange?.(this.wss.clients.size);
 
+    // Where this socket came from. Recorded before any gate decision, because it is
+    // the one fact that separates the owner's own UI (loopback) from a device on the
+    // network — see the gate in `dispatchRpc`.
+    hostState(ws).isLoopbackPeer = isLoopbackAddress(req?.socket?.remoteAddress);
+
     // Extract session token from query string.
     // Three states: no token (legacy client), valid token (thin-client), invalid token.
     let isAuthenticated = false;
@@ -933,22 +975,32 @@ export class WsServer<TCaller = unknown> {
       return;
     }
 
-    // Gate: only enforce auth for clients that attempted token-based
-    // authentication but failed. Legacy clients (Social UI, Capacitor
-    // app) connect without a token and are unrestricted.
+    // Gate: a caller must be **the owner's machine** or hold a valid session.
+    //
+    // This used to be weaker: auth was enforced only for clients that *attempted* a
+    // token and failed, so a client with no token was unrestricted regardless of
+    // where it connected from — and the host binds `0.0.0.0` so paired phones can
+    // reach it, which meant any device on the network could read the owner's surface
+    // (verified: `listFamilyProfiles` answered an unauthenticated client on the LAN).
+    // The stated reason was "Social UI, Capacitor app … legacy and unrestricted"; the
+    // Capacitor app has since been deleted, and the Social UI connects over loopback,
+    // so loopback-or-session preserves every legitimate flow and closes the rest.
     const isAuth = hostState(ws).isThinClientAuthenticated === true;
     const hadToken = hostState(ws).hadThinClientToken === true;
+    const isLoopbackPeer = hostState(ws).isLoopbackPeer === true;
     // Methods a client may call before authenticating are **product data**
     // (`preAuthMethods`), not names written here — EnvoyMesh's are the pairing
     // call and the family-invite preview, and the host does not know that.
-    if (hadToken && !isAuth && !this._preAuthMethods.has(method)) {
-      // Use the explicit UNAUTHORIZED code so the EnvoyGo mobile client
-      // can map this to a typed `UnauthorizedException` and stop
-      // treating it as a transient transport failure. The message
-      // string is unchanged for back-compat with older EnvoyGo builds
-      // and with the Social UI / Capacitor app.
-      this.sendError(ws, id ?? "unknown", "Authentication required", "UNAUTHORIZED");
-      return;
+    if (!this._preAuthMethods.has(method)) {
+      const refuse = (hadToken && !isAuth) || (!isAuth && !isLoopbackPeer && this._requireAuthForNonLoopback);
+      if (refuse) {
+        // Use the explicit UNAUTHORIZED code so the EnvoyGo mobile client
+        // can map this to a typed `UnauthorizedException` and stop
+        // treating it as a transient transport failure. The message
+        // string is unchanged for back-compat with older EnvoyGo builds.
+        this.sendError(ws, id ?? "unknown", "Authentication required", "UNAUTHORIZED");
+        return;
+      }
     }
 
     // Product methods that need the connection itself. The host does not know

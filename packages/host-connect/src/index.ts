@@ -35,7 +35,7 @@
  * latter because it re-exports `home-fs`).
  */
 
-export { WsServer } from "./ws-server.js";
+export { WsServer, isLoopbackAddress } from "./ws-server.js";
 
 export {
   // Event vocabulary and delivery
