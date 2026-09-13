@@ -1,6 +1,6 @@
 # EnvoyMesh family — multi-product packaging design
 
-**Status:** design agreed in outline; **S0, S1 and S2's model implemented** (§13) · **Owner:** product / packaging · **Created:** 2026-09-12
+**Status:** design agreed in outline; **S0, S1 and S2 done; S3 started** (§13) · **Owner:** product / packaging · **Created:** 2026-09-12
 
 > **Why this is its own document.** `docs/envoymesh-refactoring-plan.md` §11 states "**No product design**" and §12's banner adds that "product design belongs in its own document … mixing it into an encapsulation plan is precisely how the §2.3 mixed surface came into being." This is that document. It decides nothing about the refactor and changes no module's classification; it *consumes* the refactor's split (556 `reusable` / 252 `product-bound`) and records how a family of products should be installed, configured and run next to each other.
 >
@@ -192,8 +192,8 @@ The owner's rule: **check the common place; tell the user a profile exists; let 
 |---|---|---|
 | **S0** ✅ | Make the node runnable in a working checkout: refresh the sibling `envoy-harness` links (or vendor the remaining contract symbols into `packages/protocol`, which this refactor already did for five of them) | ✅ node starts; >2 GB attributed by process (§13) |
 | **S1** ✅ | Root resolution (`ENVOYMESH_HOME` → setting → per-OS default → legacy), `envoymesh.json` marker, detection helper, and move the node default off `./data/default` | ✅ starting from two different CWDs resolves to **one** identity; marker written on first run; 18 tests over found / missing / damaged / permissions (§13) |
-| **S2** ◐ | The discovery dialog: found / none / damaged / in-use, with end-user wording | ✅ the model + the node's damaged-profile path (`profile-discovery.ts`, 8 tests); ◻ the dialog rendering belongs to a product UI; ◻ **in-use** needs S3's lock |
-| **S3** | `lock` + `node.json` + attach; health identity; ownership-checked supervisor cleanup | Two apps: second attaches, never double-owns; supervisor kills only its own sidecar; `/health` identifies the node |
+| **S2** ✅ | The discovery dialog: found / none / damaged / in-use, with end-user wording | ✅ all five states modelled (`profile-discovery.ts`, 13 tests); ✅ the node's damaged *and* in-use paths; ◻ the dialog rendering belongs to a product UI |
+| **S3** ◐ | `lock` + `node.json` + attach; health identity; ownership-checked supervisor cleanup | ✅ lock, endpoint, identity probe, refusal of a second owner (16 tests + a two-process run); ◻ attach (token exchange + client); ◻ `/health` carrying identity; ◻ the Rust supervisor's kill-by-port |
 | **S4** | Shared local engine: assets to `runtime/`, `/v1/models` probe, spawn lock, model lease; embeddings first | Second app uses the running engine instead of spawning one; a racing start is resolved by the lock |
 
 ## 11. What this design does not change
@@ -321,7 +321,43 @@ Verified by corrupting a real profile and starting the node against it: the mess
 
 **Also in this change:** `packages/node-core/src` joined the module-size gate in CI and in `scripts/test/gates.test.mjs` — a core package carrying product-facing modules should not grow unbounded unnoticed. Its only current finding is a pre-existing warning (`home-fs.ts`, 509 lines).
 
-### S2 review — the gate caught my own growth, and a lie in the help text (2026-09-13)
+### S2 review round 2 — six defects, and one test that passed for the wrong reason (2026-09-13)
+
+Reading the first S2 version back against §6 and §7 found more than the first pass did:
+
+1. **The facts block did not exist**, although §7 says the dialog shows owner, display name, created and last-used. Prose mentioned the owner; every timestamp was dropped on the floor — `DescribeProfileSituationInput` took only `lastUsedByApp`.
+2. **The headline contradicted the buttons**: with `canCreate: false` the *missing* state still announced "a new one will be created" while offering no such choice.
+3. **A dialog with no way forward.** With `canCreate` *and* `canChooseFolder` both false, `missing` and `damaged` produced `choices: []`. Worse, the test written to prevent exactly this — "never leaves the user without a way forward" — only exercised the defaults, so it **passed for the wrong reason**. The test now walks every state × capability combination, and the model falls back to "Not now".
+4. **"Start a new profile here" was offered as an ordinary option** although a UI must confirm it. Choices now carry `destructive?: boolean`.
+5. **The jargon test banned arbitrary words** ("sync", "null") and would have failed on unrelated edits — the way a useful test gets deleted instead of fixed. Narrowed to vocabulary that is unambiguously developer-facing.
+6. **The damage list read "A, and B"** for two items.
+
+`ProfileSituation` gained `facts: { label, value }[]` (owner, where, created, last used *with* the app and version, device) so a UI has something to show beyond a sentence, and `ProfileSituationState` gained `"in-use"` — which an inspection can never report, because the files may be perfectly healthy; only the lock knows.
+
+### S3 (first slice) ◐ — one process owns a home (2026-09-13)
+
+**New module:** `packages/node-core/src/node-registry.ts` — **560 reusable modules**. Three pieces, and the failures they exist to prevent are the ones I could previously only describe:
+
+| Piece | Property |
+|---|---|
+| `lock` (`acquireNodeLock` / `releaseNodeLock`) | `wx` exclusive create, so eight simultaneous claimants produce **exactly one** winner (asserted concurrently, not argued); a claim whose pid is gone is **taken over** so a crashed node cannot lock the user out; release is pid-guarded so one process can never delete another's claim |
+| `node.json` (`writeNodeEndpoint`) | 0600, atomic, naming pid, port, path, owner and schema — what a second product reads to say *who* has the home |
+| `probeNodeEndpoint` | answers **two** questions: is something serving there, and is it the node we mean. The transport's `/health` body is identical across products, which is how the desktop guardian can be satisfied by a different product holding the port; identity is verified when the payload carries it and reported as `identityUnknown` when it does not |
+
+**Wired into the node**, with the order chosen by observation: **lock before profile load**, because two processes that both load (and on a fresh home both *create*) a profile have already done the damage by the time either notices.
+
+**Two defects found by running it, not by testing it:**
+
+1. **Damaged was reported before ownership** — so the second process printed "the profile looks incomplete" *and then* "EnvoyMesh is already using it". A node that is still starting has not written every file yet, so a healthy in-use home reads as damaged — and telling a user their profile is incomplete invites them to start a new identity beside a healthy one. Ownership now wins: verified by starting a second node against a live one, which prints only the in-use block, exits 3, and changes nothing.
+2. **`releaseNodeLock` is async, so the `exit` handler never finished it** — every clean shutdown left a lock file behind and the next start reported it as stale. Stale claims are taken over, so this was never fatal, but it made every clean exit look like a crash. Added `releaseNodeLockSync` for the exit path; verified by `SIGTERM`: lock and `node.json` both gone, port released, profile intact.
+
+**My verification was invalid before it was right**, which is worth recording: the first two-process run "passed" with a deleted home and four leftover node processes from earlier runs fighting over port 3030 — so the second process hit `EADDRINUSE` and exited 1 for reasons that had nothing to do with the lock. Killed everything, re-ran against a clean port, and only then did the result mean anything.
+
+**And the full suite failed once, for a reason that had nothing to do with S3.** `apps/node/test/reuse-host.test.ts` — *"boots, authenticates a client and serves an RPC end to end"* — failed with `expected undefined to deeply equal { version: '0.5.0', … }` and passed in isolation. Cause: it resolved on the **first** WebSocket message, while the transport also pushes an unsolicited `connected` event; under load the push arrives first and the test reads it as its RPC reply. Message *order* is not part of the contract — correlating on the JSON-RPC `id` is — so the test now filters by id (the same discipline my own CLI probe needed, learned the same way). The suite's test count went **up** by one after the fix, because the racing assertion had been silently skipping.
+
+**What S3 still owes:** attach (token exchange + a client), `/health` carrying the node's identity so `probeNodeEndpoint` can verify instead of reporting `identityUnknown` (the server side is `host-connect`; the Rust guardian's probe must check the same fields), and making the desktop supervisor stop killing whatever owns 3030/3031/3032.
+
+### S2 review round 1 — the gate caught my own growth, and a lie in the help text (2026-09-13)
 
 Two things the seeded suite and a read-through found after S2 was written:
 

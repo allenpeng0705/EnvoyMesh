@@ -114,9 +114,16 @@ describe("a host built only from the reusable surface", () => {
 
     const reply = await new Promise<Record<string, unknown>>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("no reply from the host")), 5_000);
-      socket.once("message", (raw: Buffer) => {
+      socket.on("message", (raw: Buffer) => {
+        const message = JSON.parse(raw.toString()) as Record<string, unknown>;
+        // Match on the JSON-RPC id, not "the first message": the host also pushes
+        // an unsolicited `connected` event, and under load it arrives first — which
+        // is how this test failed once with `expected undefined to deeply equal …`
+        // in a full-suite run while passing in isolation. Message *order* is not
+        // part of the contract; correlating by id is.
+        if (message["id"] !== 1) return;
         clearTimeout(timer);
-        resolve(JSON.parse(raw.toString()) as Record<string, unknown>);
+        resolve(message);
       });
       socket.send(
         JSON.stringify({

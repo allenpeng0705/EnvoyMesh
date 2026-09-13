@@ -144,6 +144,7 @@ import { handleCliSharePreviewViaRuntime } from "./cli-mesh-inbound-share-previe
 import { handleSystemPingViaRuntime } from "./cli-mesh-inbound-system-ping.js";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { createHash, randomUUID } from "node:crypto";
+import { writeSync } from "node:fs";
 import { readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { join, extname, resolve } from "node:path";
 import { parseNodeArgs, applyPersistedDiscoveryConfig, type NodeArgs } from "./args.js";
@@ -229,13 +230,16 @@ import {
   socialWsLoopbackUrl,
   devServicePortsConfigured,
   effectiveBridgeListenPort,
+  acquireNodeLock,
   describeProfileSituation,
   ensureHomeDirs,
   homeForProfileDir,
   inspectProfile,
   isHomeSchemaSupported,
   profileDirIn,
+  releaseNodeLockSync,
   touchHomeMarker,
+  writeNodeEndpoint,
   ENVOYMESH_HOME_SCHEMA,
 } from "@envoymesh/node-core";
 import { createBridge } from "./bridge/index.js";
@@ -371,10 +375,59 @@ if (!isHomeSchemaSupported(homeMarker)) {
   );
 }
 
-// Say what is on disk in the user's words *before* the loader can surface a raw
-// parse error, and never replace what is there: a damaged profile is reported,
-// not overwritten — those files are the owner's identity (design §6, state 5).
 const homeInspection = await inspectProfile(args.profileDir);
+
+// ─── one process owns a home (design §7) ────────────────────────────────────────
+//
+// Taken *before* the profile is loaded, not after: two processes that both load —
+// and, on a fresh home, both create — a profile have already done the damage by the
+// time either would notice. Not a nicety either: both read `libp2p-private.key`, so
+// both claim the same PeerId (a relay sees one peer check in twice, peers hold
+// ambiguous connections to that id), and both write the same stores with no
+// exclusion of any kind.
+const nodeLock = await acquireNodeLock(homeDir, {
+  pid: process.pid,
+  app: "EnvoyMesh",
+  version: ENVOYMESH_VERSION,
+});
+const secondNodeAllowed = process.env["ENVOYMESH_ALLOW_SECOND_NODE"] === "1";
+if (!nodeLock.acquired && !secondNodeAllowed) {
+  const situation = describeProfileSituation({
+    product: "EnvoyMesh",
+    home: homeDir,
+    profileDir: args.profileDir,
+    inspection: homeInspection,
+    marker: homeMarker,
+    inUse: {
+      app: nodeLock.holder.app,
+      pid: nodeLock.holder.pid,
+      ...(nodeLock.endpoint?.port !== undefined ? { port: nodeLock.endpoint.port } : {}),
+      startedAt: nodeLock.holder.startedAt,
+    },
+    // Attaching is the next slice: the running node cannot yet accept a product
+    // client, so the honest thing is not to offer it.
+    canAttach: false,
+  });
+  writeSync(
+    2,
+    `\n${situation.headline}\n${situation.detail}\n` +
+      situation.choices.map((c) => `  • ${c.label} — ${c.description}\n`).join("") +
+      `\nNothing was changed.\n`,
+  );
+  process.exit(3);
+}
+if (!nodeLock.acquired) {
+  console.warn(
+    `[home] ${nodeLock.holder.app} (pid ${nodeLock.holder.pid}) already owns ${homeDir}; ` +
+      "continuing because ENVOYMESH_ALLOW_SECOND_NODE=1. Two nodes on one profile share an identity.",
+  );
+}
+
+// Damaged is reported *after* the ownership check, never before. Running against a
+// home another process holds showed why: a node that is still starting has not
+// written every file yet, so the profile reads as "damaged" — and telling the user
+// their profile is incomplete invites them to start a new identity beside a healthy
+// one. "EnvoyMesh is already using this profile" is the true headline.
 const damaged =
   homeInspection.state === "damaged"
     ? describeProfileSituation({
@@ -382,14 +435,18 @@ const damaged =
         home: homeDir,
         profileDir: args.profileDir,
         inspection: homeInspection,
-        ...(homeMarker?.lastUsedBy?.app ? { lastUsedByApp: homeMarker.lastUsedBy.app } : {}),
+        // The whole marker, not just the app name: "created last week, last used
+        // yesterday by EnvoyMesh 0.5.0" is what the design promises the user sees.
+        marker: homeMarker,
       })
     : null;
 if (damaged) {
-  console.error(`[home] ${damaged.headline}\n       ${damaged.detail}`);
+  const lines = [`[home] ${damaged.headline}`, `       ${damaged.detail}`];
+  for (const fact of damaged.facts) lines.push(`       ${fact.label}: ${fact.value}`);
   for (const choice of damaged.choices) {
-    console.error(`       • ${choice.label} — ${choice.description}`);
+    lines.push(`       • ${choice.label} — ${choice.description}${choice.destructive ? " (asks for confirmation)" : ""}`);
   }
+  console.error(lines.join("\n"));
 }
 
 let profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
@@ -401,10 +458,15 @@ try {
   // the behaviour we want and a message no user should see: `SyntaxError:
   // Expected property name …` after a paragraph of readable English, then a stack
   // trace. Exit here with the readable half and a non-zero code.
-  console.error(
+  //
+  // `writeSync`, not `console.error`: stderr to a pipe is asynchronous, and
+  // `process.exit` does not wait for it — the message that explains the exit was
+  // the one thing that could be lost. (This session has already lost a test
+  // failure's name to `| tail`; a user's error message is worse.)
+  const message =
     `\nEnvoyMesh cannot start with the profile in \u201c${args.profileDir}\u201d.\n` +
-      `Nothing was changed. Fix or move that folder (or restore a backup), then start EnvoyMesh again.`,
-  );
+    `Nothing was changed. Fix or move that folder (or restore a backup), then start EnvoyMesh again.\n`;
+  writeSync(2, message);
   process.exit(2);
 }
 
@@ -420,6 +482,41 @@ if (homeMarker && !homeMarker.ownerId) {
   } catch {
     // Non-fatal: the marker without an owner still identifies the root.
   }
+}
+
+// The claim is taken; publish where this node can be reached and release it on the
+// way out. `release` is guarded by pid inside `releaseNodeLock`, so this process
+// can never release someone else's claim, and it runs on `exit` as well as on a
+// signal because a signal path may not reach any `finally`.
+if (nodeLock.acquired) {
+  await writeNodeEndpoint(homeDir, {
+    pid: process.pid,
+    app: "EnvoyMesh",
+    version: ENVOYMESH_VERSION,
+    startedAt: nodeLock.lock.startedAt,
+    port: SOCIAL_WS_PORT,
+    path: "/ws",
+    // The token is minted by the pairing flow, which is the product's; what this
+    // file publishes today is *that* a node is running and where, so another app
+    // can report "EnvoyMesh is using this profile" instead of guessing.
+    token: "",
+    ownerId: profile.owner.ownerId,
+    schema: homeMarker?.schema ?? ENVOYMESH_HOME_SCHEMA,
+  });
+  const release = () => {
+    // Synchronous: an `exit` handler cannot await, so the async version never
+    // finished there and every clean shutdown looked like a crash to the next start.
+    releaseNodeLockSync(homeDir, process.pid);
+  };
+  process.once("exit", release);
+  process.once("SIGINT", () => {
+    release();
+    process.exit(0);
+  });
+  process.once("SIGTERM", () => {
+    release();
+    process.exit(0);
+  });
 }
 const taskDispatcher = createTaskDispatcher();
 const taskStore = createLocalTaskStore(args.profileDir);
