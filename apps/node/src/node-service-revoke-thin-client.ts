@@ -7,7 +7,7 @@
  * NodeServiceImpl (same pattern as node-service-family.ts).
  */
 import type { RevokeThinClientParams, RevokeThinClientResult } from "@envoymesh/api"
-import type { SessionTokenRecord } from "@envoymesh/local-store"
+import type { SessionTokenRecord } from "@envoymesh/local-store/session-token-store"
 import { getRpcCaller } from "./rpc-caller-context.js"
 
 export interface RevokeThinClientDeps {

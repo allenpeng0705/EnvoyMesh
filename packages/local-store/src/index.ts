@@ -2880,7 +2880,6 @@ export * from "./chat-room-pending-message-store.js";
 export * from "./chat-draft-store.js";
 export * from "./auto-reply-limit-store.js";
 export * from "./capability-manifest-store.js";
-export * from "./session-token-store.js";
 export * from "./device-authorization-store.js";
 export * from "./agent-identity-store.js";
 export * from "./agent-activity-store.js";
@@ -2895,7 +2894,6 @@ export * from "./document-acquisition-store.js";
 export * from "./capability-provider-job-store.js";
 export * from "./task-results-store.js";
 export * from "./company-invite-store.js";
-export * from "./family-profile-store.js";
 export * from "./family-room-store.js";
 export * from "./shop-store.js";
 export * from "./market-cache-store.js";
@@ -2905,3 +2903,15 @@ export * from "./chain-reports-store.js";
 export * from "./cost-rollup-store.js";
 export * from "./chain-recipes-store.js";
 export * from "./sensitivity-overrides.js";
+
+// ─── deliberately NOT re-exported ────────────────────────────────────────────
+// `family-profile-store.ts` and `session-token-store.ts` name a product concept
+// (`FamilyProfile`, `boundFamilyProfileId`), so they are `product-bound` under
+// Axis 1 — and while they were re-exported here, this barrel reached product code
+// too, which made the whole package's declared core status a lie. They live
+// behind their own declared subpaths instead:
+//
+//     import { createFamilyProfileStore } from "@envoymesh/local-store/family-profile-store";
+//     import { createSessionTokenStore } from "@envoymesh/local-store/session-token-store";
+//
+// Importing *this* entry point can no longer reach them.

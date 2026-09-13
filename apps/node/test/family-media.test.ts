@@ -11,14 +11,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { familyThreadKey, OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api"
-import {
-  createFamilyProfileStore,
-  createFamilyRoomStore,
-  createHumanProfileStore,
-  createLocalPeerDirectoryStore,
-  createLocalTrustStore,
-  type NodeProfile,
-} from "@envoymesh/local-store"
+import { createFamilyRoomStore, createHumanProfileStore, createLocalPeerDirectoryStore, createLocalTrustStore, type NodeProfile } from "@envoymesh/local-store"
+import { createFamilyProfileStore } from "@envoymesh/local-store/family-profile-store"
 import { generateDeviceIdentity, generateOwnerIdentity, createDeviceCertificate } from "@envoymesh/identity"
 import type { EnvoyMesh } from "@envoymesh/network"
 import { NodeServiceImpl } from "../src/node-service-impl.js"

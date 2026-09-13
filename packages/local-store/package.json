@@ -4,7 +4,15 @@
   "type": "module",
   "main": "./dist/src/index.js",
   "exports": {
-    ".": "./dist/src/index.js"
+    ".": "./dist/src/index.js",
+    "./family-profile-store": {
+      "types": "./dist/src/family-profile-store.d.ts",
+      "import": "./dist/src/family-profile-store.js"
+    },
+    "./session-token-store": {
+      "types": "./dist/src/session-token-store.d.ts",
+      "import": "./dist/src/session-token-store.js"
+    }
   },
   "dependencies": {
     "@envoymesh/bonds": "0.5.0",

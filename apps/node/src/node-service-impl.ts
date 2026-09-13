@@ -330,79 +330,11 @@ import {
   createAgentCredential,
   generateAgentIdentity,
 } from "@envoymesh/identity";
-import {
-  createAuditEvent,
-  createLocalTaskStore,
-  createLocalTrustStore,
-  createLocalPeerDirectoryStore,
-  createHumanProfileStore,
-  createAgentIdentityStore,
-  createLocalChatLogStore,
-  createLocalChatRoomStore,
-  createLocalChatRoomPendingSyncStore,
-  createLocalChatRoomPendingMessageStore,
-  type LocalChatRoomPendingSyncStore,
-  type LocalChatRoomPendingMessageStore,
-  createLocalAgentActivityStore,
-  createChatDraftStore,
-  createAutoReplyLimitStore,
-  type AutoReplyLimitStore,
-  createTaskRuntimeStateStore,
-  createRelayStateStore,
-  createCapabilityManifestStore,
-  createSessionTokenStore,
-  createFamilyProfileStore,
-  createFamilyRoomStore,
-  createShopStore,
-  createMarketCacheStore,
-  createMarketSearchHistoryStore,
-  createDeviceAuthorizationStore,
-  createAgentCardStore,
-  createContactOwnerKeyStore,
-  createCommerceReceiptStore,
-  type CommerceReceiptStore,
-  createReputationAnchorStore,
-  createMultiHopDiscoveryStore,
-  createLocalPeerReputationStore,
-  type AgentCardStore,
-  type ContactOwnerKeyStore,
-  type ReputationAnchorStore,
-  type MultiHopDiscoveryStore,
-  type MultiHopDiscoverySession,
-  type PeerReputationStore,
-  loadOrCreateNodeProfile,
-  type LocalTaskStore,
-  type LocalTrustStore,
-  type LocalPeerDirectoryStore,
-  type LocalChatLogStore,
-  type LocalChatRoomStore,
-  type LocalAgentActivityStore,
-  type ChatDraftStore,
-  type HumanProfileStore,
-  type AgentIdentityStore,
-  type TaskRuntimeStateStore,
-  type RelayStateStore,
-  type CapabilityManifestStore,
-  type SessionTokenStore,
-  type FamilyProfileStore,
-  type FamilyRoomStore,
-  type ShopStore,
-  type MarketCacheStore,
-  type MarketSearchHistoryStore,
-  type DeviceAuthorizationStore,
-  buildMorningReportDigest,
-  createPeerProfileCacheStore,
-  type PeerProfileCacheStore,
-  type CachedPeerProfile,
-  createSocialProxySessionStore,
-  type SocialProxySessionStore,
-  createDocumentAcquisitionJobStore,
-  createCapabilityProviderJobStore,
-  type DocumentAcquisitionJobStore,
-  type CapabilityProviderJobStore,
-  type AuditEvent,
-  type PeerDirectoryRecord,
-} from "@envoymesh/local-store";
+import { createAuditEvent, createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore, createHumanProfileStore, createAgentIdentityStore, createLocalChatLogStore, createLocalChatRoomStore, createLocalChatRoomPendingSyncStore, createLocalChatRoomPendingMessageStore, type LocalChatRoomPendingSyncStore, type LocalChatRoomPendingMessageStore, createLocalAgentActivityStore, createChatDraftStore, createAutoReplyLimitStore, type AutoReplyLimitStore, createTaskRuntimeStateStore, createRelayStateStore, createCapabilityManifestStore, createFamilyRoomStore, createShopStore, createMarketCacheStore, createMarketSearchHistoryStore, createDeviceAuthorizationStore, createAgentCardStore, createContactOwnerKeyStore, createCommerceReceiptStore, type CommerceReceiptStore, createReputationAnchorStore, createMultiHopDiscoveryStore, createLocalPeerReputationStore, type AgentCardStore, type ContactOwnerKeyStore, type ReputationAnchorStore, type MultiHopDiscoveryStore, type MultiHopDiscoverySession, type PeerReputationStore, loadOrCreateNodeProfile, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type LocalChatLogStore, type LocalChatRoomStore, type LocalAgentActivityStore, type ChatDraftStore, type HumanProfileStore, type AgentIdentityStore, type TaskRuntimeStateStore, type RelayStateStore, type CapabilityManifestStore, type FamilyRoomStore, type ShopStore, type MarketCacheStore, type MarketSearchHistoryStore, type DeviceAuthorizationStore, buildMorningReportDigest, createPeerProfileCacheStore, type PeerProfileCacheStore, type CachedPeerProfile, createSocialProxySessionStore, type SocialProxySessionStore, createDocumentAcquisitionJobStore, createCapabilityProviderJobStore, type DocumentAcquisitionJobStore, type CapabilityProviderJobStore, type AuditEvent, type PeerDirectoryRecord } from "@envoymesh/local-store";
+import { createFamilyProfileStore } from "@envoymesh/local-store/family-profile-store";
+import type { FamilyProfileStore } from "@envoymesh/local-store/family-profile-store";
+import { createSessionTokenStore } from "@envoymesh/local-store/session-token-store";
+import type { SessionTokenRecord, SessionTokenStore } from "@envoymesh/local-store/session-token-store";
 import {
   listFamilyProfilesViaRuntime,
   createFamilyProfileViaRuntime,
@@ -14279,7 +14211,7 @@ class NodeServiceImpl implements NodeService {
     ) as Promise<import("@envoymesh/api").TerminalHerdrExportHintResult>;
   }
 
-  async lookupSessionToken(token: string): Promise<import("@envoymesh/local-store").SessionTokenRecord | undefined> {
+  async lookupSessionToken(token: string): Promise<SessionTokenRecord | undefined> {
     return lookupSessionTokenViaRuntime(this._sessionTokenContext(), token);
   }
 
@@ -16282,7 +16214,7 @@ class NodeServiceImpl implements NodeService {
    * Used at WS connect when the in-memory session was already corrected.
    */
   async healSessionProfileFromBinding(
-    record: import("@envoymesh/local-store").SessionTokenRecord,
+    record: SessionTokenRecord,
     profileId: string,
   ): Promise<void> {
     if (!this._sessionTokenStore) return;

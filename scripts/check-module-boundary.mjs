@@ -11,7 +11,8 @@
  * | 3 | Completeness| a module is missing from the manifest, or appears twice |
  * | 4 | Concept     | a `reusable` module names a product concept |
  * | 5 | Dart surface| a library the manifest calls `reusable` exports a `product-bound` module |
- * | 6 | Core set    | a package whose modules are all `reusable` is missing from `declaredInputs.corePackages` (or the manifest declares one that still contains product-bound modules — warned, not failed) |
+ * | 6a | Core set   | a package whose entry point is `reusable` is missing from `declaredInputs.corePackages` |
+ * | 6b | Core set   | a package is declared core but its entry point is `product-bound` |
  *
  * All six are implemented. A rule that is not implemented is never stubbed as
  * a passing check — an unimplemented rule must not look green — so if a rule is
@@ -362,35 +363,49 @@ for (const rel of await consumerSources()) {
   }
 }
 
-// --- rule 6: a fully-reusable package must be declared core --------------------
+// --- rule 6: the declared core set must match the declared entry points --------
 //
 // Condition 3 of the three-condition test (`classify-modules.mjs`) seeds a module
-// `product-bound` the moment it imports a non-core `@envoymesh` package — so a
-// package whose **every** module is `reusable` taints its importers for no
-// reason at all. That is not hypothetical: `@envoymesh/node-core` had 4 reusable
-// modules out of 4 and was not declared, so every harness module importing it
-// came out `product-bound` (7 of 24 reusable). Declaring the seven qualifying
-// packages took harness to 20 and the repo from 438 to 463 reusable modules.
+// `product-bound` the moment it imports a non-core `@envoymesh` package. So the
+// question a core declaration has to answer is: *can importing this package reach
+// product code?* — and the honest answer is a property of the package's declared
+// **entry point**, not of every file in its directory.
 //
-// The inverse is a **warning**, not a violation: `local-store` is declared core
-// while 3 of its modules are `product-bound` (one names a product concept). That
-// is a deliberate decision — demoting it would cost 19 reusable modules — so it
-// is surfaced rather than hidden, and the clean fix (splitting the product stores
-// out of its barrel) is a plan item.
+//   * **6a (fails)** — the entry point is `reusable` but the package is not
+//     declared core: importers are tainted for nothing. This is what hid V4:
+//     `@envoymesh/node-core` had 4 reusable modules out of 4 and was not listed,
+//     so every harness module importing it came out `product-bound` (7 of 24).
+//   * **6b (fails)** — the package *is* declared core but its entry point is
+//     `product-bound`: importers reach product code while looking reusable. This
+//     is the direction that matters most, and it was live until the local-store
+//     barrel split: `index.ts` re-exported `family-profile-store.ts`, so
+//     "declared core" was a lie for 19 dependent modules.
+//   * **note (does not fail)** — a declared-core package may hold product-bound
+//     modules that are *not* reachable from its entry point (behind their own
+//     declared subpaths, which are separate specifiers and taint on their own).
+//     `local-store` is exactly that case by design.
 const corePackages = new Set(manifest.declaredInputs?.corePackages ?? []);
-const warnings = [];
+const notes = [];
 if (manifest.declaredInputs?.corePackages) {
   const ownerOf = (rel) => /^(packages\/[^/]+)\//.exec(rel)?.[1] ?? null;
   const perPackage = new Map();
   for (const e of pkgEntries2) {
     if (!e.isDirectory()) continue;
+    let pj;
     try {
-      const pj = JSON.parse(await fs.readFile(path.join(root, "packages", e.name, "package.json"), "utf8"));
-      if (typeof pj.name !== "string" || !pj.name.startsWith("@envoymesh/")) continue;
-      perPackage.set(`packages/${e.name}`, { name: pj.name, reusable: 0, productBound: [] });
+      pj = JSON.parse(await fs.readFile(path.join(root, "packages", e.name, "package.json"), "utf8"));
     } catch {
-      /* not a package */
+      continue;
     }
+    if (typeof pj.name !== "string" || !pj.name.startsWith("@envoymesh/")) continue;
+    const dot = pj.exports && typeof pj.exports === "object" ? pj.exports["."] : null;
+    const importPath = typeof dot === "string" ? dot : (dot?.import ?? dot?.default ?? null);
+    // `./dist/index.js` and `./dist/src/index.js` both mirror `src/index.ts`.
+    const entryRel =
+      typeof importPath === "string" && importPath.endsWith(".js")
+        ? `packages/${e.name}/src/${path.basename(importPath).replace(/\.js$/, ".ts")}`
+        : null;
+    perPackage.set(`packages/${e.name}`, { name: pj.name, entryRel, reusable: 0, productBound: [] });
   }
   for (const r of reusable) {
     const owner = ownerOf(r.path);
@@ -401,16 +416,28 @@ if (manifest.declaredInputs?.corePackages) {
     if (owner && perPackage.has(owner)) perPackage.get(owner).productBound.push(r.path);
   }
   for (const [dir, info] of [...perPackage].sort()) {
-    if (info.reusable === 0) continue;
-    if (info.productBound.length === 0 && !corePackages.has(info.name)) {
+    // Judge every package that declares an entry point. An earlier version
+    // skipped packages with no reusable module — which is exactly the 6b case
+    // (declared core, nothing reusable inside), so the rule could not fire on
+    // the state it exists to catch. The seeded test caught it.
+    if (!info.entryRel) continue;
+    const entryReusable = reusableSet.has(info.entryRel);
+    const declaredCore = corePackages.has(info.name);
+    if (entryReusable && !declaredCore) {
       add(
         "core-set",
         dir,
-        `all ${info.reusable} of its modules are \`reusable\`, but \`${info.name}\` is not in \`declaredInputs.corePackages\` — importing it taints its consumers for no reason (rule 6)`,
+        `its entry point \`${path.basename(info.entryRel)}\` is \`reusable\`, but \`${info.name}\` is not in \`declaredInputs.corePackages\` — importing it taints its consumers for no reason (rule 6a)`,
       );
-    } else if (info.productBound.length > 0 && corePackages.has(info.name)) {
-      warnings.push(
-        `${info.name} is declared core but has ${info.productBound.length} product-bound module(s): ` +
+    } else if (!entryReusable && declaredCore) {
+      add(
+        "core-set",
+        dir,
+        `\`${info.name}\` is declared core, but its entry point \`${path.basename(info.entryRel)}\` is \`product-bound\` — importers would reach product code while looking reusable (rule 6b). Move the product modules behind their own declared subpaths, or drop the package from \`corePackages\``,
+      );
+    } else if (entryReusable && info.productBound.length > 0) {
+      notes.push(
+        `${info.name}: entry point is reusable; ${info.productBound.length} product-bound module(s) stay behind declared subpaths: ` +
           info.productBound.map((p) => p.split("/").pop()).join(", "),
       );
     }
@@ -424,7 +451,7 @@ if (violations.length === 0) {
     `module-boundary OK — rules 1, 2, 3, 4, 5, 6 pass over ${onDisk.size} modules ` +
       `(${reusable.length} reusable, ${productBound.length} product-bound)`,
   );
-  for (const w of warnings) console.log(`  [warn] ${w}`);
+  for (const w of notes) console.log(`  [note] ${w}`);
   process.exit(0);
 }
 

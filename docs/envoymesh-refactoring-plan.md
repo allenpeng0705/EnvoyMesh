@@ -1371,6 +1371,24 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 
 **Recommended order**, cheapest true unblock first: (1) the harness contract-symbol move — it is small, it is the V4 requirement, and it does not depend on the `api` decision; (2) re-measure, then decide the `api/core` subpath with real numbers; (3) the kernel `productStoreDir` gate as its own step; (4) the TS reuse host, which then becomes the acceptance test for all of it.
 
+#### 8.17.4 Step (3) done — the local-store barrel split, and rule 6 turned into a real rule
+
+The last rule-6 warning is gone, and the fix was not cosmetic. `local-store` was declared core while its **barrel re-exported product code**: `index.ts` re-exported `family-profile-store.ts` and `session-token-store.ts`, both `product-bound` (they name `FamilyProfile` / `boundFamilyProfileId`). So for the 19 modules that import `@envoymesh/local-store`, "declared core" was a lie — they were untainted while able to reach product code.
+
+**Split:** the two stores left the barrel and got their own declared subpaths (`@envoymesh/local-store/family-profile-store`, `.../session-token-store`). Only 9 consumers existed (6 in `apps/node/src`, 3 tests) and they were migrated; the barrel now contains only reusable modules, so importing it cannot reach product code.
+
+**Rule 6 was rewritten around the question that actually matters.** It used to judge a package by "are all its modules reusable" and merely *warned* about the dangerous direction. It now judges the package's **declared entry point**:
+
+| | fires | why it matters |
+|---|---|---|
+| **6a** | the entry point is `reusable` but the package is not declared core | importers are tainted for nothing — this is what hid V4 (`node-core` 4/4, undeclared) |
+| **6b** | the package is declared core but its entry point is `product-bound` | importers reach product code while looking reusable — **live until this split**, and every rule-6 warning until now was this case in disguise |
+| note | entry reusable, product-bound modules behind their own subpaths | `local-store`'s state now, by design — visible, not silently accepted |
+
+Both directions are seeded. Negative controls observed: re-adding `export * from "./family-profile-store.js";` to the barrel fails with the 6b message; undeclaring `harness` fails with 6a. A third seeded case pins the split shape (reusable entry + product module behind a subpath) passing *with a note*.
+
+**Two of my own mistakes, both caught by the seeded tests rather than by me.** The entry-point resolution mapped `./dist/index.js` and `./dist/src/index.js` to `src/index.ts` — `local-store` emits to `dist/src/`, which is why my first export paths were wrong and `tsc` reported `TS2307`. And the rule's first version had a `reusable === 0` guard that skipped exactly the 6b case (a declared-core package with *nothing* reusable), so the rule could not fire on the state it exists to catch. It fired only after the fixture test failed — the argument for seeding every rule, again.
+
 #### 8.17.3 Three verification hazards this round exposed
 
 Recorded because each one silently changes what "the suite is green" means:

@@ -42,7 +42,7 @@ const CONCEPT_PATTERN = "\\b(OWNER_FAMILY_PROFILE_ID|familyProfile|isOwnerProfil
  * Build a fixture tree and run the checker against it.
  * @returns {{code: number, stdout: string, stderr: string}}
  */
-async function runChecker({ files = {}, pkgFiles = {}, dartLib = null, pkgs = null, corePackages = [], reusable, productBound }) {
+async function runChecker({ files = {}, pkgFiles = {}, dartLib = null, pkgs = null, corePackages = [], reusable, productBound, extraProductBound = [] }) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "module-boundary-"));
   const dir_ = dir;
   const srcDir = path.join(dir, "apps", "node", "src");
@@ -93,7 +93,8 @@ async function runChecker({ files = {}, pkgFiles = {}, dartLib = null, pkgs = nu
         version: 1,
         declaredInputs: { conceptPattern: CONCEPT_PATTERN, corePackages, excluded: {} },
         reusable,
-        productBound,
+        // `extraProductBound` takes bare paths; the checker reads `entry.path`.
+        productBound: [...productBound, ...extraProductBound.map((e) => (typeof e === "string" ? { path: e, tags: [] } : e))],
       },
       null,
       2,
@@ -354,46 +355,75 @@ test("the real repository passes the implemented rules", async () => {
   assert.match(stdout, /module-boundary OK/);
 });
 
-test("rule 6: a fully-reusable package that is not declared core fails", async () => {
+test("rule 6a: a package with a reusable entry point must be declared core", async () => {
   const res = await runChecker({
-    pkgFiles: { "cleanpkg/src/only.ts": `export const a = 1;\n` },
+    pkgFiles: { "cleanpkg/src/index.ts": `export const a = 1;\n` },
     pkgs: { cleanpkg: { exports: { ".": "./dist/index.js" } } },
-    reusable: [{ path: "packages/cleanpkg/src/only.ts", tags: [] }],
+    reusable: [{ path: "packages/cleanpkg/src/index.ts", tags: [] }],
     productBound: [],
     corePackages: [], // present but empty — rule 6 is only judged when declared
   });
 
-  assert.equal(res.code, 1, "rule 6 must fail when a fully-reusable package is undeclared");
+  assert.equal(res.code, 1, "6a must fail when a reusable entry point is undeclared");
   assert.match(res.stderr, /core-set/);
   assert.match(res.stderr, /@envoymesh\/cleanpkg/);
+  assert.match(res.stderr, /rule 6a/);
 });
 
-test("rule 6 positive control: the same package declared core passes", async () => {
+test("rule 6a positive control: the same package declared core passes", async () => {
   const res = await runChecker({
-    pkgFiles: { "cleanpkg/src/only.ts": `export const a = 1;\n` },
+    pkgFiles: { "cleanpkg/src/index.ts": `export const a = 1;\n` },
     pkgs: { cleanpkg: { exports: { ".": "./dist/index.js" } } },
-    reusable: [{ path: "packages/cleanpkg/src/only.ts", tags: [] }],
+    reusable: [{ path: "packages/cleanpkg/src/index.ts", tags: [] }],
     productBound: [],
     corePackages: ["@envoymesh/cleanpkg"],
   });
 
-  assert.equal(res.code, 0, `declaring the package must satisfy rule 6\n${res.stderr}`);
+  assert.equal(res.code, 0, `declaring the package must satisfy rule 6a\n${res.stderr}`);
 });
 
-test("rule 6 warns (does not fail) when a declared core package has product-bound modules", async () => {
-  // `@envoymesh/local-store` is in exactly this state in the real repo: declared
-  // core, 3 product-bound modules inside. The warning is what keeps it visible.
+test("rule 6b: a declared core package whose entry point is product-bound fails", async () => {
+  // The direction that matters most, and the one that was live until the
+  // local-store barrel split: `index.ts` re-exported a product-bound module, so
+  // "declared core" was false for every module importing it.
   const res = await runChecker({
     pkgFiles: {
-      "mixedpkg/src/clean.ts": `export const a = 1;\n`,
-      "mixedpkg/src/familyProfile.ts": `export const b = 2;\n`,
+      "leakpkg/src/index.ts": `export * from "./familyProfileStore.js";\n`,
+      "leakpkg/src/familyProfileStore.ts": `export const b = 2;\n`,
     },
-    pkgs: { mixedpkg: { exports: { ".": "./dist/index.js" } } },
-    reusable: [{ path: "packages/mixedpkg/src/clean.ts", tags: [] }],
-    productBound: [{ path: "packages/mixedpkg/src/familyProfile.ts", tags: [] }],
-    corePackages: ["@envoymesh/mixedpkg"],
+    pkgs: { leakpkg: { exports: { ".": "./dist/index.js" } } },
+    reusable: [],
+    productBound: [{ path: "packages/leakpkg/src/familyProfileStore.ts", tags: [] }],
+    corePackages: ["@envoymesh/leakpkg"],
+    // `index.ts` is the entry point; the checker derives its classification from
+    // the manifest exactly as the classifier does — it is product-bound here
+    // because it re-exports one.
+    extraProductBound: ["packages/leakpkg/src/index.ts"],
   });
 
-  assert.equal(res.code, 0, "the inverse direction is a warning, not a violation");
-  assert.match(res.stdout, /warn.*mixedpkg.*1 product-bound/);
+  assert.equal(res.code, 1, "6b must fail when a core package's entry point is product-bound");
+  assert.match(res.stderr, /rule 6b/);
+  assert.match(res.stderr, /reach product code while looking reusable/);
+});
+
+test("a reusable entry point with product modules behind subpaths passes, with a note", async () => {
+  // The local-store shape after the split: the barrel is clean, the product
+  // stores are reachable only through their own declared subpaths.
+  const res = await runChecker({
+    pkgFiles: {
+      "splitpkg/src/index.ts": `export const a = 1;\n`,
+      "splitpkg/src/familyProfileStore.ts": `export const b = 2;\n`,
+    },
+    pkgs: {
+      splitpkg: {
+        exports: { ".": "./dist/index.js", "./family-profile-store": "./dist/familyProfileStore.js" },
+      },
+    },
+    reusable: [{ path: "packages/splitpkg/src/index.ts", tags: [] }],
+    productBound: [{ path: "packages/splitpkg/src/familyProfileStore.ts", tags: [] }],
+    corePackages: ["@envoymesh/splitpkg"],
+  });
+
+  assert.equal(res.code, 0, `a split package must pass\n${res.stderr}`);
+  assert.match(res.stdout, /\[note\].*splitpkg/);
 });

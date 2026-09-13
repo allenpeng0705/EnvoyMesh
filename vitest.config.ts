@@ -40,6 +40,10 @@ export default defineConfig({
       "@envoymesh/network": resolve(rootDir, "packages/network/src/index.ts"),
       "@envoymesh/vault": resolve(rootDir, "packages/vault/src/index.ts"),
       "@envoymesh/models": resolve(rootDir, "packages/models/src/index.ts"),
+      // The two product-bound stores are deliberately not on the barrel; their
+      // declared subpaths are the only way in (rules 6/7 read the same exports map).
+      "@envoymesh/local-store/family-profile-store": resolve(rootDir, "packages/local-store/src/family-profile-store.ts"),
+      "@envoymesh/local-store/session-token-store": resolve(rootDir, "packages/local-store/src/session-token-store.ts"),
       "@envoymesh/local-store": resolve(rootDir, "packages/local-store/src/index.ts"),
       "@envoymesh/ipfs-helia/browser": resolve(rootDir, "packages/ipfs-helia/src/browser.ts"),
       "@envoymesh/ipfs-helia": resolve(rootDir, "packages/ipfs-helia/src/index.ts"),

@@ -10,7 +10,8 @@
  *
  * Returns true if the token is valid.
  */
-import type { SessionTokenStore, LocalTaskStore } from "@envoymesh/local-store";
+import type { LocalTaskStore } from "@envoymesh/local-store";
+import type { SessionTokenStore } from "@envoymesh/local-store/session-token-store";
 import {
   isActiveReviewPairingToken,
   type ReviewPairingSettings,
