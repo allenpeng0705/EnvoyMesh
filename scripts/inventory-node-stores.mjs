@@ -499,6 +499,35 @@ if (flag("--check")) {
     if (strict) process.exit(1);
   }
 
+  // ─── the §5 layout gap, reported rather than gated ──────────────────────────
+  //
+  // Design §5 puts a product's own state under `<home>/<product>/` and leaves the kernel
+  // stores in the shared `profile/`. Today **every** store is built from the profile
+  // directory, so a second product sharing the home would read and write this product's
+  // chat logs, family rooms, market cache and the rest. Reported with its real size,
+  // because the first estimate ("34 stores") understated it: the stores are the easy half,
+  // and the rest are direct `this._profileDir` path builds that have to move with them or
+  // the product's state ends up split across two roots — which is worse than either
+  // layout alone. Enumerating it here means the remainder is a list, not a feeling.
+  {
+    const impl = await fs.readFile(path.join(root, "apps/node/src/node-service-impl.ts"), "utf8");
+    const profileDirRefs = (impl.match(/this\._profileDir/g) ?? []).length;
+    const productStores = all.filter((r) => STORE_GROUPS[r.field]?.[0] === "product");
+    console.log(
+      `\n[§5 layout] product state belongs under <home>/<product>/, not in the shared ` +
+        `profile/:`,
+    );
+    console.log(
+      `      ${productStores.length} product stores are built from the profile directory, ` +
+        `alongside ${profileDirRefs} direct \`this._profileDir\` references that must move ` +
+        `with them.`,
+    );
+    console.log(
+      `      Resolved already (not created, not yet used): \`resolveProductStateDir()\` in ` +
+        `node-core, which adopts the current location for existing installs.`,
+    );
+  }
+
   console.log(
     `node-store inventory is complete — ${all.length} stores ` +
       `(${rows.length} constructor-gated, ${additional.length} not gated, ` +

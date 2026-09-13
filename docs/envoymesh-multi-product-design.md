@@ -471,6 +471,39 @@ A code minted before the field existed is accepted: refusing it would break ever
 
 **3. Coding is granted per product, by the owner.** `mayFamilyProfileUseCoding()` is family-profile policy and a product scope is not a family profile, so an attached EnvoyCoder was refused the surface it exists for. `NodeConfig.productGrants` — owner-set through the already owner-only `updateNodeConfig` — now answers for products, with **nothing** as the default and a fail-closed read. Example: `{ "EnvoyCoder": ["coding"] }`. Pinned by test: denied before the grant, allowed after, unaffected for a *different* product, revoked by an empty list.
 
+### S6 — §5's foundation, and the second review's items (2026-09-13)
+
+**§5 (product state under `<home>/<product>/`) — foundation done, migration measured and deliberately not taken.**
+
+Before touching anything I measured the job, because the earlier estimate was wrong: **34 product stores** are built from the profile directory — the easy half — and there are **134 direct `this._profileDir` references** that have to move with them. Moving the stores alone would split one product's state across two roots, which is worse than either layout, and moving all 134 is a data migration performed by a version upgrade. So this slice delivers the part that is safe, plus the list:
+
+* `resolveProductStateDir({ home, product, legacyDir, legacyHasState })` — resolves `<home>/<product>`, and **adopts** the pre-§5 location when it already holds this product's state, so an installed user keeps their data and the move stays their decision;
+* `profileDirHasProductState()` — conservative markers (a bare identity profile is *not* product state, or a fresh install would adopt a directory it should have left alone);
+* the node resolves and **logs** it at boot — visible, and the switch has one place to happen — and creates nothing, so no state is split today;
+* `inventory-node-stores.mjs` now **reports** the gap with those two numbers on every run, so the remainder is a list rather than a feeling (report-only, the same enumerate-then-fix-then-enforce order the store gate itself followed).
+
+Demonstrated on a real node, two runs against one home:
+
+```
+run 1 (fresh)     [home] product state: /tmp/s6/EnvoyMesh
+run 2 (adopted)   [home] product state: /tmp/s6/profile (adopted from the pre-§5 location; moving it is a separate step)
+```
+
+**A bug in my own S2 work, found by reading that output.** Run 2 also printed *"The profile for WJRcPkB0qY75… looks incomplete"* — on a perfectly healthy home. `inspectProfile` required `human-profile.json`, which only exists once the owner has filled in a social profile, so **every fresh install looked damaged on its second start**. Identity is `profile.json` plus the peer key; the social profile is a display name, optional when absent and damage only when present-and-unreadable. Fixed, with tests for both directions, and re-verified on a real node (the message is gone).
+
+**The second review's items.**
+
+| Item | Outcome |
+|---|---|
+| `pi-runtime.test.ts:521` fails on a machine whose shell exports `OPENAI_API_KEY` | **Real, fixed.** Reproduced by setting the variable, then asserted as an invariant — *the value after equals the value before* — instead of "is undefined". Green with and without the variable (39/39 both ways). Attribution correction: the review guessed my commits `8fa51c13`/`5a0b8fb8`; `git log -S` says it was `ada65b03`, "Fix the last five suite failures: environment-dependent tests and stale copy" — a commit that set out to remove environment-dependent tests and introduced one |
+| "the home/registry/attach modules are not wired into the boot path" | **Not so** — they are, imported from the `@envoymesh/node-core` **barrel** (`envoymesh-home`, `node-registry`, `product-attach` are module filenames, which is what the grep looked for): 12 symbols in the import block, 8 call sites. Confirmed again by the run above, whose `[home]` lines come from exactly that wiring |
+| "does `packages/protocol/src/pairing-contract.ts` exist?" | **It exists** (4,725 bytes), created by the pairing-contract commit and last touched by the per-app pairing change. The `reuse-host` docstring is accurate |
+| the invariants test re-walks the repo per assertion | **Fixed** — the walk is cached; 2.07 s of tests instead of ~5 s |
+
+**One flake recorded, not explained.** A full run failed once in `document-agent-loop-integration.test.ts` (`getToolExecutionContext works without pre-existing bridge identity file`); it passes in isolation and passed on the next full run, so it is load-related rather than a regression. The assertion message was not captured, which is its own lesson — the same one that cost a test name two rounds ago. Also noticed in that log: a test printing `[push] Loaded credentials from push-config.json (/…/EnvoyMesh)` — a test reading a file from the repo root.
+
+**S4 and the harness packaging are still not started**, unchanged from §S5: S4 needs assets under `<root>/runtime/` plus a spawn lock and model lease; the harness question is a packaging decision (vendor the sibling, or degrade when absent), not a bug fix.
+
 ### S5 — the shipping-path review: three of six findings fixed (2026-09-13)
 
 An external review of the branch split its findings into "library layer: strong" and "the shipping desktop path still diverges". Both halves were right, and its top three are fixed here.

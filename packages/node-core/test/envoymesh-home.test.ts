@@ -26,7 +26,9 @@ import {
   productDirIn,
   profileDirIn,
   readHomeMarker,
+  profileDirHasProductState,
   resolveHomeDir,
+  resolveProductStateDir,
   runtimeDirIn,
   touchHomeMarker,
   writeHomeMarker,
@@ -219,7 +221,9 @@ describe("inspectProfile", () => {
   it("reports a missing profile when the directory does not exist", async () => {
     const result = await inspectProfile(path.join(tmpRoot, "nope"));
     expect(result.state).toBe("missing");
-    expect(result.missing).toEqual(["profile.json", "human-profile.json", "libp2p-private.key"]);
+    // Identity is the node profile + the peer key; `human-profile.json` is optional now
+    // (see the fresh-profile test below), so it is not in the missing list.
+    expect(result.missing).toEqual(["profile.json", "libp2p-private.key"]);
   });
 
   it("reports an empty directory as missing, not damaged", async () => {
@@ -251,6 +255,29 @@ describe("inspectProfile", () => {
     expect(result.ownerId).toBe("envoy:owner:abc");
   });
 
+  it("treats a profile without a social profile as found, not damaged", async () => {
+    // `human-profile.json` only exists once the owner has filled one in, so requiring it
+    // made a healthy fresh install report "the profile looks incomplete" on first run —
+    // found by running the node twice and reading its own output. Identity is
+    // `profile.json` plus the peer key; the social profile is a display name.
+    const dir = path.join(tmpRoot, "fresh-profile");
+    const { ["human-profile.json"]: _unused, ...identityOnly } = COMPLETE;
+    writeProfile(dir, identityOnly);
+    const result = await inspectProfile(dir);
+    expect(result.state).toBe("found");
+    expect(result.missing).toEqual([]);
+    expect(result.ownerId).toBe("envoy:owner:abc");
+    expect(result.displayName).toBeUndefined();
+  });
+
+  it("still reports a corrupt social profile as damage", async () => {
+    const dir = path.join(tmpRoot, "broken-human-profile");
+    writeProfile(dir, { ...COMPLETE, "human-profile.json": "{ truncated" });
+    const result = await inspectProfile(dir);
+    expect(result.state).toBe("damaged");
+    expect(result.unreadable).toEqual(["human-profile.json"]);
+  });
+
   it("reports an unparseable marker as damaged rather than missing", async () => {
     const dir = path.join(tmpRoot, "broken-profile");
     writeProfile(dir, { ...COMPLETE, "profile.json": "{ truncated" });
@@ -259,4 +286,70 @@ describe("inspectProfile", () => {
     expect(result.unreadable).toEqual(["profile.json"]);
     expect(result.missing).toEqual([]);
   });
+
+describe("resolveProductStateDir (§5 layout)", () => {
+  const HOME = "/home/alice/envoymesh";
+  const LEGACY = "/home/alice/envoymesh/profile";
+
+  it("gives a fresh install its own directory", () => {
+    const result = resolveProductStateDir({
+      home: HOME,
+      product: "EnvoyMesh",
+      legacyDir: LEGACY,
+      legacyHasState: false,
+      exists: () => false,
+    });
+    expect(result).toEqual({ dir: path.join(HOME, "EnvoyMesh"), adoptedLegacy: false });
+  });
+
+  it("adopts the pre-§5 location for an existing install, and says so", () => {
+    // Every install that exists today keeps product state inside `profile/`. Moving it
+    // silently would be a data migration performed by a version upgrade, so the resolve
+    // adopts it and reports — the move stays the user's decision.
+    const result = resolveProductStateDir({
+      home: HOME,
+      product: "EnvoyMesh",
+      legacyDir: LEGACY,
+      legacyHasState: true,
+      exists: () => false,
+    });
+    expect(result).toEqual({ dir: LEGACY, adoptedLegacy: true });
+  });
+
+  it("prefers a product directory that already exists — the migration ran", () => {
+    const result = resolveProductStateDir({
+      home: HOME,
+      product: "EnvoyMesh",
+      legacyDir: LEGACY,
+      legacyHasState: true,
+      exists: (candidate) => candidate === path.join(HOME, "EnvoyMesh"),
+    });
+    expect(result).toEqual({ dir: path.join(HOME, "EnvoyMesh"), adoptedLegacy: false });
+  });
+
+  it("rejects a product name that would escape the home", () => {
+    expect(() =>
+      resolveProductStateDir({
+        home: HOME,
+        product: "../other",
+        legacyDir: LEGACY,
+        legacyHasState: false,
+      }),
+    ).toThrow(/invalid product name/);
+  });
+
+  it("recognises a profile that holds product state, and one that does not", async () => {
+    const bare = path.join(tmpRoot, "bare-profile");
+    ensureHomeDirs(tmpRoot);
+    mkdirSync(bare, { recursive: true });
+    writeFileSync(path.join(bare, "profile.json"), "{}"); // kernel identity only
+    writeFileSync(path.join(bare, "libp2p-private.key"), "k");
+    expect(profileDirHasProductState(bare)).toBe(false);
+
+    const used = path.join(tmpRoot, "used-profile");
+    mkdirSync(used, { recursive: true });
+    writeFileSync(path.join(used, "family-profiles.json"), "{}");
+    expect(profileDirHasProductState(used)).toBe(true);
+  });
+});
 });

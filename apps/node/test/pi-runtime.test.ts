@@ -508,6 +508,7 @@ describe("withPiToolPath", () => {
       process.env.ENVOYMESH_PI_TOOLS_DIR = toolsDir
       process.env.PATH = BASE_PATH
 
+      const openAiKeyBefore = process.env.OPENAI_API_KEY
       const result = buildPiSpawnConfig(cfg)!
       expect(result.env.OPENAI_API_KEY).toBe("k")
 
@@ -518,7 +519,13 @@ describe("withPiToolPath", () => {
         expect(parts, `${dir} must be on the spawn PATH`).toContain(dir)
       }
       // The API key must never leak into the caller's process env (Phase 49).
-      expect(process.env.OPENAI_API_KEY).toBeUndefined()
+      //
+      // Asserted as **unchanged**, not as absent. The previous form read the current
+      // value, so it passed on CI (where the variable is unset) and failed on any
+      // developer machine whose shell exports OPENAI_API_KEY — the "green in one
+      // environment, red in another" shape. What the function must guarantee is that it
+      // does not *set* the variable, whatever it was before.
+      expect(process.env.OPENAI_API_KEY).toBe(openAiKeyBefore)
     } finally {
       await rm(toolsDir, { recursive: true, force: true }).catch(() => undefined)
     }

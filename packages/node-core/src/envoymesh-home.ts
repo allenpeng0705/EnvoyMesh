@@ -304,7 +304,14 @@ export interface ProfileInspection {
  */
 export async function inspectProfile(profileDir: string): Promise<ProfileInspection> {
   const dir = path.resolve(profileDir);
-  const required = ["profile.json", "human-profile.json", "libp2p-private.key"];
+  // Identity is two files: the node profile (owner + device + certificate) and the peer
+  // key. `human-profile.json` is the *social* profile, and it only exists once the owner
+  // has filled one in — requiring it made a perfectly healthy fresh install report "the
+  // profile looks incomplete" on first run, which is a scary thing to show someone who
+  // has just installed the app. It is checked when present (a corrupt one *is* damage)
+  // and its absence is simply "no display name yet".
+  const required = ["profile.json", "libp2p-private.key"];
+  const optionalJson = ["human-profile.json"];
   const missing: string[] = [];
   const unreadable: string[] = [];
   let profileJson: Record<string, unknown> | null = null;
@@ -330,6 +337,20 @@ export async function inspectProfile(profileDir: string): Promise<ProfileInspect
       } catch {
         unreadable.push(name);
       }
+    }
+  }
+
+  // Optional markers: present-and-read gives a better name, present-and-broken is damage,
+  // absent is normal.
+  for (const name of optionalJson) {
+    const file = path.join(dir, name);
+    if (!exists(file)) continue;
+    try {
+      const parsed = asRecord(JSON.parse(readFileSync(file, "utf8")));
+      if (!parsed) unreadable.push(name);
+      else humanJson = parsed;
+    } catch {
+      unreadable.push(name);
     }
   }
 
@@ -366,4 +387,57 @@ export function ensureHomeDirs(home: string): void {
   // this tree holds the owner private key. An existing directory keeps its mode.
   mkdirSync(home, { recursive: true, mode: 0o700 });
   mkdirSync(path.join(home, ENVOYMESH_PROFILE_DIRNAME), { recursive: true, mode: 0o700 });
+}
+
+/**
+ * Where a product's **own** state lives (design §5): `<home>/<product>`.
+ *
+ * `profile/` holds the identity and the 14 kernel stores, which every app shares;
+ * a product's 34-ish stores belong in its own directory, so a second product cannot read
+ * or write them. That is what "safe to install next to EnvoyMesh" means concretely.
+ *
+ * ## The adoption rule, and why it is not optional
+ *
+ * Every install that exists today keeps its product state *inside* `profile/`. Moving it
+ * without asking would be a data migration performed by a version upgrade, so this
+ * resolves instead: if the legacy directory holds state and no product directory exists
+ * yet, the legacy one is used and `adoptedLegacy` says so — the caller logs it, and the
+ * move stays the user's decision. A product directory that *does* exist wins, because it
+ * means the migration already ran.
+ */
+export function resolveProductStateDir(input: {
+  home: string;
+  product: string;
+  /** The shared profile directory — where product state lived before §5. */
+  legacyDir: string;
+  /** True when the legacy directory actually holds this product's state. */
+  legacyHasState: boolean;
+  /** Injectable for tests. */
+  exists?: (candidate: string) => boolean;
+}): { dir: string; adoptedLegacy: boolean } {
+  const exists = input.exists ?? existsSync;
+  const own = productDirIn(input.home, input.product);
+  if (exists(own)) return { dir: own, adoptedLegacy: false };
+  if (input.legacyHasState) {
+    return { dir: path.resolve(input.legacyDir), adoptedLegacy: true };
+  }
+  return { dir: own, adoptedLegacy: false };
+}
+
+/**
+ * Does this directory look like it holds a product's state rather than a bare profile?
+ *
+ * Deliberately conservative: a handful of files that only a *product* writes. A kernel-only
+ * profile (identity plus kernel stores) must not be mistaken for product state, or a fresh
+ * install would adopt a directory it should have left alone.
+ */
+export function profileDirHasProductState(dir: string, exists = existsSync): boolean {
+  const productMarkers = [
+    "human-profile.json", // the owner's social profile (vs `profile.json`, kernel identity)
+    "chat-log.jsonl",
+    "family-profiles.json",
+    "node-config.json",
+    "audit-events.jsonl",
+  ];
+  return productMarkers.some((name) => exists(path.join(dir, name)));
 }

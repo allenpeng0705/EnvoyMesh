@@ -34,8 +34,18 @@ import {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
 
-/** Every first-party TypeScript source outside build output. */
+/**
+ * Every first-party TypeScript source outside build output.
+ *
+ * Walked **once** per run: each assertion below reads the same set of files, and the walk
+ * is the slow part of this suite (~5s across four tests, measured). A module that
+ * introduces a second parser five directories deep is still caught — the file set is
+ * identical for every assertion, only the filter differs.
+ */
+let cachedSourceFiles: string[] | null = null;
+
 function sourceFiles(): string[] {
+  if (cachedSourceFiles) return cachedSourceFiles;
   const roots = ["apps", "packages"];
   const out: string[] = [];
   const walk = (dir: string) => {
@@ -53,6 +63,7 @@ function sourceFiles(): string[] {
     }
   };
   for (const root of roots) walk(path.join(repoRoot, root));
+  cachedSourceFiles = out;
   return out;
 }
 

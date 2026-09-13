@@ -236,8 +236,11 @@ import {
   homeForProfileDir,
   inspectProfile,
   isHomeSchemaSupported,
+  profileDirHasProductState,
   profileDirIn,
   releaseNodeLockSync,
+  resolveAppName,
+  resolveProductStateDir,
   resolveRunningNode,
   touchHomeMarker,
   writeNodeEndpoint,
@@ -463,6 +466,26 @@ if (damaged) {
   }
   console.error(lines.join("\n"));
 }
+
+// §5 layout: **where this product's own state belongs**. `profile/` holds the identity and
+// the kernel stores, which every app shares; this node's 34 product stores belong in a
+// directory of their own so a second product cannot read or write them. Resolved — not
+// created, and not yet used for the stores themselves: an existing install keeps its state
+// inside `profile/` (adopted, and said out loud), and the move is its own slice because it
+// touches 34 stores and 134 `this._profileDir` references. Reported here so the resolved
+// layout is visible and the switch has one place to happen.
+const productState = resolveProductStateDir({
+  home: homeDir,
+  product: resolveAppName(),
+  legacyDir: args.profileDir,
+  legacyHasState: profileDirHasProductState(args.profileDir),
+});
+console.log(
+  `[home] product state: ${productState.dir}` +
+    (productState.adoptedLegacy
+      ? " (adopted from the pre-§5 location; moving it is a separate step)"
+      : ""),
+);
 
 let profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
 try {
