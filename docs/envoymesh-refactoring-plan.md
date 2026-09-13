@@ -1371,6 +1371,29 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 
 **Recommended order**, cheapest true unblock first: (1) the harness contract-symbol move — it is small, it is the V4 requirement, and it does not depend on the `api` decision; (2) re-measure, then decide the `api/core` subpath with real numbers; (3) the kernel `productStoreDir` gate as its own step; (4) the TS reuse host, which then becomes the acceptance test for all of it.
 
+#### 8.17.7 The kernel gate is complete — 0 ungated product stores, 0 undecided groups
+
+§8.9's completion criterion was "a `productStoreDir` gate applied across all product-classified stores, plus a decision about the `/tmp/unknown` fallback, plus a test matrix". All three are now true, and the inventory is enforced rather than advisory.
+
+| | before | after |
+|---|---|---|
+| ungated product stores | **12** | **0** |
+| undecided groups | **6** | **0** |
+| store groups | 14 kernel / 28 product | **14 kernel / 34 product** |
+| inventory rule | report-only | **fails** (`--strict` semantics are now the default) |
+
+**The 6 undecided groups were decided, fail-closed: all `product`.** Reputation anchors belong to the market/commerce feature; document acquisition is the product's document agent; the capability-provider job queue exists because the product orchestrates team jobs; and the worker lease / reliability / receipt trio is reached only through that same orchestration. A host that is not EnvoyMesh has no market, no document agent and no team jobs, so it has nothing for those stores to hold.
+
+**Real leaks, not shape violations.** The first rule flagged twelve stores by construction *shape* — six of which were harmless (`new ChainStore()` takes no directory; the directory arrives later at a checked `init`). Refining it to "a directory is handed over unguarded" produced **4 stores / 13 call sites**: `createEnvoyHarnessSessionStore` (10 sites), `createPublishedExternalStore`, `createPublishedLibraryStore`, and the coding stores' lazy `init(this._profileDir)`. `requireProductStoreDir(dir, name)` gates them in the expression, so the guard is visible to the checker *and* the failure names the store instead of surfacing as `ENOENT: /tmp/unknown/…`.
+
+**A false negative, caught by the control rather than by review.** The refined rule looked for a guard within four lines above the site. `node-service-impl.ts` is dense with guarded store creations, so un-gating a site still looked guarded — the tool reported clean while the leak was back. It now requires the guard in the expression itself *or* in the enclosing `if (` block (which is how the constructor's chain-store block is written), and un-gating one site fails with the exact line. **This is the third time this refactor has been saved by insisting a rule can fail on the thing it claims to catch** — the pattern is: seed it, try to fool it, and fix the rule when it is fooled.
+
+**The last shape: field initializers became constructor-gated stores.** Six product stores were built in place (`private readonly _chainStore = new ChainStore()`), which is why the inventory called them ungated even after their `init` was guarded. They are now assigned in the constructor through `productStore(profileDir, name, factory)`, so on a bare kernel the field holds the typed stand-in rather than a usable object — §8.9's literal wording, "the product group is null", now holds.
+
+**The test matrix** (`apps/node/test/product-store-matrix.test.ts`) asserts the runtime half the inventory cannot: a kernel with no profile directory treats absence as absence (not the sentinel), keeps its kernel stores **usable** (a real `exists()` call on the node-config store), hands out **no** usable product store across **21 product fields** (absent or the typed stand-in whose first property access names the store), and — the non-negotiable direction — still hands out **real** product stores when a directory exists. Its own first version probed `load()`, which some stores simply do not have, and reported "usable" for a store that had refused nothing; the discriminator is now property access, which is exactly what the stand-in guards.
+
+**The probe stays green under the change** — 12 tests, `require a human profile: 2` unchanged, `precondition-not-met: 4` (up from 3: a bare kernel now reports the gated product stores as preconditions, which is the correct answer instead of silently writing to `/tmp/unknown`).
+
 #### 8.17.6 Step (4) done — the reuse host, and what it actually proves
 
 The boundary review's last finding was "no second-product proof": the Dart fixture proves the *SDK* claim, and there was no TypeScript consumer at all. A boundary claim that nobody consumes is a manifest entry, not a fact. `apps/node/test/reuse-host.test.ts` is that consumer, in its minimum honest form:

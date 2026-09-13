@@ -1,6 +1,8 @@
 import {
   UNCONFIGURED_PROFILE_DIR,
   hasProfileDir,
+  productStore,
+  requireProductStoreDir,
 } from "./product-store-availability.js";
 import { resolveBundledOpenClawDir } from "./bundled-paths.js";
 import type {
@@ -1765,14 +1767,14 @@ class NodeServiceImpl implements NodeService {
   private _memoryPruneTimer: ReturnType<typeof setInterval> | null = null;
   /** Phase 68-C6 — Coding heartbeat ticker (~60s). */
   private _codingHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly _codingHeartbeatStore = new CodingHeartbeatStore();
+  private readonly _codingHeartbeatStore: CodingHeartbeatStore;
   private readonly _codingHeartbeatFiring = new Set<string>();
   private _codingHeartbeatReady: Promise<void> | null = null;
   /** Coding Tier B runtime (cwd/model/creds) — isolated from Ext Agent. */
-  private readonly _codingRuntimeStore = new CodingRuntimeStore();
+  private readonly _codingRuntimeStore: CodingRuntimeStore;
   private _codingRuntimeReady: Promise<void> | null = null;
   /** Phase 68-C7 — Coding schedule ticker (shares ~60s interval with heartbeats). */
-  private readonly _codingScheduleStore = new CodingScheduleStore();
+  private readonly _codingScheduleStore: CodingScheduleStore;
   private readonly _codingScheduleFiring = new Set<string>();
   private _codingScheduleReady: Promise<void> | null = null;
   private readonly _agentActivityStore: LocalAgentActivityStore | null;
@@ -2398,6 +2400,22 @@ class NodeServiceImpl implements NodeService {
     this._agentIdentityStore =
       hasProfileDir(profileDir) ? createAgentIdentityStore(profileDir) : null;
     this._profileDir = profileDir ?? UNCONFIGURED_PROFILE_DIR;
+    // Product stores: constructed only when a profile directory is configured.
+    // Without one the field holds the typed stand-in, so the first use names the
+    // store instead of writing to the sentinel path. §8.9 / §8.17.7.
+    this._codingHeartbeatStore = productStore(profileDir, "_codingHeartbeatStore", () => new CodingHeartbeatStore());
+    this._codingRuntimeStore = productStore(profileDir, "_codingRuntimeStore", () => new CodingRuntimeStore());
+    this._codingScheduleStore = productStore(profileDir, "_codingScheduleStore", () => new CodingScheduleStore());
+    this._chainStore = productStore(profileDir, "_chainStore", () => new ChainStore());
+    this._delegatedChainStore = productStore(profileDir, "_delegatedChainStore", () => new DelegatedChainStore());
+    this._publishedLibraryStore = productStore(
+      profileDir,
+      "_publishedLibraryStore",
+      (dir) =>
+        new PublishedLibraryStore({
+          getFilePath: () => buildPublishedLibraryFilePath(dir),
+        }),
+    );
     this._vaultDir = vaultDir ?? process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
     this._chatLogStore =
@@ -4175,7 +4193,7 @@ class NodeServiceImpl implements NodeService {
       throw new Error(`Vault document not found: ${documentId}`);
     }
 
-    const externalExports = await createPublishedExternalStore(this._profileDir).loadAll();
+    const externalExports = await createPublishedExternalStore(requireProductStoreDir(this._profileDir, "createPublishedExternalStore")).loadAll();
     const exportRecord = externalExports.get(documentId);
     const cid = params.cid?.trim() || exportRecord?.cid;
 
@@ -6516,7 +6534,7 @@ class NodeServiceImpl implements NodeService {
     if (!hasProfileDir(this._profileDir)) {
       throw new Error("coding_runtime_store_not_ready");
     }
-    this._codingRuntimeReady = this._codingRuntimeStore.init(this._profileDir);
+    this._codingRuntimeReady = this._codingRuntimeStore.init(requireProductStoreDir(this._profileDir, "_codingRuntimeStore"));
     await this._codingRuntimeReady;
   }
 
@@ -6764,7 +6782,7 @@ class NodeServiceImpl implements NodeService {
       autoRunPolicy =
         cfg?.envoyHarnessAutoRunPolicy ??
         "safe-only";
-      const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+      const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
       const resolved = await resolveEhSessionIdForCwd({
         cwd,
         sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -6877,7 +6895,7 @@ class NodeServiceImpl implements NodeService {
       currentRevision > 0
     ) {
       const cfg = await this._configStore.load().catch(() => undefined);
-      const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+      const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
       const resolved = await resolveEhSessionIdForCwd({
         cwd,
         sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -6894,7 +6912,7 @@ class NodeServiceImpl implements NodeService {
     }
 
     const cfg = await this._configStore.load().catch(() => undefined);
-    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
     const resolved = await resolveEhSessionIdForCwd({
       cwd,
       sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -6939,7 +6957,7 @@ class NodeServiceImpl implements NodeService {
     // Soft-deny: return [] when coding is disabled (not a hard CODING_GATED_RPC throw).
     if (!(await this._callerMayUseCoding())) return [];
     const { chats, sessionByCwd } = await this._loadEhChatState();
-    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
     const agentStateByChatId: Record<string, EhAgentStateName> = {};
     for (const [id, state] of this._ehAgentStateByChatId) {
       agentStateByChatId[id] = state;
@@ -7090,7 +7108,7 @@ class NodeServiceImpl implements NodeService {
     if (!hasProfileDir(this._profileDir)) {
       throw new Error("coding_heartbeat_store_not_ready");
     }
-    this._codingHeartbeatReady = this._codingHeartbeatStore.init(this._profileDir);
+    this._codingHeartbeatReady = this._codingHeartbeatStore.init(requireProductStoreDir(this._profileDir, "_codingHeartbeatStore"));
     await this._codingHeartbeatReady;
   }
 
@@ -7224,7 +7242,7 @@ class NodeServiceImpl implements NodeService {
     if (!hasProfileDir(this._profileDir)) {
       throw new Error("coding_schedule_store_not_ready");
     }
-    this._codingScheduleReady = this._codingScheduleStore.init(this._profileDir);
+    this._codingScheduleReady = this._codingScheduleStore.init(requireProductStoreDir(this._profileDir, "_codingScheduleStore"));
     await this._codingScheduleReady;
   }
 
@@ -7463,7 +7481,7 @@ class NodeServiceImpl implements NodeService {
     }
     const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
     const cfg = await this._configStore.load().catch(() => undefined);
-    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
     const resolved = await resolveEhSessionIdForCwd({
       cwd,
       sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -7515,7 +7533,7 @@ class NodeServiceImpl implements NodeService {
     } else {
       this._closeEnvoyHarnessPersistentAcpHost();
     }
-    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
     const created = await sessionStore.create({
       cwd: normalized,
       startedAt: new Date().toISOString(),
@@ -7547,7 +7565,7 @@ class NodeServiceImpl implements NodeService {
     }
     const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
     const normalized = normalizeEhWorkspaceCwd(cwd);
-    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
     if (!(await sessionStore.exists(sessionId))) {
       throw new Error(`envoy_harness_session_not_found: ${sessionId}`);
     }
@@ -7664,7 +7682,7 @@ class NodeServiceImpl implements NodeService {
     let messageCount = 0;
     if (chat.sessionId) {
       try {
-        const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+        const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
         const history = await loadEhChatHistoryFromStore({
           sessionStore,
           sessionId: chat.sessionId,
@@ -7930,7 +7948,7 @@ class NodeServiceImpl implements NodeService {
       },
     );
     const cfg = await this._configStore.load().catch(() => undefined);
-    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
     const resolved = await resolveEhSessionIdForCwd({
       cwd: normalized,
       sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -8003,7 +8021,7 @@ class NodeServiceImpl implements NodeService {
     const runtime = await this._getOrInitEnvoyHarnessRuntime();
     const backend = await this._buildEnvoyHarnessAcpBackend(runtime, cwd);
     const cfg = await this._configStore.load().catch(() => undefined);
-    const sessionStore = createEnvoyHarnessSessionStore(this._profileDir);
+    const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._profileDir, "createEnvoyHarnessSessionStore"));
     const resolved = await resolveEhSessionIdForCwd({
       cwd,
       sessionByCwd: cfg?.envoyHarnessSessionByCwd,
@@ -9656,9 +9674,7 @@ class NodeServiceImpl implements NodeService {
   // via setPeerPublishedLibrary() (called by the test harness today, and
   // by the bond-handshake / agent.card sync in a follow-on). The circle
   // proposer and mesh-awareness worker read from this map.
-  private readonly _publishedLibraryStore = new PublishedLibraryStore({
-    getFilePath: () => buildPublishedLibraryFilePath(this._profileDir),
-  });
+  private readonly _publishedLibraryStore: PublishedLibraryStore;
 
   // -------------------------------------------------------------------
   // Phase 25D — Intent history (predictIntent source)
@@ -11719,7 +11735,7 @@ class NodeServiceImpl implements NodeService {
       const vaultDir = this._serviceContextDeps().fileShare.getVaultDir();
       if (vaultDir) {
         const sensitivityStore = createSensitivityOverrideStore(profileDir);
-        const publishedStore = createPublishedLibraryStore(profileDir);
+        const publishedStore = createPublishedLibraryStore(requireProductStoreDir(profileDir, "createPublishedLibraryStore"));
         const obsidian = createObsidianPlugin({
           readVaultFile: async (relativePath: string) => {
             try {
@@ -17334,9 +17350,9 @@ class NodeServiceImpl implements NodeService {
   // UI can start calling it.
   // ------------------------------------------------------------------
 
-  private readonly _chainStore = new ChainStore();
+  private readonly _chainStore: ChainStore;
   /** Phase 64A — creator-side delegated Assigner ledger (disk-backed). */
-  private readonly _delegatedChainStore = new DelegatedChainStore();
+  private readonly _delegatedChainStore: DelegatedChainStore;
   /** Phase 64B — periodic stranded-Assigner scanner. */
   private _delegatedStrandTimer: ReturnType<typeof setInterval> | null = null;
 

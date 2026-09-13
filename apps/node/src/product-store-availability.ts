@@ -106,6 +106,20 @@ export function createUnavailableProductStore<T extends object>(store: string): 
 }
 
 /**
+ * The directory to hand a product store, or a typed refusal.
+ *
+ * For call sites that build a store *per call* from a directory rather than
+ * holding one in a field (`const s = createEnvoyHarnessSessionStore(this._profileDir)`).
+ * Inlining `requireProductStoreDir(dir, name)` makes the guard part of the
+ * expression, so the inventory's rule can see it — and the failure names the
+ * store instead of surfacing as `ENOENT: /tmp/unknown/...`.
+ */
+export function requireProductStoreDir(dir: string | null | undefined, name: string): string {
+  if (!hasProfileDir(dir)) throw new ProductStoreUnavailableError(name);
+  return dir;
+}
+
+/**
  * Construct a product store when a profile directory exists, and the typed
  * unavailable stand-in when it does not.
  *

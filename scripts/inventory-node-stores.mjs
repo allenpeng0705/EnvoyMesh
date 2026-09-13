@@ -87,9 +87,9 @@ const STORE_GROUPS = {
   _multihopDiscoveryStore: ["kernel", "multi-hop discovery routing state"],
   _discoverySeedStore: ["kernel", "global mesh dial pool"],
   _peerReputationStore: ["kernel", "peer reputation, consulted by dial policy"],
-  _reputationAnchorStore: ["undecided", "reputation anchor history — mesh-wide, but only observed via the market/commerce areas so far"],
-  _documentAcquisitionJobStore: ["undecided", "document acquisition jobs — mesh content transfer, but the feature is the product's document agent"],
-  _capabilityProviderJobStore: ["undecided", "capability-provider job queue — provider side of the agent network"],
+  _reputationAnchorStore: ["product", "reputation anchors belong to the market/commerce feature; a host with no market has nothing to anchor"],
+  _documentAcquisitionJobStore: ["product", "document acquisition is the product's document agent, not a transport capability"],
+  _capabilityProviderJobStore: ["product", "the provider side of the agent network exists because the product orchestrates team jobs"],
 
   _chatLogStore: ["product", "human chat transcripts"],
   _chatRoomStore: ["product", "mesh chat rooms"],
@@ -138,9 +138,9 @@ const STORE_GROUPS = {
   "local:sessionStore": ["product", "Envoy Harness session state"],
   "local:memoryStore": ["product", "Envoy Harness agent memory (per-cwd `memories/`)"],
   "local:sensitivityStore": ["kernel", "knowledge-sensitivity overrides, consulted by the mesh's access decisions — a host without it cannot answer `knowledge.query` safely"],
-  "local:workerLeases": ["undecided", "agent-network worker leases: mesh-level in shape, but only reached through the product's chain/team-jobs orchestration"],
-  "local:workerReliability": ["undecided", "agent-network worker reliability history — same question as the leases"],
-  "local:attemptReceipts": ["undecided", "agent-network worker attempt receipts — same question as the leases"],
+  "local:workerLeases": ["product", "agent-network worker leases are reached only through the product's chain/team-jobs orchestration"],
+  "local:workerReliability": ["product", "worker reliability history is the same feature as the leases"],
+  "local:attemptReceipts": ["product", "attempt receipts are the same feature as the leases"],
 };
 
 /** Store fields declared in the constructor as `this._x = … <factory>(profileDir)`. */
@@ -354,27 +354,77 @@ if (flag("--check")) {
   // §8.9 "productStoreDir gate" is not done. Enumerating the remainder here means
   // the gap cannot quietly stop being tracked, and a new ungated product store
   // fails immediately.
-  const ungatedProduct = all.filter(
-    (r) =>
-      STORE_GROUPS[r.field]?.[0] === "product" &&
-      !/gated on profileDir/.test(r.created ?? ""),
-  );
   //
-  // **Reported, not enforced — yet.** Failing here would make CI red for work
-  // that is deliberately staged (the gate is incomplete, §8.17.5). The list is
-  // printed on every run and `--strict` turns it into a failure, which is the
-  // completion criterion: flip the flag in `ci-node-refactor.yml` when the list
-  // is empty. A rule that fails on day one gets deleted; a rule that names the
-  // remainder gets finished.
+  // **What counts as ungated, precisely.** Two shapes materialise product state,
+  // and only these two are defects:
+  //
+  //   * a directory is passed to the *constructor* / factory without a guard
+  //     (`createPublishedExternalStore(this._profileDir)`);
+  //   * a directory is passed to `.init(dir)` without a guard
+  //     (`this._codingHeartbeatStore.init(this._profileDir)`).
+  //
+  // A construction with **no** directory argument (`new ChainStore()`) materialises
+  // nothing by itself — the directory arrives later, at a separate site that is
+  // checked here too. The first version of this rule flagged the constructor shape
+  // alone, which listed twelve stores of both kinds and would have hurried a
+  // refactor of six harmless ones.
+  const implLines = (await fs.readFile(path.join(root, "apps/node/src/node-service-impl.ts"), "utf8")).split("\n");
+  // **Same line, not "nearby".** The first version looked four lines up for a
+  // guard, and the surrounding code is dense with guarded store creations — so
+  // un-gating a site still looked guarded and the rule reported clean. The
+  // negative control caught it (this is the "passes for the wrong reason" class
+  // the gates suite exists for). A hand-off is guarded when the guard is *in the
+  // expression* (`requireProductStoreDir(dir, name)`, `productStore(...)`,
+  // `hasProfileDir(dir) ? …`) or when no directory is handed over at all.
+  const GUARDED_ON_LINE = /hasProfileDir\(|productStore\(|requireProductStoreDir\(/;
+  /** The nearest line above with *less* indentation that opens an `if (…)`. */
+  const enclosingIf = (lineNo) => {
+    const indent = (l) => l.length - l.trimStart().length;
+    const target = indent(implLines[lineNo] ?? "");
+    for (let i = lineNo - 1; i >= 0; i--) {
+      const line = implLines[i];
+      if (!line.trim()) continue;
+      if (indent(line) < target && /^\s*(\}|\} else|if \()/.test(line)) return line;
+    }
+    return "";
+  };
+  // Guarded when the guard is in the expression, or the hand-off sits inside a
+  // guarded block (`if (hasProfileDir(profileDir)) { … init(profileDir) }` — the
+  // constructor's chain-store block is exactly that shape).
+  const guardedNear = (lineNo) =>
+    GUARDED_ON_LINE.test(implLines[lineNo]) || GUARDED_ON_LINE.test(enclosingIf(lineNo));
+  const leakingLines = (row) => {
+    const names = [row.field, row.factory].filter((n) => n && n !== "(created elsewhere)");
+    const hits = [];
+    implLines.forEach((line, i) => {
+      if (!/this\._profileDir|\bprofileDir\b/.test(line)) return;
+      if (!names.some((n) => line.includes(n))) return;
+      if (/\.init\(|=\s*(new|create)|:\s*new /.test(line) === false) return;
+      if (!guardedNear(i)) hits.push({ line: i + 1, text: line.trim().slice(0, 90) });
+    });
+    return hits;
+  };
+  const ungatedProduct = all
+    .filter((r) => STORE_GROUPS[r.field]?.[0] === "product")
+    .map((r) => ({ ...r, leaks: leakingLines(r) }))
+    .filter(
+      (r) => /gated on profileDir/.test(r.created ?? "") === false && r.leaks.length > 0,
+    );
+  //
+  // **Enforced since the list reached zero.** It was reported-only while the gate
+  // was being built (§8.17.5): a rule that fails on day one gets deleted, while
+  // one that names the remainder gets finished. The remainder is finished — 12
+  // ungated stores became 4 real leaks became 0 — so this now fails, and a new
+  // product store that takes a directory without a guard cannot land.
   if (ungatedProduct.length > 0) {
-    const strict = flag("--strict");
+    const strict = true;
     for (const r of ungatedProduct) {
       console.error(
-        `[${strict ? "fail" : "todo"}] ${r.field} (${r.factory ?? "?"}): grouped \`product\` but created ` +
-          `"${r.created}" — not gated on a profile directory, so it still ` +
-          "materialises on a kernel that supplied none. Create it through " +
-          "`productStore(profileDir, name, factory)` in " +
-          "apps/node/src/product-store-availability.ts.",
+        `[${strict ? "fail" : "todo"}] ${r.field} (${r.factory ?? "?"}): grouped \`product\`, and ` +
+          "a profile directory reaches it unguarded:\n" +
+          r.leaks.map((l) => `        node-service-impl.ts:${l.line}  ${l.text}`).join("\n") +
+          "\n      Gate the site with `hasProfileDir(...)` (or build the store through " +
+          "`productStore(profileDir, name, factory)` in apps/node/src/product-store-availability.ts).",
       );
     }
     console.error(
