@@ -87,7 +87,15 @@ describe("NodeServiceImpl.runDocumentAgentTurn", () => {
     );
     node.bindCliTaskStore(taskStore);
     const ctx = await node.getToolExecutionContext();
-    expect(ctx).not.toBeNull();
+    // The message matters: this assertion failed once in a loaded full run and passed in
+    // isolation, and the reason was not recoverable from the failure output. Whatever
+    // `_ensureAgentStores()` / `_ensureAgentIdentity()` decided is logged above, so the
+    // next occurrence is diagnosable instead of merely repeating.
+    expect(
+      ctx,
+      "getToolExecutionContext returned null — check the store/identity errors logged above " +
+        "(profile present, task store bound, agent identity resolvable)",
+    ).not.toBeNull();
     expect(ctx!.ownerIdentity.ownerId).toBe(profile.owner.ownerId);
     expect(ctx!.listLibraryItems).toBeTypeOf("function");
     expect(ctx!.setLibraryItemPublished).toBeTypeOf("function");

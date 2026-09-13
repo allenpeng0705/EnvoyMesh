@@ -471,6 +471,26 @@ A code minted before the field existed is accepted: refusing it would break ever
 
 **3. Coding is granted per product, by the owner.** `mayFamilyProfileUseCoding()` is family-profile policy and a product scope is not a family profile, so an attached EnvoyCoder was refused the surface it exists for. `NodeConfig.productGrants` — owner-set through the already owner-only `updateNodeConfig` — now answers for products, with **nothing** as the default and a fail-closed read. Example: `{ "EnvoyCoder": ["coding"] }`. Pinned by test: denied before the grant, allowed after, unaffected for a *different* product, revoked by an empty list.
 
+### S7 — §5 audited to the reference, plus the two outstanding small findings (2026-09-13)
+
+**§5's migration is now a classified worklist rather than an estimate.** Eyeballing 134 references is how a *kernel* file ends up in a product directory — which on a fresh install means an identity a second product cannot see, the exact opposite of the goal. So the classification is machine-made, from the inventory's own groups rather than a second opinion (`scripts/audit-profile-dir-usage.mjs`):
+
+| Category | Count | Meaning |
+|---|---|---|
+| guard | 34 | `hasProfileDir(this._profileDir)` — "is there a profile", a question about *identity*: stays |
+| store, kernel | 1 | stays in `profile/` |
+| store, product | 14 | wrapped in `requireProductStoreDir(...)`, the product gate itself: **moves** |
+| path | 82 | a file or directory built from the profile dir — one decision each |
+| unclassified | 3 | a prompt to look, not a category |
+
+Together with the inventory's **34 product stores**, that is the migration. It is deliberately **not** executed here: moving the stores without moving their readers splits one product's state across two roots, which is worse than either layout, and a misclassified kernel path moves the identity. The slice lands as one change with a two-root verification — start a node on a fresh home, then assert `profile/` holds kernel state only and `<home>/EnvoyMesh/` holds the rest.
+
+**The push-config finding was mine, and the fix is in my test.** A full-run log showed `[push] Loaded credentials from push-config.json (/…/EnvoyMesh)` under a test *I* added. The fallback itself is documented dev-mode behaviour (`push-notification.ts`: "repo root — dev mode"), and the push tests disable it with `ENVOYMESH_PUSH_CONFIG_SKIP_REPO_FALLBACK`; `product-attach.test.ts` builds real `NodeServiceImpl` instances and did not, so a developer with credentials at the repo root had them loaded inside a test. It sets the same flag now.
+
+**The flake's assertion is diagnosable now.** `document-agent-loop-integration.test.ts` failed once in a full run, passed in isolation and on the next run, and its message was lost — so the assertion now names what to look at (profile present, task store bound, agent identity resolvable) instead of only failing. Still load-related, still not root-caused, and recorded as such rather than smoothed over.
+
+**S4 and the harness packaging remain unstarted**, unchanged from §S5 and §S6.
+
 ### S6 — §5's foundation, and the second review's items (2026-09-13)
 
 **§5 (product state under `<home>/<product>/`) — foundation done, migration measured and deliberately not taken.**

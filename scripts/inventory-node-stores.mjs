@@ -526,6 +526,10 @@ if (flag("--check")) {
       `      Resolved already (not created, not yet used): \`resolveProductStateDir()\` in ` +
         `node-core, which adopts the current location for existing installs.`,
     );
+    console.log(
+      `      The per-reference worklist is \`node scripts/audit-profile-dir-usage.mjs\` — it ` +
+        `classifies all 134 \`this._profileDir\` references with this inventory's groups.`,
+    );
   }
 
   console.log(

@@ -19,11 +19,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createLocalPeerDirectoryStore, createLocalTrustStore } from "@envoymesh/local-store";
 import { productScopeKey } from "@envoymesh/node-core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 import { runWithRpcCaller, sessionCallerFromToken } from "../src/rpc-caller-context.js";
 import { routeRpcMethod } from "../src/json-rpc-router.js";
 import { createSocialSessionIdentityResolver } from "../src/social-ws-policy.js";
+
+// This file builds real `NodeServiceImpl` instances, which reach the push service — and
+// push credential loading falls back to `<repo root>/push-config.json` in dev mode, so a
+// developer who has one would see real APNs/FCM credentials loaded inside a test (and, if
+// dispatch were ever exercised, real network calls). The push tests disable that fallback
+// the same way; this file has to as well.
+const prevPushSkip = process.env["ENVOYMESH_PUSH_CONFIG_SKIP_REPO_FALLBACK"];
+process.env["ENVOYMESH_PUSH_CONFIG_SKIP_REPO_FALLBACK"] = "1";
+afterAll(() => {
+  if (prevPushSkip === undefined) delete process.env["ENVOYMESH_PUSH_CONFIG_SKIP_REPO_FALLBACK"];
+  else process.env["ENVOYMESH_PUSH_CONFIG_SKIP_REPO_FALLBACK"] = prevPushSkip;
+});
 
 const dirs: string[] = [];
 
