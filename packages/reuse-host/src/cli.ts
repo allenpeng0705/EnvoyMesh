@@ -12,12 +12,29 @@
  * Three methods, which is the honest size of a host whose product has not been
  * written yet — and enough to prove the path end to end:
  *
- *   * `ping`   → `"pong"` (unauthenticated; see `--pre-auth`)
+ *   * `ping`   → `"pong"`
  *   * `whoami` → the session the transport resolved from the connect URL's token
  *   * `hostInfo` → version, bind address, and the transport's own status
  *
  * Everything else is the product's. There is no store, no profile directory and
  * no identity model here: the identity arrives on the command line.
+ *
+ * ## What `--token` does and does not gate
+ *
+ * Measured against the running binary, because the help text used to imply access
+ * control and the truth is narrower — and better:
+ *
+ *   * a token that **matches** → owner session (`whoami` reports `ownerId`, and
+ *     `isOwnerScope: true`);
+ *   * a token that is **present but wrong** → `UNAUTHORIZED`; it is refused rather
+ *     than silently downgraded to anonymous, so a typo cannot pass as a stranger;
+ *   * **no token** → no error, and an *anonymous* session (`scopeKey: null`). The
+ *     transport's job is to say **who** is asking, never what they may do, so this
+ *     CLI's dispatcher answers its three diagnostics and nothing else. A product
+ *     writes its own dispatcher and decides what an anonymous caller may reach.
+ *
+ * Both halves matter for a second product: the token is not a capability, and the
+ * identity (or its absence) reaches the dispatcher so policy can live there.
  *
  * ## Why the CLI is a function, not a script
  *
@@ -55,7 +72,7 @@ const USAGE = [
   "",
   "  --port <n>            port to bind (default 3030; 0 binds a free one and reports it)",
   "  --path <p>            WebSocket path (default /ws)",
-  "  --token <t>           session token clients must present (required)",
+  "  --token <t>           session token clients present for the owner session (required)",
   "  --owner-id <id>       owner id for the pairing payload",
   "  --owner-public-key <p>  owner public key (PEM) for the pairing payload",
   "  --owner-public-key-file <f>  read the PEM from a file (a PEM is multi-line)",

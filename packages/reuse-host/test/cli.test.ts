@@ -125,6 +125,59 @@ describe("envoy-reuse-host CLI", () => {
     expect(parsed?.wsUrl).toBe(`ws://127.0.0.1:${bound}/ws`);
   });
 
+  it("gates identity, not access: a wrong token is refused, an absent one is anonymous", async () => {
+    // Found by running the binary and asking it awkward questions. The help text
+    // said clients "must present" the token, which sounds like access control; the
+    // transport's actual contract is narrower, and worth pinning because a future
+    // edit could quietly turn "anonymous" into "owner" (or the reverse) without
+    // failing any existing test.
+    const { io } = capture();
+    const result = await runReuseHostCli(
+      ["--port", "0", "--token", "good", "--owner-id", "envoy:owner:alice", "--owner-public-key", "PEM"],
+      io,
+    );
+    expect(result.code).toBe(0);
+    hosts.push(result.host!);
+    const port = result.host!.port;
+
+    /** One RPC, skipping the pre-auth `connected` push the host sends first. */
+    const ask = async (token: string | null, method: string) => {
+      const { WebSocket } = await import("ws");
+      const suffix = token === null ? "" : `?token=${token}`;
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/ws${suffix}`);
+      const reply = await new Promise<Record<string, unknown>>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${method} timed out`)), 5_000);
+        socket.on("message", (raw: Buffer) => {
+          const message = JSON.parse(raw.toString()) as { id?: number };
+          if (message.id !== 1) return;
+          clearTimeout(timer);
+          resolve(message as Record<string, unknown>);
+        });
+        socket.on("open", () =>
+          socket.send(JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: {} })),
+        );
+        socket.on("error", reject);
+      });
+      socket.close();
+      return reply;
+    };
+
+    const wrong = await ask("wrong", "whoami");
+    expect((wrong["error"] as { code?: string } | undefined)?.code).toBe("UNAUTHORIZED");
+
+    const anonymous = await ask(null, "whoami");
+    expect(anonymous["error"]).toBeUndefined();
+    expect(anonymous["result"]).toEqual({
+      scopeKey: null,
+      ownerId: null,
+      isOwnerScope: false,
+      deviceId: null,
+    });
+
+    const owner = await ask("good", "whoami");
+    expect(owner["result"]).toMatchObject({ ownerId: "envoy:owner:alice", isOwnerScope: true });
+  }, 20_000);
+
   it("says so when no pairing URI can be printed", async () => {
     const { io, out } = capture();
     const result = await runReuseHostCli(["--port", "0", "--token", "t"], io);
