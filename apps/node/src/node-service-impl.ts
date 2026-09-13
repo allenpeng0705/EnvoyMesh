@@ -1,3 +1,7 @@
+import {
+  UNCONFIGURED_PROFILE_DIR,
+  hasProfileDir,
+} from "./product-store-availability.js";
 import { resolveBundledOpenClawDir } from "./bundled-paths.js";
 import type {
   AiSettings,
@@ -2392,21 +2396,21 @@ class NodeServiceImpl implements NodeService {
     this._peerDirectoryStore = peerDirectoryStore;
     this._humanProfileStore = humanProfileStore;
     this._agentIdentityStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createAgentIdentityStore(profileDir) : null;
-    this._profileDir = profileDir ?? "/tmp/unknown";
+      hasProfileDir(profileDir) ? createAgentIdentityStore(profileDir) : null;
+    this._profileDir = profileDir ?? UNCONFIGURED_PROFILE_DIR;
     this._vaultDir = vaultDir ?? process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
     this._chatLogStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createLocalChatLogStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createLocalChatLogStore(profileDir) : null;
     this._chatRoomStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createLocalChatRoomStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createLocalChatRoomStore(profileDir) : null;
     this._bindOpenClawPersistence();
     this._chatRoomPendingSyncStore =
-      profileDir && profileDir !== "/tmp/unknown"
+      hasProfileDir(profileDir)
         ? createLocalChatRoomPendingSyncStore(profileDir)
         : null;
     this._chatRoomPendingMessageStore =
-      profileDir && profileDir !== "/tmp/unknown"
+      hasProfileDir(profileDir)
         ? createLocalChatRoomPendingMessageStore(profileDir)
         : null;
     if (this._chatRoomPendingSyncStore || this._chatRoomPendingMessageStore) {
@@ -2459,7 +2463,7 @@ class NodeServiceImpl implements NodeService {
     }, 60 * 60 * 1000); // 1 hour
 
     // Phase 68-C6/C7 — Coding heartbeats + schedules (~60s shared ticker).
-    if (profileDir && profileDir !== "/tmp/unknown") {
+    if (hasProfileDir(profileDir)) {
       this._codingHeartbeatReady = this._codingHeartbeatStore
         .init(profileDir)
         .then(() => {
@@ -2488,53 +2492,53 @@ class NodeServiceImpl implements NodeService {
     }
 
     this._agentActivityStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createLocalAgentActivityStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createLocalAgentActivityStore(profileDir) : null;
     this._agentCardStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createAgentCardStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createAgentCardStore(profileDir) : null;
     this._chatDraftStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createChatDraftStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createChatDraftStore(profileDir) : null;
     this._autoReplyLimitStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createAutoReplyLimitStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createAutoReplyLimitStore(profileDir) : null;
     this._capabilityManifestStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createCapabilityManifestStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createCapabilityManifestStore(profileDir) : null;
     this._sessionTokenStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createSessionTokenStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createSessionTokenStore(profileDir) : null;
     this._familyProfileStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createFamilyProfileStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createFamilyProfileStore(profileDir) : null;
     this._familyRoomStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createFamilyRoomStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createFamilyRoomStore(profileDir) : null;
     this._shopStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createShopStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createShopStore(profileDir) : null;
     this._marketCacheStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createMarketCacheStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createMarketCacheStore(profileDir) : null;
     this._marketSearchHistoryStore =
-      profileDir && profileDir !== "/tmp/unknown"
+      hasProfileDir(profileDir)
         ? createMarketSearchHistoryStore(profileDir)
         : null;
     this._deviceAuthorizationStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createDeviceAuthorizationStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createDeviceAuthorizationStore(profileDir) : null;
     bindDeviceAuthorizationStore(this._deviceAuthorizationStore);
     this._contactOwnerKeyStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createContactOwnerKeyStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createContactOwnerKeyStore(profileDir) : null;
     this._peerProfileCacheStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createPeerProfileCacheStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createPeerProfileCacheStore(profileDir) : null;
     this._commerceReceiptStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createCommerceReceiptStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createCommerceReceiptStore(profileDir) : null;
     this._reputationAnchorStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createReputationAnchorStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createReputationAnchorStore(profileDir) : null;
     this._multihopDiscoveryStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createMultiHopDiscoveryStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createMultiHopDiscoveryStore(profileDir) : null;
     this._peerReputationStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createLocalPeerReputationStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createLocalPeerReputationStore(profileDir) : null;
     this._socialProxyStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createSocialProxySessionStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createSocialProxySessionStore(profileDir) : null;
     this._circleStore =
-      profileDir && profileDir !== "/tmp/unknown" ? new AgentCircleStore(profileDir) : null;
+      hasProfileDir(profileDir) ? new AgentCircleStore(profileDir) : null;
     this._documentAcquisitionJobStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createDocumentAcquisitionJobStore(profileDir) : null;
+      hasProfileDir(profileDir) ? createDocumentAcquisitionJobStore(profileDir) : null;
     this._capabilityProviderJobStore =
-      profileDir && profileDir !== "/tmp/unknown" ? createCapabilityProviderJobStore(profileDir) : null;
-    if (profileDir && profileDir !== "/tmp/unknown") {
+      hasProfileDir(profileDir) ? createCapabilityProviderJobStore(profileDir) : null;
+    if (hasProfileDir(profileDir)) {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
       this._capabilityIndexReady = this._capabilityIndex.init(profileDir);
       void this._chainStore.init(profileDir).then(async () => {
@@ -3873,7 +3877,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _getRagService(): Promise<RagService | null> {
-    if (this._profileDir === "/tmp/unknown") return null;
+    if (!hasProfileDir(this._profileDir)) return null;
     if (this._ragService) return this._ragService;
     if (!this._ragServiceInit) {
       this._ragServiceInit = (async () => {
@@ -5157,7 +5161,7 @@ class NodeServiceImpl implements NodeService {
 
   /** Debounced incremental vault → vector reindex (no Obsidian/MCP connector sync). */
   scheduleVaultRagIncrementalReindex(reason = "watch"): void {
-    if (this._vaultDir === "/tmp/unknown" || !this._vaultDir) return;
+    if (!hasProfileDir(this._vaultDir) || !this._vaultDir) return;
     if (this._vaultRagWatchTimer) clearTimeout(this._vaultRagWatchTimer);
     this._vaultRagWatchTimer = setTimeout(() => {
       this._vaultRagWatchTimer = null;
@@ -5209,7 +5213,7 @@ class NodeServiceImpl implements NodeService {
 
   startVaultRagWatcher(): void {
     this.stopVaultRagWatcher();
-    if (!this._vaultDir || this._vaultDir === "/tmp/unknown") return;
+    if (!hasProfileDir(this._vaultDir)) return;
     this._vaultRagWatcher = createVaultRagWatcher({
       vaultDir: this._vaultDir,
       debounceMs: 3_000,
@@ -5234,7 +5238,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _bindOpenClawPersistence(): void {
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       return;
     }
     const path = join(this._profileDir, "openclaw-pending-replies.json");
@@ -6509,7 +6513,7 @@ class NodeServiceImpl implements NodeService {
       await this._codingRuntimeReady;
       return;
     }
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("coding_runtime_store_not_ready");
     }
     this._codingRuntimeReady = this._codingRuntimeStore.init(this._profileDir);
@@ -7083,7 +7087,7 @@ class NodeServiceImpl implements NodeService {
       await this._codingHeartbeatReady;
       return;
     }
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("coding_heartbeat_store_not_ready");
     }
     this._codingHeartbeatReady = this._codingHeartbeatStore.init(this._profileDir);
@@ -7217,7 +7221,7 @@ class NodeServiceImpl implements NodeService {
       await this._codingScheduleReady;
       return;
     }
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("coding_schedule_store_not_ready");
     }
     this._codingScheduleReady = this._codingScheduleStore.init(this._profileDir);
@@ -11854,7 +11858,7 @@ class NodeServiceImpl implements NodeService {
     if (
       profile &&
       profileDir &&
-      profileDir !== "/tmp/unknown" &&
+      hasProfileDir(profileDir) &&
       params.targetOwnerId.trim() === profile.owner.ownerId.trim()
     ) {
       const started = Date.now();
@@ -11928,7 +11932,7 @@ class NodeServiceImpl implements NodeService {
   async publishWebContentEntry(
     params: PublishWebContentParams,
   ): Promise<PublishWebContentResult> {
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("publishWebContentEntry: node profile not initialized");
     }
     const ownerId =
@@ -11977,7 +11981,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async ensureDefaultWebSite(): Promise<import("@envoymesh/api").EnsureDefaultWebSiteResult> {
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("ensureDefaultWebSite: node profile not initialized");
     }
     const human = await this._humanProfileOrUndefined();
@@ -12000,7 +12004,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async listWebContentSections(): Promise<import("@envoymesh/api").WebContentSectionSummary[]> {
-    if (this._profileDir === "/tmp/unknown") return [];
+    if (!hasProfileDir(this._profileDir)) return [];
     const human = await this._humanProfileOrUndefined();
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
@@ -12009,7 +12013,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async listFeedPosts(): Promise<import("@envoymesh/api").FeedPostSummary[]> {
-    if (this._profileDir === "/tmp/unknown") return [];
+    if (!hasProfileDir(this._profileDir)) return [];
     const human = await this._humanProfileOrUndefined();
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
@@ -12022,7 +12026,7 @@ class NodeServiceImpl implements NodeService {
   async listFeedTimeline(
     params?: import("@envoymesh/api").ListFeedTimelineParams,
   ): Promise<import("@envoymesh/api").ListFeedTimelineResult> {
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       return { items: [], hasMore: false };
     }
     const human = await this._humanProfileOrUndefined();
@@ -12051,7 +12055,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async listBlogPosts(): Promise<import("@envoymesh/api").BlogPostSummary[]> {
-    if (this._profileDir === "/tmp/unknown") return [];
+    if (!hasProfileDir(this._profileDir)) return [];
     const human = await this._humanProfileOrUndefined();
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
@@ -12062,7 +12066,7 @@ class NodeServiceImpl implements NodeService {
   async deleteWebContentEntry(
     params: import("@envoymesh/api").DeleteWebContentParams,
   ): Promise<import("@envoymesh/api").DeleteWebContentResult> {
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("deleteWebContentEntry: node profile not initialized");
     }
     const human = await this._humanProfileOrUndefined();
@@ -12172,7 +12176,7 @@ class NodeServiceImpl implements NodeService {
 
   /** Retry undelivered feed.notify for one bond (used by warm / online flush). */
   private async _flushFeedNotifyOutboxForOwner(ownerId: string): Promise<void> {
-    if (this._profileDir === "/tmp/unknown") return;
+    if (!hasProfileDir(this._profileDir)) return;
     const mesh = this._reachableMesh();
     const profile = this._profile;
     if (!mesh || !profile) return;
@@ -12210,7 +12214,7 @@ class NodeServiceImpl implements NodeService {
 
   /** Best-effort: deliver all pending outbox rows (peer may still be offline). */
   private async _flushFeedNotifyOutbox(): Promise<void> {
-    if (this._profileDir === "/tmp/unknown") return;
+    if (!hasProfileDir(this._profileDir)) return;
     await compactFeedNotifyOutbox(this._profileDir);
     const rows = await loadFeedNotifyOutbox(this._profileDir);
     if (rows.length === 0) return;
@@ -12221,18 +12225,18 @@ class NodeServiceImpl implements NodeService {
   }
 
   async listFeedNotifications(): Promise<FeedNotification[]> {
-    if (this._profileDir === "/tmp/unknown") return [];
+    if (!hasProfileDir(this._profileDir)) return [];
     // Newest slice for Inbox / Feed; full history is listFeedTimeline.
     return listFeedNotifyRecent(this._profileDir);
   }
 
   async dismissFeedNotification(id: string): Promise<void> {
-    if (this._profileDir === "/tmp/unknown") return;
+    if (!hasProfileDir(this._profileDir)) return;
     await dismissFeedNotifyInboxItem(this._profileDir, id);
   }
 
   async dismissAllFeedNotifications(): Promise<void> {
-    if (this._profileDir === "/tmp/unknown") return;
+    if (!hasProfileDir(this._profileDir)) return;
     await dismissAllFeedNotifyInboxItems(this._profileDir);
   }
 
@@ -12259,14 +12263,14 @@ class NodeServiceImpl implements NodeService {
   }
 
   async listContentEngageNotifications(): Promise<ContentEngageNotification[]> {
-    if (this._profileDir === "/tmp/unknown") return [];
+    if (!hasProfileDir(this._profileDir)) return [];
     return loadContentEngageInbox(this._profileDir);
   }
 
   async dismissContentEngageNotifications(
     params?: DismissContentEngageNotificationsParams,
   ): Promise<void> {
-    if (this._profileDir === "/tmp/unknown") return;
+    if (!hasProfileDir(this._profileDir)) return;
     const surface = params?.surface ?? "all";
     await dismissContentEngageInbox(this._profileDir, surface);
   }
@@ -12333,7 +12337,7 @@ class NodeServiceImpl implements NodeService {
     commentId?: string;
   }): Promise<void> {
     const profile = this._profile;
-    if (!profile || this._profileDir === "/tmp/unknown") return;
+    if (!profile || !hasProfileDir(this._profileDir)) return;
     try {
       await enqueueFeedEngageOutboxItem(this._profileDir, {
         targetOwnerId: input.targetOwnerId,
@@ -12352,7 +12356,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _flushFeedEngageOutboxForOwner(ownerId: string): Promise<void> {
-    if (this._profileDir === "/tmp/unknown") return;
+    if (!hasProfileDir(this._profileDir)) return;
     const mesh = this._reachableMesh();
     const profile = this._profile;
     if (!mesh || !profile) return;
@@ -12393,7 +12397,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _flushFeedEngageOutbox(): Promise<void> {
-    if (this._profileDir === "/tmp/unknown") return;
+    if (!hasProfileDir(this._profileDir)) return;
     await compactFeedEngageOutbox(this._profileDir);
     const rows = await loadFeedEngageOutbox(this._profileDir);
     if (rows.length === 0) return;
@@ -12406,7 +12410,7 @@ class NodeServiceImpl implements NodeService {
   async getContentEngagement(params: GetContentEngagementParams): Promise<ContentEngagementSummary> {
     const url = params.url?.trim() ?? "";
     if (!url) throw new Error("getContentEngagement: url required");
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       return {
         url,
         starCount: 0,
@@ -12429,7 +12433,7 @@ class NodeServiceImpl implements NodeService {
   async toggleContentStar(params: ToggleContentStarParams): Promise<ContentEngagementSummary> {
     const url = params.url?.trim() ?? "";
     if (!url) throw new Error("toggleContentStar: url required");
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("toggleContentStar: profile directory not configured");
     }
     const profile = this._requireProfile();
@@ -12462,7 +12466,7 @@ class NodeServiceImpl implements NodeService {
     const text = params.text?.trim() ?? "";
     if (!url) throw new Error("addContentComment: url required");
     if (!text) throw new Error("addContentComment: text required");
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("addContentComment: profile directory not configured");
     }
     const profile = this._requireProfile();
@@ -12498,7 +12502,7 @@ class NodeServiceImpl implements NodeService {
     const commentId = params.commentId?.trim() ?? "";
     if (!url) throw new Error("removeContentComment: url required");
     if (!commentId) throw new Error("removeContentComment: commentId required");
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("removeContentComment: profile directory not configured");
     }
     const profile = this._requireProfile();
@@ -14771,7 +14775,7 @@ class NodeServiceImpl implements NodeService {
     if (
       ownerId &&
       this._profileDir &&
-      this._profileDir !== "/tmp/unknown" &&
+      hasProfileDir(this._profileDir) &&
       result.listing.mediaPaths?.length
     ) {
       try {
@@ -14836,7 +14840,7 @@ class NodeServiceImpl implements NodeService {
       : null;
     const result = await shopDeleteListingViaRuntime(this._shopStore, ownerId, params);
     if (existing) {
-      if (this._profileDir && this._profileDir !== "/tmp/unknown") {
+      if (hasProfileDir(this._profileDir)) {
         const { unmirrorShopListingThumb } = await import("./shop-listing-thumb.js");
         await unmirrorShopListingThumb(this._profileDir, existing.listingId);
       }
@@ -14887,7 +14891,7 @@ class NodeServiceImpl implements NodeService {
     params: import("@envoymesh/api").ShopSaveListingMediaParams,
   ): Promise<import("@envoymesh/api").ShopSaveListingMediaResult> {
     requireOwnerProfile("save shop listing media");
-    if (!this._profileDir || this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("Profile directory is not ready");
     }
     const { saveShopListingMedia } = await import("./shop-listing-media.js");
@@ -14902,7 +14906,7 @@ class NodeServiceImpl implements NodeService {
     if (!listingId) return { ok: false, reason: "listingId is required" };
     const { ownerId } = this._shopOwnerContext();
     if (!ownerId || !this._shopStore) return { ok: false, reason: "Shop is not ready" };
-    if (!this._profileDir || this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       return { ok: false, reason: "Profile directory is not ready" };
     }
     const listing = await this._shopStore.getListing(listingId);
@@ -15288,7 +15292,7 @@ class NodeServiceImpl implements NodeService {
     const { sendMarketAnnounceToBonds } = await import("./market-announce-outbound.js");
     const { loadInlineListingThumbnail } = await import("./shop-listing-media.js");
     const thumb =
-      this._profileDir && this._profileDir !== "/tmp/unknown"
+      hasProfileDir(this._profileDir)
         ? await loadInlineListingThumbnail(this._profileDir, listing.mediaPaths)
         : undefined;
     // Prefer explicit public envoy:// thumb; else deterministic path if media exists.
@@ -15793,7 +15797,7 @@ class NodeServiceImpl implements NodeService {
     params: import("@envoymesh/api").FamilyAttachmentUploadParams,
   ): Promise<import("@envoymesh/api").FamilyAttachmentUploadResult> {
     await this._ensureFamilyOwnerMigrated();
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("Family media is not available on this node");
     }
     return uploadFamilyAttachmentViaRuntime(this._familyMediaContext(), params);
@@ -15807,7 +15811,7 @@ class NodeServiceImpl implements NodeService {
     params: import("@envoymesh/api").FamilyAttachmentReadParams,
   ): Promise<import("@envoymesh/api").FamilyAttachmentReadResult> {
     await this._ensureFamilyOwnerMigrated();
-    if (this._profileDir === "/tmp/unknown") {
+    if (!hasProfileDir(this._profileDir)) {
       throw new Error("Family media is not available on this node");
     }
     return readFamilyAttachmentViaRuntime(this._familyMediaContext(), params);
@@ -18160,7 +18164,7 @@ class NodeServiceImpl implements NodeService {
   /** Lazily build the local verifier scoreboard (§9.2), once a profile exists. */
   private async _getVerifierScoreboard(): Promise<VerifierScoreboard | null> {
     if (this._verifierScoreboard !== undefined) return this._verifierScoreboard;
-    if (this._profileDir === "/tmp/unknown") return null;
+    if (!hasProfileDir(this._profileDir)) return null;
     const profile = this.getProfile();
     if (!profile) return null;
     this._verifierScoreboard = new VerifierScoreboard({

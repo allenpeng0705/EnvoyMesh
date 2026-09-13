@@ -346,6 +346,36 @@ if (flag("--check")) {
     }
     process.exit(1);
   }
+  // **Rule: a `product`-grouped store must be gated.** Completeness says every
+  // store is grouped; correctness of the *claim* requires more. `node-service-impl`
+  // currently gates 29 creations on `profileDir` and leaves 9 ungated (field
+  // initializers / `init`) plus 11 per-call creations, so a host that supplies no
+  // profile directory still materialises product state — which is why the plan's
+  // §8.9 "productStoreDir gate" is not done. Enumerating the remainder here means
+  // the gap cannot quietly stop being tracked, and a new ungated product store
+  // fails immediately.
+  const ungatedProduct = all.filter(
+    (r) =>
+      STORE_GROUPS[r.field]?.[0] === "product" &&
+      !/gated on profileDir/.test(r.created ?? ""),
+  );
+  if (ungatedProduct.length > 0) {
+    for (const r of ungatedProduct) {
+      console.error(
+        `[fail] ${r.field} (${r.factory ?? "?"}): grouped \`product\` but created ` +
+          `"${r.created}" — not gated on a profile directory, so it still ` +
+          "materialises on a kernel that supplied none. Create it through " +
+          "`productStore(profileDir, name, factory)` in " +
+          "apps/node/src/product-store-availability.ts.",
+      );
+    }
+    console.error(
+      `\n${ungatedProduct.length} product store(s) are ungated. The ` +
+        "`productStoreDir` gate (§8.9) is incomplete while this list is non-empty.",
+    );
+    process.exit(1);
+  }
+
   console.log(
     `node-store inventory is complete — ${all.length} stores ` +
       `(${rows.length} constructor-gated, ${additional.length} not gated, ` +

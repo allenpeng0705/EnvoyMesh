@@ -1,6 +1,7 @@
 /**
  * OpenClaw runtime — gateway lifecycle, webhook ask/send, sync reply correlation.
  */
+import { hasProfileDir } from "./product-store-availability.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -1350,7 +1351,7 @@ async function startOpenClawInner(
 
   const profileDir = deps.getProfileDir();
   const profileDirAbs =
-    profileDir && profileDir !== "/tmp/unknown"
+    hasProfileDir(profileDir)
       ? resolve(nodeCwd, profileDir)
       : null;
   const cfgPath = profileDirAbs

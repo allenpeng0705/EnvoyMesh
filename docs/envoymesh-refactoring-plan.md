@@ -1371,6 +1371,23 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 
 **Recommended order**, cheapest true unblock first: (1) the harness contract-symbol move — it is small, it is the V4 requirement, and it does not depend on the `api` decision; (2) re-measure, then decide the `api/core` subpath with real numbers; (3) the kernel `productStoreDir` gate as its own step; (4) the TS reuse host, which then becomes the acceptance test for all of it.
 
+#### 8.17.5 Kernel `productStoreDir` — the typed-absence half is done, the gate is not
+
+§8.9 named the shape: "a `productStoreDir` gate applied across **all** product-classified stores (constructor-gated and field-initialized), plus a decision about the `/tmp/unknown` fallback, plus a test matrix". Two of those three are done, and the third is now *enumerated and enforced* rather than remembered.
+
+**The `/tmp/unknown` decision: absence is typed.** `profileDir` had become a magic string compared in **66 places** across `node-service-impl.ts` and `node-service-clawhub.ts` (`=== "/tmp/unknown"`, `profileDir && profileDir !== "/tmp/unknown"`, …). Every one now goes through `hasProfileDir()` from the new `product-store-availability.ts`, and the sentinel is declared once as `UNCONFIGURED_PROFILE_DIR`. Verified: no `/tmp/unknown` literal remains outside that module, and the change is behaviour-neutral by construction (`x === SENTINEL` → `!hasProfileDir(x)` is the same predicate).
+
+**The seam mirrors the human-profile one.** `productStore(profileDir, name, factory)` returns the real store when a directory exists and a **typed, store-naming stand-in** when it does not — the same discipline as `createUnavailableHumanProfileStore`, for the same reason: a null-object would hide the dependency, a typed error measures it. The stand-in throws `ProductStoreUnavailableError` on any use, but is safe to hold, `await`, log and `JSON.stringify` — it prints `[unavailable product store: _shopStore]`, because *inspection is not use* and a log line must not crash a bare kernel.
+
+**The gate itself is incomplete, and now says so.** `inventory-node-stores.mjs --check` gained a rule: a `product`-grouped store that is not gated on a profile directory fails. It currently names **12**:
+
+| Shape | Stores |
+|---|---|
+| field initializer (constructed before `profileDir` is known) | `_codingHeartbeatStore`, `_codingRuntimeStore`, `_codingScheduleStore`, `_publishedLibraryStore`, `_chainStore`, `_delegatedChainStore` |
+| local / object-literal binding inside a method | `createWebContentStore`, `createPublishedLibraryStore` (×2), `createPublishedExternalStore`, `createEnvoyHarnessSessionStore`, `LocalMemoryStore` |
+
+They still materialise on a kernel that supplied no profile directory — the honest summary is that construction is **not yet product-free**, exactly as §8.9 predicted, and the checker keeps that visible. Closing it is a real refactor: those stores must move into the constructor (or become lazy) and their consumers must handle the typed error instead of finding a usable store, with the 5,300-test suite as the referee.
+
 #### 8.17.4 Step (3) done — the local-store barrel split, and rule 6 turned into a real rule
 
 The last rule-6 warning is gone, and the fix was not cosmetic. `local-store` was declared core while its **barrel re-exported product code**: `index.ts` re-exported `family-profile-store.ts` and `session-token-store.ts`, both `product-bound` (they name `FamilyProfile` / `boundFamilyProfileId`). So for the 19 modules that import `@envoymesh/local-store`, "declared core" was a lie — they were untainted while able to reach product code.

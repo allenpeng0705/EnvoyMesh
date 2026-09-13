@@ -3,6 +3,10 @@
  *
  * Extracted from `node-service-impl.ts` (ClawHub section + bridge-config helpers).
  */
+import {
+  UNCONFIGURED_PROFILE_DIR,
+  hasProfileDir,
+} from "./product-store-availability.js";
 import { join, dirname } from "node:path";
 import { ensureOpenClawWorkspace } from "./openclaw-workspace.js";
 import { resolveBundledSkillsDir } from "./bundled-paths.js";
@@ -67,7 +71,7 @@ export function resolveOpenClawWorkspaceDirFromProfile(
   ownerId: string,
   cwd = process.cwd(),
 ): string {
-  if (!profileDir || profileDir === "/tmp/unknown") {
+  if (!hasProfileDir(profileDir)) {
     throw new Error("OpenClaw workspace unavailable — profile not loaded");
   }
   return ensureOpenClawWorkspace(profileDir, { ownerId }, {
