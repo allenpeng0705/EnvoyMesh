@@ -28,7 +28,6 @@
  */
 
 import { readFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { pathToFileURL } from "node:url";
 import { ENVOYMESH_VERSION } from "@envoymesh/protocol";
 import {
@@ -54,7 +53,7 @@ const USAGE = [
   "",
   "Usage: envoy-reuse-host [options]",
   "",
-  "  --port <n>            port to bind (default 3030; 0 picks a free one)",
+  "  --port <n>            port to bind (default 3030; 0 binds a free one and reports it)",
   "  --path <p>            WebSocket path (default /ws)",
   "  --token <t>           session token clients must present (required)",
   "  --owner-id <id>       owner id for the pairing payload",
@@ -78,6 +77,20 @@ interface ParsedArgs {
   preAuth: string[];
 }
 
+/** Every flag this CLI accepts — used to tell an omitted value from a PEM. */
+const KNOWN_FLAGS = new Set([
+  "--port",
+  "--path",
+  "--token",
+  "--owner-id",
+  "--owner-public-key",
+  "--owner-public-key-file",
+  "--name",
+  "--pre-auth",
+  "--help",
+  "-h",
+]);
+
 function parseArgs(argv: string[]): { ok: true; args: ParsedArgs } | { ok: false; error: string } {
   const args: ParsedArgs = { port: 3030, path: "/ws", token: "", preAuth: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -89,6 +102,11 @@ function parseArgs(argv: string[]): { ok: true; args: ParsedArgs } | { ok: false
     const value = () => {
       const next = argv[i + 1];
       if (next === undefined) throw new Error(`${flag} needs a value`);
+      // ...but a *known flag* in value position means the value was omitted.
+      // Taking it anyway silently ate both the flag and its value: `--token
+      // --port 3030` set the token to `--port` and dropped `3030` entirely. A
+      // PEM starts with `-----`, which is not a flag name, so it still passes.
+      if (KNOWN_FLAGS.has(next)) throw new Error(`${flag} needs a value`);
       i++;
       return next;
     };
@@ -169,27 +187,6 @@ export interface CliResult {
 }
 
 /**
- * Resolve a concrete free port for `--port 0`.
- *
- * The host cannot report the port the OS chose — `WsServer` binds a number it was
- * given and exposes no bound-port accessor — so a host started on `0` would print
- * `ws://127.0.0.1:0/ws` and a pairing URI nobody could dial. Picking the port here
- * keeps the printed URL true. (Running the CLI is how this was found: the unit
- * tests asserted the *shape* of the URL, not that its port was reachable.)
- */
-async function resolveFreePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const probe = createServer();
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const address = probe.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      probe.close(() => resolve(port));
-    });
-  });
-}
-
-/**
  * Run the CLI. Returns the exit code and (when it started) the live host, which
  * the caller is responsible for stopping — the tests do exactly that.
  */
@@ -227,10 +224,8 @@ export async function runReuseHostCli(argv: string[], io: Partial<CliIo> = {}): 
     noteClientActivity: () => undefined,
   };
 
-  const port = args.port === 0 ? await resolveFreePort() : args.port;
-
   const host = createReuseHost({
-    port,
+    port: args.port,
     path: args.path,
     ...(args.name ? { displayName: args.name } : {}),
     sessionIdentity,
@@ -239,13 +234,17 @@ export async function runReuseHostCli(argv: string[], io: Partial<CliIo> = {}): 
   });
 
   try {
-    host.serve(nodeService);
+    // Awaiting the bind is what makes `--port 0` work: `host.port` is the port
+    // the OS chose, so neither the printed URL nor the pairing URI can carry
+    // `:0`. It also means an occupied port reports here instead of printing a
+    // URL for a host that is not listening.
+    await host.serve(nodeService);
   } catch (e) {
     err(`envoy-reuse-host: could not start: ${e instanceof Error ? e.message : String(e)}`);
     return { code: 1 };
   }
 
-  out(`envoy-reuse-host ${ENVOYMESH_VERSION} listening on ws://127.0.0.1:${port}${args.path}`);
+  out(`envoy-reuse-host ${ENVOYMESH_VERSION} listening on ws://127.0.0.1:${host.port}${args.path}`);
   out("methods: ping, whoami, hostInfo");
   if (args.ownerId && args.ownerPublicKey) {
     out("");

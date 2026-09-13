@@ -651,6 +651,62 @@ test("node-store inventory: the real tree passes the completeness gate", async (
   assert.match(stdout, /per-call/);
 });
 
+test("node-store inventory: deleting a guard fails the gate (negative control)", async () => {
+  // **The rule that says "a new ungated product store cannot land" has to be able
+  // to fail.** A review pass found it could not: the gate matched the directory
+  // argument on the same line as the construction, and this file's product stores
+  // write the guard and the construction on *different* lines, so deleting
+  // `hasProfileDir(profileDir) ? … : null` left the report saying "clean". The
+  // sabotage below is exactly that deletion — it must be caught, and the positive
+  // control in the next test proves the same harness passes a correct tree.
+  const IMPL = path.join(repoRoot, "apps", "node", "src", "node-service-impl.ts");
+  const GUARDED = `    this._shopStore =
+      hasProfileDir(profileDir) ? createShopStore(profileDir) : null;`;
+
+  async function runAgainst(patchedImpl) {
+    const dir = await tmp("gating-");
+    const scripts = path.join(dir, "scripts");
+    await fs.mkdir(scripts, { recursive: true });
+    await fs.copyFile(ROOT_STORES, path.join(scripts, "inventory-node-stores.mjs"));
+    await fs.symlink(path.join(repoRoot, "packages"), path.join(dir, "packages"), "dir");
+    // `apps/node/src` holds one real file (the patched copy) and symlinks to the
+    // rest, so the sabotage is confined to the file the rule reads.
+    const srcDir = path.join(dir, "apps", "node", "src");
+    await fs.mkdir(srcDir, { recursive: true });
+    for (const entry of await fs.readdir(path.join(repoRoot, "apps", "node", "src"))) {
+      if (entry === "node-service-impl.ts") continue;
+      await fs.symlink(
+        path.join(repoRoot, "apps", "node", "src", entry),
+        path.join(srcDir, entry),
+      );
+    }
+    await fs.writeFile(path.join(srcDir, "node-service-impl.ts"), patchedImpl, "utf8");
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        process.execPath,
+        [path.join(scripts, "inventory-node-stores.mjs"), "--check"],
+        { cwd: repoRoot },
+      );
+      return { code: 0, output: `${stdout}${stderr}` };
+    } catch (error) {
+      return { code: error.code ?? 1, output: `${error.stdout ?? ""}${error.stderr ?? ""}` };
+    }
+  }
+
+  const impl = await fs.readFile(IMPL, "utf8");
+  assert.ok(impl.includes(GUARDED), "the gating anchor moved — update this fixture");
+
+  // Positive control: the same harness against the *unmodified* file must pass, so
+  // a failure below means the sabotage was caught and not that the harness is broken.
+  const control = await runAgainst(impl);
+  assert.equal(control.code, 0, `the unsabotaged copy must pass:\n${control.output}`);
+
+  const sabotaged = await runAgainst(impl.replace(GUARDED, `    this._shopStore =\n      createShopStore(profileDir);`));
+  assert.equal(sabotaged.code, 1, `the removed guard must fail the gate:\n${sabotaged.output}`);
+  assert.match(sabotaged.output, /\[fail\] _shopStore/);
+  assert.match(sabotaged.output, /unguarded/);
+});
+
 test("node-store inventory: a store with no group fails the gate", async () => {
   // The completeness rule is what keeps the split honest: `undecided` is an
   // acceptable answer, but *silence* is not. Seed it by pointing the script at a

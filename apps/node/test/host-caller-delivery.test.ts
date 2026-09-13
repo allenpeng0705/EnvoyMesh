@@ -62,17 +62,13 @@ const sockets: WebSocket[] = [];
 
 /**
  * Wait for the listener's address. `start()` is synchronous and `listen()` is
- * not, so reading `address()` right after it returns null — which is how the
- * first version of this file failed with "host did not bind".
+ * not, so reading the port right after it returns gives the *requested* one —
+ * which is why the transport exposes `waitUntilListening()`/`boundPort` rather
+ * than making every caller poll or reach into `httpServer`.
  */
 async function boundPort(server: WsServer<RpcCallerContext>): Promise<number> {
-  const http = (server as unknown as { httpServer: { address(): { port: number } | null } }).httpServer;
-  for (let i = 0; i < 100; i += 1) {
-    const address = http.address();
-    if (address && typeof address.port === "number") return address.port;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error("host did not bind");
+  await server.waitUntilListening();
+  return server.boundPort;
 }
 
 /** Start a real host on an ephemeral port and return its URL. */
@@ -104,8 +100,8 @@ function startHost(gateAllows: (profileId: string) => boolean) {
       gateAllows(session.scopeKey),
     ),
   });
-  // `server.port` is the *requested* port (0 → ephemeral), so the bound port has
-  // to come from the listening socket, asynchronously.
+  // `server.port` is the *requested* port (0 → ephemeral); the bound port comes
+  // from `boundPort`, once `waitUntilListening()` says the listener is up.
   return { server, emit: node.emit, port: boundPort(server) };
 }
 

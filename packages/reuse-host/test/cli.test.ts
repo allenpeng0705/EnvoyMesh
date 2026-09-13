@@ -64,6 +64,14 @@ describe("envoy-reuse-host CLI", () => {
     expect((await runReuseHostCli(["--token", "t", "--name"], c.io)).code).toBe(2);
     expect(c.err.join("\n")).toContain("--name needs a value");
 
+    // A *known flag* where a value belongs means the value was omitted. Taking it
+    // anyway used to set `token` to `--port` and swallow `3030` with it — a
+    // silently misconfigured host rather than an error message.
+    const noValue = capture();
+    const swallowed = await runReuseHostCli(["--token", "--port", "3030"], noValue.io);
+    expect(swallowed.code).toBe(2);
+    expect(noValue.err.join("\n")).toContain("--token needs a value");
+
     // A PEM starts with `--`, which an earlier version refused as "missing value".
     // It must now be *accepted* — and the host it starts must be stopped, or the
     // suite leaks a listener (found by this test failing with a stray exit 0).
@@ -111,6 +119,10 @@ describe("envoy-reuse-host CLI", () => {
     const parsed = parsePairingUri(uriLine!.trim());
     expect(parsed?.ownerId).toBe("envoy:owner:alice");
     expect(parsed?.token).toBe("pair-token");
+    // The URL that was printed and the URL in the QR code must be the same host —
+    // this is the assertion that fails when the CLI guesses the port instead of
+    // reading the one it bound.
+    expect(parsed?.wsUrl).toBe(`ws://127.0.0.1:${bound}/ws`);
   });
 
   it("says so when no pairing URI can be printed", async () => {

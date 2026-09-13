@@ -132,6 +132,18 @@ export interface WsServerOptions<TCaller = unknown> {
    * on the same socket. Absent → everything runs concurrently.
    */
   shouldSerializeMethod?: (method: string) => boolean;
+
+  /**
+   * What to do when the listener cannot bind.
+   *
+   * Absent → the desktop host's behaviour, unchanged: log, and on `EADDRINUSE`
+   * `process.exit(1)` so the Tauri guardian respawns it. That is the right
+   * choice for the product's own process and the wrong one for a library: a
+   * second product embedding this transport must be able to *report* an
+   * occupied port instead of being killed by it. Supplying a handler takes over
+   * the decision — `waitUntilListening()` rejects either way.
+   */
+  onListenError?: (err: NodeJS.ErrnoException) => void;
 }
 
 export class WsServer<TCaller = unknown> {
@@ -181,6 +193,20 @@ export class WsServer<TCaller = unknown> {
    */
   private readonly heartbeatMissedPongsTolerance = 3;
   private onConnectionChange?: (connectedCount: number) => void;
+  /**
+   * Bind-failure policy — see {@link WsServerOptions.onListenError}. Absent
+   * keeps the desktop host's log-and-exit behaviour.
+   */
+  private onListenError?: (err: NodeJS.ErrnoException) => void;
+  /**
+   * Settles when the listener is bound, so a caller that must know the real
+   * port (`port: 0`) can wait for it instead of guessing.
+   */
+  private listening: Promise<void> | null = null;
+  /** Resolve/reject pair of {@link listening}; `null` once settled. */
+  private listeningPending: { resolve: () => void; reject: (err: Error) => void } | null = null;
+  /** The port the OS actually bound; see {@link boundPort}. */
+  private _boundPort: number | null = null;
   /**
    * Optional WAN readiness probe for GET /readyz.
    * /health stays process-liveness only; /readyz may 503 without a live
@@ -238,6 +264,15 @@ export class WsServer<TCaller = unknown> {
     this._socketMethods = options.socketMethods;
     this._preAuthMethods = new Set(options.preAuthMethods ?? []);
     this._shouldSerializeMethod = options.shouldSerializeMethod ?? (() => false);
+    this.onListenError = options.onListenError;
+    this._boundPort = null;
+    this.listening = new Promise<void>((resolve, reject) => {
+      this.listeningPending = { resolve, reject };
+    });
+    // Only a consumer that awaits `waitUntilListening()` observes a rejection;
+    // the desktop host does not await it, so mark the promise handled here —
+    // otherwise a bind failure would also surface as an unhandled rejection.
+    this.listening.catch(() => undefined);
 
     const startedAtMs = Date.now();
     this.httpServer = createServer((req, res) => {
@@ -252,7 +287,7 @@ export class WsServer<TCaller = unknown> {
             ok: true,
             service: "envoymesh-home-ws",
             path: this.path,
-            port: this.port,
+            port: this.boundPort,
             uptimeMs: Date.now() - startedAtMs,
             checkedAt: new Date().toISOString(),
           }),
@@ -270,7 +305,7 @@ export class WsServer<TCaller = unknown> {
             reason: probe.reason,
             service: "envoymesh-home-ws",
             path: this.path,
-            port: this.port,
+            port: this.boundPort,
             uptimeMs: Date.now() - startedAtMs,
             checkedAt: new Date().toISOString(),
           }),
@@ -296,7 +331,16 @@ export class WsServer<TCaller = unknown> {
 
     this.httpServer.on("error", (err: NodeJS.ErrnoException) => {
       console.error(`[ws-server] HTTP server error: ${err.message}`);
+      // Settle the listen promise first: a consumer awaiting it must fail rather
+      // than hang, and this must happen even when the policy below is to exit.
+      this.settleListening(err);
       if (err.code === "EADDRINUSE") {
+        if (this.onListenError) {
+          // A product that embeds the transport decides for itself whether an
+          // occupied port is fatal — killing the process is not a library's call.
+          this.onListenError(err);
+          return;
+        }
         console.error(
           `[ws-server] Social WebSocket port ${this.port} is already in use — exiting so the desktop shell can retry`,
         );
@@ -369,8 +413,15 @@ export class WsServer<TCaller = unknown> {
     });
 
     this.httpServer.listen(this.port, HOST_WS_BIND_HOST, () => {
+      // Learn the real port before settling: with `port: 0` the OS chose it,
+      // and `boundPort` is the only way a caller can dial this host.
+      const address = this.httpServer?.address();
+      if (address && typeof address === "object") {
+        this._boundPort = address.port;
+      }
+      this.settleListening();
       console.log(
-        `[ws-server] Listening on ws://127.0.0.1:${this.port}${this.path} (bound ${HOST_WS_BIND_HOST})`,
+        `[ws-server] Listening on ws://127.0.0.1:${this.boundPort}${this.path} (bound ${HOST_WS_BIND_HOST})`,
       );
     });
 
@@ -402,6 +453,46 @@ export class WsServer<TCaller = unknown> {
   }
 
   /**
+   * Resolve or reject {@link listening}, at most once.
+   *
+   * Called from the `listening` callback, from a bind error, and from `stop()` —
+   * so a consumer awaiting `waitUntilListening()` always settles, and never
+   * hangs on a host that failed to bind or was stopped before it could.
+   */
+  private settleListening(err?: Error): void {
+    const pending = this.listeningPending;
+    if (!pending) return;
+    this.listeningPending = null;
+    if (err) pending.reject(err);
+    else pending.resolve();
+  }
+
+  /**
+   * Resolves once the listener is bound (or the host was stopped before it could
+   * bind); rejects if it could not bind.
+   *
+   * Needed for `port: 0`, where the OS picks the port: `boundPort` is only final
+   * after this resolves, so a caller that prints a URL or builds a pairing URI
+   * must await it — otherwise it publishes port `0`, which nobody can dial.
+   */
+  waitUntilListening(): Promise<void> {
+    return this.listening ?? Promise.resolve();
+  }
+
+  /**
+   * The port actually bound.
+   *
+   * Equal to the requested port, except when that was `0` — then this is the
+   * port the OS chose. Reports the requested port before the listener is up.
+   */
+  get boundPort(): number {
+    if (this._boundPort !== null) return this._boundPort;
+    const address = this.httpServer?.address();
+    if (address && typeof address === "object") return address.port;
+    return this.port;
+  }
+
+  /**
    * Stop the WebSocket server
    */
   stop(): void {
@@ -409,6 +500,9 @@ export class WsServer<TCaller = unknown> {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
+    // A deliberate stop is not a bind failure: settle (don't reject) so an
+    // awaiting consumer is released instead of hanging.
+    this.settleListening();
     this.wss?.close();
     this.httpServer?.close();
     this.httpServer = null;

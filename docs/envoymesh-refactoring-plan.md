@@ -1371,6 +1371,32 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 
 **Recommended order**, cheapest true unblock first: (1) the harness contract-symbol move — it is small, it is the V4 requirement, and it does not depend on the `api` decision; (2) re-measure, then decide the `api/core` subpath with real numbers; (3) the kernel `productStoreDir` gate as its own step; (4) the TS reuse host, which then becomes the acceptance test for all of it.
 
+#### 8.17.11 The review that found the gate could not fail
+
+**The method.** Every claim in §8.17 was re-checked against the tree adversarially — not "does this look right" but "what input makes it wrong". Three checks found nothing (recorded below, because a negative result is the only evidence that a claim holds) and three findings were real, all three in code this refactor had just written.
+
+**Finding 1 — `port: 0` published port zero.** `createReuseHost` documented `port` as "the port actually bound (equal to the requested one unless it was `0`)" and returned `options.port` verbatim, so a host started on `0` reported `0` and built the pairing URI `ws://127.0.0.1:0/ws`. §8.17.10's fix was a workaround *outside* the library — the CLI probed for a free port, closed the probe, and handed that number over — which left the library contract false for every other consumer and opened a TOCTOU window between the probe closing and the host binding. Fixed at the root: `WsServer` gained `boundPort` (read from the listening socket) and `waitUntilListening()` (settled by the `listening` callback, by a bind error, and by `stop()`, so it can neither hang nor be read too early); `ReuseHost.port` is a getter over the bound port; `serve()` is awaitable and resolves once the port is final; and the CLI's probe is gone. `apps/node/test/host-caller-delivery.test.ts` had poked `WsServer`'s private `httpServer` in a poll loop to work around the same gap — it now calls the public accessor.
+
+**Finding 2 — an occupied port killed the consumer's process.** `WsServer`'s `EADDRINUSE` handler calls `process.exit(1)`. That is deliberate and right for the desktop host (the Tauri guardian respawns it) and indefensible in a library a second product embeds: `createReuseHost` on a busy port would end the *product's* process, with no error to handle. `WsServerOptions.onListenError` now takes over the decision; absent, the behaviour is byte-for-byte what it was. `reuse-host` passes a handler, so `serve()` rejects and the new test asserts it — a test that would kill the run if the hook ever stopped working, which is the intended failure mode for a silently-restored `process.exit`.
+
+**Finding 3 — the store gate could not fail.** This is the one that matters. `inventory-node-stores.mjs` was documented and enforced as "a new product store that takes a directory without a guard cannot land" (§8.17.7). A negative control — a copy of the tree with one guard deleted — showed it reporting **clean**, for two compounding reasons:
+
+| Sabotage (one edit in a copy of the tree) | Old rule | New rule |
+|---|---|---|
+| delete the guard, leaving `createShopStore(profileDir)` — the file's own two-line style | **not caught** | **caught** |
+| same, collapsed onto one line | **not caught** | **caught** |
+| `this._codingRuntimeStore.init(this._profileDir)` un-guarded | caught | caught |
+| add a product store never gated (`createFeedPostStore(profileDir)`) | caught (by *completeness*, not by this rule) | caught |
+| dir aliased into a local first (`const dir = profileDir; createShopStore(dir)`) | not caught | **not caught** (documented limit: needs dataflow, not a statement) |
+| a *new* product store built the sanctioned way (`productStore(…)`) | clean | clean (no false positive) |
+| the unmodified tree | clean | clean |
+
+Two causes, both now fixed: the rule matched the directory argument and the construction **on the same line**, and the file writes the guard and the construction on different lines; and the row's shape label (`constructor, gated on profileDir`) — hardcoded from *how* the store is created, never from what the line says — excluded every one of the 35 constructor-shaped rows. The rule is now **statement-scoped** (a statement is guarded if the guard is in it or in an enclosing guarded `if`), matches a directory reaching a *store call* rather than a shape, and no longer consults the label. Two of my own fixes on the way were wrong in instructive ways: matching a bare binding name (`local:store`) as a substring reported five phantom leaks, and treating `= create…()` as a directory hand-off flagged a constructor's default parameter value — both are why the suite now carries the positive control alongside the sabotage.
+
+**What the adversarial pass found nothing in.** (a) *The typed stand-in*: nothing calls `stop`/`close`/`flush`/`dispose` on any of the 17 gated product-store fields, and no code spreads one or asks `"x" in` one, so a bare kernel cannot trip the throwing Proxy on a teardown or inspection path; the product *method* calls that do reach it now fail closed with a typed error instead of writing under `/tmp/unknown`. (b) *The pairing parser*, under empty / garbage / `https:` / missing-field / `javascript:` / 2 MB inputs: no throw, no hang (2 MB in 15 ms), and hostile tokens survive a URL-encoded round-trip. The `javascript:` `wsUrl` is accepted exactly as the product's own parser accepts it — inherited, unchanged, and the defence belongs at the dial site, not in a format parser. (c) *The three rows the inventory calls "not gated"* are all **kernel** stores (two field initializers, one `init`), which need no gate by construction; the enforced invariant is about product rows, and it is still 34 product / 0 ungated.
+
+A fourth, smaller finding came out of the same reading: `--token --port 3030` set the token to `--port` and *swallowed* `3030`, producing a silently misconfigured host instead of an error. A **known flag** in value position is now a missing value (`KNOWN_FLAGS` — the shape `check-module-size.mjs` already used), while a PEM starts with `-----`, which is not a flag name, so §8.17.10's fix is preserved rather than reverted.
+
 #### 8.17.10 The `ModelProviderConfig`-style sweep, and a runnable second product
 
 **The sweep, with its own instrument.** The technique that found `ModelProviderConfig` and the pairing payloads is now a script (`/tmp/contract-candidates.mjs`, reproduced below in prose): a module is tainted *by propagation* when its own text is clean yet the manifest calls it product-bound, so the **relative imports that resolve to product-bound modules** are the coupling, and the names taken from them are candidates. For each candidate, compute the closure — the declaring module, the names its declaration references, whether any reaches product-bound code — and only move it if that closure is clean.
@@ -1398,7 +1424,7 @@ Pairing URI (encode this as a QR code):
   envoy://pair?wsUrl=…&token=…&ownerPublicKey=…&ownerId=envoy%3Aowner%3Aalice
 ```
 
-Two bugs it exposed by being *run* rather than read, both in the CLI and both mine: `--owner-public-key "-----BEGIN PUBLIC KEY-----"` was rejected as "needs a value" (the parser refused anything starting with `--`, which is exactly what a PEM starts with — now values are accepted, and `--owner-public-key-file` reads a multi-line PEM from disk); and `--port 0` printed `ws://127.0.0.1:0/ws` with a pairing URI nobody could dial, because `WsServer` binds a number it is given and exposes no bound-port accessor, so the CLI now resolves a free port first. The unit tests had asserted the *shape* of the URL, not that its port was reachable — which is the argument for running the artifact, not just testing it.
+Two bugs it exposed by being *run* rather than read, both in the CLI and both mine: `--owner-public-key "-----BEGIN PUBLIC KEY-----"` was rejected as "needs a value" (the parser refused anything starting with `--`, which is exactly what a PEM starts with — now values are accepted, and `--owner-public-key-file` reads a multi-line PEM from disk); and `--port 0` printed `ws://127.0.0.1:0/ws` with a pairing URI nobody could dial, because `WsServer` binds a number it is given and exposes no bound-port accessor. The unit tests had asserted the *shape* of the URL, not that its port was reachable — which is the argument for running the artifact, not just testing it. **The first fix for that was itself wrong**: the CLI resolved a free port and passed it in, which repaired the symptom for one caller and left the library's documented contract false for everyone else — see §8.17.11 for the root-cause fix (`boundPort`/`waitUntilListening`) and the removal of the probe.
 
 #### 8.17.9 The pairing contract is shared — one QR format, two products
 
@@ -1459,7 +1485,16 @@ Three surfaces, all from the reusable layer:
 
 **Real leaks, not shape violations.** The first rule flagged twelve stores by construction *shape* — six of which were harmless (`new ChainStore()` takes no directory; the directory arrives later at a checked `init`). Refining it to "a directory is handed over unguarded" produced **4 stores / 13 call sites**: `createEnvoyHarnessSessionStore` (10 sites), `createPublishedExternalStore`, `createPublishedLibraryStore`, and the coding stores' lazy `init(this._profileDir)`. `requireProductStoreDir(dir, name)` gates them in the expression, so the guard is visible to the checker *and* the failure names the store instead of surfacing as `ENOENT: /tmp/unknown/…`.
 
-**A false negative, caught by the control rather than by review.** The refined rule looked for a guard within four lines above the site. `node-service-impl.ts` is dense with guarded store creations, so un-gating a site still looked guarded — the tool reported clean while the leak was back. It now requires the guard in the expression itself *or* in the enclosing `if (` block (which is how the constructor's chain-store block is written), and un-gating one site fails with the exact line. **This is the third time this refactor has been saved by insisting a rule can fail on the thing it claims to catch** — the pattern is: seed it, try to fool it, and fix the rule when it is fooled.
+**A false negative, caught by the control rather than by review.** The refined rule looked for a guard within four lines above the site. `node-service-impl.ts` is dense with guarded store creations, so un-gating a site still looked guarded — the tool reported clean while the leak was back. It then required the guard in the expression itself *or* in the enclosing `if (` block (which is how the constructor's chain-store block is written), and un-gating one site fails with the exact line. **This is the third time this refactor has been saved by insisting a rule can fail on the thing it claims to catch** — the pattern is: seed it, try to fool it, and fix the rule when it is fooled.
+
+**…and the rule was still blind to the shape that matters — found by the next review round (§8.17.11).** "In the expression, on the same line as the directory" is not the shape this file uses: the product stores are written as
+
+```ts
+this._shopStore =
+  hasProfileDir(profileDir) ? createShopStore(profileDir) : null;
+```
+
+so the guard and the directory never share a line, and the row's shape label (`constructor, gated on profileDir`, hardcoded from how the store is created rather than from what its creation line says) then excluded all 35 constructor rows from the rule. The gate reported `0 ungated` because it could not fire, not because nothing was ungated. It is now statement-scoped (see §8.17.11); the conclusion below — 0 ungated — survives the stronger rule, which is the only reason it was ever true.
 
 **The last shape: field initializers became constructor-gated stores.** Six product stores were built in place (`private readonly _chainStore = new ChainStore()`), which is why the inventory called them ungated even after their `init` was guarded. They are now assigned in the constructor through `productStore(profileDir, name, factory)`, so on a bare kernel the field holds the typed stand-in rather than a usable object — §8.9's literal wording, "the product group is null", now holds.
 
@@ -1514,7 +1549,7 @@ Both directions are seeded. Negative controls observed: re-adding `export * from
 
 **Two of my own mistakes, both caught by the seeded tests rather than by me.** The entry-point resolution mapped `./dist/index.js` and `./dist/src/index.js` to `src/index.ts` — `local-store` emits to `dist/src/`, which is why my first export paths were wrong and `tsc` reported `TS2307`. And the rule's first version had a `reusable === 0` guard that skipped exactly the 6b case (a declared-core package with *nothing* reusable), so the rule could not fire on the state it exists to catch. It fired only after the fixture test failed — the argument for seeding every rule, again.
 
-#### 8.17.3 Three verification hazards this round exposed
+#### 8.17.3 Four verification hazards this round exposed
 
 Recorded because each one silently changes what "the suite is green" means:
 
@@ -1543,6 +1578,15 @@ Recorded because each one silently changes what "the suite is green" means:
    `@libp2p/interface` copies. `npm install` restored the tree and the errors
    vanished; no source change was involved. Refresh the pnpm lock with
    `--lockfile-only` (or run it where CI does), not with a root install.
+4. **Capture the whole log when checking for flakes — the count alone is not
+   enough to diagnose one.** Five full runs during the §8.17.11 review: four
+   green at 961 files / 8,987 tests, and one with **2 failing tests** that ran
+   concurrently with the sabotage probe that builds seven temp trees by hand.
+   It did not recur — a fifth run started under the same concurrent load was
+   green — but the two names are gone, because that run's output was piped
+   through `tail`. A rerun that cannot name what failed costs another 90-second
+   run; write to a file and grep it. (The 8,987 count is 8,959 plus the tests
+   §8.17.11 added.)
 
 #### 8.17.2 Step (2) done — `@envoymesh/api/core`, and the measurement that made it safe
 

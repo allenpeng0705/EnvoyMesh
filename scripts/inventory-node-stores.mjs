@@ -347,13 +347,10 @@ if (flag("--check")) {
     process.exit(1);
   }
   // **Rule: a `product`-grouped store must be gated.** Completeness says every
-  // store is grouped; correctness of the *claim* requires more. `node-service-impl`
-  // currently gates 29 creations on `profileDir` and leaves 9 ungated (field
-  // initializers / `init`) plus 11 per-call creations, so a host that supplies no
-  // profile directory still materialises product state — which is why the plan's
-  // §8.9 "productStoreDir gate" is not done. Enumerating the remainder here means
-  // the gap cannot quietly stop being tracked, and a new ungated product store
-  // fails immediately.
+  // store is grouped; correctness of the *claim* requires more. The remainder was
+  // enumerated while it existed — 12 ungated stores became 4 real leaks became 0 —
+  // and this now fails rather than reports, so a product store that takes a
+  // profile directory without a guard cannot land.
   //
   // **What counts as ungated, precisely.** Two shapes materialise product state,
   // and only these two are defects:
@@ -369,14 +366,62 @@ if (flag("--check")) {
   // alone, which listed twelve stores of both kinds and would have hurried a
   // refactor of six harmless ones.
   const implLines = (await fs.readFile(path.join(root, "apps/node/src/node-service-impl.ts"), "utf8")).split("\n");
-  // **Same line, not "nearby".** The first version looked four lines up for a
-  // guard, and the surrounding code is dense with guarded store creations — so
-  // un-gating a site still looked guarded and the rule reported clean. The
-  // negative control caught it (this is the "passes for the wrong reason" class
-  // the gates suite exists for). A hand-off is guarded when the guard is *in the
-  // expression* (`requireProductStoreDir(dir, name)`, `productStore(...)`,
-  // `hasProfileDir(dir) ? …`) or when no directory is handed over at all.
+  // **Group the lines into statements.** The first two versions of this rule
+  // looked at single lines, and both were blind in a different way:
+  //
+  //   * a four-line window above the hand-off "found" a guard that belonged to a
+  //     neighbouring store, so un-gating a site still looked guarded (fixed by
+  //     requiring the guard in the expression);
+  //   * requiring the guard *in the expression on the same line as the directory
+  //     argument* then missed the style this file actually uses, where the guard
+  //     and the directory sit on different lines:
+  //
+  //         this._shopStore =
+  //           hasProfileDir(profileDir) ? createShopStore(profileDir) : null;
+  //
+  //     — and, worse, it missed the *unguarded* form of that style too, which is
+  //     the edit that matters. Measured with a negative control (a copy of the
+  //     tree with one guard deleted, `scripts/test/gates.test.mjs`): deleting the
+  //     guard from this shape left the gate reporting "clean". A statement is the
+  //     right unit — it is what "is this hand-off guarded?" is actually asked
+  //     about.
+  const statements = [];
+  {
+    let start = -1;
+    let code = [];
+    const flush = () => {
+      if (start >= 0) statements.push({ start, text: code.join("\n") });
+      start = -1;
+      code = [];
+    };
+    for (let i = 0; i < implLines.length; i += 1) {
+      const raw = implLines[i];
+      const trimmed = raw.trim();
+      // Comments are dropped from the statement's text: a JSDoc line mentioning
+      // "the profile store" is neither a guard nor a hand-off, and counting it as
+      // evidence once reported a constructor signature as an ungated store.
+      if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+        continue;
+      }
+      if (start < 0) start = i;
+      const line = trimmed.replace(/\/\/.*$/, "").trim();
+      code.push(line);
+      if (/[;{[]$/.test(line) || line.startsWith("}")) flush();
+    }
+    flush();
+  }
   const GUARDED_ON_LINE = /hasProfileDir\(|productStore\(|requireProductStoreDir\(/;
+  /**
+   * A profile directory reaching a store, as `callee(profileDir)`.
+   *
+   * The callee and the argument have to be matched **together**: an earlier shape
+   * test (`= new|create`) also matched a constructor's default parameter value
+   * (`profileDir: string | undefined = create…()`), which hands nothing over, and
+   * that was reported as an ungated product store in a tree where every store is
+   * gated.
+   */
+  const DIR_TO_STORE =
+    /(?:\b(?:create[A-Za-z0-9]*Store)|new\s+[A-Za-z_$][\w$]*Store)\s*\(\s*(?:this\._profileDir|\bprofileDir\b)|\.init\(\s*(?:this\._profileDir|\bprofileDir\b)/;
   /** The nearest line above with *less* indentation that opens an `if (…)`. */
   const enclosingIf = (lineNo) => {
     const indent = (l) => l.length - l.trimStart().length;
@@ -388,34 +433,53 @@ if (flag("--check")) {
     }
     return "";
   };
-  // Guarded when the guard is in the expression, or the hand-off sits inside a
+  // Guarded when the guard is in the statement, or the hand-off sits inside a
   // guarded block (`if (hasProfileDir(profileDir)) { … init(profileDir) }` — the
   // constructor's chain-store block is exactly that shape).
-  const guardedNear = (lineNo) =>
-    GUARDED_ON_LINE.test(implLines[lineNo]) || GUARDED_ON_LINE.test(enclosingIf(lineNo));
+  const guardedStatement = (s) => GUARDED_ON_LINE.test(s.text) || GUARDED_ON_LINE.test(enclosingIf(s.start));
   const leakingLines = (row) => {
-    const names = [row.field, row.factory].filter((n) => n && n !== "(created elsewhere)");
+    // `local:workerLeases` is keyed by its binding name; the code says
+    // `workerLeases:`, so the prefix has to come off or the row is never matched.
+    // Matched as a whole identifier — a binding called `store` is otherwise a
+    // substring of half the file, which is how the first version of this check
+    // reported five phantom leaks.
+    const names = [row.field.replace(/^local:/, ""), row.factory]
+      .filter((n) => n && n !== "(created elsewhere)")
+      .map((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`));
     const hits = [];
-    implLines.forEach((line, i) => {
-      if (!/this\._profileDir|\bprofileDir\b/.test(line)) return;
-      if (!names.some((n) => line.includes(n))) return;
-      if (/\.init\(|=\s*(new|create)|:\s*new /.test(line) === false) return;
-      if (!guardedNear(i)) hits.push({ line: i + 1, text: line.trim().slice(0, 90) });
-    });
+    for (const s of statements) {
+      if (!DIR_TO_STORE.test(s.text)) continue;
+      if (!names.some((re) => re.test(s.text))) continue;
+      if (guardedStatement(s)) continue;
+      hits.push({
+        line: s.start + 1,
+        text: s.text.replace(/\s+/g, " ").trim().slice(0, 120),
+      });
+    }
     return hits;
   };
+  // **The shape label is not evidence of a guard.** Every row built from the
+  // constructor scan is labelled "constructor, gated on profileDir" from its
+  // *shape*, not from what its creation line says — so an earlier version of this
+  // filter, which skipped rows carrying that label, could not fire for any of the
+  // 35 constructor-shaped stores. The label is still printed (it describes how the
+  // store is created) but the decision now rests on the statements alone.
   const ungatedProduct = all
     .filter((r) => STORE_GROUPS[r.field]?.[0] === "product")
     .map((r) => ({ ...r, leaks: leakingLines(r) }))
-    .filter(
-      (r) => /gated on profileDir/.test(r.created ?? "") === false && r.leaks.length > 0,
-    );
+    .filter((r) => r.leaks.length > 0);
   //
   // **Enforced since the list reached zero.** It was reported-only while the gate
   // was being built (§8.17.5): a rule that fails on day one gets deleted, while
   // one that names the remainder gets finished. The remainder is finished — 12
   // ungated stores became 4 real leaks became 0 — so this now fails, and a new
   // product store that takes a directory without a guard cannot land.
+  //
+  // That sentence was false for a while after it was written: the rule could not
+  // see the constructor rows at all, so "0 ungated" was a report of blindness
+  // rather than of cleanliness. The negative control in `scripts/test/gates.test.mjs`
+  // (delete one guard from a copy of the tree; the gate must fail) is what keeps it
+  // honest — a rule here is only as good as the sabotage it survives.
   if (ungatedProduct.length > 0) {
     const strict = true;
     for (const r of ungatedProduct) {

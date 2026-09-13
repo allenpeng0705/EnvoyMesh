@@ -135,7 +135,10 @@ export function parsePairingUri(uri: string): PairWithHomeNodeParams | null {
 // ─── the host ───────────────────────────────────────────────────────────────
 
 export interface ReuseHostOptions {
-  /** Port to bind. Pass `0` to let the OS choose one (`host.port` reports it). */
+  /**
+   * Port to bind. Pass `0` to let the OS choose one — then `port` reports the
+   * choice, but only after `serve()` has resolved.
+   */
   port: number;
   /** Path the WebSocket endpoint is served at. Defaults to `/ws`. */
   path?: string;
@@ -176,11 +179,23 @@ export function createShellHostNodeService(
 }
 
 export interface ReuseHost {
-  /** The port actually bound (equal to the requested one unless it was `0`). */
+  /**
+   * The port actually bound.
+   *
+   * A getter, not a snapshot: with `port: 0` the OS chooses, so the value is
+   * only final after `serve()` has resolved. Reading it before that reports the
+   * request (`0`), which is why `serve()` is awaitable.
+   */
   readonly port: number;
   readonly path: string;
-  /** Serve using the given node surface. Throws without `sessionIdentity`/`dispatch`. */
-  serve(nodeService?: HostNodeService): void;
+  /**
+   * Serve using the given node surface. Resolves once the port is bound.
+   *
+   * Throws without `sessionIdentity`/`dispatch`, and **rejects** if the port
+   * cannot be bound (already in use) — this is a library, so an occupied port is
+   * a condition to report, not a reason to kill the caller's process.
+   */
+  serve(nodeService?: HostNodeService): Promise<void>;
   /** The pairing URI for the running host, using the given token and identity. */
   pairingUri(token: string, identity: { ownerPublicKey: string; ownerId: string }): string;
   /** Stop serving, if started. */
@@ -201,9 +216,11 @@ export function createReuseHost(options: ReuseHostOptions): ReuseHost {
   let started = false;
 
   return {
-    port: options.port,
+    get port() {
+      return server.boundPort;
+    },
     path,
-    serve(nodeService = createShellHostNodeService()) {
+    async serve(nodeService = createShellHostNodeService()) {
       if (started) return;
       server.start(nodeService, {
         sessionIdentity: options.sessionIdentity,
@@ -211,16 +228,30 @@ export function createReuseHost(options: ReuseHostOptions): ReuseHost {
         ...(options.socketMethods ? { socketMethods: options.socketMethods } : {}),
         ...(options.preAuthMethods ? { preAuthMethods: options.preAuthMethods } : {}),
         ...(options.transformForSession ? { transformForSession: options.transformForSession } : {}),
+        // Reject `serve()` rather than `process.exit(1)`. This hook only has to
+        // *exist*: `WsServer` settles its listen promise with the same error, so
+        // the await below is what reports it — with the transport's default
+        // policy an occupied port would end the consumer's process instead.
+        onListenError: () => undefined,
       });
+      try {
+        await server.waitUntilListening();
+      } catch (err) {
+        server.stop();
+        throw err;
+      }
       started = true;
     },
     /**
      * The pairing URI for the running host. `ownerPublicKey`/`ownerId` are the
      * product's identity and arrive through `identity`, not from this package.
+     *
+     * Built from the *bound* port, so a host started on `0` produces a URI that
+     * can actually be dialled.
      */
     pairingUri(token: string, identity: { ownerPublicKey: string; ownerId: string }) {
       return buildPairingUri({
-        wsUrl: `ws://127.0.0.1:${options.port}${path}`,
+        wsUrl: `ws://127.0.0.1:${server.boundPort}${path}`,
         token,
         ownerPublicKey: identity.ownerPublicKey,
         ownerId: identity.ownerId,

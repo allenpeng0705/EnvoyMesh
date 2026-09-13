@@ -66,7 +66,7 @@ describe("@envoymesh/reuse-host", () => {
     const port = await freePort();
     const host = createReuseHost({ port, sessionIdentity: identity, dispatch: dispatcher });
     hosts.push(host);
-    host.serve();
+    await host.serve();
 
     const { WebSocket } = await import("ws");
     const socket = new WebSocket(`ws://127.0.0.1:${port}/ws?token=pair-token`);
@@ -142,6 +142,44 @@ describe("@envoymesh/reuse-host", () => {
     expect(parsed?.wsUrl).toBe(`ws://127.0.0.1:${port}/ws`);
     expect(parsed?.ownerId).toBe("envoy:owner:alice");
   });
+
+  it("reports the port the OS chose, and a URI that can be dialled", async () => {
+    // `port: 0` is the documented way to take any free port, so the host has to
+    // report the one it got. It used to answer with the *requested* port — the
+    // pairing URI read `ws://127.0.0.1:0/ws`, which nobody can dial. Every test
+    // that passed a concrete port still passed, which is exactly why this went
+    // unnoticed until the CLI was run by hand.
+    const host = createReuseHost({ port: 0, sessionIdentity: identity, dispatch: dispatcher });
+    hosts.push(host);
+    await host.serve();
+
+    expect(host.port).toBeGreaterThan(0);
+    const uri = host.pairingUri("pair-token", { ownerPublicKey: "PEM", ownerId: "envoy:owner:alice" });
+    expect(parsePairingUri(uri)?.wsUrl).toBe(`ws://127.0.0.1:${host.port}/ws`);
+
+    // Not just a number in a string: a client can reach it.
+    const { WebSocket } = await import("ws");
+    const socket = new WebSocket(`ws://127.0.0.1:${host.port}/ws?token=pair-token`);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve());
+      socket.once("error", reject);
+    });
+    socket.close();
+  }, 15_000);
+
+  it("rejects an occupied port instead of killing the process", async () => {
+    // The transport's default policy on `EADDRINUSE` is `process.exit(1)` — right
+    // for the desktop host, fatal for a library a second product embeds. If this
+    // package did not take over that decision, this test would end the run.
+    const port = await freePort();
+    const first = createReuseHost({ port, sessionIdentity: identity, dispatch: dispatcher });
+    hosts.push(first);
+    await first.serve();
+
+    const second = createReuseHost({ port, sessionIdentity: identity, dispatch: dispatcher });
+    hosts.push(second);
+    await expect(second.serve()).rejects.toThrow(/EADDRINUSE|in use/i);
+  }, 15_000);
 
   it("exposes the harness surface a second product needs", () => {
     expect(typeof createBackend).toBe("function");
