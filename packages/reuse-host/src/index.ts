@@ -85,37 +85,41 @@ export {
 // only way a pairing code is worth anything.
 // Imported for local use (this file builds and parses with them) *and*
 // re-exported, so a consumer of this package gets the pairing surface too.
-import { parseEnvoyPairUri } from "@envoymesh/api/core";
+import { buildEnvoyPairUri, parseEnvoyPairUri } from "@envoymesh/api/core";
 import type { PairWithHomeNodeParams } from "@envoymesh/api/core";
 export {
   decodePairingToken,
   decodePairingTokenAsync,
   encodePairingToken,
   parseEnvoyPairUri,
+  buildEnvoyPairUri,
   type PairingPayload,
   type PairWithHomeNodeParams,
 } from "@envoymesh/api/core";
 
-/** Build the `envoy://pair?…` URI that EnvoyMesh's own parser reads. */
-export function buildPairingUri(params: PairWithHomeNodeParams): string {
-  const query = new URLSearchParams();
-  query.set("wsUrl", params.wsUrl);
-  if (params.lanWsUrl) query.set("lanWsUrl", params.lanWsUrl);
-  query.set("token", params.token);
-  query.set("ownerPublicKey", params.ownerPublicKey);
-  query.set("ownerId", params.ownerId);
-  for (const key of [
-    "relayPeerId",
-    "agentPeerId",
-    "agentPubKey",
-    "agentName",
-    "homeNodePeerId",
-  ] as const) {
-    const value = params[key];
-    if (value) query.set(key, value);
-  }
-  return `envoy://pair?${query.toString()}`;
-}
+// ─── the shared relay network ───────────────────────────────────────────────
+//
+// Every EnvoyMesh app joins the **same** relay network — that is what makes two
+// apps on two machines find each other, and what makes one product's QR code
+// meaningful to another. These constants are the roster; re-exported here so a
+// product gets them from the surface it already depends on rather than reaching
+// into `@envoymesh/api/core` itself.
+export {
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDRS,
+  DEFAULT_ENVOY_COMMUNITY_RELAY_PEER_IDS,
+  DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+} from "@envoymesh/api/core";
+
+/**
+ * Build the `envoy://pair?…` URI that EnvoyMesh's own parser reads.
+ *
+ * Kept as a named export for this package's consumers; the implementation is the
+ * shared one in `@envoymesh/api/core`, because "same QR format" is only true while
+ * there is a single builder.
+ */
+export const buildPairingUri = buildEnvoyPairUri;
 
 /**
  * Parse a pairing URI, returning `null` for anything that is not one.

@@ -375,6 +375,8 @@ The Rust side is compile-verified (`cargo check`) and unit-tested (`cargo test -
 
 ### S3 (third slice) ◐ — `resolveRunningNode`, and the probe gets a consumer (2026-09-13)
 
+**Where it shows up for the user.** The node's own in-use message now distinguishes "EnvoyMesh is using this profile — close it" from "…it is not answering on port 3030 right now, so it may be shutting down", because a live claim that does not answer is a different situation and "close the app" is poor advice for it. Verified in a two-process run: node 2 probed node 1, matched the owner id, and used the first wording with **zero** unverified warnings; `/health` on node 1 reports `{"app":"EnvoyMesh","ownerId":"envoy:owner:YQ1zCno…","port":3030}`.
+
 `probeNodeEndpoint` was written in the first slice and had no production caller. That is the shape of a helper that rots, so the node now uses it: `resolveRunningNode(home)` answers the question a second product actually has — *is a node running here, and is it the one the descriptor claims?*
 
 | Status | Meaning |
@@ -386,7 +388,37 @@ The Rust side is compile-verified (`cargo check`) and unit-tested (`cargo test -
 
 No authentication happens there, deliberately: the token comes from the pairing flow, which is the product's business. Discovery and verification are the shared part.
 
-**Where it shows up for the user.** The node's own in-use message now distinguishes "EnvoyMesh is using this profile — close it" from "…it is not answering on port 3030 right now, so it may be shutting down", because a live claim that does not answer is a different situation and "close the app" is poor advice for it. Verified in a two-process run: node 2 probed node 1, matched the owner id, and used the first wording with **zero** unverified warnings; `/health` on node 1 reports `{"app":"EnvoyMesh","ownerId":"envoy:owner:YQ1zCno…","port":3030}`.
+### S3 (fourth slice) — the apps-group invariants, and a security finding that gates attach (2026-09-13)
+
+
+**The owner's rule:** every app in the group uses the same relay network, the same QR scanning and the same URI connecting. Checked against the tree, all three were already true — and that turned out to be the interesting part.
+
+| Invariant | State |
+|---|---|
+| One relay roster | `packages/api/src/default-bootstrap.ts`, **one** declaration, `reusable` |
+| One QR format | `protocol/src/pairing-contract.ts` (payload) + `api/src/envoy-pair-uri.ts` (codec) |
+| One URI scheme | `envoy://pair` — builder and parser now in **the same module** |
+| Reachable from a product's own surface | ✅ after this change: `@envoymesh/reuse-host` exports the roster, the codec and both URI directions |
+
+Two real gaps closed:
+
+1. **The builder was a second copy.** `reuse-host` built `envoy://pair?…` itself, next to the shared parser — working, tested (the interop test passed), and still a format fork waiting to happen. `buildEnvoyPairUri` now lives in `envoy-pair-uri.ts` beside `parseEnvoyPairUri`; `reuse-host` re-exports it, so no consumer changed.
+2. **A product could not reach the roster from its own surface.** It had to know that the relay addresses live in `api/core` and the codec in `protocol`. Both are now exported by `@envoymesh/reuse-host`.
+
+**And the invariants are now enforced, not just described**: `packages/reuse-host/test/apps-group-invariants.test.ts` reads the tree and asserts one builder, one parser definition, one roster declaration, and that the product-facing package exports them. Writing it caught my own over-reach: I first asserted that only one module may contain `startsWith("envoy://pair")`, which failed on the Social SPA — and the SPA is *right*: it classifies a scanned code and passes it through unchanged. **Recognising a format is not implementing it**, so the assertion now says exactly that, with the reasoning in the test.
+
+**The finding that gates attach.** Probing the running node from the machine's LAN address with **no token**:
+
+```
+listFamilyProfiles → {"profiles":[{"id":"owner","name":"tsdq2OwmR8HX","isOwner":true,…
+getNodeStatus      → {"status":"offline"}
+```
+
+A *wrong* token is refused (`UNAUTHORIZED`), so authentication works — but a tokenless client is served regardless of where it connects from, and the node binds `0.0.0.0` (deliberately, so paired phones can reach it). The transport documents the reason: *"Clients without any token (Social UI, Capacitor app) are legacy and unrestricted."* The Social UI is loopback-only, and **the Capacitor app named in that comment was deleted** (`apps/` is now cli, envoygo, node, relay, social, tauri; `packages/mobile-identity` survives only as the SPA's browser-safe identity). So the rationale is half-stale, and what it currently permits is any device on the network reading the owner's surface.
+
+The fix is small and preserves every legitimate flow — require `loopback OR a valid session` for non-pre-auth methods, which the transport can decide because it knows the remote address (the session type does not currently expose it, so that is the reusable-layer part). It is **not** in this change: it alters a shipped product's authorisation behaviour, and it is the same decision attach depends on (below). Reported rather than taken.
+
+**Why this gates attach.** Both come down to one question: *what may a caller who is not the owner do?* Attaching a second product means deciding whether it gets the owner's scope (as the tokenless Social UI does today) or a product scope of its own. Building the token exchange before that decision would hardcode the answer by accident.
 
 ### S2 review round 1 — the gate caught my own growth, and a lie in the help text (2026-09-13)
 
