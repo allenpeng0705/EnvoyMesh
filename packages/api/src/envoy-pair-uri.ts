@@ -17,6 +17,24 @@ function paramsToPairWithHomeNode(searchParams: URLSearchParams): PairWithHomeNo
     const value = searchParams.get(key)?.trim();
     return value || undefined;
   };
+  /**
+   * A comma-separated list, for the one field that is one.
+   *
+   * `relayWsUrls` is declared on the pairing contract (`protocol/src/pairing-contract.ts`) and
+   * carried by the compact codec (`pairing-token.ts`), but the `envoy://pair` URI had no way to
+   * express it — so a product that wanted to advertise relay fallback in a QR code could not. A
+   * relay WebSocket URL never contains a comma, so one parameter with a joined list is unambiguous
+   * and keeps the URI's shape (one key, one value) for every other field.
+   */
+  const list = (key: string): string[] | undefined => {
+    const raw = optional(key);
+    if (!raw) return undefined;
+    const parts = raw
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    return parts.length > 0 ? parts : undefined;
+  };
 
   return {
     wsUrl: required("wsUrl"),
@@ -26,6 +44,7 @@ function paramsToPairWithHomeNode(searchParams: URLSearchParams): PairWithHomeNo
     ownerPublicKey: required("ownerPublicKey"),
     ownerId: required("ownerId"),
     relayPeerId: optional("relayPeerId"),
+    relayWsUrls: list("relayWsUrls"),
     agentPeerId: optional("agentPeerId"),
     agentPubKey: optional("agentPubKey"),
     agentName: optional("agentName"),
@@ -63,6 +82,11 @@ export function buildEnvoyPairUri(params: PairWithHomeNodeParams): string {
   ] as const) {
     const value = params[key];
     if (value) query.set(key, value);
+  }
+  // The one list-valued field: joined with commas, and read back by `list()` above.
+  if (params.relayWsUrls && params.relayWsUrls.length > 0) {
+    const urls = params.relayWsUrls.map((url) => url.trim()).filter((url) => url.length > 0);
+    if (urls.length > 0) query.set("relayWsUrls", urls.join(","));
   }
   return `envoy://pair?${query.toString()}`;
 }
