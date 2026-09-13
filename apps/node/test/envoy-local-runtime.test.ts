@@ -4,12 +4,12 @@
  */
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { open, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  acquireEngineLock,
   readEngineLock,
   releaseEngineLock,
 } from "@envoymesh/node-core";
@@ -20,7 +20,15 @@ import {
   ENVOY_LOCAL_MIN_MODEL_BYTES,
 } from "../src/envoy-local-manifest.js";
 import { downloadFile, verifyGgufFile } from "../src/envoy-local-download.js";
-import { ENVOY_LOCAL_PORT, envoyLocalOpenAiBaseUrl } from "@envoymesh/node-core";
+import {
+  ENVOY_LOCAL_PORT,
+  currentProcessStartedAt,
+  engineLockPath,
+  envoyLocalOpenAiBaseUrl,
+  processStartedAt,
+} from "@envoymesh/node-core";
+import { engineRootFor } from "../src/engine-root.js";
+import { hostname as osHostname } from "node:os";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const mod = await importOriginal<typeof import("node:child_process")>();
@@ -113,6 +121,43 @@ async function writeSparseFile(path: string, size: number): Promise<void> {
   const fh = await open(path, "w");
   await fh.truncate(size);
   await fh.close();
+}
+
+/**
+ * Write a claim the way **another process** would have written it.
+ *
+ * `acquireEngineLock` always records the *calling* process's start time, so using it to fake a
+ * foreign holder produces an inconsistent claim: a pid that is not ours paired with our start
+ * time. The pid-reuse guard reads that pair, sees a mismatch, and correctly treats the claim as
+ * stale — which made these tests pass or fail depending on how long before the worker its
+ * parent process had started. Seeding the file directly is what a foreign process actually
+ * leaves behind: its own pid *and* its own start time.
+ */
+function writeForeignClaim(
+  rootDir: string,
+  claim: { pid: number; app: string; port: number; modelId?: string; role?: "chat" | "embed" },
+): void {
+  const role = claim.role ?? "chat";
+  const file = engineLockPath(rootDir, role);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(
+    file,
+    `${JSON.stringify(
+      {
+        role,
+        pid: claim.pid,
+        host: osHostname(),
+        pidStartedAt: processStartedAt(claim.pid) ?? currentProcessStartedAt(),
+        app: claim.app,
+        port: claim.port,
+        ...(claim.modelId ? { modelId: claim.modelId } : {}),
+        startedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
 }
 
 describe("envoy-local-runtime lifecycle", () => {
@@ -767,10 +812,13 @@ describe("envoy-local-runtime lifecycle", () => {
     // §8 / S4 — one engine per root. A live claim means somebody else is starting (or
     // serving) llama-server; this process must wait for it, never spawn a competitor.
     const { exePath } = await seedRuntimeAndModel();
-    const engineRoot = dirname(dirname(dirname(exePath))); // <root>/envoy-local
+    // The same resolver the runtime uses, so the seeded assets and the assertions cannot
+    // drift from where the engine actually looks (the recorded decision included).
+    const engineRoot = engineRootFor(profileDir).dir;
+    expect(engineRoot).toBe(dirname(dirname(dirname(exePath))));
     // A different live process (`process.ppid`): a claim naming *this* process would be
     // re-acquired, because that is what a restart in the same process does.
-    await acquireEngineLock(engineRoot, { pid: process.ppid, app: "EnvoyCoder", port: 18790 });
+    writeForeignClaim(engineRoot, { pid: process.ppid, app: "EnvoyCoder", port: 18790 });
     cfg = { ...cfg, serverParams: { startupTimeoutMs: 100 } };
     mockedSpawn.mockClear();
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503 })));
@@ -795,8 +843,9 @@ describe("envoy-local-runtime lifecycle", () => {
     // A crashed engine must not lock the user out of their own model: the stale claim is
     // taken over rather than waited on.
     const { exePath } = await seedRuntimeAndModel();
-    const engineRoot = dirname(dirname(dirname(exePath)));
-    await acquireEngineLock(engineRoot, { pid: 2_147_483_646, app: "CrashedCoder", port: 18790 });
+    const engineRoot = engineRootFor(profileDir).dir;
+    expect(engineRoot).toBe(dirname(dirname(dirname(exePath))));
+    writeForeignClaim(engineRoot, { pid: 2_147_483_646, app: "CrashedCoder", port: 18790 });
     cfg = { ...cfg, serverParams: { startupTimeoutMs: 100 } };
     mockedSpawn.mockClear();
     mockedSpawn.mockImplementation(() => makeFakeChild(7777));

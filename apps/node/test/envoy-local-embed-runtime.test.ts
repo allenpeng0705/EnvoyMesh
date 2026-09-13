@@ -1,7 +1,8 @@
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname as osHostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -21,11 +22,12 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 import { spawn } from "node:child_process";
 import { ENVOY_LOCAL_LLAMA_CPP_TAG } from "../src/envoy-local-manifest.js";
+import { engineRootFor } from "../src/engine-root.js";
 import {
   ENVOY_LOCAL_MIN_MODEL_BYTES,
-  acquireEngineLock,
+  currentProcessStartedAt,
   engineLockPath,
-  localEngineAssetsDir,
+  processStartedAt,
   readEngineLock,
   releaseEngineLock,
 } from "@envoymesh/node-core";
@@ -210,15 +212,50 @@ describe("envoy-local-embed probes", () => {
  * killing watchdog) had nothing that would notice. Seeding a fake `llama-server` and a sparse
  * model is what makes the real path runnable in a test.
  */
+/**
+ * Write a claim the way **another process** would have written it.
+ *
+ * `acquireEngineLock` always records the *calling* process's start time, so using it to fake a
+ * foreign holder pairs a pid that is not ours with our start time — and the pid-reuse guard
+ * reads that pair, sees a mismatch, and correctly treats the claim as stale. Seeding the file
+ * directly is what a foreign process actually leaves behind: its own pid and its own start time.
+ */
+function writeForeignClaim(
+  rootDir: string,
+  claim: { pid: number; app: string; port: number; modelId?: string; role?: "chat" | "embed" },
+): void {
+  const role = claim.role ?? "embed";
+  const file = engineLockPath(rootDir, role);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(
+    file,
+    `${JSON.stringify(
+      {
+        role,
+        pid: claim.pid,
+        host: osHostname(),
+        pidStartedAt: processStartedAt(claim.pid) ?? currentProcessStartedAt(),
+        app: claim.app,
+        port: claim.port,
+        ...(claim.modelId ? { modelId: claim.modelId } : {}),
+        startedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
 describe("envoy-local-embed engine lock", () => {
   let profileDir: string;
   let state: ReturnType<typeof createEnvoyLocalEmbedRuntimeState>;
   let savedEmbedConfig: { activeModelId?: string; enabled?: boolean };
 
   async function seedEmbedRuntimeAndModel(): Promise<{ engineRoot: string; modelId: string }> {
-    // The engine root is the shared asset root, which for a profile with no legacy
-    // `envoy-local/` directory is `<home>/runtime/envoy-local`.
-    const engineRoot = localEngineAssetsDir({ profileDir }).dir;
+    // Resolve the root exactly as the runtime does — including the recorded decision — so a
+    // test can never seed assets somewhere the runtime will not look.
+    const engineRoot = engineRootFor(profileDir).dir;
     const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
     const exePath = join(engineRoot, "runtime", ENVOY_LOCAL_LLAMA_CPP_TAG, exeName);
     await mkdir(dirname(exePath), { recursive: true });
@@ -332,12 +369,7 @@ describe("envoy-local-embed engine lock", () => {
     const { engineRoot } = await seedEmbedRuntimeAndModel();
     // A different live process: `process.ppid`, because a claim naming this process is
     // re-acquired on purpose (that is what a restart in the same process looks like).
-    await acquireEngineLock(engineRoot, {
-      role: "embed",
-      pid: process.ppid,
-      app: "EnvoyCoder",
-      port: 18791,
-    });
+    writeForeignClaim(engineRoot, { role: "embed", pid: process.ppid, app: "EnvoyCoder", port: 18791 });
     mockedSpawn.mockClear();
 
     await runEnable();
@@ -355,7 +387,7 @@ describe("envoy-local-embed engine lock", () => {
 
   it("refuses to adopt an embed engine that holds a different model (one agreed model)", async () => {
     const { engineRoot } = await seedEmbedRuntimeAndModel();
-    await acquireEngineLock(engineRoot, {
+    writeForeignClaim(engineRoot, {
       role: "embed",
       pid: process.ppid,
       app: "EnvoyCoder",
@@ -377,7 +409,7 @@ describe("envoy-local-embed engine lock", () => {
 
   it("takes over a stale embed claim and starts the engine", async () => {
     const { engineRoot } = await seedEmbedRuntimeAndModel();
-    await acquireEngineLock(engineRoot, {
+    writeForeignClaim(engineRoot, {
       role: "embed",
       pid: 2_147_483_646, // certainly dead
       app: "CrashedCoder",

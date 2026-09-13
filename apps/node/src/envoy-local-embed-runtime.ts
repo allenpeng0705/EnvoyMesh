@@ -59,12 +59,12 @@ import {
   engineLockPath,
   isProcessAlive,
   readEngineLock,
-  localEngineAssetsDir,
   releaseEngineLock,
   homeForProfileDir,
   runtimeDirIn,
   ENVOY_LOCAL_EMBED_PORT,
   envoyLocalEmbedOpenAiBaseUrl,} from "@envoymesh/node-core";
+import { engineRootFor } from "./engine-root.js";
 
 export interface EnvoyLocalEmbedRuntimeDeps {
   getProfileDir: () => string;
@@ -184,10 +184,13 @@ async function notifyEmbedReady(
  * the choice is observable in the log rather than silent.
  */
 function rootDir(profileDir: string): string {
-  // Always absolute so llama-server (spawned with runtime cwd) can open models. The rule
-  // (shared `<root>/runtime/` first, profile-local copy adopted) lives in `@envoymesh/node-core`
-  // so every product resolves the same engine, not just this one.
-  return localEngineAssetsDir({ profileDir }).dir;
+  // Always absolute so llama-server (spawned with runtime cwd) can open models. The decision
+  // lives in `@envoymesh/node-core` (`resolveEngineRoot`) and is **recorded in the home**, so
+  // every product on this machine computes the same root — and therefore the same lock file.
+  // Resolving per call from `exists()` was the race: one process could adopt the legacy copy
+  // while another, started after the shared root appeared, picked the shared one, and the two
+  // then held different claims for the same engine port.
+  return engineRootFor(profileDir).dir;
 }
 
 function runtimeDir(profileDir: string): string {

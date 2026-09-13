@@ -238,7 +238,6 @@ import {
   isHomeSchemaSupported,
   profileDirHasProductState,
   profileDirIn,
-  localEngineAssetsDir,
   releaseEngineLockSync,
   releaseNodeLockSync,
   resolveAppName,
@@ -249,6 +248,7 @@ import {
   ENVOYMESH_HOME_SCHEMA,
 } from "@envoymesh/node-core";
 import { describeProductStateDir, resolveProductStateDirFor } from "./product-state-dir.js";
+import { engineRootFor } from "./engine-root.js";
 import { createBridge } from "./bridge/index.js";
 import {
   createA2ATaskBridge,
@@ -544,11 +544,11 @@ if (nodeLock.acquired) {
     // treat our claim as stale.
     //
     // The root is **the engine asset root**, not `runtimeDirIn(home)`: the runtimes lock
-    // inside `localEngineAssetsDir({ profileDir }).dir` (= `<home>/runtime/envoy-local`), and
-    // releasing `runtimeDirIn(home)` resolved to `<home>/runtime/engine-*.lock` — a path that
-    // can never exist, so both calls were silent no-ops. Verified by running the two
-    // resolvers side by side.
-    const engineRootDir = localEngineAssetsDir({ profileDir: args.profileDir }).dir;
+    // inside `engineRootFor(profileDir).dir` (= `<home>/runtime/envoy-local`), and releasing
+    // `runtimeDirIn(home)` resolved to `<home>/runtime/engine-*.lock` — a path that can never
+    // exist, so both calls were silent no-ops. This now goes through the *same* resolver the
+    // runtimes use, which is the only way the two can be guaranteed to agree.
+    const engineRootDir = engineRootFor(args.profileDir).dir;
     releaseEngineLockSync(engineRootDir, process.pid, "chat");
     releaseEngineLockSync(engineRootDir, process.pid, "embed");
   };
