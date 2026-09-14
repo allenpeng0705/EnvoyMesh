@@ -1,7 +1,7 @@
 /**
  * Phase 68-C6 — Coding heartbeat store.
  *
- * Persists cron heartbeats that wake **existing** Coding workspaces.
+ * Persists cron heartbeats that wake **existing** Coding tasks.
  * Separate from EnvoyAI TriggerStore (digest / proactive) and Team jobs.
  */
 

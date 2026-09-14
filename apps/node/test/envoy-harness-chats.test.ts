@@ -1,5 +1,5 @@
 /**
- * Envoy chat workspace registry helpers (sidebar threads ↔ projects).
+ * Envoy chat task registry helpers (sidebar threads ↔ projects).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,7 +7,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import type { EhChatWorkspace } from "@envoymesh/api";
+import type { EhChatTask } from "@envoymesh/api";
 import { MAX_ENVOY_HARNESS_CHATS } from "@envoymesh/api";
 import { SessionStore } from "@envoymesh/envoy-harness";
 
@@ -25,7 +25,7 @@ import {
   upsertEhChatSessionId,
 } from "../src/envoy-harness-chats.js";
 
-function chat(overrides: Partial<EhChatWorkspace> = {}): EhChatWorkspace {
+function chat(overrides: Partial<EhChatTask> = {}): EhChatTask {
   return {
     id: "chat-1",
     cwd: "/projects/app",
@@ -102,7 +102,7 @@ describe("envoy-harness-chats", () => {
     const session = await store.create({
       cwd: "/projects/app",
       startedAt: new Date().toISOString(),
-      permissionMode: "workspace-write",
+      permissionMode: "task-write",
     });
     await session.appendMessage("user", [{ type: "text", text: "hi" }]);
     await session.appendMessage("assistant", [
@@ -138,7 +138,7 @@ describe("envoy-harness-chats", () => {
     expect(summaries[0]?.uiBucket).toBe("needs_input");
   });
 
-  it("includes locked workspace model on summary", async () => {
+  it("includes locked task model on summary", async () => {
     const store = new SessionStore({ dir: tmpDir });
     const summaries = await summarizeEhChats({
       chats: [chat({ id: "locked", model: "openai:gpt-4o" })],
@@ -182,14 +182,14 @@ describe("envoy-harness-chats", () => {
     expect(removeEhChat(chats, "b").map((c) => c.id)).toEqual(["a"]);
   });
 
-  it("summarizes missing titles as New workspace", async () => {
+  it("summarizes missing titles as New task", async () => {
     const store = new SessionStore({ dir: tmpDir });
     const summaries = await summarizeEhChats({
       chats: [chat({ id: "untitled", title: undefined })],
       sessionStore: store,
       sessionByCwd: {},
     });
-    expect(summaries[0]?.title).toBe("New workspace");
+    expect(summaries[0]?.title).toBe("New task");
   });
 
   it("enforces the chat capacity cap", () => {

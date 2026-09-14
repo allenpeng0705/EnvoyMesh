@@ -1,17 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useT } from "../../context/I18nContext.js";
 
-export type CodingWorkspaceTab = "chat" | "shell";
+export type CodingTaskTab = "chat" | "shell";
 
-export type CodingWorkspaceShellProps = {
+export type CodingTaskShellProps = {
   title: string;
   cwd?: string | null;
   statusLabel: string;
   /** Prefer Chat on select; remount resets via key from parent. */
-  defaultTab?: CodingWorkspaceTab;
+  defaultTab?: CodingTaskTab;
   chatBody: ReactNode;
   /**
-   * Shell tab body. Omit for Chat-only workspaces (e.g. Pi stream) —
+   * Shell tab body. Omit for Chat-only tasks (e.g. Pi stream) —
    * Shell tab is hidden and the body stays on Chat.
    */
   shellBody?: ReactNode;
@@ -21,11 +21,11 @@ export type CodingWorkspaceShellProps = {
 };
 
 /**
- * Center Coding chrome: workspace header + Chat/Shell tabs.
+ * Center Coding chrome: task header + Chat/Shell tabs.
  * Chat = agent timeline; Shell = PTY / placeholder when provided.
- * Workspace ≈ one agent session; tabs are UI surfaces on that session.
+ * Task ≈ one agent session; tabs are UI surfaces on that session.
  */
-export function CodingWorkspaceShell({
+export function CodingTaskShell({
   title,
   cwd,
   statusLabel,
@@ -35,10 +35,10 @@ export function CodingWorkspaceShell({
   onClose,
   changesOpen = false,
   onToggleChanges,
-}: CodingWorkspaceShellProps) {
+}: CodingTaskShellProps) {
   const t = useT();
   const showShellTab = shellBody != null;
-  const [tab, setTab] = useState<CodingWorkspaceTab>(
+  const [tab, setTab] = useState<CodingTaskTab>(
     showShellTab ? defaultTab : "chat",
   );
 
@@ -49,31 +49,31 @@ export function CodingWorkspaceShell({
   const activeTab = showShellTab ? tab : "chat";
 
   return (
-    <div className="coding-workspace-shell" data-testid="coding-workspace-shell">
-      <header className="coding-workspace-shell__header">
-        <div className="coding-workspace-shell__main">
-          <div className="coding-workspace-shell__title-row">
-            <h2 className="coding-workspace-shell__title">{title}</h2>
+    <div className="coding-task-shell" data-testid="coding-task-shell">
+      <header className="coding-task-shell__header">
+        <div className="coding-task-shell__main">
+          <div className="coding-task-shell__title-row">
+            <h2 className="coding-task-shell__title">{title}</h2>
             {statusLabel.trim() ? (
               <span
-                className="coding-workspace-shell__status"
-                data-testid="coding-workspace-status"
+                className="coding-task-shell__status"
+                data-testid="coding-task-status"
               >
                 {statusLabel}
               </span>
             ) : null}
           </div>
           {cwd ? (
-            <p className="coding-workspace-shell__cwd" title={cwd}>
+            <p className="coding-task-shell__cwd" title={cwd}>
               {cwd}
             </p>
           ) : null}
         </div>
-        <div className="coding-workspace-shell__header-actions">
+        <div className="coding-task-shell__header-actions">
           {onToggleChanges ? (
             <button
               type="button"
-              className="coding-workspace-shell__changes-btn"
+              className="coding-task-shell__changes-btn"
               onClick={onToggleChanges}
               aria-pressed={changesOpen}
               aria-label={t("codingView.toggleChanges", "Show or hide Changes")}
@@ -85,10 +85,10 @@ export function CodingWorkspaceShell({
           {onClose ? (
             <button
               type="button"
-              className="coding-workspace-shell__close"
+              className="coding-task-shell__close"
               onClick={onClose}
-              aria-label={t("codingView.closeWorkspace", "Close workspace")}
-              data-testid="coding-workspace-close"
+              aria-label={t("codingView.closeTask", "Close task")}
+              data-testid="coding-task-close"
             >
               ×
             </button>
@@ -98,9 +98,9 @@ export function CodingWorkspaceShell({
 
       {showShellTab ? (
         <div
-          className="coding-workspace-shell__tabs"
+          className="coding-task-shell__tabs"
           role="tablist"
-          aria-label={t("codingView.workspaceTabs", "Workspace tabs")}
+          aria-label={t("codingView.taskTabs", "Task tabs")}
         >
           <button
             type="button"
@@ -108,11 +108,11 @@ export function CodingWorkspaceShell({
             aria-selected={activeTab === "chat"}
             className={
               activeTab === "chat"
-                ? "coding-workspace-shell__tab active"
-                : "coding-workspace-shell__tab"
+                ? "coding-task-shell__tab active"
+                : "coding-task-shell__tab"
             }
             onClick={() => setTab("chat")}
-            data-testid="coding-workspace-tab-chat"
+            data-testid="coding-task-tab-chat"
           >
             {t("codingView.tabChat", "Chat")}
           </button>
@@ -122,11 +122,11 @@ export function CodingWorkspaceShell({
             aria-selected={activeTab === "shell"}
             className={
               activeTab === "shell"
-                ? "coding-workspace-shell__tab active"
-                : "coding-workspace-shell__tab"
+                ? "coding-task-shell__tab active"
+                : "coding-task-shell__tab"
             }
             onClick={() => setTab("shell")}
-            data-testid="coding-workspace-tab-shell"
+            data-testid="coding-task-tab-shell"
           >
             {t("codingView.tabShell", "Shell")}
           </button>
@@ -134,12 +134,12 @@ export function CodingWorkspaceShell({
       ) : null}
 
       <div
-        className="coding-workspace-shell__body"
+        className="coding-task-shell__body"
         role="tabpanel"
         data-testid={
           activeTab === "chat"
-            ? "coding-workspace-panel-chat"
-            : "coding-workspace-panel-shell"
+            ? "coding-task-panel-chat"
+            : "coding-task-panel-shell"
         }
       >
         {activeTab === "chat" ? chatBody : shellBody}

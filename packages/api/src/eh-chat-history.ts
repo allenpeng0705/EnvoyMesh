@@ -14,9 +14,9 @@ export interface EhChatTurn {
 }
 
 export interface EhChatHistory {
-  /** Sidebar chat workspace id (when using multi-thread mode). */
+  /** Sidebar chat task id (when using multi-thread mode). */
   chatId?: string
-  /** Persisted harness session id for this workspace. */
+  /** Persisted harness session id for this task. */
   sessionId: string
   /** Normalized project folder path. */
   cwd: string

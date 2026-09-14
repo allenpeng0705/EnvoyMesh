@@ -114,7 +114,7 @@ describe("CodingProjectSettingsModal", () => {
   });
 });
 
-describe("CodingNewSessionSheet workspace override", () => {
+describe("CodingNewSessionSheet task override", () => {
   it("prefills from project and confirms override payload", () => {
     const onConfirm = vi.fn();
     renderWithI18n(
@@ -147,11 +147,11 @@ describe("CodingNewSessionSheet workspace override", () => {
     const pi = screen.getByTestId("coding-harness-pi") as HTMLInputElement;
     expect(pi.checked).toBe(true);
     expect(
-      (screen.getByTestId("coding-new-workspace-model") as HTMLInputElement)
+      (screen.getByTestId("coding-new-task-model") as HTMLInputElement)
         .value,
     ).toBe("gpt-4o");
 
-    fireEvent.change(screen.getByTestId("coding-new-workspace-model"), {
+    fireEvent.change(screen.getByTestId("coding-new-task-model"), {
       target: { value: "o4-mini" },
     });
     fireEvent.click(screen.getByTestId("coding-new-session-confirm"));

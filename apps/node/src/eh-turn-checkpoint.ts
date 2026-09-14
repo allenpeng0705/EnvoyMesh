@@ -198,7 +198,7 @@ export async function completeEhTurnCheckpoint(
     files.push({
       path,
       status: !after.exists ? "deleted" as const : !before.exists ? "added" as const : "modified" as const,
-      attribution: revertible ? "runtime" as const : "workspace" as const,
+      attribution: revertible ? "runtime" as const : "task" as const,
       revertible,
       ...(diff ? { diff } : {}),
     });

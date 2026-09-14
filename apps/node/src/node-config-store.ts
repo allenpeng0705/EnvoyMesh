@@ -510,7 +510,7 @@ export interface PersistedNodeConfig {
    */
   envoyHarnessSessionByCwd?: Record<string, string>;
   /** Envoy sidebar chat threads (one per project folder, like Terminal sessions). */
-  envoyHarnessChats?: import("@envoymesh/api").EhChatWorkspace[];
+  envoyHarnessChats?: import("@envoymesh/api").EhChatTask[];
   /** Active chat id for legacy bare thread key and default open. */
   activeEnvoyHarnessChatId?: string;
   /**

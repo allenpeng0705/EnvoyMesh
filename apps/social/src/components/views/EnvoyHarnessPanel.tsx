@@ -798,7 +798,7 @@ export function EnvoyHarnessPanel({
           setSystem(
             t(
               "eh.permissionsNeverSet",
-              "Permission policy → Always approve: every tool auto-runs with no prompts — including write/edit/bash. Only use this in workspaces you fully trust. {when}",
+              "Permission policy → Always approve: every tool auto-runs with no prompts — including write/edit/bash. Only use this in tasks you fully trust. {when}",
               { when: busy ? t("eh.permissionsNextTurn", "Applies from the next turn.") : "" },
             ),
             "info",

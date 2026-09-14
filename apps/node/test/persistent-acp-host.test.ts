@@ -227,7 +227,7 @@ describe("EnvoyHarnessPersistentAcpHost", () => {
       expect(b.resumed).toBe(true);
 
       // A different (existing) resume id forces a reload — the host
-      // switches to that persisted session for another chat workspace.
+      // switches to that persisted session for another chat task.
       const otherSession = await store.create({
         cwd: "/projects/other",
         startedAt: new Date().toISOString(),

@@ -137,7 +137,7 @@ export * from "./coding-heartbeat.js";
 export * from "./coding-schedule.js";
 export * from "./eh-turn-review.js";
 export * from "./eh-ux-telemetry.js";
-export * from "./eh-chat-workspace.js";
+export * from "./eh-chat-task.js";
 export * from "./eh-permission.js";
 export * from "./eh-files-changed.js";
 export * from "./ai-bot.js";

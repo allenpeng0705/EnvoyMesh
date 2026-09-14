@@ -1,5 +1,5 @@
 /**
- * Coding Cmd/Ctrl+K command palette — projects, workspaces, files, actions.
+ * Coding Cmd/Ctrl+K command palette — projects, tasks, files, actions.
  * Metadata only; not transcript search.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -93,8 +93,8 @@ export function CodingCommandPalette({
     switch (kind) {
       case "project":
         return t("codingView.searchKindProject", "Project");
-      case "workspace":
-        return t("codingView.searchKindWorkspace", "Workspace");
+      case "task":
+        return t("codingView.searchKindTask", "Task");
       case "file":
         return t("codingView.searchKindFile", "File");
       case "action":
@@ -128,7 +128,7 @@ export function CodingCommandPalette({
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t(
               "codingView.searchPlaceholder",
-              "Search projects, workspaces, files…",
+              "Search projects, tasks, files…",
             )}
             aria-label={t("codingView.searchTitle", "Search Coding")}
             data-testid="coding-palette-input"

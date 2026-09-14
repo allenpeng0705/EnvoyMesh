@@ -13,14 +13,14 @@ import '../../services/coding_ext_sessions.dart';
 import '../../widgets/connection_indicator.dart';
 import '../chat/envoy_harness_chat_screen.dart';
 import 'coding_heartbeat_ui.dart';
-import 'coding_new_workspace_sheet.dart';
+import 'coding_new_task_sheet.dart';
 import 'ext_agent_coding_screen.dart';
 import 'pi_coding_chat_screen.dart';
 
-/// Coding tab root — resume-first workspace list (Phase 68-C1b.2 / C1b.3).
+/// Coding tab root — resume-first task list (Phase 68-C1b.2 / C1b.3).
 ///
 /// EH stream chats + Pi coding sessions from the home node, plus local
-/// Tier B Ext Agent sessions. Create via FAB ([showCodingNewWorkspaceSheet]).
+/// Tier B Ext Agent sessions. Create via FAB ([showCodingNewTaskSheet]).
 class CodingHomeScreen extends ConsumerStatefulWidget {
   const CodingHomeScreen({super.key});
 
@@ -76,9 +76,9 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
     return term.sessions.where((s) => s.isPi).toList();
   }
 
-  Future<void> _openNewWorkspace() async {
+  Future<void> _openNewTask() async {
     final ehCount = _ehThreads(ref.read(chatProvider)).length;
-    await showCodingNewWorkspaceSheet(
+    await showCodingNewTaskSheet(
       context,
       ref,
       onConfirm: (harness, cwd) async {
@@ -317,7 +317,7 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
     final term = ref.watch(terminalProvider);
     final ehThreads = _ehThreads(chat);
     final piSessions = _piSessions(term);
-    final hasWorkspaces = ehThreads.isNotEmpty ||
+    final hasTasks = ehThreads.isNotEmpty ||
         piSessions.isNotEmpty ||
         _extSessions.isNotEmpty;
 
@@ -353,8 +353,8 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
       floatingActionButton: mayUseCoding
           ? FloatingActionButton(
               heroTag: 'coding-new',
-              tooltip: l10n.codingNewWorkspaceTitle,
-              onPressed: _openNewWorkspace,
+              tooltip: l10n.codingNewTaskTitle,
+              onPressed: _openNewTask,
               child: const Icon(Icons.add),
             )
           : null,
@@ -373,7 +373,7 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
             )
           : RefreshIndicator(
               onRefresh: _refresh,
-              child: !hasWorkspaces
+              child: !hasTasks
                   ? ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(24),

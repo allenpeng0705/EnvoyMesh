@@ -18,7 +18,7 @@ describe("coding-sessions auto-title", () => {
     localStorage.clear();
   });
 
-  it("creates with New workspace placeholder", () => {
+  it("creates with New task placeholder", () => {
     const s = createCodingExtSession({
       harness: "opencode",
       cwd: "/tmp/demo",

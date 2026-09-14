@@ -72,68 +72,68 @@ export const en = {
     sessionsTitle: "Projects",
     changesTitle: "Changes",
     emptySessions:
-      "No workspaces yet. Workspaces from Envoy Harness and other harnesses will appear under each project.",
+      "No tasks yet. Tasks from Envoy Harness and other harnesses will appear under each project.",
     emptyProjects:
-      "No projects yet. Add a project folder, then create a workspace under it.",
+      "No projects yet. Add a project folder, then create a task under it.",
     homeTitle: "Coding",
     homeEmptyProjects:
-      "Add a project to start. Then create a workspace under that project.",
-    homePickWorkspace:
-      "Select a workspace on the left, or use + on a project to create one.",
+      "Add a project to start. Then create a task under that project.",
+    homePickTask:
+      "Select a task on the left, or use + on a project to create one.",
     homeAddProjectHint: "Register a folder on your home node.",
     homeSettingsHint:
       "Default agent and model for projects that have no override.",
-    emptySession: "Select a workspace or start a new one from Coding.",
-    emptyChanges: "File changes and review will appear here when a workspace is active.",
-    changesPlaceholder: "File changes for this workspace will show here.",
+    emptySession: "Select a task or start a new one from Coding.",
+    emptyChanges: "File changes and review will appear here when a task is active.",
+    changesPlaceholder: "File changes for this task will show here.",
     toggleChanges: "Show or hide Changes",
     closeChanges: "Close Changes",
     codingGated: "Coding isn’t available for this profile.",
     addProjectTitle: "Add project",
     addProjectDesc:
-      "Register a folder as a project. You can create workspaces under it next.",
+      "Register a folder as a project. You can create tasks under it next.",
     addProjectCta: "Add project",
     addProjectConfirm: "Add project",
     addProjectAria: "Add project",
     projectLabel: "Project",
     projectRequired: "Choose a project.",
-    projectEmptyWorkspaces: "No workspaces yet.",
-    needProjectFirst: "Add a project first, then create a workspace under it.",
-    newWorkspaceInProject: "New workspace in {project}",
+    projectEmptyTasks: "No tasks yet.",
+    needProjectFirst: "Add a project first, then create a task under it.",
+    newTaskInProject: "New task in {project}",
     isolationLocalHint:
       "Isolation: Local (this project folder). Worktrees come later.",
-    newSessionTitle: "New workspace",
+    newSessionTitle: "New task",
     newSessionDesc:
-      "Choose a project, agent, and model. Workspace choices override the project defaults.",
-    newSessionAria: "New coding workspace",
-    newSessionCta: "New workspace",
-    addWorkspaceCta: "Add workspace",
-    workspacesSection: "Workspaces",
+      "Choose a project, agent, and model. Task choices override the project defaults.",
+    newSessionAria: "New coding task",
+    newSessionCta: "New task",
+    addTaskCta: "Add task",
+    tasksSection: "Tasks",
     removeFromCoding: "Remove from Coding",
     remove: "Remove",
     removingFromCoding: "Removing…",
     removeProjectTitle: "Remove project from Coding?",
     removeProjectMessage:
-      "Remove “{title}” from Coding? Workspaces under it leave Coding too. Your folder, repo, and files on disk are not deleted.",
+      "Remove “{title}” from Coding? Tasks under it leave Coding too. Your folder, repo, and files on disk are not deleted.",
     removeProjectAria: "Remove project from Coding",
     removeProject: "Remove from Coding",
     projectMenuAria: "Project actions",
     projectSettings: "Project settings",
     projectSettingsTitle: "Project settings",
     projectSettingsDesc:
-      "Overrides for new workspaces in this project. Leave agent or model empty to use Coding defaults.",
+      "Overrides for new tasks in this project. Leave agent or model empty to use Coding defaults.",
     projectName: "Name",
     projectLocation: "Location",
     projectOpenInFileManager: "Open in file manager",
     projectRevealBusy: "Opening…",
     projectRevealFailed: "Couldn’t open that folder on your computer.",
-    projectDefaultHarness: "Default agent for new workspaces",
-    projectDefaultModel: "Default model for new workspaces",
+    projectDefaultHarness: "Default agent for new tasks",
+    projectDefaultModel: "Default model for new tasks",
     projectDefaultModelPlaceholder:
       "e.g. gpt-4o — empty leaves model unset",
     projectDefaultModelHint:
-      "Used when creating a new workspace. The workspace can override it.",
-    projectWorkspaceCount: "{n} workspace(s) in this project",
+      "Used when creating a new task. The task can override it.",
+    projectTaskCount: "{n} task(s) in this project",
     projectOpenCodingDefaults: "Edit Coding defaults…",
     modelLabel: "Model",
     modelPlaceholder: "e.g. gpt-4o or claude-sonnet…",
@@ -143,7 +143,7 @@ export const en = {
     modelPlaceholderEnvoymeshAiEmpty: "Empty = EnvoyMesh AI",
     modelLoading: "Loading models…",
     modelLockHint:
-      "Locked for this workspace at start. Overrides the project default.",
+      "Locked for this task at start. Overrides the project default.",
     modelHintCodingDefaults:
       "Envoy and Pi use Coding defaults when empty. Set a model here only to override.",
     modelHintEnvoymeshAi:
@@ -156,7 +156,7 @@ export const en = {
     providerOpenAI: "OpenAI-compatible",
     providerAnthropic: "Anthropic-compatible",
     providerKindHint:
-      "Optional custom endpoint and API key for this project or workspace.",
+      "Optional custom endpoint and API key for this project or task.",
     providerKindHintCodingDefaults:
       "Leave on Coding defaults to reuse your Coding default model and keys. Pick OpenAI/Anthropic-compatible only for a custom endpoint and key.",
     providerKindHintEnvoymeshAi:
@@ -174,11 +174,11 @@ export const en = {
     defaultsSaving: "Saving…",
     defaultsSaved: "Coding defaults saved.",
     defaultsSaveFailed: "Couldn’t save Coding defaults. Try again.",
-    removeWorkspaceTitle: "Remove workspace?",
-    removeWorkspaceMessage:
+    removeTaskTitle: "Remove task?",
+    removeTaskMessage:
       "Remove “{title}” from Coding? Your folder, repo, and files on disk are not deleted.",
-    removeWorkspaceAria: "Remove workspace",
-    workspaceActionsAria: "Workspace actions",
+    removeTaskAria: "Remove task",
+    taskActionsAria: "Task actions",
     inviteReview: "Invite peer to review",
     inviteReviewTitle: "Invite peer to review",
     inviteReviewDesc:
@@ -190,19 +190,19 @@ export const en = {
     inviteReviewFailed: "Couldn’t send the review invite. Try again.",
     inviteReviewBondDenied: "That contact isn’t eligible for a review invite.",
     inviteReviewOpenOnOwnerHome:
-      "Open on the owner’s home node to review this workspace.",
+      "Open on the owner’s home node to review this task.",
     openReview: "Open review",
     reviewOnlyBanner: "Review only",
     harnessLabel: "Harness",
-    startSession: "Start workspace",
+    startSession: "Start task",
     settingsFooter: "Coding defaults",
     heartbeatAdd: "Add heartbeat…",
     heartbeatAddTitle: "Add heartbeat",
     heartbeatAddDesc:
-      "On a schedule, send a prompt to “{title}”. This wakes the existing workspace — it does not create a new one.",
+      "On a schedule, send a prompt to “{title}”. This wakes the existing task — it does not create a new one.",
     heartbeatDefaultName: "Heartbeat · {title}",
     heartbeatDefaultPrompt:
-      "Check progress on this workspace and continue useful next steps.",
+      "Check progress on this task and continue useful next steps.",
     heartbeatName: "Name",
     heartbeatSchedule: "How often",
     heartbeatPreset: {
@@ -238,9 +238,9 @@ export const en = {
     heartbeatListTitle: "Heartbeats",
     automationsFooter: "Automations",
     heartbeatListDesc:
-      "Scheduled prompts for existing Coding workspaces. Not Team jobs.",
+      "Scheduled prompts for existing Coding tasks. Not Team jobs.",
     heartbeatLoading: "Loading…",
-    heartbeatEmpty: "No heartbeats yet. Add one from a workspace menu.",
+    heartbeatEmpty: "No heartbeats yet. Add one from a task menu.",
     heartbeatListFailed: "Couldn’t load heartbeats. Try again.",
     heartbeatActionFailed: "That heartbeat action didn’t work. Try again.",
     heartbeatOn: "On",
@@ -252,7 +252,7 @@ export const en = {
     heartbeatDelete: "Delete",
     scheduleAddTitle: "New schedule",
     scheduleAddDesc:
-      "On a schedule, create a new Coding workspace for a project and run the prompt once. Distinct from heartbeats.",
+      "On a schedule, create a new Coding task for a project and run the prompt once. Distinct from heartbeats.",
     scheduleDefaultName: "Scheduled run",
     scheduleDefaultPrompt:
       "Start this scheduled coding task and make useful progress.",
@@ -269,7 +269,7 @@ export const en = {
     scheduleSaveFailed: "Couldn’t save the schedule. Try again.",
     scheduleListTitle: "Schedules",
     scheduleListDesc:
-      "Cron creates a new Coding workspace and runs the prompt once. Not heartbeats or Team jobs.",
+      "Cron creates a new Coding task and runs the prompt once. Not heartbeats or Team jobs.",
     scheduleLoading: "Loading…",
     scheduleEmpty:
       "No schedules yet. Create one from Schedules or the command palette.",
@@ -305,18 +305,18 @@ export const en = {
     reviewChanges: "Review changes",
     tabChat: "Chat",
     tabShell: "Shell",
-    workspaceTabs: "Workspace tabs",
-    workspaceFallback: "New workspace",
-    closeWorkspace: "Close workspace",
+    taskTabs: "Task tabs",
+    taskFallback: "New task",
+    closeTask: "Close task",
     shellEmptyEh:
-      "No shell attached to this workspace yet. Use the Terminal tab for a plain shell.",
+      "No shell attached to this task yet. Use the Terminal tab for a plain shell.",
     piComingSoon: "Coming next — open from Coding soon",
     searchTitle: "Search Coding",
-    searchPlaceholder: "Search projects, workspaces, files…",
+    searchPlaceholder: "Search projects, tasks, files…",
     searchEmpty: "No matches.",
     searchHint: "↑↓ to move · Enter to open · Esc to close",
     searchKindProject: "Project",
-    searchKindWorkspace: "Workspace",
+    searchKindTask: "Task",
     searchKindFile: "File",
     searchKindAction: "Action",
     historyFiltersAria: "History filters",
@@ -324,10 +324,10 @@ export const en = {
     historyNeedsYou: "Action",
     historyRecent: "Recent",
     historyArchived: "Archived",
-    historyAllWorkspaces: "All workspaces",
+    historyAllTasks: "All tasks",
     historyArchive: "Archive",
     historyUnarchive: "Unarchive",
-    historyEmpty: "No workspaces match this filter.",
+    historyEmpty: "No tasks match this filter.",
   },
   header: {
     starting: "Starting…",

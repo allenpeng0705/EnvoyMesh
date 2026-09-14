@@ -88,7 +88,7 @@ String codingHarnessDisplayName(CodingHarnessChoice h) {
 }
 
 /// Create sheet: harness (immutable) + project folder via [HomeFolderBrowser].
-Future<void> showCodingNewWorkspaceSheet(
+Future<void> showCodingNewTaskSheet(
   BuildContext context,
   WidgetRef ref, {
   required Future<void> Function(CodingHarnessChoice harness, String cwd)
@@ -142,12 +142,12 @@ Future<void> showCodingNewWorkspaceSheet(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    l10n.codingNewWorkspaceTitle,
+                    l10n.codingNewTaskTitle,
                     style: Theme.of(ctx).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    l10n.codingNewWorkspaceDesc,
+                    l10n.codingNewTaskDesc,
                     style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                         ),
@@ -281,7 +281,7 @@ Future<void> showCodingNewWorkspaceSheet(
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : Text(l10n.codingStartWorkspace),
+                        : Text(l10n.codingStartTask),
                   ),
                 ],
               ),

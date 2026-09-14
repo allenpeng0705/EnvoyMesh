@@ -323,10 +323,10 @@ export type AuditEventType =
   | "eh.permission.responded"
   | "eh.review.accepted"
   | "eh.review.invited"
-  // Phase 68-C6 — Coding heartbeats (wake existing workspace).
+  // Phase 68-C6 — Coding heartbeats (wake an existing task).
   | "coding.heartbeat.fired"
   | "coding.heartbeat.failed"
-  // Phase 68-C7 — Coding schedules (new workspace each fire).
+  // Phase 68-C7 — Coding schedules (a new task each fire).
   | "coding.schedule.fired"
   | "coding.schedule.failed";
 

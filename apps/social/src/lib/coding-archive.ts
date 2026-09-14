@@ -1,5 +1,5 @@
 /**
- * Client-side archived Coding workspaces (History-as-list-power).
+ * Client-side archived Coding tasks (History-as-list-power).
  * Keys: `eh:<chatId>` | `pi:<sessionId>` | `ext:<id>`
  */
 
@@ -54,7 +54,7 @@ export function isCodingArchived(key: string): boolean {
   return loadCodingArchivedKeys().has(key);
 }
 
-export function archiveCodingWorkspace(key: string): void {
+export function archiveCodingTask(key: string): void {
   const k = key.trim();
   if (!k) return;
   const keys = loadCodingArchivedKeys();
@@ -63,7 +63,7 @@ export function archiveCodingWorkspace(key: string): void {
   saveCodingArchivedKeys(keys);
 }
 
-export function unarchiveCodingWorkspace(key: string): void {
+export function unarchiveCodingTask(key: string): void {
   const k = key.trim();
   if (!k) return;
   const keys = loadCodingArchivedKeys();

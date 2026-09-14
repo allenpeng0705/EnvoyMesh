@@ -1,10 +1,10 @@
 /**
  * Phase 68-C7 — Coding schedules (Paseo schedule analogue).
  *
- * A schedule creates a **new** Coding workspace on cron for a fixed project
+ * A schedule creates a **new** Coding task on cron for a fixed project
  * cwd + harness, then runs the prompt once.
  *
- * Distinct from heartbeats (wake existing workspace). Not Team jobs / Chains.
+ * Distinct from heartbeats (wake existing task). Not Team jobs / Chains.
  * Not EnvoyAI TriggerStore digests.
  */
 
@@ -36,8 +36,12 @@ export type CodingSchedule = {
   runCount: number
   lastFiredAt?: string
   lastError?: string
-  /** chatId / sessionId created on last fire. */
-  lastWorkspaceId?: string
+  /**
+   * chatId / sessionId created on last fire.
+   * Renamed from `lastWorkspaceId` when the Coding vocabulary moved to “task”;
+   * a schedule saved before that rename fires as if it had none.
+   */
+  lastTaskId?: string
   createdAt: string
   updatedAt: string
 }

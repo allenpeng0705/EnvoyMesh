@@ -256,7 +256,7 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
                 final messenger = ScaffoldMessenger.of(context);
                 final ok = await showCodingHeartbeatDialog(
                   context,
-                  workspaceTitle: widget.sessionName,
+                  taskTitle: widget.sessionName,
                   target: CodingHeartbeatTargetPi(sessionId: widget.sessionId),
                 );
                 if (!mounted || !ok) return;

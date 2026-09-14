@@ -8,17 +8,17 @@ import {
   resolveEhChatHostCreds,
   resolveEhChatHostModel,
   shouldAutoSetEhChatTitle,
-  type EhChatWorkspaceSummary,
-} from "../src/eh-chat-workspace.js";
+  type EhChatTaskSummary,
+} from "../src/eh-chat-task.js";
 import { deriveCodingUiBucket } from "../src/coding-ui-bucket.js";
 
-describe("eh-chat-workspace titles", () => {
+describe("eh-chat-task titles", () => {
   it("uses folder basename only for project-style defaultEhChatTitle", () => {
     expect(defaultEhChatTitle("/Users/me/my-app/")).toBe("my-app");
     expect(defaultEhChatTitle("C:\\\\repos\\\\EnvoyMesh")).toBe("EnvoyMesh");
   });
 
-  it("resolves empty title to New workspace placeholder", () => {
+  it("resolves empty title to New task placeholder", () => {
     expect(resolveEhChatDisplayTitle(undefined)).toBe(EH_CHAT_PLACEHOLDER_TITLE);
     expect(resolveEhChatDisplayTitle("  ")).toBe(EH_CHAT_PLACEHOLDER_TITLE);
     expect(resolveEhChatDisplayTitle("Fix login")).toBe("Fix login");
@@ -55,9 +55,9 @@ describe("eh-chat-workspace titles", () => {
   });
 });
 
-describe("EhChatWorkspaceSummary promote fields", () => {
+describe("EhChatTaskSummary promote fields", () => {
   it("accepts optional harness / uiBucket / agentState", () => {
-    const summary: EhChatWorkspaceSummary = {
+    const summary: EhChatTaskSummary = {
       id: "c1",
       cwd: "/p",
       title: "Fix login",
@@ -72,7 +72,7 @@ describe("EhChatWorkspaceSummary promote fields", () => {
   });
 
   it("accepts optional locked model", () => {
-    const summary: EhChatWorkspaceSummary = {
+    const summary: EhChatTaskSummary = {
       id: "c1",
       cwd: "/p",
       title: "Fix login",
@@ -84,7 +84,7 @@ describe("EhChatWorkspaceSummary promote fields", () => {
 });
 
 describe("resolveEhChatHostModel", () => {
-  it("prefers workspace lock over global host model", () => {
+  it("prefers task lock over global host model", () => {
     expect(normalizeEhChatModel("  openai:a  ")).toBe("openai:a");
     expect(normalizeEhChatModel("   ")).toBeUndefined();
     expect(resolveEhChatHostModel("openai:locked", "openai:global")).toBe(
@@ -96,7 +96,7 @@ describe("resolveEhChatHostModel", () => {
     expect(resolveEhChatHostModel("  ", undefined)).toBeUndefined();
   });
 
-  it("prefers workspace endpoint and apiKey over global", () => {
+  it("prefers task endpoint and apiKey over global", () => {
     expect(
       resolveEhChatHostCreds({
         chatEndpoint: "https://chat",

@@ -57,9 +57,9 @@ describe("CodingScheduleStore", () => {
     const now = new Date(Date.UTC(2026, 8, 11, 12, 30, 10))
     await store.recordFire(row.id, {
       firedAt: now.toISOString(),
-      lastWorkspaceId: "ws-1",
+      lastTaskId: "ws-1",
     })
-    expect(store.get(row.id)?.lastWorkspaceId).toBe("ws-1")
+    expect(store.get(row.id)?.lastTaskId).toBe("ws-1")
     expect(store.selectDue(now)).toEqual([])
     const nextMinute = new Date(Date.UTC(2026, 8, 11, 12, 31, 0))
     expect(store.selectDue(nextMinute).map((s) => s.id)).toEqual([row.id])

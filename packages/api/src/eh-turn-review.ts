@@ -2,8 +2,11 @@ export interface EhTurnReviewFile {
   path: string;
   status: "modified" | "added" | "deleted";
   diff?: string;
-  /** Runtime-observed files are safe to revert; workspace-detected files are review-only. */
-  attribution?: "runtime" | "workspace";
+  /**
+   * Runtime-observed files are safe to revert; files only found by scanning the
+   * task folder are review-only.
+   */
+  attribution?: "runtime" | "task";
   revertible?: boolean;
 }
 

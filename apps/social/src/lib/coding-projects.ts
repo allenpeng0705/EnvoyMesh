@@ -1,8 +1,8 @@
 /**
  * Client-side Coding project registry (C1).
- * Paseo: Project = registered root; Workspace = task under a project.
+ * Paseo: Project = registered root; Task = task under a project.
  * Home-node Project registry comes later — this persists paths in localStorage
- * and is seeded from existing workspace cwds.
+ * and is seeded from existing task cwds.
  */
 
 import {
@@ -12,6 +12,10 @@ import {
 
 const STORAGE_KEY = "envoymesh.codingProjects";
 const DISMISSED_KEY = "envoymesh.codingProjects.dismissed";
+/**
+ * Key is frozen: it is already written into every existing browser's
+ * localStorage, so renaming it would silently drop the saved prefill.
+ */
 const LAST_PREFILL_KEY = "envoymesh.coding.lastWorkspacePrefill";
 const DEFAULTS_KEY = "envoymesh.coding.defaults";
 
@@ -33,7 +37,7 @@ export function isCodingProviderKind(raw: string): raw is CodingProviderKind {
   return (CODING_PROVIDER_KINDS as readonly string[]).includes(raw);
 }
 
-export type CodingWorkspacePrefill = {
+export type CodingTaskPrefill = {
   harness: CodingHarnessId;
   model: string;
   providerKind: CodingProviderKind | "";
@@ -47,9 +51,9 @@ export type CodingProject = {
   /** Display label (folder basename or user rename). */
   label: string;
   addedAt: string;
-  /** Preferred harness when creating a new workspace under this project. */
+  /** Preferred harness when creating a new task under this project. */
   defaultHarness?: CodingHarnessId;
-  /** Preferred LLM for new workspaces under this project. */
+  /** Preferred LLM for new tasks under this project. */
   defaultModel?: string;
   /** Compatible provider kind; omit = agent-native. */
   defaultProviderKind?: CodingProviderKind;
@@ -186,13 +190,13 @@ export function saveCodingDefaults(next: CodingDefaults): CodingDefaults {
 }
 
 /**
- * Prefill for New workspace: project → Coding defaults → system.
+ * Prefill for New task: project → Coding defaults → system.
  * Empty model/provider for Envoy/Pi means EnvoyMesh AI at runtime.
  */
-export function resolveCodingWorkspacePrefill(opts: {
+export function resolveCodingTaskPrefill(opts: {
   project?: CodingProject | null;
   defaults?: CodingDefaults | null;
-}): CodingWorkspacePrefill {
+}): CodingTaskPrefill {
   const p = opts.project;
   const d = opts.defaults ?? loadCodingDefaults();
   const harness =
@@ -222,7 +226,7 @@ export function resolveCodingWorkspacePrefill(opts: {
   };
 }
 
-/** @deprecated Use resolveCodingWorkspacePrefill — kept for older call sites. */
+/** @deprecated Use resolveCodingTaskPrefill — kept for older call sites. */
 export function resolveCodingModelPrefill(opts: {
   project?: Pick<CodingProject, "defaultModel"> | null;
   lastUsed?: string | null;
@@ -275,7 +279,7 @@ export function codingCompatibleModelSuggestions(
   return ["gpt-4o", "claude-sonnet-4-20250514", "openai:gpt-4o"];
 }
 
-export function loadCodingLastUsedPrefill(): Partial<CodingWorkspacePrefill> | null {
+export function loadCodingLastUsedPrefill(): Partial<CodingTaskPrefill> | null {
   try {
     const raw = localStorage.getItem(LAST_PREFILL_KEY);
     if (!raw) {
@@ -284,7 +288,7 @@ export function loadCodingLastUsedPrefill(): Partial<CodingWorkspacePrefill> | n
       const model = normalizeCodingModelSpec(legacy);
       return model ? { model } : null;
     }
-    const parsed = JSON.parse(raw) as Partial<CodingWorkspacePrefill>;
+    const parsed = JSON.parse(raw) as Partial<CodingTaskPrefill>;
     if (!parsed || typeof parsed !== "object") return null;
     return {
       ...(parsed.harness && isCodingHarnessId(parsed.harness)
@@ -309,14 +313,14 @@ export function loadCodingLastUsedPrefill(): Partial<CodingWorkspacePrefill> | n
 }
 
 export function saveCodingLastUsedPrefill(
-  prefill: Partial<CodingWorkspacePrefill> | null | undefined,
+  prefill: Partial<CodingTaskPrefill> | null | undefined,
 ): void {
   try {
     if (!prefill) {
       localStorage.removeItem(LAST_PREFILL_KEY);
       return;
     }
-    const payload: Partial<CodingWorkspacePrefill> = {};
+    const payload: Partial<CodingTaskPrefill> = {};
     if (prefill.harness && isCodingHarnessId(prefill.harness)) {
       payload.harness = prefill.harness;
     }
@@ -499,8 +503,8 @@ export function addCodingProject(path: string): CodingProject {
 }
 
 /**
- * When a project has no default agent yet, copy create-time workspace choices
- * into project defaults (first workspace defines the project engine).
+ * When a project has no default agent yet, copy create-time task choices
+ * into project defaults (first task defines the project engine).
  * Does not overwrite an existing defaultHarness.
  */
 export function seedCodingProjectDefaultsIfEmpty(
@@ -607,7 +611,7 @@ export function removeCodingProject(path: string): boolean {
 }
 
 /**
- * Ensure known workspace cwds appear as projects (migration / sync).
+ * Ensure known task cwds appear as projects (migration / sync).
  * Skips paths the user explicitly removed until they Add project again.
  */
 export function ensureCodingProjectsFromCwds(cwds: string[]): CodingProject[] {

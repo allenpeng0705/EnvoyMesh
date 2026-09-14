@@ -27,28 +27,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navCoding => '编程';
 
   @override
-  String get codingHomePlaceholder => '来自家用电脑的编程工作区会显示在这里。';
+  String get codingHomePlaceholder => '来自家用电脑的编程任务会显示在这里。';
 
   @override
-  String get codingNewWorkspaceTitle => '新建工作区';
+  String get codingNewTaskTitle => '新建任务';
 
   @override
-  String get codingNewWorkspaceDesc => '选择编程引擎和项目文件夹。创建后引擎不可更改。';
+  String get codingNewTaskDesc => '选择编程引擎和项目文件夹。创建后引擎不可更改。';
 
   @override
   String get codingHarnessLabel => '编程引擎';
 
   @override
-  String get codingStartWorkspace => '开始工作区';
+  String get codingStartTask => '开始任务';
 
   @override
   String get codingPiConsoleHint => '本地编程助手';
 
   @override
-  String get codingEmptyTitle => '暂无工作区';
+  String get codingEmptyTitle => '暂无任务';
 
   @override
-  String get codingEmptyHint => '在家用电脑上开始一个编程工作区。';
+  String get codingEmptyHint => '在家用电脑上开始一个编程任务。';
 
   @override
   String get codingGated => '此档案无法使用编程。';
@@ -130,7 +130,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingInviteReviewBondDenied => '该联系人无法接收审阅邀请。';
 
   @override
-  String get codingInviteReviewOpenOnOwnerHome => '请在所有者的主节点上打开以审阅此工作区。';
+  String get codingInviteReviewOpenOnOwnerHome => '请在所有者的主节点上打开以审阅此任务。';
 
   @override
   String get codingReviewOnlyBanner => '只读审阅 — 可查看时间线与变更；工具与还原已禁用。';
@@ -143,7 +143,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String codingHeartbeatAddDesc(String title) {
-    return '按计划向“$title”发送提示。这会唤醒已有工作区 — 不会新建。';
+    return '按计划向“$title”发送提示。这会唤醒已有任务 — 不会新建。';
   }
 
   @override
@@ -152,7 +152,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get codingHeartbeatDefaultPrompt => '检查此工作区的进展，并继续有用的下一步。';
+  String get codingHeartbeatDefaultPrompt => '检查此任务的进展，并继续有用的下一步。';
 
   @override
   String get codingHeartbeatName => '名称';
@@ -200,10 +200,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingHeartbeatListTitle => '心跳';
 
   @override
-  String get codingHeartbeatListDesc => '针对已有编程工作区的定时提示。不是团队任务。';
+  String get codingHeartbeatListDesc => '针对已有编程任务的定时提示。不是团队任务。';
 
   @override
-  String get codingHeartbeatEmpty => '还没有心跳。可从工作区菜单添加。';
+  String get codingHeartbeatEmpty => '还没有心跳。可从任务菜单添加。';
 
   @override
   String get codingHeartbeatListFailed => '无法加载心跳，请重试。';
@@ -3970,7 +3970,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ehReviewDiffUnavailable => '此文件没有可用的文本差异。';
 
   @override
-  String get ehReviewOnly => '工作区检测到 · 仅可审查';
+  String get ehReviewOnly => '任务检测到 · 仅可审查';
 
   @override
   String get ehRevertTitle => '还原此回合？';

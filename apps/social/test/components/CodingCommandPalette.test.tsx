@@ -10,15 +10,15 @@ import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const items: CodingPaletteItem[] = [
   {
-    id: "action:new-workspace",
+    id: "action:new-task",
     kind: "action",
-    label: "New workspace",
+    label: "New task",
     detail: "Action",
-    action: { type: "new-workspace" },
+    action: { type: "new-task" },
   },
   {
-    id: "workspace:eh:c1",
-    kind: "workspace",
+    id: "task:eh:c1",
+    kind: "task",
     label: "Fix login",
     detail: "Envoy Harness · /repo",
     path: "/repo",
@@ -62,15 +62,15 @@ describe("CodingCommandPalette", () => {
     const input = screen.getByTestId("coding-palette-input");
     fireEvent.change(input, { target: { value: "login" } });
     expect(
-      screen.getByTestId("coding-palette-item-workspace:eh:c1"),
+      screen.getByTestId("coding-palette-item-task:eh:c1"),
     ).toBeTruthy();
     expect(
-      screen.queryByTestId("coding-palette-item-action:new-workspace"),
+      screen.queryByTestId("coding-palette-item-action:new-task"),
     ).toBeNull();
 
     fireEvent.keyDown(window, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "workspace:eh:c1" }),
+      expect.objectContaining({ id: "task:eh:c1" }),
     );
 
     onSelect.mockClear();
@@ -88,11 +88,11 @@ describe("CodingCommandPalette", () => {
         onSelect={onSelect}
       />,
     );
-    const second = screen.getByTestId("coding-palette-item-workspace:eh:c1");
+    const second = screen.getByTestId("coding-palette-item-task:eh:c1");
     fireEvent.mouseEnter(second);
     fireEvent.click(second);
     expect(onSelect).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "workspace:eh:c1" }),
+      expect.objectContaining({ id: "task:eh:c1" }),
     );
   });
 });

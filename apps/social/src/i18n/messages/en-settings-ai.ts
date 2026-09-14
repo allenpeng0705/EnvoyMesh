@@ -42,7 +42,7 @@ export const aiSettingsMessages = {
     // locales already carry the short form.
     projectFolder: "Project folder",
     projectFolderHint:
-      "Fallback working folder on this home node when no Coding project is set. New Coding workspaces use each project’s own folder.",
+      "Fallback working folder on this home node when no Coding project is set. New Coding tasks use each project’s own folder.",
     projectFolderTitle: "Choose default folder",
     projectFolderPlaceholder: "No folder selected",
     projectFolderPathPlaceholder: "/absolute/path/on/home/node",
@@ -148,7 +148,7 @@ export const aiSettingsMessages = {
       "Disabling Pi stops the Pi runtime immediately. Re-enabling starts it on the next save. Envoy Harness (coding chat + Terminal) is unaffected.",
     ehSectionTitle: "Envoy Harness",
     ehSectionDesc:
-      "Powers coding chat and is always available in Terminal. Auto-run here is harness-only. Coding workspaces use each project’s folder; the active harness folder below is the current session cwd.",
+      "Powers coding chat and is always available in Terminal. Auto-run here is harness-only. Coding tasks use each project’s folder; the active harness folder below is the current session cwd.",
     ehStatusReady: "Ready",
     ehStatusError: "Not ready",
     ehModelError: "Envoy Harness is not ready: {error}",

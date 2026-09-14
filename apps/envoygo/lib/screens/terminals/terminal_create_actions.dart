@@ -7,7 +7,7 @@ import '../../providers/chat_provider.dart';
 /// New shell Terminal dialog (Terminal tab FAB).
 ///
 /// Pi / Envoy Harness create flows live under Coding
-/// ([showCodingNewWorkspaceSheet]).
+/// ([showCodingNewTaskSheet]).
 Future<void> showCreateTerminalDialog(
   BuildContext context,
   WidgetRef ref,

@@ -1302,7 +1302,7 @@ class _EnvoyHarnessChatScreenState
                     final messenger = ScaffoldMessenger.of(context);
                     final ok = await showCodingHeartbeatDialog(
                       context,
-                      workspaceTitle: widget.displayName,
+                      taskTitle: widget.displayName,
                       target: CodingHeartbeatTargetEh(chatId: chatId),
                     );
                     if (!mounted || !ok) return;

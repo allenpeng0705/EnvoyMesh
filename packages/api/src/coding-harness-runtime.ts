@@ -1,6 +1,6 @@
 /**
  * Coding Tier B harness runtime — isolated from Ext Agent bridge state.
- * Home node stores per-workspace cwd / model / compatible creds.
+ * Home node stores per-task cwd / model / compatible creds.
  */
 
 import {
@@ -30,7 +30,7 @@ export type AskCodingHarnessParams = {
   cwd: string;
   /**
    * Non-secret runtime hints from the client (model / provider / endpoint).
-   * API key is resolved from the home-node store set at workspace create.
+   * API key is resolved from the home-node store set at task create.
    */
   runtime?: Omit<CodingHarnessRuntimeFields, "apiKey">;
 };

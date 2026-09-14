@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ehMessagesToChatTurns } from "../src/envoy-harness-workspace.js";
+import { ehMessagesToChatTurns } from "../src/envoy-harness-task.js";
 import type { Message } from "@envoymesh/envoy-harness";
 
 describe("ehMessagesToChatTurns", () => {

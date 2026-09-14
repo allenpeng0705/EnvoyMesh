@@ -2,7 +2,7 @@
  * Phase 68-C2 — Pi agent timeline panel for Coding → Chat.
  *
  * Reuses `eh:timeline` under `__pi__:${sessionId}` (see piTimelineChatId).
- * Pi workspaces are Chat-only (no Shell / TUI embed); use the Terminal tab
+ * Pi tasks are Chat-only (no Shell / TUI embed); use the Terminal tab
  * for a plain shell.
  */
 
@@ -21,7 +21,7 @@ import { EhChatMessageText } from "../ehui/EhChatMessageText.js"
 
 export type PiCodingPanelProps = {
   sessionId: string
-  /** Coding workspace header / sidebar live busy state. */
+  /** Coding task header / sidebar live busy state. */
   onBusyChange?: (busy: boolean) => void
 }
 

@@ -1,8 +1,8 @@
 /**
  * Phase 68-C6 — Coding heartbeats (Paseo heartbeat analogue).
  *
- * A heartbeat wakes an **existing** Coding workspace on a cron with a prompt.
- * Full Schedules (new workspace each run) live in `coding-schedule.ts` (68-C7).
+ * A heartbeat wakes an **existing** Coding task on a cron with a prompt.
+ * Full Schedules (new task each run) live in `coding-schedule.ts` (68-C7).
  *
  * Not Team jobs / Chains. Not EnvoyAI TriggerStore digests.
  */

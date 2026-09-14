@@ -1,5 +1,5 @@
 /**
- * Create a Coding schedule — new workspace each fire (Phase 68-C7).
+ * Create a Coding schedule — new task each fire (Phase 68-C7).
  */
 import { useState } from "react";
 import {
@@ -92,7 +92,7 @@ export function CodingScheduleModal({
           <p className="modal-desc coding-job-modal__desc">
             {t(
               "codingView.scheduleAddDesc",
-              "On a schedule, create a new Coding workspace for a project and run the prompt once. Distinct from heartbeats.",
+              "On a schedule, create a new Coding task for a project and run the prompt once. Distinct from heartbeats.",
             )}
           </p>
 

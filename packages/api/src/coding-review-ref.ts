@@ -3,6 +3,11 @@
  *
  * Marker line is parseable without a custom OS URL scheme:
  * `[envoymesh-coding-review]{"kind":"eh-workspace-review","v":1,...}`
+ *
+ * The `kind` token below is **frozen**: it is already embedded in chat messages
+ * that peers received, so renaming it would stop older invites from parsing.
+ * Our vocabulary calls this entity a Coding *task*; the wire token keeps the
+ * older spelling on purpose.
  */
 
 export const CODING_REVIEW_REF_KIND = "eh-workspace-review" as const;
@@ -99,7 +104,7 @@ export function parseCodingReviewRef(text: string): CodingReviewRef | null {
 export function formatCodingReviewInviteMessage(ref: CodingReviewRef): string {
   const title = ref.title?.trim();
   const human = title
-    ? `I've invited you to review the Coding workspace “${title}”. Open it on the owner's home node to view the timeline and changes (read-only).`
-    : "I've invited you to review a Coding workspace. Open it on the owner's home node to view the timeline and changes (read-only).";
+    ? `I've invited you to review the Coding task “${title}”. Open it on the owner's home node to view the timeline and changes (read-only).`
+    : "I've invited you to review a Coding task. Open it on the owner's home node to view the timeline and changes (read-only).";
   return `${human}\n\n${encodeCodingReviewRef(ref)}`;
 }

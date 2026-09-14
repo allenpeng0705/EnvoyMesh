@@ -36,7 +36,7 @@ mixin HarnessRpcs on HomeRpcSession {
         as Map<String, dynamic>;
   }
 
-  /// Phase 68-C6 — list Coding heartbeats (cron wakes existing workspace).
+  /// Phase 68-C6 — list Coding heartbeats (cron wakes existing task).
   Future<List<CodingHeartbeat>> listCodingHeartbeats() async {
     final result = await homeClient.call('listCodingHeartbeats');
     final list = (result as List<dynamic>?) ?? const [];
@@ -46,7 +46,7 @@ mixin HarnessRpcs on HomeRpcSession {
         .toList(growable: false);
   }
 
-  /// Phase 68-C6 — create a Coding heartbeat for an existing workspace.
+  /// Phase 68-C6 — create a Coding heartbeat for an existing task.
   Future<CodingHeartbeat> createCodingHeartbeat(
     CreateCodingHeartbeatInput input,
   ) async {

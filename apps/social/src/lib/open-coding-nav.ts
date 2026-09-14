@@ -14,7 +14,7 @@ export type OpenCodingDetail = {
   harness?: "envoy-harness" | "pi";
   /** Open create sheet for a new session. */
   startNew?: boolean;
-  /** Phase 68-C2 — open EH workspace in read-only review mode. */
+  /** Phase 68-C2 — open EH task in read-only review mode. */
   reviewOnly?: boolean;
 };
 

@@ -36,7 +36,7 @@ describe("json-rpc — envoy harness chats", () => {
     const summary = {
       id: "chat-2",
       cwd: "/projects/app",
-      title: "New workspace",
+      title: "New task",
       lastUsedAt: "2026-08-25T00:00:00.000Z",
       model: "openai:gpt-4o",
     };

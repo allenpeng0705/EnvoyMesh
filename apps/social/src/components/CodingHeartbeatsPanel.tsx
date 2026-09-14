@@ -103,7 +103,7 @@ export function CodingHeartbeatsPanel({ onClose }: CodingHeartbeatsPanelProps) {
           <p className="section-desc">
             {t(
               "codingView.heartbeatListDesc",
-              "Scheduled prompts for existing Coding workspaces. Not Team jobs.",
+              "Scheduled prompts for existing Coding tasks. Not Team jobs.",
             )}
           </p>
 
@@ -118,7 +118,7 @@ export function CodingHeartbeatsPanel({ onClose }: CodingHeartbeatsPanelProps) {
               >
                 {t(
                   "codingView.heartbeatEmpty",
-                  "No heartbeats yet. Add one from a workspace menu.",
+                  "No heartbeats yet. Add one from a task menu.",
                 )}
               </p>
             ) : (

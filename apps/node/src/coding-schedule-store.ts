@@ -1,7 +1,7 @@
 /**
  * Phase 68-C7 — Coding schedule store.
  *
- * Persists cron schedules that create a **new** Coding workspace each fire.
+ * Persists cron schedules that create a **new** Coding task each fire.
  * Separate from CodingHeartbeatStore and EnvoyAI TriggerStore.
  */
 
@@ -202,7 +202,7 @@ export class CodingScheduleStore {
     opts: {
       error?: string
       firedAt?: string
-      lastWorkspaceId?: string
+      lastTaskId?: string
     } = {},
   ): Promise<CodingSchedule | undefined> {
     this._assertReady()
@@ -218,8 +218,8 @@ export class CodingScheduleStore {
       runCount,
       lastFiredAt: firedAt,
       ...(opts.error ? { lastError: opts.error } : { lastError: undefined }),
-      ...(opts.lastWorkspaceId
-        ? { lastWorkspaceId: opts.lastWorkspaceId }
+      ...(opts.lastTaskId
+        ? { lastTaskId: opts.lastTaskId }
         : {}),
       ...(hitMax ? { enabled: false } : {}),
       updatedAt: firedAt,

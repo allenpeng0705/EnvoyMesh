@@ -15,7 +15,7 @@ import { useNodeService } from "../hooks/useNodeService.js";
 import {
   codingCompatibleModelSuggestions,
   type CodingProviderKind,
-  type CodingWorkspacePrefill,
+  type CodingTaskPrefill,
 } from "../lib/coding-projects.js";
 
 export type CodingAgentModelProviderValue = {
@@ -31,17 +31,17 @@ export type CodingAgentModelProviderFieldsProps = {
   onChange: (next: CodingAgentModelProviderValue) => void;
   busy?: boolean;
   disabled?: boolean;
-  /** When true, render harness as radios (new workspace). Else select (project settings). */
+  /** When true, render harness as radios (new task). Else select (project settings). */
   harnessAsRadios?: boolean;
   enabledHarnesses?: readonly CodingHarnessId[];
   harnessProbe?: Partial<
     Record<CodingHarnessId, "ready" | "install" | "unknown" | "checking">
   >;
-  /** Scope hint for copy: coding defaults vs project vs this workspace. */
-  scope?: "defaults" | "project" | "workspace";
+  /** Scope hint for copy: coding defaults vs project vs this task. */
+  scope?: "defaults" | "project" | "task";
   /**
    * What empty Envoy/Pi model/provider means in this form.
-   * - coding-defaults: inherit Coding defaults (project / new workspace)
+   * - coding-defaults: inherit Coding defaults (project / new task)
    * - envoymesh-ai: inherit EnvoyMesh AI (Coding defaults page)
    */
   fallbackKind?: "coding-defaults" | "envoymesh-ai";
@@ -65,7 +65,7 @@ const HARNESS_HINT: Partial<Record<CodingHarnessId, string>> = {
 };
 
 export function codingPrefillToValue(
-  prefill: CodingWorkspacePrefill,
+  prefill: CodingTaskPrefill,
 ): CodingAgentModelProviderValue {
   return {
     harness: prefill.harness,
@@ -84,7 +84,7 @@ export function CodingAgentModelProviderFields({
   harnessAsRadios = false,
   enabledHarnesses = CODING_ALL_HARNESSES,
   harnessProbe = {},
-  scope = "workspace",
+  scope = "task",
   fallbackKind,
   fallbackModelHint = "",
   settingsAiModelHint = "",
@@ -219,7 +219,7 @@ export function CodingAgentModelProviderFields({
           <span>
             {t(
               "codingView.projectDefaultHarness",
-              "Default agent for new workspaces",
+              "Default agent for new tasks",
             )}
           </span>
           <select
@@ -282,7 +282,7 @@ export function CodingAgentModelProviderFields({
               ? "coding-defaults-settings-model"
               : scope === "project"
                 ? "coding-project-settings-model"
-                : "coding-new-workspace-model"
+                : "coding-new-task-model"
           }
           onChange={(e) => patch({ model: e.target.value })}
         />
@@ -310,11 +310,11 @@ export function CodingAgentModelProviderFields({
                 : scope === "project"
                   ? t(
                       "codingView.projectDefaultModelHint",
-                      "Used when creating a new workspace. The workspace can override it.",
+                      "Used when creating a new task. The task can override it.",
                     )
                   : t(
                       "codingView.modelLockHint",
-                      "Locked for this workspace at start. Overrides the project default.",
+                      "Locked for this task at start. Overrides the project default.",
                     )}
         </p>
       </label>
@@ -329,7 +329,7 @@ export function CodingAgentModelProviderFields({
               ? "coding-defaults-settings-provider"
               : scope === "project"
                 ? "coding-project-settings-provider"
-                : "coding-new-workspace-provider"
+                : "coding-new-task-provider"
           }
           onChange={(e) => {
             const next = e.target.value;
@@ -368,7 +368,7 @@ export function CodingAgentModelProviderFields({
                 )
               : t(
                   "codingView.providerKindHint",
-                  "Optional custom endpoint and API key for this project or workspace.",
+                  "Optional custom endpoint and API key for this project or task.",
                 )}
         </p>
       </label>
@@ -385,7 +385,7 @@ export function CodingAgentModelProviderFields({
               data-testid={
                 scope === "project"
                   ? "coding-project-settings-endpoint"
-                  : "coding-new-workspace-endpoint"
+                  : "coding-new-task-endpoint"
               }
               onChange={(e) => patch({ endpoint: e.target.value })}
             />
@@ -401,7 +401,7 @@ export function CodingAgentModelProviderFields({
               data-testid={
                 scope === "project"
                   ? "coding-project-settings-apikey"
-                  : "coding-new-workspace-apikey"
+                  : "coding-new-task-apikey"
               }
               onChange={(e) => patch({ apiKey: e.target.value })}
             />

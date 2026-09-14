@@ -12,14 +12,14 @@ import type { CodingSessionRef } from "./coding-session-ref.js";
 
 export type CodingPaletteItemKind =
   | "project"
-  | "workspace"
+  | "task"
   | "action"
   | "file";
 
 export type CodingPaletteAction =
   | { type: "select-session"; ref: CodingSessionRef }
   | { type: "focus-project"; path: string }
-  | { type: "new-workspace"; projectPath?: string }
+  | { type: "new-task"; projectPath?: string }
   | { type: "add-project" }
   | { type: "open-settings" }
   | { type: "invite-peer" }
@@ -38,7 +38,7 @@ export type CodingPaletteItem = {
   action: CodingPaletteAction;
 };
 
-export type CodingPaletteWorkspaceInput = {
+export type CodingPaletteTaskInput = {
   kind: "eh" | "pi" | "ext";
   id: string;
   title: string;
@@ -49,17 +49,17 @@ export type CodingPaletteWorkspaceInput = {
 
 export type BuildCodingPaletteItemsInput = {
   projects: CodingProject[];
-  workspaces: CodingPaletteWorkspaceInput[];
+  tasks: CodingPaletteTaskInput[];
   /** Top-level files under the focused project cwd (optional). */
   cwdFiles?: Array<{ name: string; path: string }>;
   /** For open-file EH context. */
   focusedEhChatId?: string | null;
-  /** Include Invite peer when an EH workspace is selected. */
+  /** Include Invite peer when an EH task is selected. */
   canInvitePeer?: boolean;
   /** Include Open Coding settings. */
   canOpenSettings?: boolean;
   labels?: {
-    newWorkspace?: string;
+    newTask?: string;
     addProject?: string;
     openSettings?: string;
     invitePeer?: string;
@@ -116,11 +116,11 @@ export function buildCodingPaletteItems(
   const items: CodingPaletteItem[] = [];
 
   items.push({
-    id: "action:new-workspace",
+    id: "action:new-task",
     kind: "action",
-    label: labels.newWorkspace ?? "New workspace",
+    label: labels.newTask ?? "New task",
     detail: "Action",
-    action: { type: "new-workspace" },
+    action: { type: "new-task" },
   });
   items.push({
     id: "action:new-schedule",
@@ -166,10 +166,10 @@ export function buildCodingPaletteItems(
     });
   }
 
-  for (const ws of input.workspaces) {
+  for (const ws of input.tasks) {
     items.push({
-      id: `workspace:${ws.kind}:${ws.id}`,
-      kind: "workspace",
+      id: `task:${ws.kind}:${ws.id}`,
+      kind: "task",
       label: ws.title,
       detail: `${ws.harnessLabel} · ${ws.cwd}`,
       path: ws.cwd,
@@ -196,7 +196,7 @@ export function buildCodingPaletteItems(
   return items;
 }
 
-/** Convenience harness label for palette workspace rows. */
+/** Convenience harness label for palette task rows. */
 export function paletteHarnessLabel(
   kind: "eh" | "pi" | "ext",
   harness?: CodingHarnessId,

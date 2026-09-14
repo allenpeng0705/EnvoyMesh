@@ -139,7 +139,7 @@ export async function ensurePiTerminalSession(
     return {
       ok: false,
       code: "no_model",
-      reason: "Choose a model for this workspace, or configure one in Settings → AI.",
+      reason: "Choose a model for this task, or configure one in Settings → AI.",
     }
   }
 

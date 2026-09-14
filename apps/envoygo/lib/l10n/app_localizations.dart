@@ -147,20 +147,20 @@ abstract class AppLocalizations {
   /// No description provided for @codingHomePlaceholder.
   ///
   /// In en, this message translates to:
-  /// **'Coding workspaces from your home will appear here.'**
+  /// **'Coding tasks from your home will appear here.'**
   String get codingHomePlaceholder;
 
-  /// No description provided for @codingNewWorkspaceTitle.
+  /// No description provided for @codingNewTaskTitle.
   ///
   /// In en, this message translates to:
-  /// **'New workspace'**
-  String get codingNewWorkspaceTitle;
+  /// **'New task'**
+  String get codingNewTaskTitle;
 
-  /// No description provided for @codingNewWorkspaceDesc.
+  /// No description provided for @codingNewTaskDesc.
   ///
   /// In en, this message translates to:
-  /// **'Pick a harness and project folder. The harness stays fixed for this workspace.'**
-  String get codingNewWorkspaceDesc;
+  /// **'Pick a harness and project folder. The harness stays fixed for this task.'**
+  String get codingNewTaskDesc;
 
   /// No description provided for @codingHarnessLabel.
   ///
@@ -168,11 +168,11 @@ abstract class AppLocalizations {
   /// **'Harness'**
   String get codingHarnessLabel;
 
-  /// No description provided for @codingStartWorkspace.
+  /// No description provided for @codingStartTask.
   ///
   /// In en, this message translates to:
-  /// **'Start workspace'**
-  String get codingStartWorkspace;
+  /// **'Start task'**
+  String get codingStartTask;
 
   /// No description provided for @codingPiConsoleHint.
   ///
@@ -183,13 +183,13 @@ abstract class AppLocalizations {
   /// No description provided for @codingEmptyTitle.
   ///
   /// In en, this message translates to:
-  /// **'No workspaces yet'**
+  /// **'No tasks yet'**
   String get codingEmptyTitle;
 
   /// No description provided for @codingEmptyHint.
   ///
   /// In en, this message translates to:
-  /// **'Start a coding workspace on your home computer.'**
+  /// **'Start a coding task on your home computer.'**
   String get codingEmptyHint;
 
   /// No description provided for @codingGated.
@@ -333,7 +333,7 @@ abstract class AppLocalizations {
   /// No description provided for @codingInviteReviewOpenOnOwnerHome.
   ///
   /// In en, this message translates to:
-  /// **'Open on the owner’s home node to review this workspace.'**
+  /// **'Open on the owner’s home node to review this task.'**
   String get codingInviteReviewOpenOnOwnerHome;
 
   /// No description provided for @codingReviewOnlyBanner.
@@ -357,7 +357,7 @@ abstract class AppLocalizations {
   /// No description provided for @codingHeartbeatAddDesc.
   ///
   /// In en, this message translates to:
-  /// **'On a schedule, send a prompt to “{title}”. This wakes the existing workspace — it does not create a new one.'**
+  /// **'On a schedule, send a prompt to “{title}”. This wakes the existing task — it does not create a new one.'**
   String codingHeartbeatAddDesc(String title);
 
   /// No description provided for @codingHeartbeatDefaultName.
@@ -369,7 +369,7 @@ abstract class AppLocalizations {
   /// No description provided for @codingHeartbeatDefaultPrompt.
   ///
   /// In en, this message translates to:
-  /// **'Check progress on this workspace and continue useful next steps.'**
+  /// **'Check progress on this task and continue useful next steps.'**
   String get codingHeartbeatDefaultPrompt;
 
   /// No description provided for @codingHeartbeatName.
@@ -465,13 +465,13 @@ abstract class AppLocalizations {
   /// No description provided for @codingHeartbeatListDesc.
   ///
   /// In en, this message translates to:
-  /// **'Scheduled prompts for existing Coding workspaces. Not Team jobs.'**
+  /// **'Scheduled prompts for existing Coding tasks. Not Team jobs.'**
   String get codingHeartbeatListDesc;
 
   /// No description provided for @codingHeartbeatEmpty.
   ///
   /// In en, this message translates to:
-  /// **'No heartbeats yet. Add one from a workspace menu.'**
+  /// **'No heartbeats yet. Add one from a task menu.'**
   String get codingHeartbeatEmpty;
 
   /// No description provided for @codingHeartbeatListFailed.
@@ -7479,7 +7479,7 @@ abstract class AppLocalizations {
   /// No description provided for @ehReviewOnly.
   ///
   /// In en, this message translates to:
-  /// **'Workspace-detected · review only'**
+  /// **'Task-detected · review only'**
   String get ehReviewOnly;
 
   /// No description provided for @ehRevertTitle.

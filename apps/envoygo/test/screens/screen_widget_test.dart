@@ -196,11 +196,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       expect(find.text('Coding'), findsOneWidget);
-      expect(find.text('No workspaces yet'), findsOneWidget);
+      expect(find.text('No tasks yet'), findsOneWidget);
       expect(find.byType(FloatingActionButton), findsOneWidget);
     });
 
-    testWidgets('lists EH workspace rows from chat threads', (tester) async {
+    testWidgets('lists EH task rows from chat threads', (tester) async {
       await tester.pumpWidget(
         _app(
           const CodingHomeScreen(),
@@ -227,10 +227,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       expect(find.text('fix-login'), findsOneWidget);
-      expect(find.text('No workspaces yet'), findsNothing);
+      expect(find.text('No tasks yet'), findsNothing);
     });
 
-    testWidgets('lists Pi workspace rows and opens Pi stream screen', (
+    testWidgets('lists Pi task rows and opens Pi stream screen', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -260,7 +260,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       expect(find.text('Pi · app'), findsOneWidget);
-      expect(find.text('No workspaces yet'), findsNothing);
+      expect(find.text('No tasks yet'), findsNothing);
 
       await tester.tap(find.text('Pi · app'));
       await tester.pumpAndSettle();
@@ -307,7 +307,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       expect(find.text('Codex'), findsWidgets);
-      expect(find.text('No workspaces yet'), findsNothing);
+      expect(find.text('No tasks yet'), findsNothing);
 
       await tester.tap(find.text('Codex').first);
       await tester.pumpAndSettle();

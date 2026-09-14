@@ -1,5 +1,5 @@
 /**
- * Compact ⋯ menu for Coding sidebar rows (project / workspace).
+ * Compact ⋯ menu for Coding sidebar rows (project / task).
  * Actions only affect Coding UI — never disk folders or files
  * (except “Open in file manager”, which reveals the path on the home node).
  */
@@ -44,7 +44,7 @@ export type CodingSidebarMenuProps = {
   /** Optional archive / unarchive (History-as-list-power). */
   archiveLabel?: string;
   onArchive?: () => void;
-  /** Phase 68-C6 — add heartbeat for this workspace. */
+  /** Phase 68-C6 — add heartbeat for this task. */
   heartbeatLabel?: string;
   onAddHeartbeat?: () => void;
 };

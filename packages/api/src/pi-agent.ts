@@ -409,7 +409,7 @@ export interface EnsurePiTerminalParams {
    */
   forceRestart?: boolean
   /**
-   * One-shot Coding workspace override for this spawn only.
+   * One-shot Coding task override for this spawn only.
    * Does not write `piSettings.modelOverride`.
    */
   modelOverride?: PiModelOverride

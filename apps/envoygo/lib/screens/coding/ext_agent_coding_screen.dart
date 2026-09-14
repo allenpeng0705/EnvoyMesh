@@ -10,7 +10,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/coding_ext_sessions.dart';
 import 'coding_heartbeat_ui.dart';
-import 'coding_new_workspace_sheet.dart';
+import 'coding_new_task_sheet.dart';
 
 /// Wire chatId for an Ext Agent coding session (`__ext__:$sessionId`).
 String extTimelineChatId(String sessionId) => '__ext__:${sessionId.trim()}';
@@ -309,7 +309,7 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
                 final messenger = ScaffoldMessenger.of(context);
                 final ok = await showCodingHeartbeatDialog(
                   context,
-                  workspaceTitle: title,
+                  taskTitle: title,
                   target: CodingHeartbeatTargetExt(
                     sessionId: widget.sessionId,
                     agentId: _agentId,

@@ -1,5 +1,5 @@
 /**
- * Envoy Harness chat workspaces — one sidebar thread per project folder.
+ * Envoy Harness chat tasks — one sidebar thread per project folder.
  *
  * Thread keys: `__envoy_harness__:<chatId>` (legacy bare `__envoy_harness__` → active chat).
  */
@@ -9,13 +9,13 @@ import { ENVOY_HARNESS_THREAD_KEY } from "./envoy-ai-thread.js";
 /** Max open Envoy chat threads (matches Envoy Terminal PTY cap). */
 export const MAX_ENVOY_HARNESS_CHATS = 5;
 
-/** Placeholder until the first user prompt becomes the workspace title (Paseo). */
-export const EH_CHAT_PLACEHOLDER_TITLE = "New workspace";
+/** Placeholder until the first user prompt becomes the task title (Paseo). */
+export const EH_CHAT_PLACEHOLDER_TITLE = "New task";
 
-/** Max chars for prompt-derived workspace titles (first line). */
+/** Max chars for prompt-derived task titles (first line). */
 export const EH_CHAT_TITLE_FROM_PROMPT_MAX = 60;
 
-export interface EhChatWorkspace {
+export interface EhChatTask {
   id: string;
   /** Normalized absolute project folder. */
   cwd: string;
@@ -31,7 +31,7 @@ export interface EhChatWorkspace {
   model?: string;
   /** Create-time locked OpenAI/Anthropic-compatible endpoint. */
   endpoint?: string;
-  /** Create-time locked API key (credentials for this workspace). */
+  /** Create-time locked API key (credentials for this task). */
   apiKey?: string;
   /** Persisted harness JSONL session id when known. */
   sessionId?: string;
@@ -39,19 +39,19 @@ export interface EhChatWorkspace {
   lastUsedAt: string;
 }
 
-export interface EhChatWorkspaceSummary {
+export interface EhChatTaskSummary {
   id: string;
   cwd: string;
   title: string;
   lastUsedAt: string;
   messageCount?: number;
-  /** Locked workspace model when set at create. */
+  /** Locked task model when set at create. */
   model?: string;
-  /** True when workspace locked its own API key (key itself is not listed). */
+  /** True when task locked its own API key (key itself is not listed). */
   hasApiKey?: boolean;
   /** Locked endpoint when set at create. */
   endpoint?: string;
-  /** Harness that owns this workspace (EH list is always envoy-harness). */
+  /** Harness that owns this task (EH list is always envoy-harness). */
   harness?: "envoy-harness" | "pi";
   /** Sidebar status bucket derived from live agent state (+ pending). */
   uiBucket?: import("./coding-ui-bucket.js").CodingUiBucket;
@@ -68,7 +68,7 @@ export function normalizeEhChatModel(
 }
 
 /**
- * Prefer the workspace-locked model; else the global host model from Settings.
+ * Prefer the task-locked model; else the global host model from Settings.
  */
 export function resolveEhChatHostModel(
   chatModel: string | null | undefined,
@@ -77,7 +77,7 @@ export function resolveEhChatHostModel(
   return normalizeEhChatModel(chatModel) ?? normalizeEhChatModel(globalHostModel);
 }
 
-/** Prefer workspace-locked endpoint/apiKey; else global host creds. */
+/** Prefer task-locked endpoint/apiKey; else global host creds. */
 export function resolveEhChatHostCreds(opts: {
   chatEndpoint?: string | null;
   chatApiKey?: string | null;
@@ -119,7 +119,7 @@ export function parseEnvoyHarnessChatId(threadKey: string): string | null {
   return id.length > 0 ? id : null;
 }
 
-/** Folder basename — project label / legacy default, not preferred workspace title. */
+/** Folder basename — project label / legacy default, not preferred task title. */
 export function defaultEhChatTitle(cwd: string): string {
   const norm = cwd.replace(/[/\\]+$/, "");
   const base = norm.split(/[/\\]/).pop();
@@ -136,7 +136,7 @@ export function resolveEhChatDisplayTitle(
 }
 
 /**
- * Derive a workspace title from the first user prompt (Paseo-aligned):
+ * Derive a task title from the first user prompt (Paseo-aligned):
  * first non-empty line, trimmed, capped at {@link EH_CHAT_TITLE_FROM_PROMPT_MAX}.
  */
 export function ehChatTitleFromUserPrompt(

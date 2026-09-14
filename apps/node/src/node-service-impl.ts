@@ -1397,9 +1397,9 @@ import {
   deleteEhChatTurnFromStore,
   loadEhChatHistoryFromStore,
   mergeSessionMapping,
-  normalizeEhWorkspaceCwd,
+  normalizeEhTaskCwd,
   resolveEhSessionIdForCwd,
-} from "./envoy-harness-workspace.js";
+} from "./envoy-harness-task.js";
 import { EhChatRuntime } from "./eh-chat-runtime.js";
 import {
   auditEhPermissionResponded,
@@ -5492,7 +5492,7 @@ class NodeServiceImpl implements NodeService {
       throw new Error("envoy_harness_turn_busy");
     }
 
-    // Paseo-aligned: first user prompt becomes the workspace title.
+    // Paseo-aligned: first user prompt becomes the task title.
     if (chat) {
       await this._maybeAutoTitleEhChatFromPrompt(chat, trimmed);
     }
@@ -5889,9 +5889,9 @@ class NodeServiceImpl implements NodeService {
       ["/cancel", "Cancel the active turn"],
       ["/status", "Show runtime status"],
       ["/compact", "Compact conversation context"],
-      ["/diff", "Show workspace changes"],
+      ["/diff", "Show task changes"],
       ["/plan", "Show or update the plan"],
-      ["/review", "Review workspace changes"],
+      ["/review", "Review task changes"],
     ] as const;
     return {
       agentId: "envoy-harness",
@@ -6896,7 +6896,7 @@ class NodeServiceImpl implements NodeService {
     await this._refreshEnvoyHarnessHostConfig();
     const chat = await this._resolveEhChat(chatId ?? null);
     const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
-    const normalized = normalizeEhWorkspaceCwd(cwd);
+    const normalized = normalizeEhTaskCwd(cwd);
     const revKey = chat?.id ?? LEGACY_EH_CHAT_ID;
     const currentRevision = currentEhTimelineRevision(revKey);
     const empty: import("@envoymesh/api").EhChatHistory = {
@@ -6981,7 +6981,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async listEnvoyHarnessChats(): Promise<
-    import("@envoymesh/api").EhChatWorkspaceSummary[]
+    import("@envoymesh/api").EhChatTaskSummary[]
   > {
     // Soft-deny: return [] when coding is disabled (not a hard CODING_GATED_RPC throw).
     if (!(await this._callerMayUseCoding())) return [];
@@ -7011,12 +7011,12 @@ class NodeServiceImpl implements NodeService {
     model?: string;
     endpoint?: string;
     apiKey?: string;
-  }): Promise<import("@envoymesh/api").EhChatWorkspaceSummary> {
+  }): Promise<import("@envoymesh/api").EhChatTaskSummary> {
     const abs = resolvePiProjectDir(opts.cwd);
     if (abs === null) {
       throw new Error(`envoy-harness project path is not a directory: ${opts.cwd}`);
     }
-    const normalized = normalizeEhWorkspaceCwd(abs);
+    const normalized = normalizeEhTaskCwd(abs);
     const { chats } = await this._loadEhChatState();
     if (!opts.forceNew) {
       const existing = findEhChatByCwd(chats, normalized);
@@ -7043,7 +7043,7 @@ class NodeServiceImpl implements NodeService {
     const lockedModel = normalizeEhChatModel(opts.model);
     const lockedEndpoint = normalizeEhChatModel(opts.endpoint);
     const lockedApiKey = normalizeEhChatModel(opts.apiKey);
-    const chat: import("@envoymesh/api").EhChatWorkspace = {
+    const chat: import("@envoymesh/api").EhChatTask = {
       id: crypto.randomUUID(),
       cwd: normalized,
       title: opts.title?.trim() || undefined,
@@ -7337,11 +7337,11 @@ class NodeServiceImpl implements NodeService {
       return skipped ?? row;
     }
 
-    // Skip if previous fire's EH workspace is still mid-turn.
+    // Skip if previous fire’s EH task is still mid-turn.
     if (
       row.harness === "envoy-harness" &&
-      row.lastWorkspaceId &&
-      this._ehChatRuntime.hasTurnForChat(row.lastWorkspaceId)
+      row.lastTaskId &&
+      this._ehChatRuntime.hasTurnForChat(row.lastTaskId)
     ) {
       const skipped = await this._codingScheduleStore.recordSkipError(
         row.id,
@@ -7356,7 +7356,7 @@ class NodeServiceImpl implements NodeService {
     }
 
     this._codingScheduleFiring.add(row.id);
-    let workspaceId: string | undefined;
+    let taskId: string | undefined;
     try {
       const title =
         row.name.trim() ||
@@ -7364,9 +7364,9 @@ class NodeServiceImpl implements NodeService {
 
       if (row.harness === "envoy-harness") {
         // Free the previous schedule-owned EH slot so recurring fires stay under cap.
-        if (row.lastWorkspaceId) {
+        if (row.lastTaskId) {
           try {
-            await this.removeEnvoyHarnessChat(row.lastWorkspaceId);
+            await this.removeEnvoyHarnessChat(row.lastTaskId);
           } catch {
             // Cap / missing — create may still succeed or fail honestly.
           }
@@ -7376,7 +7376,7 @@ class NodeServiceImpl implements NodeService {
           title,
           forceNew: true,
         });
-        workspaceId = created.id;
+        taskId = created.id;
         await this.startEnvoyHarnessTurn(row.prompt, { chatId: created.id });
       } else if (row.harness === "pi") {
         const ensured = await this.ensurePiTerminalSession({
@@ -7389,8 +7389,8 @@ class NodeServiceImpl implements NodeService {
               : "pi_ensure_failed",
           );
         }
-        workspaceId = ensured.session.sessionId;
-        await this.sendToPi(row.prompt, { sessionId: workspaceId });
+        taskId = ensured.session.sessionId;
+        await this.sendToPi(row.prompt, { sessionId: taskId });
       } else {
         // Tier B — new ephemeral stream session each fire.
         const agentId = row.harness;
@@ -7407,22 +7407,22 @@ class NodeServiceImpl implements NodeService {
         } catch {
           // non-fatal — ask may still work with prior cwd
         }
-        workspaceId = crypto.randomUUID();
+        taskId = crypto.randomUUID();
         await this.askExtAgent({
           prompt: row.prompt,
           agentId,
-          streamSessionId: workspaceId,
+          streamSessionId: taskId,
         });
       }
 
       const next = await this._codingScheduleStore.recordFire(row.id, {
-        lastWorkspaceId: workspaceId,
+        lastTaskId: taskId,
       });
       auditCodingScheduleFired(this._taskStore, {
         id: row.id,
         name: row.name,
         harness: row.harness,
-        workspaceId,
+        taskId,
       });
       return next ?? row;
     } catch (err) {
@@ -7432,7 +7432,7 @@ class NodeServiceImpl implements NodeService {
           : "dispatch_failed";
       const next = await this._codingScheduleStore.recordFire(row.id, {
         error: reason,
-        ...(workspaceId ? { lastWorkspaceId: workspaceId } : {}),
+        ...(taskId ? { lastTaskId: taskId } : {}),
       });
       auditCodingScheduleFailed(this._taskStore, {
         id: row.id,
@@ -7520,7 +7520,7 @@ class NodeServiceImpl implements NodeService {
       return {
         ...(chat ? { chatId: chat.id } : {}),
         sessionId: "",
-        cwd: normalizeEhWorkspaceCwd(cwd),
+        cwd: normalizeEhTaskCwd(cwd),
         turns: [],
         deleted: false,
       };
@@ -7545,7 +7545,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
-   * `/new` / `/clear` — fresh persisted session for the current chat workspace.
+   * `/new` / `/clear` — fresh persisted session for the current chat task.
    */
   async resetEnvoyHarnessChat(
     chatId?: string,
@@ -7555,7 +7555,7 @@ class NodeServiceImpl implements NodeService {
       throw new Error("envoy_harness_turn_busy");
     }
     const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
-    const normalized = normalizeEhWorkspaceCwd(cwd);
+    const normalized = normalizeEhTaskCwd(cwd);
     if (chat) {
       await this._activateEhChat(chat);
       this._ehChatRuntime.removeHost(chat.id);
@@ -7593,7 +7593,7 @@ class NodeServiceImpl implements NodeService {
       throw new Error("envoy_harness_turn_busy");
     }
     const cwd = chat?.cwd ?? (await this._envoyHarnessResolvedCwd());
-    const normalized = normalizeEhWorkspaceCwd(cwd);
+    const normalized = normalizeEhTaskCwd(cwd);
     const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
     if (!(await sessionStore.exists(sessionId))) {
       throw new Error(`envoy_harness_session_not_found: ${sessionId}`);
@@ -7661,7 +7661,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _loadEhChatState(): Promise<{
-    chats: import("@envoymesh/api").EhChatWorkspace[];
+    chats: import("@envoymesh/api").EhChatTask[];
     sessionByCwd: Record<string, string>;
     activeId: string | undefined;
   }> {
@@ -7705,7 +7705,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _maybeAutoTitleEhChatFromPrompt(
-    chat: import("@envoymesh/api").EhChatWorkspace,
+    chat: import("@envoymesh/api").EhChatTask,
     prompt: string,
   ): Promise<void> {
     let messageCount = 0;
@@ -7734,7 +7734,7 @@ class NodeServiceImpl implements NodeService {
 
   private async _resolveEhChat(
     chatId: string | null | undefined,
-  ): Promise<import("@envoymesh/api").EhChatWorkspace | undefined> {
+  ): Promise<import("@envoymesh/api").EhChatTask | undefined> {
     const { chats, activeId } = await this._loadEhChatState();
     if (chatId) return findEhChatById(chats, chatId);
     if (activeId) {
@@ -7766,7 +7766,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _activateEhChat(
-    chat: import("@envoymesh/api").EhChatWorkspace,
+    chat: import("@envoymesh/api").EhChatTask,
   ): Promise<void> {
     const { chats } = await this._loadEhChatState();
     const nextChats = touchEhChat(chats, chat.id);
@@ -7949,7 +7949,7 @@ class NodeServiceImpl implements NodeService {
     });
     const policyKey = await this._envoyHarnessAutoRunPolicyKey();
     const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}:${policyKey}`;
-    const normalized = normalizeEhWorkspaceCwd(cwd);
+    const normalized = normalizeEhTaskCwd(cwd);
     const existing = this._ehChatRuntime.getHost(chatId);
     if (
       existing &&

@@ -241,7 +241,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("CodingView — Project → Workspace → Chat", () => {
+describe("CodingView — Project → Task → Chat", () => {
   it("shows home empty + opens Coding defaults from footer (not Settings)", async () => {
     renderWithI18n(<CodingView active />);
     expect(await screen.findByTestId("coding-home")).toBeDefined();
@@ -262,7 +262,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
     expect(await screen.findByTestId("coding-defaults-settings")).toBeDefined();
   });
 
-  it("Add project from home registers folder then opens New workspace", async () => {
+  it("Add project from home registers folder then opens New task", async () => {
     renderWithI18n(<CodingView active />);
     fireEvent.click(await screen.findByTestId("coding-home-add-project"));
     expect(await screen.findByTestId("coding-add-project-confirm")).toBeDefined();
@@ -272,14 +272,14 @@ describe("CodingView — Project → Workspace → Chat", () => {
     fireEvent.click(screen.getByTestId("coding-add-project-confirm"));
     expect(createEnvoyHarnessChat).not.toHaveBeenCalled();
     expect(await screen.findByTestId("coding-new-session-sheet")).toBeDefined();
-    expect(screen.getByTestId("coding-new-workspace-project")).toBeDefined();
+    expect(screen.getByTestId("coding-new-task-project")).toBeDefined();
     expect(
-      (screen.getByTestId("coding-new-workspace-project") as HTMLSelectElement)
+      (screen.getByTestId("coding-new-task-project") as HTMLSelectElement)
         .value,
     ).toBe("/projects/app");
   });
 
-  it("New workspace is per-project (+) and picks project + harness", async () => {
+  it("New task is per-project (+) and picks project + harness", async () => {
     saveCodingProjects([
       {
         path: "/projects/app",
@@ -289,10 +289,10 @@ describe("CodingView — Project → Workspace → Chat", () => {
     ]);
     renderWithI18n(<CodingView active />);
     expect(await screen.findByTestId("coding-project-group-app")).toBeDefined();
-    fireEvent.click(screen.getByTestId("coding-project-new-workspace-app"));
+    fireEvent.click(screen.getByTestId("coding-project-new-task-app"));
     expect(await screen.findByTestId("coding-new-session-sheet")).toBeDefined();
     expect(screen.queryByTestId("home-folder-picker")).toBeNull();
-    expect(screen.getByTestId("coding-new-workspace-project")).toBeDefined();
+    expect(screen.getByTestId("coding-new-task-project")).toBeDefined();
 
     fireEvent.click(screen.getByTestId("coding-new-session-confirm"));
 
@@ -302,12 +302,12 @@ describe("CodingView — Project → Workspace → Chat", () => {
         forceNew: true,
       });
     });
-    expect(await screen.findByTestId("coding-workspace-shell")).toBeDefined();
-    expect(screen.getByTestId("coding-workspace-tab-chat")).toBeDefined();
+    expect(await screen.findByTestId("coding-task-shell")).toBeDefined();
+    expect(screen.getByTestId("coding-task-tab-chat")).toBeDefined();
     expect(await screen.findByTestId("eh-panel-stub")).toBeDefined();
   });
 
-  it("toggles Changes overlay over the workspace", async () => {
+  it("toggles Changes overlay over the task", async () => {
     listEnvoyHarnessChats.mockResolvedValue([
       {
         id: "chat-1",
@@ -318,18 +318,18 @@ describe("CodingView — Project → Workspace → Chat", () => {
       },
     ]);
     renderWithI18n(<CodingView active />);
-    fireEvent.click(await screen.findByTestId("coding-workspace-chat-1"));
-    expect(await screen.findByTestId("coding-workspace-shell")).toBeDefined();
+    fireEvent.click(await screen.findByTestId("coding-task-chat-1"));
+    expect(await screen.findByTestId("coding-task-shell")).toBeDefined();
     expect(screen.queryByTestId("coding-context-rail")).toBeNull();
     fireEvent.click(screen.getByTestId("coding-changes-toggle"));
     expect(await screen.findByTestId("coding-context-rail")).toBeDefined();
-    fireEvent.click(screen.getByTestId("coding-workspace-tab-shell"));
+    fireEvent.click(screen.getByTestId("coding-task-tab-shell"));
     expect(await screen.findByTestId("coding-shell-empty")).toBeDefined();
     fireEvent.click(screen.getByTestId("coding-changes-close"));
     expect(screen.queryByTestId("coding-context-rail")).toBeNull();
   });
 
-  it("creates a Pi workspace with Chat timeline panel (no Shell TUI)", async () => {
+  it("creates a Pi task with Chat timeline panel (no Shell TUI)", async () => {
     saveCodingProjects([
       {
         path: "/projects/app",
@@ -338,7 +338,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
       },
     ]);
     renderWithI18n(<CodingView active />);
-    fireEvent.click(await screen.findByTestId("coding-project-new-workspace-app"));
+    fireEvent.click(await screen.findByTestId("coding-project-new-task-app"));
     await screen.findByTestId("coding-new-session-sheet");
     fireEvent.click(screen.getByTestId("coding-harness-pi"));
     fireEvent.click(screen.getByTestId("coding-new-session-confirm"));
@@ -349,14 +349,14 @@ describe("CodingView — Project → Workspace → Chat", () => {
         forceRestart: true,
       });
     });
-    expect(await screen.findByTestId("coding-workspace-shell")).toBeDefined();
+    expect(await screen.findByTestId("coding-task-shell")).toBeDefined();
     expect(await screen.findByTestId("pi-coding-panel")).toBeDefined();
-    expect(screen.queryByTestId("coding-workspace-tab-shell")).toBeNull();
+    expect(screen.queryByTestId("coding-task-tab-shell")).toBeNull();
     expect(screen.queryByTestId("coding-pi-shell")).toBeNull();
     expect(screen.queryByTestId("coding-pi-tui")).toBeNull();
   });
 
-  it("lists Pi workspaces from terminal list", async () => {
+  it("lists Pi tasks from terminal list", async () => {
     mockTerminalSessions = [
       {
         sessionId: "pi-1",
@@ -370,14 +370,14 @@ describe("CodingView — Project → Workspace → Chat", () => {
       },
     ];
     renderWithI18n(<CodingView active />);
-    expect(await screen.findByTestId("coding-workspace-pi-pi-1")).toBeDefined();
-    fireEvent.click(screen.getByTestId("coding-workspace-pi-pi-1"));
-    expect(await screen.findByTestId("coding-workspace-shell")).toBeDefined();
+    expect(await screen.findByTestId("coding-task-pi-pi-1")).toBeDefined();
+    fireEvent.click(screen.getByTestId("coding-task-pi-pi-1"));
+    expect(await screen.findByTestId("coding-task-shell")).toBeDefined();
     expect(screen.getByTestId("pi-coding-panel")).toBeDefined();
     expect(screen.getByText("pi:pi-1")).toBeDefined();
   });
 
-  it("groups EH workspaces by project cwd and shows empty registered projects", async () => {
+  it("groups EH tasks by project cwd and shows empty registered projects", async () => {
     saveCodingProjects([
       {
         path: "/projects/empty-only",
@@ -412,16 +412,16 @@ describe("CodingView — Project → Workspace → Chat", () => {
     expect(screen.getByTestId("coding-project-group-lib")).toBeDefined();
     expect(screen.getByTestId("coding-project-group-empty-only")).toBeDefined();
     expect(
-      screen.getByTestId("coding-project-new-workspace-empty-only"),
+      screen.getByTestId("coding-project-new-task-empty-only"),
     ).toBeDefined();
-    expect(screen.getByTestId("coding-workspace-chat-1")).toBeDefined();
-    expect(screen.getByTestId("coding-workspace-chat-3")).toBeDefined();
+    expect(screen.getByTestId("coding-task-chat-1")).toBeDefined();
+    expect(screen.getByTestId("coding-task-chat-3")).toBeDefined();
     expect(
-      screen.getAllByText("Add workspace").length,
+      screen.getAllByText("Add task").length,
     ).toBeGreaterThanOrEqual(1);
   });
 
-  it("removes a coding workspace from Coding UI after confirm", async () => {
+  it("removes a coding task from Coding UI after confirm", async () => {
     listEnvoyHarnessChats.mockResolvedValue([
       {
         id: "chat-1",
@@ -432,7 +432,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
       },
     ]);
     renderWithI18n(<CodingView active />);
-    await screen.findByTestId("coding-workspace-chat-1");
+    await screen.findByTestId("coding-task-chat-1");
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-btn-chat-1"));
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-remove-chat-1"));
     // Menu defers opening confirm to the next macrotask (click-through guard).
@@ -496,7 +496,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
       },
     ]);
     renderWithI18n(<CodingView active />);
-    await screen.findByTestId("coding-workspace-chat-1");
+    await screen.findByTestId("coding-task-chat-1");
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-btn-chat-1"));
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-invite-chat-1"));
     expect(await screen.findByTestId("coding-invite-review-modal")).toBeDefined();
@@ -516,7 +516,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
     });
   });
 
-  it("opens EH workspace in review-only mode from openCoding", async () => {
+  it("opens EH task in review-only mode from openCoding", async () => {
     const { openCoding } = await import("../../src/lib/open-coding-nav.js");
     listEnvoyHarnessChats.mockResolvedValue([
       {
@@ -530,7 +530,7 @@ describe("CodingView — Project → Workspace → Chat", () => {
     openCoding({ chatId: "chat-1", reviewOnly: true });
     expect(await screen.findByTestId("eh-panel-stub")).toBeDefined();
     expect(screen.getByTestId("eh-review-only-flag")).toBeDefined();
-    expect(screen.getByTestId("coding-workspace-status").textContent).toMatch(
+    expect(screen.getByTestId("coding-task-status").textContent).toMatch(
       /Review only/i,
     );
   });
@@ -551,10 +551,10 @@ describe("CodingView — Project → Workspace → Chat", () => {
     expect(screen.getByTestId("coding-status-chip-chat-run").textContent).toMatch(
       /Running/i,
     );
-    fireEvent.click(screen.getByTestId("coding-workspace-chat-run"));
-    expect(await screen.findByTestId("coding-workspace-status")).toBeDefined();
+    fireEvent.click(screen.getByTestId("coding-task-chat-run"));
+    expect(await screen.findByTestId("coding-task-status")).toBeDefined();
     await waitFor(() => {
-      expect(screen.getByTestId("coding-workspace-status").textContent).toMatch(
+      expect(screen.getByTestId("coding-task-status").textContent).toMatch(
         /Running/i,
       );
     });

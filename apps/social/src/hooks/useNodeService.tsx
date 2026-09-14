@@ -526,7 +526,7 @@ export interface NodeServiceClient {
     sinceRevision?: number,
   ): Promise<import("@envoymesh/api").EhChatHistory>;
   listEnvoyHarnessChats(): Promise<
-    import("@envoymesh/api").EhChatWorkspaceSummary[]
+    import("@envoymesh/api").EhChatTaskSummary[]
   >;
   createEnvoyHarnessChat(opts: {
     cwd: string;
@@ -535,7 +535,7 @@ export interface NodeServiceClient {
     model?: string;
     endpoint?: string;
     apiKey?: string;
-  }): Promise<import("@envoymesh/api").EhChatWorkspaceSummary>;
+  }): Promise<import("@envoymesh/api").EhChatTaskSummary>;
   /**
    * Phase 68-C2 — peer-review invite. Social must sendChat(messageText) after.
    */
@@ -2055,7 +2055,7 @@ function createWsNodeServiceClient(
     },
     async listEnvoyHarnessChats() {
       return wsClient.rpc("listEnvoyHarnessChats", {}, { timeoutMs: 15_000 }) as Promise<
-        import("@envoymesh/api").EhChatWorkspaceSummary[]
+        import("@envoymesh/api").EhChatTaskSummary[]
       >;
     },
     async createEnvoyHarnessChat(opts: {
@@ -2067,7 +2067,7 @@ function createWsNodeServiceClient(
       apiKey?: string;
     }) {
       return wsClient.rpc("createEnvoyHarnessChat", opts, { timeoutMs: 30_000 }) as Promise<
-        import("@envoymesh/api").EhChatWorkspaceSummary
+        import("@envoymesh/api").EhChatTaskSummary
       >;
     },
     async createCodingReviewInvite(opts: {

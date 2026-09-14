@@ -18,7 +18,7 @@ import {
   type OpenCodingDetail,
 } from "../../lib/open-coding-nav.js";
 import { CodingSidebar } from "./CodingSidebar.js";
-import { CodingWorkspaceShell } from "./CodingWorkspaceShell.js";
+import { CodingTaskShell } from "./CodingTaskShell.js";
 import { EnvoyHarnessPanel } from "./EnvoyHarnessPanel.js";
 import { CodingHarnessPanel } from "./ExtAgentCodingPanel.js";
 import { PiCodingPanel } from "./PiCodingPanel.js";
@@ -30,8 +30,8 @@ export type CodingViewProps = {
 };
 
 /**
- * Coding tab: Projects | Workspace (Chat/Shell).
- * Changes is a closable overlay over the workspace (Paseo Cmd+E pattern).
+ * Coding tab: Projects | Task (Chat/Shell).
+ * Changes is a closable overlay over the task (Paseo Cmd+E pattern).
  */
 export function CodingView({ active }: CodingViewProps) {
   const t = useT();
@@ -122,10 +122,10 @@ export function CodingView({ active }: CodingViewProps) {
     );
   }, [selected, terminalSessions]);
 
-  const workspaceTitle =
+  const taskTitle =
     selected?.kind === "eh"
       ? selected.title?.trim() ||
-        t("codingView.newSessionTitle", "New workspace")
+        t("codingView.newSessionTitle", "New task")
       : selected?.kind === "pi"
         ? piSession?.title?.trim() || t("pi.title", "Pi")
         : selected?.kind === "ext"
@@ -133,7 +133,7 @@ export function CodingView({ active }: CodingViewProps) {
             codingHarnessLabel(selected.harness)
           : "";
 
-  const workspaceCwd =
+  const taskCwd =
     selected?.kind === "eh"
       ? selected.cwd
       : selected?.kind === "pi"
@@ -223,7 +223,7 @@ export function CodingView({ active }: CodingViewProps) {
                 <p>
                   {t(
                     "codingView.changesPlaceholder",
-                    "File changes for this workspace will show here.",
+                    "File changes for this task will show here.",
                   )}
                 </p>
               </div>
@@ -261,10 +261,10 @@ export function CodingView({ active }: CodingViewProps) {
           data-testid="coding-session-pane"
         >
           {selected?.kind === "eh" ? (
-            <CodingWorkspaceShell
+            <CodingTaskShell
               key={`eh:${selected.chatId}`}
-              title={workspaceTitle}
-              cwd={workspaceCwd}
+              title={taskTitle}
+              cwd={taskCwd}
               statusLabel={statusLabel}
               onClose={() => selectSession(null)}
               changesOpen={changesOpen}
@@ -286,17 +286,17 @@ export function CodingView({ active }: CodingViewProps) {
                   <p>
                     {t(
                       "codingView.shellEmptyEh",
-                      "No shell attached to this workspace yet. Use the Terminal tab for a plain shell.",
+                      "No shell attached to this task yet. Use the Terminal tab for a plain shell.",
                     )}
                   </p>
                 </div>
               }
             />
           ) : selected?.kind === "pi" ? (
-            <CodingWorkspaceShell
+            <CodingTaskShell
               key={`pi:${selected.sessionId}`}
-              title={workspaceTitle}
-              cwd={workspaceCwd}
+              title={taskTitle}
+              cwd={taskCwd}
               statusLabel={statusLabel}
               onClose={() => selectSession(null)}
               changesOpen={changesOpen}
@@ -310,10 +310,10 @@ export function CodingView({ active }: CodingViewProps) {
               }
             />
           ) : selected?.kind === "ext" ? (
-            <CodingWorkspaceShell
+            <CodingTaskShell
               key={`ext:${selected.sessionId}`}
-              title={workspaceTitle}
-              cwd={workspaceCwd}
+              title={taskTitle}
+              cwd={taskCwd}
               statusLabel={statusLabel}
               onClose={() => selectSession(null)}
               changesOpen={changesOpen}
@@ -336,11 +336,11 @@ export function CodingView({ active }: CodingViewProps) {
                   {projectCount === 0
                     ? t(
                         "codingView.homeEmptyProjects",
-                        "Add a project to start. Then create a workspace under that project.",
+                        "Add a project to start. Then create a task under that project.",
                       )
                     : t(
-                        "codingView.homePickWorkspace",
-                        "Select a workspace on the left, or use + on a project to create one.",
+                        "codingView.homePickTask",
+                        "Select a task on the left, or use + on a project to create one.",
                       )}
                 </p>
               </div>

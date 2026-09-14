@@ -7,6 +7,12 @@ import 'dart:convert';
 ///
 /// Port of `packages/api/src/coding-review-ref.ts`.
 
+/// Wire token for the review ref `kind`.
+///
+/// FROZEN: the `'eh-workspace-review'` literal is embedded in chat messages
+/// that were already sent to peers and is parsed by builds that predate the
+/// workspace → task rename. Do not change the value; only the Dart name and
+/// the human-readable copy around it follow the rename.
 const codingReviewRefKind = 'eh-workspace-review';
 
 const codingReviewMarker = '[envoymesh-coding-review]';
@@ -138,8 +144,8 @@ CodingReviewRef? parseCodingReviewRef(String? text) {
 String formatCodingReviewInviteMessage(CodingReviewRef ref) {
   final title = ref.title?.trim();
   final human = (title != null && title.isNotEmpty)
-      ? 'I\'ve invited you to review the Coding workspace “$title”. Open it on the owner\'s home node to view the timeline and changes (read-only).'
-      : 'I\'ve invited you to review a Coding workspace. Open it on the owner\'s home node to view the timeline and changes (read-only).';
+      ? 'I\'ve invited you to review the Coding task “$title”. Open it on the owner\'s home node to view the timeline and changes (read-only).'
+      : 'I\'ve invited you to review a Coding task. Open it on the owner\'s home node to view the timeline and changes (read-only).';
   return '$human\n\n${encodeCodingReviewRef(ref)}';
 }
 

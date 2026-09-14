@@ -15,7 +15,7 @@ describe("scoreCodingPaletteItem / filterCodingPaletteItems", () => {
   const items: CodingPaletteItem[] = [
     {
       id: "ws-1",
-      kind: "workspace",
+      kind: "task",
       label: "Fix auth bug",
       detail: "Envoy Harness · /Users/me/app",
       path: "/Users/me/app",
@@ -36,8 +36,8 @@ describe("scoreCodingPaletteItem / filterCodingPaletteItems", () => {
     {
       id: "act-1",
       kind: "action",
-      label: "New workspace",
-      action: { type: "new-workspace" },
+      label: "New task",
+      action: { type: "new-task" },
     },
   ];
 
@@ -71,7 +71,7 @@ describe("scoreCodingPaletteItem / filterCodingPaletteItems", () => {
 });
 
 describe("buildCodingPaletteItems", () => {
-  it("builds projects, workspaces, actions, and files", () => {
+  it("builds projects, tasks, actions, and files", () => {
     const items = buildCodingPaletteItems({
       projects: [
         {
@@ -80,7 +80,7 @@ describe("buildCodingPaletteItems", () => {
           addedAt: new Date().toISOString(),
         },
       ],
-      workspaces: [
+      tasks: [
         {
           kind: "eh",
           id: "eh1",
@@ -95,9 +95,9 @@ describe("buildCodingPaletteItems", () => {
       canInvitePeer: true,
     });
     expect(items.some((i) => i.kind === "project")).toBe(true);
-    expect(items.some((i) => i.kind === "workspace")).toBe(true);
+    expect(items.some((i) => i.kind === "task")).toBe(true);
     expect(items.some((i) => i.kind === "file")).toBe(true);
-    expect(items.some((i) => i.id === "action:new-workspace")).toBe(true);
+    expect(items.some((i) => i.id === "action:new-task")).toBe(true);
     expect(items.some((i) => i.id === "action:new-schedule")).toBe(true);
     expect(items.some((i) => i.id === "action:invite-peer")).toBe(true);
     expect(items.some((i) => i.id === "action:open-settings")).toBe(true);

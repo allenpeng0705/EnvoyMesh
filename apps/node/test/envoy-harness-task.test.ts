@@ -1,5 +1,5 @@
 /**
- * Per-project Envoy Harness workspace session resolution.
+ * Per-project Envoy Harness task session resolution.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -14,29 +14,29 @@ import {
   ehMessagesToChatTurns,
   loadEhChatHistoryFromStore,
   mergeSessionMapping,
-  normalizeEhWorkspaceCwd,
+  normalizeEhTaskCwd,
   resolveEhSessionIdForCwd,
-} from "../src/envoy-harness-workspace.js";
+} from "../src/envoy-harness-task.js";
 
 let tmpDir: string;
 
 beforeEach(async () => {
-  tmpDir = await mkdtemp(path.join(os.tmpdir(), "eh-workspace-test-"));
+  tmpDir = await mkdtemp(path.join(os.tmpdir(), "eh-task-test-"));
 });
 
 afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
 
-describe("envoy-harness-workspace", () => {
+describe("envoy-harness-task", () => {
   it("normalizes cwd paths for stable config keys", () => {
-    expect(normalizeEhWorkspaceCwd("/projects/app/")).toBe(
-      normalizeEhWorkspaceCwd("/projects/app"),
+    expect(normalizeEhTaskCwd("/projects/app/")).toBe(
+      normalizeEhTaskCwd("/projects/app"),
     );
   });
 
   it("merges cwd → sessionId into config map", () => {
-    const key = normalizeEhWorkspaceCwd("/projects/app");
+    const key = normalizeEhTaskCwd("/projects/app");
     const next = mergeSessionMapping({ [key]: "old-id" }, "/projects/app", "new-id");
     expect(next[key]).toBe("new-id");
   });
@@ -46,9 +46,9 @@ describe("envoy-harness-workspace", () => {
     const created = await store.create({
       cwd: "/projects/app",
       startedAt: new Date().toISOString(),
-      permissionMode: "workspace-write",
+      permissionMode: "task-write",
     });
-    const key = normalizeEhWorkspaceCwd("/projects/app");
+    const key = normalizeEhTaskCwd("/projects/app");
     const resolved = await resolveEhSessionIdForCwd({
       cwd: "/projects/app",
       sessionByCwd: { [key]: created.id },
@@ -63,13 +63,13 @@ describe("envoy-harness-workspace", () => {
     const older = await store.create({
       cwd: "/projects/other",
       startedAt: new Date().toISOString(),
-      permissionMode: "workspace-write",
+      permissionMode: "task-write",
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     const newer = await store.create({
       cwd: "/projects/other",
       startedAt: new Date().toISOString(),
-      permissionMode: "workspace-write",
+      permissionMode: "task-write",
     });
 
     const resolved = await resolveEhSessionIdForCwd({
@@ -87,7 +87,7 @@ describe("envoy-harness-workspace", () => {
     const created = await store.create({
       cwd: "/tmp",
       startedAt: new Date().toISOString(),
-      permissionMode: "workspace-write",
+      permissionMode: "task-write",
     });
     await created.appendMessage("user", [{ type: "text", text: "Hi" }]);
     await created.appendMessage("assistant", [{ type: "text", text: "Hello!" }]);
@@ -111,7 +111,7 @@ describe("envoy-harness-workspace", () => {
     const created = await store.create({
       cwd: "/tmp",
       startedAt: new Date().toISOString(),
-      permissionMode: "workspace-write",
+      permissionMode: "task-write",
     });
     created.appendMessage("user", [{ type: "text", text: "first" }]);
     created.appendMessage("assistant", [{ type: "text", text: "working" }]);

@@ -67,11 +67,11 @@ export function CodingHistoryFilters({
         aria-pressed={flatMode}
         onClick={() => onFlatModeChange(!flatMode)}
         title={t(
-          "codingView.historyAllWorkspaces",
-          "All workspaces",
+          "codingView.historyAllTasks",
+          "All tasks",
         )}
       >
-        {t("codingView.historyAllWorkspaces", "All workspaces")}
+        {t("codingView.historyAllTasks", "All tasks")}
       </button>
     </div>
   );

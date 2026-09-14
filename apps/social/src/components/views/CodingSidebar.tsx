@@ -8,7 +8,7 @@ import {
   isCodingTierBHarness,
   type CodingHarnessId,
   type CodingHeartbeatTarget,
-  type EhChatWorkspaceSummary,
+  type EhChatTaskSummary,
   type ExtAgentInstallGuide,
   type InstallState,
   type TerminalSessionSummary,
@@ -20,10 +20,10 @@ import {
   useTerminalSessions,
 } from "../../hooks/useNodeService.js";
 import {
-  archiveCodingWorkspace,
+  archiveCodingTask,
   CODING_ARCHIVED_CHANGED_EVENT,
   loadCodingArchivedKeys,
-  unarchiveCodingWorkspace,
+  unarchiveCodingTask,
 } from "../../lib/coding-archive.js";
 import {
   codingHistoryArchiveKey,
@@ -39,7 +39,7 @@ import {
   buildCodingPaletteItems,
   paletteHarnessLabel,
   type CodingPaletteItem,
-  type CodingPaletteWorkspaceInput,
+  type CodingPaletteTaskInput,
 } from "../../lib/coding-palette-items.js";
 import {
   addCodingProject,
@@ -54,7 +54,7 @@ import {
   normalizeCodingProjectPath,
   normalizeCodingProviderKind,
   removeCodingProject,
-  resolveCodingWorkspacePrefill,
+  resolveCodingTaskPrefill,
   saveCodingDefaults,
   saveCodingLastUsedPrefill,
   seedCodingProjectDefaultsIfEmpty,
@@ -64,7 +64,7 @@ import {
   type CodingDefaults,
   type CodingProject,
   type CodingProviderKind,
-  type CodingWorkspacePrefill,
+  type CodingTaskPrefill,
 } from "../../lib/coding-projects.js";
 import {
   createCodingExtSession,
@@ -112,7 +112,7 @@ export type CodingSidebarProps = {
   onSelect: (ref: CodingSessionRef | null) => void;
   /** When bumped, open Coding defaults. */
   openDefaultsRequest?: number;
-  /** When bumped, open the New workspace sheet (deep link; needs a project). */
+  /** When bumped, open the New task sheet (deep link; needs a project). */
   openCreateRequest?: number;
   /** When bumped, open Add project (home empty / deep link). */
   openAddProjectRequest?: number;
@@ -140,7 +140,7 @@ function formatRelativeShort(iso: string, nowMs = Date.now()): string {
 type ListRow =
   | {
       kind: "eh";
-      chat: EhChatWorkspaceSummary;
+      chat: EhChatTaskSummary;
       cwd: string;
       title: string;
       lastUsedAt: string;
@@ -173,8 +173,8 @@ function harnessFromListRow(row: ListRow): CodingHarnessId {
 }
 
 /**
- * Left pane of Coding — Projects contain Workspaces (Paseo IA).
- * Add project = register folder only; New workspace = pick project + harness.
+ * Left pane of Coding — Projects contain Tasks (Paseo IA).
+ * Add project = register folder only; New task = pick project + harness.
  */
 export function CodingSidebar({
   selected,
@@ -193,18 +193,18 @@ export function CodingSidebar({
   const { sessions: terminalSessions, refresh: refreshTerminalSessions } =
     useTerminalSessions();
 
-  const [ehChats, setEhChats] = useState<EhChatWorkspaceSummary[]>([]);
+  const [ehChats, setEhChats] = useState<EhChatTaskSummary[]>([]);
   const [projects, setProjects] = useState<CodingProject[]>(() =>
     loadCodingProjects(),
   );
-  const [workspaceSheetOpen, setWorkspaceSheetOpen] = useState(false);
+  const [taskSheetOpen, setTaskSheetOpen] = useState(false);
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const [addProjectPath, setAddProjectPath] = useState("");
   const [sheetBusy, setSheetBusy] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [sheetInitialProject, setSheetInitialProject] = useState("");
   const [sheetInitialPrefill, setSheetInitialPrefill] =
-    useState<CodingWorkspacePrefill>(() => resolveCodingWorkspacePrefill({}));
+    useState<CodingTaskPrefill>(() => resolveCodingTaskPrefill({}));
   const [codingDefaults, setCodingDefaults] = useState<CodingDefaults>(() =>
     loadCodingDefaults(),
   );
@@ -219,9 +219,9 @@ export function CodingSidebar({
   >(null);
   const [revealBusyPath, setRevealBusyPath] = useState<string | null>(null);
   const [deleteEhChatTarget, setDeleteEhChatTarget] =
-    useState<EhChatWorkspaceSummary | null>(null);
+    useState<EhChatTaskSummary | null>(null);
   const [inviteReviewTarget, setInviteReviewTarget] =
-    useState<EhChatWorkspaceSummary | null>(null);
+    useState<EhChatTaskSummary | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [heartbeatTarget, setHeartbeatTarget] = useState<{
@@ -346,7 +346,7 @@ export function CodingSidebar({
     };
   }, [nodeService, nodeService.isConnected]);
 
-  // Keep workspace shell title/cwd/status in sync when the EH list refreshes.
+  // Keep task shell title/cwd/status in sync when the EH list refreshes.
   useEffect(() => {
     if (selected?.kind !== "eh") return;
     const chat = ehChats.find((c) => c.id === selected.chatId);
@@ -391,7 +391,7 @@ export function CodingSidebar({
     });
   }, [extSessions, selected, onSelect]);
 
-  // Seed / sync project registry from live workspace cwds.
+  // Seed / sync project registry from live task cwds.
   useEffect(() => {
     const cwds = [
       ...ehChats.map((c) => c.cwd || ""),
@@ -440,7 +440,7 @@ export function CodingSidebar({
 
   // Probe Tier B harnesses when the create sheet opens.
   useEffect(() => {
-    if (!workspaceSheetOpen || !nodeService.isConnected) return;
+    if (!taskSheetOpen || !nodeService.isConnected) return;
     let cancelled = false;
     const tierB = CODING_ALL_HARNESSES.filter((h) => isCodingTierBHarness(h));
     setHarnessProbe((prev) => {
@@ -480,7 +480,7 @@ export function CodingSidebar({
     };
     // Intentionally omit nodeService object identity — only sheet open + connection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceSheetOpen, nodeService.isConnected]);
+  }, [taskSheetOpen, nodeService.isConnected]);
 
   // Probe harnesses that already have Ext sessions (sidebar Ready/Install chips).
   useEffect(() => {
@@ -519,7 +519,7 @@ export function CodingSidebar({
 
   useEffect(() => {
     if (openCreateRequest > 0) {
-      openNewWorkspace();
+      openNewTask();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open on bump only
   }, [openCreateRequest]);
@@ -591,7 +591,7 @@ export function CodingSidebar({
         rows: groupRows,
       });
     }
-    // Orphan workspace cwds not yet in registry (race before seed effect).
+    // Orphan task cwds not yet in registry (race before seed effect).
     for (const [cwd, groupRows] of byCwd) {
       if (seen.has(cwd)) continue;
       groupRows.sort(
@@ -643,7 +643,7 @@ export function CodingSidebar({
         rows: g.rows.filter(rowPassesFilter),
       }))
       .filter((g) => {
-        // Keep empty projects on "all" so users can still Add workspace.
+        // Keep empty projects on "all" so users can still Add task.
         if (historyFilter === "all" && !flatMode) return true;
         return g.rows.length > 0;
       });
@@ -729,8 +729,8 @@ export function CodingSidebar({
     };
   }, [paletteOpen, focusedCwd, nodeService, nodeService.isConnected]);
 
-  const paletteWorkspaces = useMemo((): CodingPaletteWorkspaceInput[] => {
-    const out: CodingPaletteWorkspaceInput[] = [];
+  const paletteTasks = useMemo((): CodingPaletteTaskInput[] => {
+    const out: CodingPaletteTaskInput[] = [];
     for (const g of projectGroups) {
       for (const row of g.rows) {
         if (row.kind === "eh") {
@@ -786,14 +786,14 @@ export function CodingSidebar({
     () =>
       buildCodingPaletteItems({
         projects,
-        workspaces: paletteWorkspaces,
+        tasks: paletteTasks,
         cwdFiles: paletteCwdFiles,
         focusedEhChatId:
           selected?.kind === "eh" ? selected.chatId : null,
         canInvitePeer: selected?.kind === "eh",
         canOpenSettings: true,
         labels: {
-          newWorkspace: t("codingView.newSessionCta", "New workspace"),
+          newTask: t("codingView.newSessionCta", "New task"),
           addProject: t("codingView.addProjectCta", "Add project"),
           openSettings: t("codingView.settingsFooter", "Coding defaults"),
           invitePeer: t("codingView.inviteReview", "Invite peer to review"),
@@ -802,14 +802,14 @@ export function CodingSidebar({
       }),
     [
       projects,
-      paletteWorkspaces,
+      paletteTasks,
       paletteCwdFiles,
       selected,
       t,
     ],
   );
 
-  const openNewWorkspace = (projectPathHint?: string) => {
+  const openNewTask = (projectPathHint?: string) => {
     if (projects.length === 0) {
       openAddProject();
       return;
@@ -818,14 +818,14 @@ export function CodingSidebar({
     setSheetInitialProject(path);
     const project = projects.find((p) => p.path === path);
     setSheetInitialPrefill(
-      resolveCodingWorkspacePrefill({
+      resolveCodingTaskPrefill({
         project,
         defaults: loadCodingDefaults(),
       }),
     );
     setSheetError(null);
     setAddProjectOpen(false);
-    setWorkspaceSheetOpen(true);
+    setTaskSheetOpen(true);
   };
 
   const revealProjectPath = async (path: string): Promise<void> => {
@@ -870,7 +870,7 @@ export function CodingSidebar({
       initialPath?.trim() || nodeConfig?.envoyHarnessCwd?.trim() || "",
     );
     setSheetError(null);
-    setWorkspaceSheetOpen(false);
+    setTaskSheetOpen(false);
     setAddProjectOpen(true);
   };
 
@@ -887,18 +887,18 @@ export function CodingSidebar({
       setSheetError(null);
       setSheetInitialProject(project.path);
       setSheetInitialPrefill(
-        resolveCodingWorkspacePrefill({
+        resolveCodingTaskPrefill({
           project,
           defaults: loadCodingDefaults(),
         }),
       );
-      setWorkspaceSheetOpen(true);
+      setTaskSheetOpen(true);
     } catch (e: unknown) {
       setSheetError(e instanceof Error ? e.message : String(e));
     }
   };
 
-  const submitNewWorkspace = async (opts: {
+  const submitNewTask = async (opts: {
     harness: CodingHarnessId;
     cwd: string;
     model: string;
@@ -973,7 +973,7 @@ export function CodingSidebar({
           chatId = null;
         }
         commitProjectDefaults();
-        setWorkspaceSheetOpen(false);
+        setTaskSheetOpen(false);
         await refreshEhChats();
         if (chatId) {
           onSelect({
@@ -981,7 +981,7 @@ export function CodingSidebar({
             chatId,
             title:
               createdTitle?.trim() ||
-              t("codingView.newSessionTitle", "New workspace"),
+              t("codingView.newSessionTitle", "New task"),
             cwd: path,
           });
         }
@@ -1021,7 +1021,7 @@ export function CodingSidebar({
               guide: reach.installGuide,
               installState: reach.installState,
             });
-            setWorkspaceSheetOpen(false);
+            setTaskSheetOpen(false);
           } else {
             setSheetError(
               t(
@@ -1057,7 +1057,7 @@ export function CodingSidebar({
         }
         commitProjectDefaults();
         setExtSessions(loadCodingExtSessions());
-        setWorkspaceSheetOpen(false);
+        setTaskSheetOpen(false);
         onSelect({
           kind: "ext",
           sessionId: session.id,
@@ -1105,7 +1105,7 @@ export function CodingSidebar({
         return;
       }
       commitProjectDefaults();
-      setWorkspaceSheetOpen(false);
+      setTaskSheetOpen(false);
       await refreshTerminalSessions();
       onSelect({
         kind: "pi",
@@ -1132,11 +1132,11 @@ export function CodingSidebar({
           next.delete(a.path);
           return next;
         });
-        openNewWorkspace(a.path);
+        openNewTask(a.path);
         return;
       }
-      case "new-workspace":
-        openNewWorkspace();
+      case "new-task":
+        openNewTask();
         return;
       case "new-schedule":
         setScheduleError(null);
@@ -1169,8 +1169,8 @@ export function CodingSidebar({
 
   const toggleArchiveRow = (row: ListRow) => {
     const key = codingHistoryArchiveKey(rowMeta(row));
-    if (archivedKeys.has(key)) unarchiveCodingWorkspace(key);
-    else archiveCodingWorkspace(key);
+    if (archivedKeys.has(key)) unarchiveCodingTask(key);
+    else archiveCodingTask(key);
   };
 
   const archiveLabelFor = (row: ListRow): string => {
@@ -1190,7 +1190,7 @@ export function CodingSidebar({
     saveCodingHistoryFlatMode(v);
   };
 
-  const handleRemoveEhChat = async (chat: EhChatWorkspaceSummary) => {
+  const handleRemoveEhChat = async (chat: EhChatTaskSummary) => {
     setDeletingUi(true);
     try {
       await nodeService.removeEnvoyHarnessChat(chat.id);
@@ -1200,7 +1200,7 @@ export function CodingSidebar({
       }
       setDeleteEhChatTarget(null);
     } catch (err) {
-      console.error("[CodingSidebar] remove workspace failed:", err);
+      console.error("[CodingSidebar] remove task failed:", err);
       setSheetError(err instanceof Error ? err.message : String(err));
     } finally {
       setDeletingUi(false);
@@ -1217,7 +1217,7 @@ export function CodingSidebar({
       }
       setDeletePiSession(null);
     } catch (err) {
-      console.error("[CodingSidebar] remove pi workspace failed:", err);
+      console.error("[CodingSidebar] remove pi task failed:", err);
       setSheetError(err instanceof Error ? err.message : String(err));
     } finally {
       setDeletingUi(false);
@@ -1236,7 +1236,7 @@ export function CodingSidebar({
     setDeleteExtSession(null);
   };
 
-  /** Remove project + its Coding workspaces from UI only — never disk. */
+  /** Remove project + its Coding tasks from UI only — never disk. */
   const handleRemoveProject = async (group: ProjectGroup) => {
     setDeletingUi(true);
     setSheetError(null);
@@ -1331,7 +1331,7 @@ export function CodingSidebar({
   const hasProjects = projects.length > 0 || projectGroups.length > 0;
   const showFlat = flatMode || historyFilter !== "all";
 
-  const renderWorkspaceRow = (row: ListRow) => {
+  const renderTaskRow = (row: ListRow) => {
     if (row.kind === "eh") {
       const ref: CodingSessionRef = {
         kind: "eh",
@@ -1345,21 +1345,21 @@ export function CodingSidebar({
       return (
         <div
           key={`eh-${row.chat.id}`}
-          className="coding-workspace-row-wrap"
+          className="coding-task-row-wrap"
         >
           <button
             type="button"
-            className={`coding-workspace-row${active ? " active" : ""}`}
+            className={`coding-task-row${active ? " active" : ""}`}
             onClick={() => onSelect(ref)}
-            data-testid={`coding-workspace-${row.chat.id}`}
+            data-testid={`coding-task-${row.chat.id}`}
           >
             <span
               className={codingUiBucketDotClass(row.chat.uiBucket)}
               aria-label={statusText}
             />
-            <span className="coding-workspace-row__meta">
-              <span className="coding-workspace-row__title-row">
-                <span className="coding-workspace-row__title">
+            <span className="coding-task-row__meta">
+              <span className="coding-task-row__title-row">
+                <span className="coding-task-row__title">
                   {row.title}
                 </span>
                 {codingUiBucketShowsChip(row.chat.uiBucket) ? (
@@ -1371,7 +1371,7 @@ export function CodingSidebar({
                   </span>
                 ) : null}
               </span>
-              <span className="coding-workspace-row__sub">
+              <span className="coding-task-row__sub">
                 {showFlat ? `${codingProjectLabel(row.cwd)} · ` : ""}
                 {formatRelativeShort(row.lastUsedAt)}
               </span>
@@ -1429,21 +1429,21 @@ export function CodingSidebar({
       return (
         <div
           key={`ext-${row.session.id}`}
-          className="coding-workspace-row-wrap"
+          className="coding-task-row-wrap"
         >
           <button
             type="button"
-            className={`coding-workspace-row${active ? " active" : ""}`}
+            className={`coding-task-row${active ? " active" : ""}`}
             onClick={() => onSelect(ref)}
-            data-testid={`coding-workspace-ext-${row.session.id}`}
+            data-testid={`coding-task-ext-${row.session.id}`}
           >
             <span
               className={`coding-status-dot coding-status-dot--${dotBucket}`}
               aria-label={statusText}
             />
-            <span className="coding-workspace-row__meta">
-              <span className="coding-workspace-row__title-row">
-                <span className="coding-workspace-row__title">
+            <span className="coding-task-row__meta">
+              <span className="coding-task-row__title-row">
+                <span className="coding-task-row__title">
                   {row.title}
                 </span>
                 {codingExtStatusShowsChip(extStatus) ? (
@@ -1455,7 +1455,7 @@ export function CodingSidebar({
                   </span>
                 ) : null}
               </span>
-              <span className="coding-workspace-row__sub">
+              <span className="coding-task-row__sub">
                 {showFlat ? `${codingProjectLabel(row.cwd)} · ` : ""}
                 {formatRelativeShort(row.lastUsedAt)}
                 {" · "}
@@ -1466,8 +1466,8 @@ export function CodingSidebar({
           <CodingSidebarMenu
             testId={`coding-ext-menu-${row.session.id}`}
             ariaLabel={t(
-              "codingView.workspaceActionsAria",
-              "Workspace actions",
+              "codingView.taskActionsAria",
+              "Task actions",
             )}
             removeLabel={t("codingView.remove", "Remove")}
             onRemove={() => setDeleteExtSession(row.session)}
@@ -1506,21 +1506,21 @@ export function CodingSidebar({
     return (
       <div
         key={`pi-${row.session.sessionId}`}
-        className="coding-workspace-row-wrap"
+        className="coding-task-row-wrap"
       >
         <button
           type="button"
-          className={`coding-workspace-row${active ? " active" : ""}`}
+          className={`coding-task-row${active ? " active" : ""}`}
           onClick={() => onSelect(ref)}
-          data-testid={`coding-workspace-pi-${row.session.sessionId}`}
+          data-testid={`coding-task-pi-${row.session.sessionId}`}
         >
           <span
             className={`coding-status-dot coding-status-dot--${piDot}`}
             aria-label={statusText}
           />
-          <span className="coding-workspace-row__meta">
-            <span className="coding-workspace-row__title-row">
-              <span className="coding-workspace-row__title">
+          <span className="coding-task-row__meta">
+            <span className="coding-task-row__title-row">
+              <span className="coding-task-row__title">
                 {row.title}
               </span>
               {piBusy ? (
@@ -1532,7 +1532,7 @@ export function CodingSidebar({
                 </span>
               ) : null}
             </span>
-            <span className="coding-workspace-row__sub">
+            <span className="coding-task-row__sub">
               {showFlat ? `${codingProjectLabel(row.cwd)} · ` : ""}
               {formatRelativeShort(row.lastUsedAt)}
               {" · "}
@@ -1543,8 +1543,8 @@ export function CodingSidebar({
         <CodingSidebarMenu
           testId={`coding-pi-menu-${row.session.sessionId}`}
           ariaLabel={t(
-            "codingView.workspaceActionsAria",
-            "Workspace actions",
+            "codingView.taskActionsAria",
+            "Task actions",
           )}
           removeLabel={t("codingView.remove", "Remove")}
           onRemove={() => setDeletePiSession(row.session)}
@@ -1596,15 +1596,15 @@ export function CodingSidebar({
         onFlatModeChange={setFlat}
       />
 
-      {sheetError && !workspaceSheetOpen && !addProjectOpen ? (
+      {sheetError && !taskSheetOpen && !addProjectOpen ? (
         <p className="coding-sidebar-error" role="alert">
           {sheetError}
         </p>
       ) : null}
 
-      <div className="coding-workspace-list" data-testid="coding-workspace-list">
+      <div className="coding-task-list" data-testid="coding-task-list">
         {showFlat
-          ? flatRows.map((row) => renderWorkspaceRow(row))
+          ? flatRows.map((row) => renderTaskRow(row))
           : visibleGroups.map((group) => {
           const collapsed = collapsedCwds.has(group.cwd);
           const projectMeta =
@@ -1639,7 +1639,7 @@ export function CodingSidebar({
                       data-testid={`coding-project-engine-${group.label}`}
                       title={t(
                         "codingView.projectDefaultHarness",
-                        "Default agent for new workspaces",
+                        "Default agent for new tasks",
                       )}
                     >
                       {codingHarnessLabel(projectEngine)}
@@ -1693,22 +1693,22 @@ export function CodingSidebar({
                 />
               </div>
               {!collapsed ? (
-                <div className="coding-project-group__workspaces-bar">
-                  <span className="coding-project-group__workspaces-title">
-                    {t("codingView.workspacesSection", "Workspaces")}
+                <div className="coding-project-group__tasks-bar">
+                  <span className="coding-project-group__tasks-title">
+                    {t("codingView.tasksSection", "Tasks")}
                   </span>
                   <button
                     type="button"
-                    className="coding-project-group__add-workspace"
-                    onClick={() => openNewWorkspace(group.cwd)}
-                    data-testid={`coding-project-new-workspace-${group.label}`}
+                    className="coding-project-group__add-task"
+                    onClick={() => openNewTask(group.cwd)}
+                    data-testid={`coding-project-new-task-${group.label}`}
                   >
                     <AddIcon size={14} />
-                    {t("codingView.addWorkspaceCta", "Add workspace")}
+                    {t("codingView.addTaskCta", "Add task")}
                   </button>
                 </div>
               ) : null}
-              {!collapsed ? group.rows.map((row) => renderWorkspaceRow(row)) : null}
+              {!collapsed ? group.rows.map((row) => renderTaskRow(row)) : null}
             </div>
           );
         })}
@@ -1718,7 +1718,7 @@ export function CodingSidebar({
             <p>
               {t(
                 "codingView.emptyProjects",
-                "No projects yet. Add a project folder, then create a workspace under it.",
+                "No projects yet. Add a project folder, then create a task under it.",
               )}
             </p>
           </div>
@@ -1727,7 +1727,7 @@ export function CodingSidebar({
             <p>
               {t(
                 "codingView.historyEmpty",
-                "No workspaces match this filter.",
+                "No tasks match this filter.",
               )}
             </p>
           </div>
@@ -1824,7 +1824,7 @@ export function CodingSidebar({
 
       {heartbeatTarget ? (
         <CodingHeartbeatModal
-          workspaceTitle={heartbeatTarget.title}
+          taskTitle={heartbeatTarget.title}
           target={heartbeatTarget.target}
           busy={heartbeatBusy}
           error={heartbeatError}
@@ -1920,11 +1920,11 @@ export function CodingSidebar({
       {deleteEhChatTarget ? (
         <ConfirmDialog
           title={t(
-            "codingView.removeWorkspaceTitle",
-            "Remove workspace from Coding?",
+            "codingView.removeTaskTitle",
+            "Remove task from Coding?",
           )}
           message={t(
-            "codingView.removeWorkspaceMessage",
+            "codingView.removeTaskMessage",
             "Remove “{title}” from Coding? Your folder, repo, and files on disk are not deleted.",
             { title: deleteEhChatTarget.title },
           )}
@@ -1946,11 +1946,11 @@ export function CodingSidebar({
       {deletePiSession ? (
         <ConfirmDialog
           title={t(
-            "codingView.removeWorkspaceTitle",
-            "Remove workspace from Coding?",
+            "codingView.removeTaskTitle",
+            "Remove task from Coding?",
           )}
           message={t(
-            "codingView.removeWorkspaceMessage",
+            "codingView.removeTaskMessage",
             "Remove “{title}” from Coding? Your folder, repo, and files on disk are not deleted.",
             { title: deletePiSession.title },
           )}
@@ -1977,7 +1977,7 @@ export function CodingSidebar({
           )}
           message={t(
             "codingView.removeProjectMessage",
-            "Remove “{title}” from Coding? Workspaces under it leave Coding too. Your folder, repo, and files on disk are not deleted.",
+            "Remove “{title}” from Coding? Tasks under it leave Coding too. Your folder, repo, and files on disk are not deleted.",
             { title: deleteProjectTarget.label },
           )}
           variant="destructive"
@@ -2001,7 +2001,7 @@ export function CodingSidebar({
           title={t("codingView.addProjectTitle", "Add project")}
           description={t(
             "codingView.addProjectDesc",
-            "Register a folder as a project. You can create workspaces under it next.",
+            "Register a folder as a project. You can create tasks under it next.",
           )}
           value={addProjectPath}
           onChange={setAddProjectPath}
@@ -2119,10 +2119,10 @@ export function CodingSidebar({
         />
       ) : null}
 
-      {workspaceSheetOpen ? (
+      {taskSheetOpen ? (
         <CodingNewSessionSheet
           key={`${sheetInitialProject}:${sheetInitialPrefill.harness}:${sheetInitialPrefill.model}`}
-          open={workspaceSheetOpen}
+          open={taskSheetOpen}
           projects={projects}
           initialProjectPath={sheetInitialProject}
           initialPrefill={sheetInitialPrefill}
@@ -2132,9 +2132,9 @@ export function CodingSidebar({
           enabledHarnesses={CODING_ALL_HARNESSES}
           harnessProbe={harnessProbe}
           onClose={() => {
-            if (!sheetBusy) setWorkspaceSheetOpen(false);
+            if (!sheetBusy) setTaskSheetOpen(false);
           }}
-          onConfirm={(opts) => void submitNewWorkspace(opts)}
+          onConfirm={(opts) => void submitNewTask(opts)}
           onAddProject={() => openAddProject()}
         />
       ) : null}
@@ -2142,11 +2142,11 @@ export function CodingSidebar({
       {deleteExtSession ? (
         <ConfirmDialog
           title={t(
-            "codingView.removeWorkspaceTitle",
-            "Remove workspace from Coding?",
+            "codingView.removeTaskTitle",
+            "Remove task from Coding?",
           )}
           message={t(
-            "codingView.removeWorkspaceMessage",
+            "codingView.removeTaskMessage",
             "Remove “{title}” from Coding? Your folder, repo, and files on disk are not deleted.",
             { title: deleteExtSession.title },
           )}

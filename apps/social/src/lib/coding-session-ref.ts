@@ -9,7 +9,7 @@ export type CodingSessionRef =
   | {
       kind: "eh";
       chatId: string;
-      /** Display hints for workspace shell header (optional on deep link). */
+      /** Display hints for task shell header (optional on deep link). */
       title?: string;
       cwd?: string;
       /** Live sidebar summary bucket (refreshed with EH list). */

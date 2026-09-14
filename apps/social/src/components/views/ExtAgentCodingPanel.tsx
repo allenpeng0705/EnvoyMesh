@@ -34,7 +34,7 @@ export type CodingHarnessPanelProps = {
   harness: CodingHarnessId;
   cwd: string;
   sessionId: string;
-  /** Coding workspace header / sidebar status (busy + probe). */
+  /** Coding task header / sidebar status (busy + probe). */
   onStatusChange?: (status: ExtProbeStatus | null) => void;
 };
 

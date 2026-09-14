@@ -654,7 +654,7 @@ export interface NodeConfig {
    */
   envoyHarnessSessionByCwd?: Record<string, string>;
   /** Envoy sidebar chat threads (one per project folder, like Terminal sessions). */
-  envoyHarnessChats?: import("./eh-chat-workspace.js").EhChatWorkspace[];
+  envoyHarnessChats?: import("./eh-chat-task.js").EhChatTask[];
   /** Active chat id for the legacy bare thread key and default open. */
   activeEnvoyHarnessChatId?: string;
   /**

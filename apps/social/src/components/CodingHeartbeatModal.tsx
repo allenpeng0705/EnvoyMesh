@@ -1,5 +1,5 @@
 /**
- * Create a Coding heartbeat for an existing workspace (Phase 68-C6).
+ * Create a Coding heartbeat for an existing task (Phase 68-C6).
  */
 import { useState } from "react";
 import {
@@ -12,7 +12,7 @@ import { CodingCronFields } from "./CodingCronFields.js";
 import { ModalPortal } from "./ModalPortal.js";
 
 export type CodingHeartbeatModalProps = {
-  workspaceTitle: string;
+  taskTitle: string;
   target: CodingHeartbeatTarget;
   busy?: boolean;
   error?: string | null;
@@ -21,7 +21,7 @@ export type CodingHeartbeatModalProps = {
 };
 
 export function CodingHeartbeatModal({
-  workspaceTitle,
+  taskTitle,
   target,
   busy = false,
   error = null,
@@ -32,7 +32,7 @@ export function CodingHeartbeatModal({
   const [name, setName] = useState(
     () =>
       t("codingView.heartbeatDefaultName", "Heartbeat · {title}", {
-        title: workspaceTitle,
+        title: taskTitle,
       }),
   );
   // Widened to `string`: the preset map is `as const`, so inference pinned this
@@ -43,7 +43,7 @@ export function CodingHeartbeatModal({
     () =>
       t(
         "codingView.heartbeatDefaultPrompt",
-        "Check progress on this workspace and continue useful next steps.",
+        "Check progress on this task and continue useful next steps.",
       ),
   );
   const [enabled, setEnabled] = useState(true);
@@ -89,8 +89,8 @@ export function CodingHeartbeatModal({
           <p className="modal-desc coding-job-modal__desc">
             {t(
               "codingView.heartbeatAddDesc",
-              "On a schedule, send a prompt to “{title}”. This wakes the existing workspace — it does not create a new one.",
-              { title: workspaceTitle },
+              "On a schedule, send a prompt to “{title}”. This wakes the existing task — it does not create a new one.",
+              { title: taskTitle },
             )}
           </p>
 

@@ -364,12 +364,12 @@ T: dict[str, dict[str, str]] = {
         "zh": "此文件没有可用的文本差异。",
     },
     "ehReviewOnly": {
-        "de": "Workspace erkannt · nur Prüfung",
-        "fr": "Détecté dans le workspace · revue seule",
-        "it": "Rilevato nel workspace · solo revisione",
-        "ja": "ワークスペース検出 · 確認のみ",
-        "ko": "워크스페이스 감지 · 검토 전용",
-        "zh": "工作区检测到 · 仅可审查",
+        "de": "Aufgabe erkannt · nur Prüfung",
+        "fr": "Détecté dans la tâche · revue seule",
+        "it": "Rilevato nell'attività · solo revisione",
+        "ja": "タスク検出 · 確認のみ",
+        "ko": "태스크 감지 · 검토 전용",
+        "zh": "任务检测到 · 仅可审查",
     },
     "ehRevertTitle": {
         "de": "Diesen Turn zurücksetzen?",

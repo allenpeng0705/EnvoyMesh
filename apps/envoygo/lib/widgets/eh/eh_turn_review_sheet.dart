@@ -309,7 +309,7 @@ class _EhTurnReviewSheetState extends State<EhTurnReviewSheet> {
                   initiallyExpanded: focused || _files.length <= 3,
                   title: Text(path),
                   subtitle: Text(
-                    attribution == 'workspace'
+                    attribution == 'task'
                         ? '$status · ${l10n.ehReviewOnly}'
                         : status,
                   ),

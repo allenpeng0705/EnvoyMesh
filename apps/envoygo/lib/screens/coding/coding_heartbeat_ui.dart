@@ -9,13 +9,13 @@ import '../../services/product/node_service_client.dart';
 /// Dialog to create a Coding heartbeat for [target] (Phase 68-C6).
 Future<bool> showCodingHeartbeatDialog(
   BuildContext context, {
-  required String workspaceTitle,
+  required String taskTitle,
   required CodingHeartbeatTarget target,
 }) async {
   final saved = await showDialog<bool>(
     context: context,
     builder: (ctx) => _CodingHeartbeatDialog(
-      workspaceTitle: workspaceTitle,
+      taskTitle: taskTitle,
       target: target,
     ),
   );
@@ -24,11 +24,11 @@ Future<bool> showCodingHeartbeatDialog(
 
 class _CodingHeartbeatDialog extends ConsumerStatefulWidget {
   const _CodingHeartbeatDialog({
-    required this.workspaceTitle,
+    required this.taskTitle,
     required this.target,
   });
 
-  final String workspaceTitle;
+  final String taskTitle;
   final CodingHeartbeatTarget target;
 
   @override
@@ -52,11 +52,10 @@ class _CodingHeartbeatDialogState extends ConsumerState<_CodingHeartbeatDialog> 
     super.initState();
     // English placeholders until [didChangeDependencies] applies l10n.
     _nameCtrl = TextEditingController(
-      text: 'Heartbeat · ${widget.workspaceTitle}',
+      text: 'Heartbeat · ${widget.taskTitle}',
     );
     _promptCtrl = TextEditingController(
-      text:
-          'Check progress on this workspace and continue useful next steps.',
+      text: 'Check progress on this task and continue useful next steps.',
     );
     _customCronCtrl = TextEditingController(text: '*/15 * * * *');
   }
@@ -67,7 +66,7 @@ class _CodingHeartbeatDialogState extends ConsumerState<_CodingHeartbeatDialog> 
     if (_didLocalizeDefaults) return;
     _didLocalizeDefaults = true;
     final l10n = AppLocalizations.of(context);
-    _nameCtrl.text = l10n.codingHeartbeatDefaultName(widget.workspaceTitle);
+    _nameCtrl.text = l10n.codingHeartbeatDefaultName(widget.taskTitle);
     _promptCtrl.text = l10n.codingHeartbeatDefaultPrompt;
   }
 
@@ -153,7 +152,7 @@ class _CodingHeartbeatDialogState extends ConsumerState<_CodingHeartbeatDialog> 
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                l10n.codingHeartbeatAddDesc(widget.workspaceTitle),
+                l10n.codingHeartbeatAddDesc(widget.taskTitle),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),

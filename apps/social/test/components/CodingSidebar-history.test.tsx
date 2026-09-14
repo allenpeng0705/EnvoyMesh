@@ -8,7 +8,7 @@ import type { NodeConfig } from "@envoymesh/api";
 import { CodingSidebar } from "../../src/components/views/CodingSidebar.js";
 import { saveCodingProjects } from "../../src/lib/coding-projects.js";
 import {
-  archiveCodingWorkspace,
+  archiveCodingTask,
   loadCodingArchivedKeys,
 } from "../../src/lib/coding-archive.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
@@ -118,36 +118,36 @@ describe("CodingSidebar history filters", () => {
       <CodingSidebar selected={null} onSelect={vi.fn()} hotkeysEnabled />,
     );
     await waitFor(() => {
-      expect(screen.getByTestId("coding-workspace-needs-1")).toBeTruthy();
+      expect(screen.getByTestId("coding-task-needs-1")).toBeTruthy();
     });
-    expect(screen.getByTestId("coding-workspace-old-1")).toBeTruthy();
+    expect(screen.getByTestId("coding-task-old-1")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("coding-history-filter-needs_you"));
     await waitFor(() => {
-      expect(screen.getByTestId("coding-workspace-needs-1")).toBeTruthy();
+      expect(screen.getByTestId("coding-task-needs-1")).toBeTruthy();
     });
-    expect(screen.queryByTestId("coding-workspace-old-1")).toBeNull();
+    expect(screen.queryByTestId("coding-task-old-1")).toBeNull();
 
     fireEvent.click(screen.getByTestId("coding-history-filter-recent"));
     await waitFor(() => {
-      expect(screen.getByTestId("coding-workspace-needs-1")).toBeTruthy();
+      expect(screen.getByTestId("coding-task-needs-1")).toBeTruthy();
     });
-    expect(screen.queryByTestId("coding-workspace-old-1")).toBeNull();
+    expect(screen.queryByTestId("coding-task-old-1")).toBeNull();
   });
 
   it("hides archived from All until Archived filter", async () => {
-    archiveCodingWorkspace("eh:needs-1");
+    archiveCodingTask("eh:needs-1");
     expect(loadCodingArchivedKeys().has("eh:needs-1")).toBe(true);
 
     renderWithI18n(<CodingSidebar selected={null} onSelect={vi.fn()} />);
     await waitFor(() => {
-      expect(screen.getByTestId("coding-workspace-old-1")).toBeTruthy();
+      expect(screen.getByTestId("coding-task-old-1")).toBeTruthy();
     });
-    expect(screen.queryByTestId("coding-workspace-needs-1")).toBeNull();
+    expect(screen.queryByTestId("coding-task-needs-1")).toBeNull();
 
     fireEvent.click(screen.getByTestId("coding-history-filter-archived"));
     await waitFor(() => {
-      expect(screen.getByTestId("coding-workspace-needs-1")).toBeTruthy();
+      expect(screen.getByTestId("coding-task-needs-1")).toBeTruthy();
     });
   });
 });

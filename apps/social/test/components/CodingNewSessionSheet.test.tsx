@@ -88,7 +88,7 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
     );
 
     const provider = screen.getByTestId(
-      "coding-new-workspace-provider",
+      "coding-new-task-provider",
     ) as HTMLSelectElement;
     expect(provider.value).toBe("");
     expect(provider.options[0]?.textContent).toMatch(/Coding defaults/i);
@@ -98,13 +98,13 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
 
     fireEvent.click(screen.getByTestId("coding-harness-pi"));
     expect(
-      (screen.getByTestId("coding-new-workspace-provider") as HTMLSelectElement)
+      (screen.getByTestId("coding-new-task-provider") as HTMLSelectElement)
         .options[0]?.textContent,
     ).toMatch(/Coding defaults/i);
 
     fireEvent.click(screen.getByTestId("coding-harness-codex"));
     expect(
-      (screen.getByTestId("coding-new-workspace-provider") as HTMLSelectElement)
+      (screen.getByTestId("coding-new-task-provider") as HTMLSelectElement)
         .options[0]?.textContent,
     ).toMatch(/Agent default/i);
   });

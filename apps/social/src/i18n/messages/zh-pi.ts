@@ -115,7 +115,7 @@ export const zhEhMessages = {
     permissionsAria: "权限",
     permissionsCurrent: "Permission policy: {mode}. Use /permissions always-confirm | safe-only | off | never.",
     permissionsFailed: "无法设置权限。",
-    permissionsNeverSet: "Permission policy → Always approve: every tool auto-runs with no prompts — including write/edit/bash. Only use this in workspaces you fully trust. {when}",
+    permissionsNeverSet: "Permission policy → Always approve: every tool auto-runs with no prompts — including write/edit/bash. Only use this in tasks you fully trust. {when}",
     permissionsNextTurn: "下一回合生效",
     permissionsSet: "已设置权限策略。",
     permissionsShort: "权限",

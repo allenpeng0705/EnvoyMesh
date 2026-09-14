@@ -113,7 +113,7 @@ export function CodingSchedulesPanel({
           <p className="section-desc">
             {t(
               "codingView.scheduleListDesc",
-              "Cron creates a new Coding workspace and runs the prompt once. Not heartbeats or Team jobs.",
+              "Cron creates a new Coding task and runs the prompt once. Not heartbeats or Team jobs.",
             )}
           </p>
 

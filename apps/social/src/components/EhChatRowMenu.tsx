@@ -10,7 +10,7 @@ import {
   type SyntheticEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import type { EhChatWorkspaceSummary } from "@envoymesh/api";
+import type { EhChatTaskSummary } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { MoreIcon } from "../icons.js";
 
@@ -31,15 +31,15 @@ function clampMenuPosition(
 }
 
 export interface EhChatRowMenuProps {
-  chat: EhChatWorkspaceSummary;
-  onRemove: (chat: EhChatWorkspaceSummary) => void;
-  /** Phase 68-C2 — invite a bonded peer to review this workspace. */
-  onInviteReview?: (chat: EhChatWorkspaceSummary) => void;
-  /** History-as-list-power — archive / unarchive this workspace. */
+  chat: EhChatTaskSummary;
+  onRemove: (chat: EhChatTaskSummary) => void;
+  /** Phase 68-C2 — invite a bonded peer to review this task. */
+  onInviteReview?: (chat: EhChatTaskSummary) => void;
+  /** History-as-list-power — archive / unarchive this task. */
   archiveLabel?: string;
-  onArchive?: (chat: EhChatWorkspaceSummary) => void;
-  /** Phase 68-C6 — add heartbeat for this EH workspace. */
-  onAddHeartbeat?: (chat: EhChatWorkspaceSummary) => void;
+  onArchive?: (chat: EhChatTaskSummary) => void;
+  /** Phase 68-C6 — add heartbeat for this EH task. */
+  onAddHeartbeat?: (chat: EhChatTaskSummary) => void;
 }
 
 export function EhChatRowMenu({
@@ -114,12 +114,12 @@ export function EhChatRowMenu({
         type="button"
         className={`ai-bot-row-menu-btn${open ? " ai-bot-row-menu-btn--open" : ""}`}
         aria-label={t(
-          "codingView.workspaceActionsAria",
-          "Workspace actions",
+          "codingView.taskActionsAria",
+          "Task actions",
         )}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={t("codingView.workspaceActionsAria", "Workspace actions")}
+        title={t("codingView.taskActionsAria", "Task actions")}
         data-testid={`eh-chat-row-menu-btn-${chat.id}`}
         onClick={toggleMenu}
       >

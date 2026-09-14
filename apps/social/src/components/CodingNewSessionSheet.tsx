@@ -1,5 +1,5 @@
 /**
- * New workspace sheet — project + agent + model + optional compatible provider.
+ * New task sheet — project + agent + model + optional compatible provider.
  */
 import { useEffect, useState } from "react";
 import {
@@ -10,9 +10,9 @@ import { useT } from "../context/I18nContext.js";
 import type {
   CodingProject,
   CodingProviderKind,
-  CodingWorkspacePrefill,
+  CodingTaskPrefill,
 } from "../lib/coding-projects.js";
-import { resolveCodingWorkspacePrefill } from "../lib/coding-projects.js";
+import { resolveCodingTaskPrefill } from "../lib/coding-projects.js";
 import {
   CodingAgentModelProviderFields,
   codingPrefillToValue,
@@ -37,7 +37,7 @@ export type CodingNewSessionSheetProps = {
   open: boolean;
   projects: CodingProject[];
   initialProjectPath?: string;
-  initialPrefill?: CodingWorkspacePrefill;
+  initialPrefill?: CodingTaskPrefill;
   busy?: boolean;
   error?: string | null;
   enabledHarnesses?: readonly CodingHarnessId[];
@@ -68,7 +68,7 @@ export function CodingNewSessionSheet({
   const [agentModel, setAgentModel] = useState<CodingAgentModelProviderValue>(
     () =>
       codingPrefillToValue(
-        initialPrefill ?? resolveCodingWorkspacePrefill({}),
+        initialPrefill ?? resolveCodingTaskPrefill({}),
       ),
   );
 
@@ -85,7 +85,7 @@ export function CodingNewSessionSheet({
   useEffect(() => {
     if (!open) return;
     const next = codingPrefillToValue(
-      initialPrefill ?? resolveCodingWorkspacePrefill({}),
+      initialPrefill ?? resolveCodingTaskPrefill({}),
     );
     const harness = enabledHarnesses.includes(next.harness)
       ? next.harness
@@ -135,7 +135,7 @@ export function CodingNewSessionSheet({
         >
           <div className="modal-header">
             <h2 id="coding-new-session-title">
-              {t("codingView.newSessionTitle", "New workspace")}
+              {t("codingView.newSessionTitle", "New task")}
             </h2>
             <button
               type="button"
@@ -151,7 +151,7 @@ export function CodingNewSessionSheet({
           <p className="modal-desc coding-project-modal__desc">
             {t(
               "codingView.newSessionDesc",
-              "Choose a project, agent, and model. Workspace choices override the project defaults.",
+              "Choose a project, agent, and model. Task choices override the project defaults.",
             )}
           </p>
 
@@ -167,13 +167,13 @@ export function CodingNewSessionSheet({
                   const nextProject = projects.find((p) => p.path === nextPath);
                   setAgentModel(
                     codingPrefillToValue(
-                      resolveCodingWorkspacePrefill({
+                      resolveCodingTaskPrefill({
                         project: nextProject,
                       }),
                     ),
                   );
                 }}
-                data-testid="coding-new-workspace-project"
+                data-testid="coding-new-task-project"
               >
                 {projects.map((p) => (
                   <option key={p.path} value={p.path}>
@@ -193,12 +193,12 @@ export function CodingNewSessionSheet({
           ) : (
             <div
               className="coding-pane-empty"
-              data-testid="coding-new-workspace-no-projects"
+              data-testid="coding-new-task-no-projects"
             >
               <p>
                 {t(
                   "codingView.needProjectFirst",
-                  "Add a project first, then create a workspace under it.",
+                  "Add a project first, then create a task under it.",
                 )}
               </p>
             </div>
@@ -212,7 +212,7 @@ export function CodingNewSessionSheet({
             harnessAsRadios
             enabledHarnesses={enabledHarnesses}
             harnessProbe={harnessProbe}
-            scope="workspace"
+            scope="task"
             fallbackKind="coding-defaults"
             fallbackModelHint={codingDefaultsModelHint}
           />
@@ -240,7 +240,7 @@ export function CodingNewSessionSheet({
                 onClose();
                 onAddProject();
               }}
-              data-testid="coding-new-workspace-add-project"
+              data-testid="coding-new-task-add-project"
             >
               {t("codingView.addProjectCta", "Add project")}
             </button>
@@ -270,7 +270,7 @@ export function CodingNewSessionSheet({
             >
               {busy
                 ? t("eh.openingChat", "Opening…")
-                : t("codingView.startSession", "Start workspace")}
+                : t("codingView.startSession", "Start task")}
             </button>
           </div>
         </div>

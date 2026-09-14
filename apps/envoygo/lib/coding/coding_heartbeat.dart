@@ -1,7 +1,7 @@
 /// Phase 68-C6 — Coding heartbeats (Dart port of `packages/api/src/coding-heartbeat.ts`).
 ///
-/// A heartbeat wakes an **existing** Coding workspace on a cron with a prompt.
-/// Full Schedules (new workspace each run) are separate and not in this module.
+/// A heartbeat wakes an **existing** Coding task on a cron with a prompt.
+/// Full Schedules (new task each run) are separate and not in this module.
 library;
 
 const maxCodingHeartbeats = 20;

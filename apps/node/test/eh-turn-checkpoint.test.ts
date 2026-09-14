@@ -68,7 +68,7 @@ describe("EH turn checkpoints", () => {
     expect(complete.review.canRevert).toBe(false);
   });
 
-  it("shows workspace-detected changes without making uncertain files revertible", async () => {
+  it("shows task-detected changes without making uncertain files revertible", async () => {
     const cwd = await repo();
     const pending = await createEhTurnCheckpoint(cwd, "turn-inferred");
     await writeFile(join(cwd, "tracked.txt"), "unreported edit\n");
@@ -76,7 +76,7 @@ describe("EH turn checkpoints", () => {
     expect(complete.review.files).toEqual([
       expect.objectContaining({
         path: "tracked.txt",
-        attribution: "workspace",
+        attribution: "task",
         revertible: false,
       }),
     ]);

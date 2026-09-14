@@ -17,7 +17,7 @@
  * **Sixteen static value imports across ten files sit on the boot path** — measured with the
  * TypeScript parser, walking static relative imports from `apps/node/src/index.ts` (429 files
  * reachable): `node-service-impl.ts` (×3), `agent-runtime-envoy/persistent-acp-host.ts` (×2),
- * `node-service-setup-sponsor-friend.ts`, `envoy-harness-workspace.ts`,
+ * `node-service-setup-sponsor-friend.ts`, `envoy-harness-task.ts`,
  * `agent-runtime-envoy/factory.ts`, `agent-runtime-envoy/manifest.ts`,
  * `agent-runtime-envoy/local-runtime-registry.ts` (×2), `agent-runtime-envoy/runtime.ts` (×2),
  * `agent-runtime-envoy/bridge-to-envoy-harness-skill.ts` and `agent-runtime-envoy/acp-host.ts`

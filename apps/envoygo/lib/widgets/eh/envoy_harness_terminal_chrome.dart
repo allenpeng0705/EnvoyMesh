@@ -59,7 +59,7 @@ class _EnvoyHarnessTerminalChromeState
     final eventChatId = data['chatId']?.toString();
     final expected = widget.chatId ?? _terminalChatId;
     if (expected != null) return eventChatId == expected;
-    // Before a terminal has resolved its workspace chat, only accept legacy
+    // Before a terminal has resolved its task chat, only accept legacy
     // unscoped events. This prevents another open chat's approval from being
     // answered in the wrong terminal.
     return eventChatId == null;

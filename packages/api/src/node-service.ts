@@ -2092,8 +2092,8 @@ export interface NodeService extends CoreNodeService {
   ): Promise<string>;
 
   /**
-   * Persist Coding workspace runtime (cwd / model / optional API key) on
-   * the home node. Called once at workspace create.
+   * Persist Coding task runtime (cwd / model / optional API key) on
+   * the home node. Called once at task create.
    */
   setCodingHarnessRuntime(
     params: import("./coding-harness-runtime.js").SetCodingHarnessRuntimeParams,
@@ -2101,7 +2101,7 @@ export interface NodeService extends CoreNodeService {
     import("./coding-harness-runtime.js").SetCodingHarnessRuntimeResult
   >;
 
-  /** Drop Coding workspace runtime when the workspace is removed. */
+  /** Drop Coding task runtime when the task is removed. */
   clearCodingHarnessRuntime(
     params: import("./coding-harness-runtime.js").ClearCodingHarnessRuntimeParams,
   ): Promise<
@@ -2388,7 +2388,7 @@ export interface NodeService extends CoreNodeService {
     policy: string,
   ): Promise<import("./pi-agent.js").EnvoyHarnessStatus>;
 
-  /** Load persisted chat transcript for a workspace (defaults to active chat). */
+  /** Load persisted chat transcript for a task (defaults to active chat). */
   getEnvoyHarnessChatHistory(
     chatId?: string,
     sinceRevision?: number,
@@ -2396,7 +2396,7 @@ export interface NodeService extends CoreNodeService {
 
   /** List open Envoy chat threads (sidebar). */
   listEnvoyHarnessChats(): Promise<
-    import("./eh-chat-workspace.js").EhChatWorkspaceSummary[]
+    import("./eh-chat-task.js").EhChatTaskSummary[]
   >;
 
   /** Open or reuse a chat for a project folder. */
@@ -2407,17 +2407,17 @@ export interface NodeService extends CoreNodeService {
     forceNew?: boolean;
     /**
      * Create-time locked LLM (`provider:model` or bare name).
-     * Omitted / empty → inherit Settings → AI model for this workspace.
+     * Omitted / empty → inherit Settings → AI model for this task.
      */
     model?: string;
     /** Create-time locked OpenAI/Anthropic-compatible endpoint. */
     endpoint?: string;
-    /** Create-time locked API key for this workspace. */
+    /** Create-time locked API key for this task. */
     apiKey?: string;
-  }): Promise<import("./eh-chat-workspace.js").EhChatWorkspaceSummary>;
+  }): Promise<import("./eh-chat-task.js").EhChatTaskSummary>;
 
   /**
-   * Phase 68-C2 — build a mesh peer-review invite for an EH Coding workspace.
+   * Phase 68-C2 — build a mesh peer-review invite for an EH Coding task.
    * Returns `messageText` for Social to `sendChat(peerOwnerId, messageText)`.
    * Does not send the chat message itself.
    */
@@ -2431,8 +2431,8 @@ export interface NodeService extends CoreNodeService {
   }>;
 
   /**
-   * Phase 68-C6 — Coding heartbeats: cron wakes an existing workspace.
-   * Not Schedules (new workspace each run) and not Team jobs / TriggerStore.
+   * Phase 68-C6 — Coding heartbeats: cron wakes an existing task.
+   * Not Schedules (new task each run) and not Team jobs / TriggerStore.
    */
   listCodingHeartbeats(): Promise<
     import("./coding-heartbeat.js").CodingHeartbeat[]
@@ -2450,7 +2450,7 @@ export interface NodeService extends CoreNodeService {
   ): Promise<import("./coding-heartbeat.js").CodingHeartbeat>;
 
   /**
-   * Phase 68-C7 — Coding schedules: cron creates a **new** workspace then
+   * Phase 68-C7 — Coding schedules: cron creates a **new** task then
    * runs the prompt once. Not heartbeats / Team jobs / TriggerStore.
    */
   listCodingSchedules(): Promise<

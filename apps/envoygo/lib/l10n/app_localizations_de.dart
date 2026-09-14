@@ -28,30 +28,29 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get codingHomePlaceholder =>
-      'Coding-Workspaces von Ihrem Home erscheinen hier. Starten Sie eines über +, wenn Sie bereit sind.';
+      'Coding-Aufgaben von Ihrem Home erscheinen hier. Starten Sie eine über +, wenn Sie bereit sind.';
 
   @override
-  String get codingNewWorkspaceTitle => 'New workspace';
+  String get codingNewTaskTitle => 'New task';
 
   @override
-  String get codingNewWorkspaceDesc =>
-      'Pick a harness and project folder. The harness stays fixed for this workspace.';
+  String get codingNewTaskDesc =>
+      'Pick a harness and project folder. The harness stays fixed for this task.';
 
   @override
   String get codingHarnessLabel => 'Harness';
 
   @override
-  String get codingStartWorkspace => 'Start workspace';
+  String get codingStartTask => 'Start task';
 
   @override
   String get codingPiConsoleHint => 'Local coding agent';
 
   @override
-  String get codingEmptyTitle => 'No workspaces yet';
+  String get codingEmptyTitle => 'No tasks yet';
 
   @override
-  String get codingEmptyHint =>
-      'Start a coding workspace on your home computer.';
+  String get codingEmptyHint => 'Start a coding task on your home computer.';
 
   @override
   String get codingGated => 'Coding isn’t available for this profile.';
@@ -138,7 +137,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get codingInviteReviewOpenOnOwnerHome =>
-      'Öffne dies auf dem Home-Knoten des Besitzers, um den Workspace zu prüfen.';
+      'Öffne dies auf dem Home-Knoten des Besitzers, um die Aufgabe zu prüfen.';
 
   @override
   String get codingReviewOnlyBanner =>
@@ -152,7 +151,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String codingHeartbeatAddDesc(String title) {
-    return 'On a schedule, send a prompt to “$title”. This wakes the existing workspace — it does not create a new one.';
+    return 'On a schedule, send a prompt to “$title”. This wakes the existing task — it does not create a new one.';
   }
 
   @override
@@ -162,7 +161,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get codingHeartbeatDefaultPrompt =>
-      'Check progress on this workspace and continue useful next steps.';
+      'Check progress on this task and continue useful next steps.';
 
   @override
   String get codingHeartbeatName => 'Name';
@@ -212,11 +211,11 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get codingHeartbeatListDesc =>
-      'Scheduled prompts for existing Coding workspaces. Not Team jobs.';
+      'Scheduled prompts for existing Coding tasks. Not Team jobs.';
 
   @override
   String get codingHeartbeatEmpty =>
-      'No heartbeats yet. Add one from a workspace menu.';
+      'No heartbeats yet. Add one from a task menu.';
 
   @override
   String get codingHeartbeatListFailed =>
@@ -4177,7 +4176,7 @@ class AppLocalizationsDe extends AppLocalizations {
       'Für diese Datei ist kein textueller Diff verfügbar.';
 
   @override
-  String get ehReviewOnly => 'Workspace erkannt · nur Prüfung';
+  String get ehReviewOnly => 'Aufgabe erkannt · nur Prüfung';
 
   @override
   String get ehRevertTitle => 'Diesen Turn zurücksetzen?';

@@ -18,7 +18,7 @@ export interface EnvoyHarnessEhuiNodeService {
 }
 
 export interface CreateRemoteEhuiDataSourceOptions {
-  /** Scope plan/memory/git/sessions to this EH chat workspace. */
+  /** Scope plan/memory/git/sessions to this EH chat task. */
   chatId?: string;
 }
 

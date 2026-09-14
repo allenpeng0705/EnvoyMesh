@@ -158,9 +158,9 @@ function ReviewFileCard({
             {file.status}
           </span>
           <code>{file.path}</code>
-          {file.attribution === "workspace" ? (
+          {file.attribution === "task" ? (
             <span className="eh-turn-review-attribution">
-              {t("eh.reviewOnly", "Workspace-detected · review only")}
+              {t("eh.reviewOnly", "Task-detected · review only")}
             </span>
           ) : null}
         </summary>

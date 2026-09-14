@@ -112,7 +112,7 @@ export const jaEhMessages = {
     permissionsAria: "Permission policy",
     permissionsCurrent: "Permission policy: {mode}. Use /permissions always-confirm | safe-only | off | never.",
     permissionsFailed: "Failed to set permission policy: {error}",
-    permissionsNeverSet: "Permission policy → Always approve: every tool auto-runs with no prompts — including write/edit/bash. Only use this in workspaces you fully trust. {when}",
+    permissionsNeverSet: "Permission policy → Always approve: every tool auto-runs with no prompts — including write/edit/bash. Only use this in tasks you fully trust. {when}",
     permissionsNextTurn: "Applies from the next turn.",
     permissionsSet: "Permission policy → {mode}.",
     permissionsShort: "Perms",

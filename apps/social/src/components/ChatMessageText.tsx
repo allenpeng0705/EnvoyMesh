@@ -48,7 +48,7 @@ export function ChatMessageText({
             <p className="chat-coding-review-cta__hint">
               {t(
                 "codingView.inviteReviewOpenOnOwnerHome",
-                "Open on the owner’s home node to review this workspace.",
+                "Open on the owner’s home node to review this task.",
               )}
             </p>
           ) : null}

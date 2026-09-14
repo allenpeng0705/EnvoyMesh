@@ -1,5 +1,5 @@
 /**
- * Per-project Envoy Harness workspace sessions (cwd → persisted session id).
+ * Per-project Envoy Harness task sessions (cwd → persisted session id).
  *
  * Mirrors Cursor / Codex / Claude Code: each project folder gets its own
  * harness transcript (JSONL under `{profile}/envoy-harness/sessions`).
@@ -16,7 +16,7 @@ import {
 } from "@envoymesh/envoy-harness";
 
 /** Normalize cwd for stable config keys (absolute, no trailing slash). */
-export function normalizeEhWorkspaceCwd(cwd: string): string {
+export function normalizeEhTaskCwd(cwd: string): string {
   const abs = resolve(cwd);
   return abs.replace(/[/\\]+$/, "") || abs;
 }
@@ -35,7 +35,7 @@ export async function resolveEhSessionIdForCwd(opts: {
   sessionByCwd: Record<string, string> | undefined;
   sessionStore: SessionStore;
 }): Promise<{ sessionId: string | undefined; migratedFromDisk: boolean }> {
-  const key = normalizeEhWorkspaceCwd(opts.cwd);
+  const key = normalizeEhTaskCwd(opts.cwd);
   const mapped = opts.sessionByCwd?.[key]?.trim();
   if (mapped && mapped.length > 0 && (await opts.sessionStore.exists(mapped))) {
     return { sessionId: mapped, migratedFromDisk: false };
@@ -44,7 +44,7 @@ export async function resolveEhSessionIdForCwd(opts: {
   const summaries = await opts.sessionStore.listSummaries();
   const matches = summaries.filter(
     (s) =>
-      s.cwd !== undefined && normalizeEhWorkspaceCwd(s.cwd) === key,
+      s.cwd !== undefined && normalizeEhTaskCwd(s.cwd) === key,
   );
   if (matches.length > 0) {
     matches.sort((a, b) => (b.mtimeMs ?? 0) - (a.mtimeMs ?? 0));
@@ -85,7 +85,7 @@ export async function loadEhChatHistoryFromStore(opts: {
   const persisted = await opts.sessionStore.load(opts.sessionId);
   return withEhTimeline({
     sessionId: persisted.id,
-    cwd: normalizeEhWorkspaceCwd(opts.cwd),
+    cwd: normalizeEhTaskCwd(opts.cwd),
     title: persisted.metadata.title,
     turns: ehMessagesToChatTurns(persisted.messages),
   });
@@ -143,7 +143,7 @@ export async function deleteEhChatTurnFromStore(opts: {
       deleted: false,
       history: withEhTimeline({
         sessionId: persisted.id,
-        cwd: normalizeEhWorkspaceCwd(opts.cwd),
+        cwd: normalizeEhTaskCwd(opts.cwd),
         title: persisted.metadata.title,
         turns: ehMessagesToChatTurns(persisted.messages),
       }),
@@ -186,7 +186,7 @@ export async function deleteEhChatTurnFromStore(opts: {
     deleted: true,
     history: withEhTimeline({
       sessionId: persisted.id,
-      cwd: normalizeEhWorkspaceCwd(opts.cwd),
+      cwd: normalizeEhTaskCwd(opts.cwd),
       title: persisted.metadata.title,
       turns: ehMessagesToChatTurns(persisted.messages),
     }),
@@ -198,7 +198,7 @@ export function mergeSessionMapping(
   cwd: string,
   sessionId: string,
 ): Record<string, string> {
-  const key = normalizeEhWorkspaceCwd(cwd);
+  const key = normalizeEhTaskCwd(cwd);
   return { ...(existing ?? {}), [key]: sessionId };
 }
 

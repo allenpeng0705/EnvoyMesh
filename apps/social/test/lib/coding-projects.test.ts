@@ -9,7 +9,7 @@ import {
   modelProvidersToCodingSpec,
   normalizeCodingProjectPath,
   removeCodingProject,
-  resolveCodingWorkspacePrefill,
+  resolveCodingTaskPrefill,
   saveCodingDefaults,
   saveCodingProjects,
   seedCodingProjectDefaultsIfEmpty,
@@ -142,9 +142,9 @@ describe("coding-projects", () => {
     expect(cleared?.defaultProviderKind).toBeUndefined();
   });
 
-  it("resolveCodingWorkspacePrefill prefers project over Coding defaults", () => {
+  it("resolveCodingTaskPrefill prefers project over Coding defaults", () => {
     expect(
-      resolveCodingWorkspacePrefill({
+      resolveCodingTaskPrefill({
         project: {
           path: "/p",
           label: "p",
@@ -192,7 +192,7 @@ describe("coding-projects", () => {
     ).toBe("x");
   });
 
-  it("resolveCodingWorkspacePrefill uses Coding defaults then system", () => {
+  it("resolveCodingTaskPrefill uses Coding defaults then system", () => {
     installMemoryStorage();
     saveCodingDefaults({
       harness: "cursor",
@@ -202,7 +202,7 @@ describe("coding-projects", () => {
       apiKey: "",
     });
     expect(
-      resolveCodingWorkspacePrefill({
+      resolveCodingTaskPrefill({
         project: {
           path: "/p",
           label: "p",
@@ -217,7 +217,7 @@ describe("coding-projects", () => {
       apiKey: "",
     });
     expect(
-      resolveCodingWorkspacePrefill({
+      resolveCodingTaskPrefill({
         project: {
           path: "/p",
           label: "p",
@@ -255,9 +255,9 @@ describe("coding-projects", () => {
     expect(loadCodingDefaults()).toEqual(saved);
   });
 
-  it("resolveCodingWorkspacePrefill leaves Envoy/Pi model empty for EnvoyMesh AI fallback", () => {
+  it("resolveCodingTaskPrefill leaves Envoy/Pi model empty for EnvoyMesh AI fallback", () => {
     expect(
-      resolveCodingWorkspacePrefill({
+      resolveCodingTaskPrefill({
         project: {
           path: "/p",
           label: "p",
@@ -304,7 +304,7 @@ describe("coding-projects", () => {
     expect(loadCodingProjects()[0]?.defaultHarness).toBeUndefined();
   });
 
-  it("seedCodingProjectDefaultsIfEmpty sets first workspace agent only once", () => {
+  it("seedCodingProjectDefaultsIfEmpty sets first task agent only once", () => {
     installMemoryStorage();
     addCodingProject("/projects/app");
     const seeded = seedCodingProjectDefaultsIfEmpty("/projects/app", {

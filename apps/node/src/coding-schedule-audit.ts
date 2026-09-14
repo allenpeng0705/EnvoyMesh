@@ -35,13 +35,13 @@ async function append(
 
 export function auditCodingScheduleFired(
   taskStore: AppendAudit | null | undefined,
-  opts: { id: string; name: string; harness: string; workspaceId?: string },
+  opts: { id: string; name: string; harness: string; taskId?: string },
 ): void {
   void append(
     taskStore,
     "coding.schedule.fired",
     `coding.schedule.fired id=${opts.id} name=${opts.name} harness=${opts.harness}${
-      opts.workspaceId ? ` workspace=${opts.workspaceId}` : ""
+      opts.taskId ? ` task=${opts.taskId}` : ""
     }`,
     "record",
   )

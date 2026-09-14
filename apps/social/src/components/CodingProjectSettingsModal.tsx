@@ -124,7 +124,7 @@ export function CodingProjectSettingsModal({
           <p className="modal-desc coding-job-modal__desc">
             {t(
               "codingView.projectSettingsDesc",
-              "Overrides for new workspaces in this project. Leave agent or model empty to use Coding defaults.",
+              "Overrides for new tasks in this project. Leave agent or model empty to use Coding defaults.",
             )}
           </p>
 

@@ -10,13 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 **Coding schedules (Phase 68-C7)**
-- Home-node cron schedules that create a **new** Coding workspace (project cwd + harness) then run the prompt once
+- Home-node cron schedules that create a **new** Coding task (project cwd + harness) then run the prompt once
 - Social: Schedules footer next to Heartbeats, list panel (pause / delete / run now), create modal, command-palette “New schedule”; en + zh strings
-- Distinct from heartbeats (wake existing workspace); EnvoyGo schedules UI deferred — not Team jobs / EnvoyAI TriggerStore
+- Distinct from heartbeats (wake an existing task); EnvoyGo schedules UI deferred — not Team jobs / EnvoyAI TriggerStore
 
 **Coding heartbeats (Phase 68-C6)**
-- Home-node cron heartbeats that wake an **existing** Coding workspace (Envoy Harness / Pi / Ext Agent) with a prompt
-- Social: workspace menu “Add heartbeat…”, Heartbeats list (pause / delete / run now); en + zh strings
+- Home-node cron heartbeats that wake an **existing** Coding task (Envoy Harness / Pi / Ext Agent) with a prompt
+- Social: task menu “Add heartbeat…”, Heartbeats list (pause / delete / run now); en + zh strings
 - EnvoyGo: Coding home Heartbeats sheet + EH / Pi / Ext “Add heartbeat…” dialog; RPC wrappers; en + zh (+ English fillers)
 - EnvoyGo Schedules UI still deferred — not Team jobs / EnvoyAI TriggerStore
 

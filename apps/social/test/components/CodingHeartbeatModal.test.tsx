@@ -14,7 +14,7 @@ describe("CodingHeartbeatModal (Phase 68-C6)", () => {
     const onSave = vi.fn()
     renderWithI18n(
       <CodingHeartbeatModal
-        workspaceTitle="Demo"
+        taskTitle="Demo"
         target={{ kind: "eh", chatId: "chat-1" }}
         onCancel={() => {}}
         onSave={onSave}
@@ -40,7 +40,7 @@ describe("CodingHeartbeatModal (Phase 68-C6)", () => {
     const onSave = vi.fn()
     renderWithI18n(
       <CodingHeartbeatModal
-        workspaceTitle="Demo"
+        taskTitle="Demo"
         target={{ kind: "pi", sessionId: "pi-1" }}
         onCancel={() => {}}
         onSave={onSave}
