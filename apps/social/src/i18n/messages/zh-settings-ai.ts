@@ -188,7 +188,7 @@ export const zhAiSettingsMessages = {
     listenPort: "监听端口",
     projectFolder: "项目文件夹",
     projectFolderHint:
-      "未设置编程项目时的回退工作目录。新建编程工作区会使用各项目自己的文件夹。",
+      "未设置编程项目时的回退工作目录。新建编程任务会使用各项目自己的文件夹。",
     projectFolderTitle: "选择默认文件夹",
     projectFolderPlaceholder: "未选择文件夹",
     projectFolderPathPlaceholder: "/主节点上的绝对路径",
@@ -281,7 +281,7 @@ export const zhAiSettingsMessages = {
     piRestartToApply: "重启 Pi 以应用更改",
     piEnableHint: "禁用 Pi 会立即停止 Pi 运行时。重新启用后将在下次保存时启动。不影响 Envoy Harness（编码聊天 + 终端）。",
     ehSectionTitle: "Envoy Harness",
-    ehSectionDesc: "负责编码聊天，并始终可在终端中使用。此处的自动执行仅作用于 Harness。编程工作区使用各项目自己的文件夹；下方的活动引擎文件夹是当前会话目录。",
+    ehSectionDesc: "负责编码聊天，并始终可在终端中使用。此处的自动执行仅作用于 Harness。编程任务使用各项目自己的文件夹；下方的活动引擎文件夹是当前会话目录。",
     ehStatusReady: "就绪",
     ehStatusError: "未就绪",
     ehModelError: "Envoy Harness 未就绪：{error}",

@@ -359,7 +359,7 @@ export const jaProfilePhotosMessages = {
 
 export const jaLibraryViewMessages = {
   title: "ライブラリ",
-  hint: "ローカルファイル — ボルトドキュメントとエージェントワークスペースファイルが1つのリストに。発見用にボルトのメタデータを公開、IPFS にエクスポート、または P2P 共有を提供。RAG の全文検索にはボルトの .md / .txt / .json のみ対応。",
+  hint: "ローカルファイル — ボルトドキュメントとエージェントファイルが1つのリストに。発見用にボルトのメタデータを公開、IPFS にエクスポート、または P2P 共有を提供。RAG の全文検索にはボルトの .md / .txt / .json のみ対応。",
   filterPlaceholder: "名前またはパスでフィルター…",
   filterAria: "ライブラリをフィルター",
   importFile: "ファイルをインポート…",

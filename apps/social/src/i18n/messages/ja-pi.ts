@@ -155,7 +155,7 @@ export const jaEhMessages = {
     reviewKeepFile: "保持",
     reviewKeepFailed: "変更を保持できませんでした。",
     reviewKeptAll: "変更を保持しました。",
-    reviewOnly: "ワークスペース検出 · 確認のみ",
+    reviewOnly: "タスク検出 · 確認のみ",
     reviewOpenFile: "ファイルを開く",
     reviewRevertFile: "元に戻す",
     reviewRevertedFile: "{path} を元に戻しました",

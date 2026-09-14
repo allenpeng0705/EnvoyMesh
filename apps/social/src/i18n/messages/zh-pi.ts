@@ -158,7 +158,7 @@ export const zhEhMessages = {
     reviewKeepFile: "保留",
     reviewKeepFailed: "无法保留更改。",
     reviewKeptAll: "已保留更改。",
-    reviewOnly: "工作区检测到 · 仅可审查",
+    reviewOnly: "检测到任务 · 仅可审查",
     reviewOpenFile: "打开文件",
     reviewRevertFile: "还原",
     reviewRevertedFile: "已还原 {path}",

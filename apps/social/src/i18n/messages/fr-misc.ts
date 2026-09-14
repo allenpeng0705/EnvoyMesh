@@ -359,7 +359,7 @@ export const frProfilePhotosMessages = {
 
 export const frLibraryViewMessages = {
   title: "Bibliothèque",
-  hint: "Fichiers locaux — documents du coffre et fichiers de l'espace de travail de l'agent dans une seule liste. Publiez les métadonnées du coffre pour la découverte, exportez vers IPFS, ou proposez un partage P2P. Seuls les .md / .txt / .json du coffre sont indexés en texte intégral pour le RAG.",
+  hint: "Fichiers locaux — documents du coffre et fichiers de l'agent dans une seule liste. Publiez les métadonnées du coffre pour la découverte, exportez vers IPFS, ou proposez un partage P2P. Seuls les .md / .txt / .json du coffre sont indexés en texte intégral pour le RAG.",
   filterPlaceholder: "Filtrer par nom ou chemin…",
   filterAria: "Filtrer la bibliothèque",
   importFile: "Importer un fichier…",

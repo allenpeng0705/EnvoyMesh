@@ -359,7 +359,7 @@ export const itProfilePhotosMessages = {
 
 export const itLibraryViewMessages = {
   title: "Libreria",
-  hint: "File locali — documenti del vault e file dell'area di lavoro dell'agente in un unico elenco. Pubblica i metadati del vault per la scoperta, esporta su IPFS o offri condivisioni P2P. Solo i .md / .txt / .json del vault sono indicizzati full-text per il RAG.",
+  hint: "File locali — documenti del vault e file dell'agente in un unico elenco. Pubblica i metadati del vault per la scoperta, esporta su IPFS o offri condivisioni P2P. Solo i .md / .txt / .json del vault sono indicizzati full-text per il RAG.",
   filterPlaceholder: "Filtra per nome o percorso…",
   filterAria: "Filtra libreria",
   importFile: "Importa un file…",

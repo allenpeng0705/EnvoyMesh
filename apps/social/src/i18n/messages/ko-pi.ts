@@ -155,7 +155,7 @@ export const koEhMessages = {
     reviewKeepFile: "유지",
     reviewKeepFailed: "변경 사항을 유지하지 못했습니다.",
     reviewKeptAll: "변경 사항을 유지했습니다.",
-    reviewOnly: "워크스페이스 감지 · 검토 전용",
+    reviewOnly: "작업 감지 · 검토 전용",
     reviewOpenFile: "파일 열기",
     reviewRevertFile: "되돌리기",
     reviewRevertedFile: "{path} 되돌림",
