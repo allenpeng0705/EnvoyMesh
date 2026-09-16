@@ -156,17 +156,16 @@ export function ehChatTitleFromUserPrompt(
 
 /**
  * Whether the node may replace `title` with a prompt-derived name.
- * Empty / placeholder always; legacy folder-basename only when no prior turns.
+ * Empty / "New task" always. Legacy folder-basename titles were never
+ * user-chosen (migration default) — always replaceable. Custom titles stay.
  */
 export function shouldAutoSetEhChatTitle(
   title: string | undefined,
   cwd: string,
-  opts?: { messageCount?: number },
+  _opts?: { messageCount?: number },
 ): boolean {
   const trimmed = title?.trim() ?? "";
   if (!trimmed || trimmed === EH_CHAT_PLACEHOLDER_TITLE) return true;
-  if (trimmed === defaultEhChatTitle(cwd)) {
-    return (opts?.messageCount ?? 0) === 0;
-  }
+  if (trimmed === defaultEhChatTitle(cwd)) return true;
   return false;
 }

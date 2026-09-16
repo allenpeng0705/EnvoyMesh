@@ -25,6 +25,11 @@ import { spawn } from "node:child_process"
 import {
   defaultExtAgentStartHint,
   getExtAgentInstallGuide,
+  getCodingProvider,
+  codingProviderProbeBinary,
+  codingProviderIsBundler,
+  codingProviderInstallHint,
+  codingProviderInstallDocsUrl,
   type ExtAgentReachability,
   type InstallState,
 } from "@envoymesh/api/core"
@@ -117,6 +122,12 @@ const BINARY_FOR_AGENT: Record<string, string> = {
   opencode: "opencode",
   codewhale: "codewhale",
 };
+
+function catalogProbeBinary(agentId: string): string | undefined {
+  const entry = getCodingProvider(agentId);
+  if (!entry) return undefined;
+  return codingProviderProbeBinary(entry);
+}
 
 /**
  * Default implementation: check `$PATH` for `command` via
@@ -241,7 +252,58 @@ export async function classifyExtAgentInstallState(
     // HomeClaw is a separate channel; not a CLI we can PATH-check.
     return { installState: "unknown" };
   }
-  const bin = BINARY_FOR_AGENT[id];
+
+  // Catalog agents launched via npx/uvx/… — the bundler on PATH is NOT the
+  // agent. Treating `npx` as installed made Nova / Qwen Code / Gemini show
+  // Ready on every machine with Node, even when the package was never used.
+  // Attach EnvoyCoder-style install guidance (Node download vs first-run cmd).
+  const catalog = getCodingProvider(id);
+  if (catalog && codingProviderIsBundler(catalog)) {
+    const bundler = catalog.command[0];
+    const bundlerOnPath = await binaryOnPath(bundler);
+    if (bundlerOnPath === null) {
+      return {
+        installState: "unknown",
+        installGuide: getExtAgentInstallGuide(id, "unknown"),
+      };
+    }
+    const present = bundlerOnPath === true;
+    const hint = codingProviderInstallHint(catalog, {
+      bundlerOnPath: present,
+    });
+    const docsUrl = codingProviderInstallDocsUrl(catalog, {
+      bundlerOnPath: present,
+    });
+    const runCmd = catalog.installCommand ?? catalog.command.join(" ");
+    return {
+      installState: "not-installed",
+      installGuide: {
+        agentId: id,
+        installed: false,
+        command: catalog.title,
+        installCommand: present
+          ? runCmd
+          : bundler === "uvx"
+            ? "Install uv (https://docs.astral.sh/uv/) so `uvx` is on PATH"
+            : "Install Node.js from https://nodejs.org/en/download so `npx` is on PATH",
+        verifyCommand: present
+          ? runCmd
+          : bundler === "uvx"
+            ? "uvx --version"
+            : "npx --version",
+        startHint: hint,
+        homepageUrl: docsUrl,
+        homepageLabel: present
+          ? `${catalog.title} docs`
+          : bundler === "uvx"
+            ? "uv install docs"
+            : "Node.js downloads",
+        commonIssues: [hint],
+      },
+    };
+  }
+
+  const bin = BINARY_FOR_AGENT[id] ?? catalogProbeBinary(id);
   if (!bin) {
     return {
       installState: "unknown",
@@ -375,6 +437,20 @@ export async function probeExtAgentReachability(params: {
       installState,
       ...(installGuide ? { installGuide } : {}),
     }
+  }
+
+  const catalog = getCodingProvider(agentId);
+  if (catalog) {
+    return {
+      agentId,
+      agentName,
+      builtIn: false,
+      reachable: installState === "installed",
+      hint,
+      checkedAt,
+      installState,
+      ...(installGuide ? { installGuide } : {}),
+    };
   }
 
   // Custom / unknown agent — try /status derived from agentUrl.

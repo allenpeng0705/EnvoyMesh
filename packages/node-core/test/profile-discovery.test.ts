@@ -42,7 +42,7 @@ function marker(over: Partial<EnvoyMeshHomeMarker> = {}): EnvoyMeshHomeMarker {
 }
 
 const BASE = {
-  product: "EnvoyCoder",
+  product: "EnvoyDev",
   home: "/Users/alice/Library/Application Support/EnvoyMesh",
   profileDir: DIR,
   now: NOW,

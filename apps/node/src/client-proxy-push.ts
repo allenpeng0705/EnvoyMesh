@@ -118,6 +118,7 @@ export function wireClientProxyPushEvents(
     "eh:permission",
     "eh:user_question",
     "eh:timeline",
+    "eh:chats_updated",
     "homeTerminalWs:rx",
     "homeTerminalWs:closed",
     "node:status",

@@ -1,15 +1,24 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../coding/coding_composer.dart';
 import '../../coding/coding_heartbeat.dart';
+import '../../coding/coding_transcript_store.dart';
 import '../../eh/eh_timeline.dart';
+import '../../ext_agent/agent_attachments.dart';
 import '../../ext_agent/ext_agent_presets.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
+import '../../screens/files/home_file_pick_screen.dart';
 import '../../services/coding_ext_sessions.dart';
+import '../../utils/open_external_url.dart';
+import '../../widgets/agent_attachment_bar.dart';
+import '../../widgets/coding_composer_toolbar.dart';
 import 'coding_heartbeat_ui.dart';
+import 'coding_import_session_sheet.dart';
 import 'coding_new_task_sheet.dart';
 
 /// Wire chatId for an Ext Agent coding session (`__ext__:$sessionId`).
@@ -56,12 +65,19 @@ class ExtAgentCodingScreen extends ConsumerStatefulWidget {
 
 class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
   final TextEditingController _controller = TextEditingController();
+  final TextEditingController _modelController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<void Function()> _unsubs = [];
+  final List<AgentDraftAttachment> _attachments = [];
 
   late EhTimelineState _timeline;
   final List<_LocalMsg> _messages = [];
+  late CodingComposerPrefs _prefs;
+  late final CodingComposerCapabilities _caps;
+  late final String _prefsKey;
   Map<String, dynamic>? _reach;
+  CodingExtSession? _session;
+  String? _titleOverride;
   bool _busy = false;
   String? _localError;
 
@@ -71,7 +87,7 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
   String get _label {
     final choice = codingHarnessFromWireId(widget.harness);
     if (choice != null) return codingHarnessDisplayName(choice);
-    final t = widget.title?.trim() ?? '';
+    final t = (_titleOverride ?? widget.title)?.trim() ?? '';
     return t.isNotEmpty ? t : widget.harness;
   }
 
@@ -113,18 +129,95 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
     return [..._messages, stream];
   }
 
+  Map<String, dynamic> get _runtimePayload {
+    final model = (_prefs.model ?? _session?.model)?.trim();
+    return {
+      if (model != null && model.isNotEmpty) 'model': model,
+      if ((_session?.providerKind ?? '').trim().isNotEmpty)
+        'providerKind': _session!.providerKind!.trim(),
+      if ((_session?.endpoint ?? '').trim().isNotEmpty)
+        'endpoint': _session!.endpoint!.trim(),
+    };
+  }
+
   @override
   void initState() {
     super.initState();
     _timeline = EhTimelineState(chatId: _chatId);
+    _caps = codingComposerCapabilities(widget.harness);
+    _prefsKey =
+        codingComposerSessionKey(kind: 'ext', id: widget.sessionId);
+    _prefs = const CodingComposerPrefs();
     _controller.addListener(() {
       if (mounted) setState(() {});
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _wireEvents();
+      unawaited(_loadLocalState());
       unawaited(_bootstrap());
       unawaited(touchCodingExtSession(widget.sessionId));
     });
+  }
+
+  Future<void> _loadLocalState() async {
+    final prefs = await loadCodingComposerPrefs(_prefsKey);
+    final seed = await loadCodingTranscript(
+      kind: 'ext',
+      id: widget.sessionId,
+    );
+    final session = await getCodingExtSession(widget.sessionId);
+    if (!mounted) return;
+    setState(() {
+      _prefs = prefs;
+      _session = session;
+      _messages
+        ..clear()
+        ..addAll(
+          seed.map(
+            (m) => _LocalMsg(id: m.id, role: m.role, text: m.text),
+          ),
+        );
+      final model = (prefs.model ?? session?.model)?.trim() ?? '';
+      if (model.isNotEmpty) _modelController.text = model;
+    });
+  }
+
+  Future<void> _saveTranscript() async {
+    final rows = [
+      for (final m in _messages)
+        if (!m.streaming && m.text.trim().isNotEmpty)
+          CodingTranscriptMessage(
+            id: m.id,
+            role: m.role,
+            text: m.text,
+          ),
+    ];
+    await saveCodingTranscript(
+      kind: 'ext',
+      id: widget.sessionId,
+      messages: rows,
+    );
+  }
+
+  Future<void> _patchPrefs(CodingComposerPrefs next) async {
+    final saved = await saveCodingComposerPrefs(_prefsKey, next);
+    if (!mounted) return;
+    setState(() => _prefs = saved);
+    final model = (saved.model ?? '').trim();
+    await updateCodingExtSessionRuntime(
+      widget.sessionId,
+      model: model,
+    );
+    _session = await getCodingExtSession(widget.sessionId);
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      await client.setCodingHarnessRuntime(
+        codingSessionId: widget.sessionId,
+        cwd: _session?.cwd ?? widget.cwd,
+        runtime: _runtimePayload,
+      );
+    } catch (_) {}
   }
 
   @override
@@ -132,7 +225,9 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
     for (final u in _unsubs) {
       u();
     }
+    unawaited(_saveTranscript());
     _controller.dispose();
+    _modelController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -158,6 +253,23 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
   Future<void> _bootstrap() async {
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
+    final session = await getCodingExtSession(widget.sessionId);
+    try {
+      await client.setCodingHarnessRuntime(
+        codingSessionId: widget.sessionId,
+        cwd: session?.cwd ?? widget.cwd,
+        runtime: {
+          if ((session?.model ?? '').trim().isNotEmpty)
+            'model': session!.model!.trim(),
+          if ((session?.providerKind ?? '').trim().isNotEmpty)
+            'providerKind': session!.providerKind!.trim(),
+          if ((session?.endpoint ?? '').trim().isNotEmpty)
+            'endpoint': session!.endpoint!.trim(),
+        },
+      );
+    } catch (_) {
+      // non-fatal
+    }
     try {
       await client.setExtAgentProjectPath(
         agentId: _agentId,
@@ -203,19 +315,123 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
   String _installHintText(AppLocalizations l10n) {
     final guide = _reach?['installGuide'];
     if (guide is Map) {
-      final cmd = guide['installCommand']?.toString().trim() ?? '';
       final hint = guide['startHint']?.toString().trim() ?? '';
-      if (cmd.isNotEmpty) return cmd;
       if (hint.isNotEmpty) return hint;
+      final cmd = guide['installCommand']?.toString().trim() ?? '';
+      if (cmd.isNotEmpty) return cmd;
     }
     final info = getExtAgentInstallInfo(_agentId);
     if (info.startHint.isNotEmpty) return info.startHint;
     return l10n.codingExtInstallHint(_label);
   }
 
+  String? get _installCommand {
+    final guide = _reach?['installGuide'];
+    if (guide is Map) {
+      final cmd = guide['installCommand']?.toString().trim() ?? '';
+      if (cmd.isNotEmpty) return cmd;
+    }
+    return null;
+  }
+
+  String? get _installDocsUrl {
+    final guide = _reach?['installGuide'];
+    if (guide is Map) {
+      final link = guide['homepageUrl']?.toString().trim() ??
+          guide['installLink']?.toString().trim() ??
+          '';
+      if (link.isNotEmpty) return link;
+    }
+    return null;
+  }
+
+  bool get _installIsFirstRun {
+    final guide = _reach?['installGuide'];
+    final hint = guide is Map
+        ? (guide['startHint']?.toString() ?? '')
+        : '';
+    final lower = hint.toLowerCase();
+    return lower.contains('fetched from npm') ||
+        lower.contains('fetched from pypi');
+  }
+
+  Future<void> _pickAttachment() async {
+    final path = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => HomeFilePickScreen(
+          initialPath:
+              widget.cwd.trim().isNotEmpty ? widget.cwd : null,
+        ),
+      ),
+    );
+    if (!mounted || path == null || path.isEmpty) return;
+    setState(() {
+      _attachments.add(
+        AgentDraftAttachment(
+          id: 'att_${DateTime.now().microsecondsSinceEpoch}',
+          path: path,
+          name: attachmentBasename(path),
+          mimeType: guessMimeFromName(path),
+        ),
+      );
+    });
+  }
+
+  Future<void> _importSession() async {
+    final all = await loadCodingExtSessions();
+    final rows = all
+        .where(
+          (s) =>
+              s.id != widget.sessionId &&
+              s.harness == widget.harness &&
+              s.cwd == widget.cwd,
+        )
+        .map(
+          (s) => CodingImportSessionRow(
+            id: s.id,
+            title: s.title,
+            subtitle: s.cwd,
+          ),
+        )
+        .toList();
+    if (!mounted) return;
+    await showCodingImportSessionSheet(
+      context,
+      rows: rows,
+      onPick: (id) {
+        final s = all.where((x) => x.id == id).firstOrNull;
+        if (s == null || !mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => ExtAgentCodingScreen(
+              sessionId: s.id,
+              harness: s.harness,
+              cwd: s.cwd,
+              title: s.title,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _sendFastSlash(bool enabled) async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null || !_caps.fast) return;
+    try {
+      await client.askCodingHarness(
+        codingSessionId: widget.sessionId,
+        harness: widget.harness,
+        prompt: fastToggleSlash(enabled),
+        cwd: _session?.cwd ?? widget.cwd,
+        runtime: _runtimePayload,
+      );
+    } catch (_) {}
+  }
+
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _busy) return;
+    if ((text.isEmpty && _attachments.isEmpty) || _busy) return;
     final l10n = AppLocalizations.of(context);
 
     final latest = await _refreshProbe();
@@ -239,24 +455,68 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
       return;
     }
 
+    var outbound = shapeCodingComposerPrompt(text, _prefs, _caps);
+    final atts = List<AgentDraftAttachment>.from(_attachments);
+    if (atts.isNotEmpty) {
+      try {
+        final built = await client.buildAgentAttachmentContext(
+          atts.map((a) => a.toRpc()).toList(),
+        );
+        if (built['ok'] != true) {
+          throw StateError(
+            built['error']?.toString() ?? 'Attachment context failed',
+          );
+        }
+        outbound = mergeAgentPromptWithAttachments(
+          outbound,
+          built['contextText']?.toString(),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _localError = l10n.codingExtSendFailed(
+            e.toString().replaceFirst('Exception: ', ''),
+          );
+        });
+        return;
+      }
+    }
+    if (outbound.trim().isEmpty) return;
+
     setState(() {
       _busy = true;
       _localError = null;
+      _attachments.clear();
       _messages.add(
-        _LocalMsg(id: 'u-${DateTime.now().millisecondsSinceEpoch}', role: 'user', text: text),
+        _LocalMsg(
+          id: 'u-${DateTime.now().millisecondsSinceEpoch}',
+          role: 'user',
+          text: outbound,
+        ),
       );
     });
     _controller.clear();
     _scrollToEnd();
+    unawaited(() async {
+      final titled =
+          await maybeAutoTitleCodingExtSession(widget.sessionId, text);
+      if (titled != null && mounted) {
+        setState(() => _titleOverride = titled);
+      }
+    }());
+    unawaited(_saveTranscript());
 
     try {
-      final reply = await client.askExtAgent(
-        prompt: text,
-        agentId: _agentId,
-        streamSessionId: _canStream ? widget.sessionId : null,
+      final reply = await client.askCodingHarness(
+        codingSessionId: widget.sessionId,
+        harness: widget.harness,
+        prompt: outbound,
+        cwd: _session?.cwd ?? widget.cwd,
+        runtime: _runtimePayload,
       );
       if (!mounted) return;
-      final body = reply.trim().isEmpty ? l10n.codingExtEmptyReply : reply.trim();
+      final body =
+          reply.trim().isEmpty ? l10n.codingExtEmptyReply : reply.trim();
       setState(() {
         _messages.add(
           _LocalMsg(
@@ -266,6 +526,7 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
           ),
         );
       });
+      await _saveTranscript();
     } catch (e) {
       if (!mounted) return;
       final msg = e.toString().replaceFirst('Exception: ', '');
@@ -279,6 +540,7 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
           ),
         );
       });
+      await _saveTranscript();
       if (RegExp(r'install|not found|ENOENT|missing', caseSensitive: false)
           .hasMatch(msg)) {
         unawaited(_refreshProbe());
@@ -294,8 +556,8 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
     final display = _displayMessages;
-    final title = widget.title?.trim().isNotEmpty == true
-        ? widget.title!.trim()
+    final title = (_titleOverride ?? widget.title)?.trim().isNotEmpty == true
+        ? (_titleOverride ?? widget.title)!.trim()
         : _label;
 
     return Scaffold(
@@ -402,25 +664,59 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      l10n.codingExtInstallHint(_label),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: scheme.onErrorContainer,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
                       _installHintText(l10n),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: scheme.onErrorContainer,
-                            fontFamily: 'monospace',
                           ),
                     ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: () => unawaited(_refreshProbe()),
-                        child: Text(l10n.commonRefresh),
+                    if (_installCommand != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _installIsFirstRun
+                            ? l10n.codingHarnessFirstRunCmd
+                            : l10n.codingHarnessInstallCmd,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: scheme.onErrorContainer,
+                            ),
                       ),
+                      const SizedBox(height: 4),
+                      SelectableText(
+                        _installCommand!,
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          color: scheme.onErrorContainer,
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () async {
+                            await Clipboard.setData(
+                              ClipboardData(text: _installCommand!),
+                            );
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(l10n.codingHarnessCmdCopied)),
+                            );
+                          },
+                          child: Text(l10n.codingHarnessCopyCmd),
+                        ),
+                      ),
+                    ],
+                    Row(
+                      children: [
+                        if (_installDocsUrl != null)
+                          TextButton(
+                            onPressed: () =>
+                                unawaited(openExternalUrl(_installDocsUrl!)),
+                            child: Text(l10n.codingHarnessOpenDocs),
+                          ),
+                        TextButton(
+                          onPressed: () => unawaited(_refreshProbe()),
+                          child: Text(l10n.commonRefresh),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -483,6 +779,30 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
               ],
             ),
           ),
+          CodingComposerToolbar(
+            caps: _caps,
+            prefs: _prefs,
+            modelController: _modelController,
+            onPrefsChanged: (p) {
+              unawaited(_patchPrefs(p));
+              if (_caps.fast && p.fast != _prefs.fast) {
+                unawaited(_sendFastSlash(p.fast));
+              }
+            },
+            onImportSession: _importSession,
+            onAttach: _pickAttachment,
+          ),
+          if (_attachments.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+              child: AgentAttachmentBar(
+                attachments: _attachments,
+                onRemove: (id) => setState(
+                  () => _attachments.removeWhere((a) => a.id == id),
+                ),
+                onClearAll: () => setState(() => _attachments.clear()),
+              ),
+            ),
           SafeArea(
             top: false,
             child: Padding(
@@ -508,7 +828,9 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    onPressed: _busy || _controller.text.trim().isEmpty
+                    onPressed: _busy ||
+                            (_controller.text.trim().isEmpty &&
+                                _attachments.isEmpty)
                         ? null
                         : () => unawaited(_send()),
                     icon: const Icon(Icons.send),
@@ -558,7 +880,7 @@ class _ExtMessageBubble extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
           child: SelectableText(
-            streaming ? '$text▍' : text,
+            streaming ? '$text…' : text,
             style: TextStyle(
               color: isSystem ? scheme.onErrorContainer : null,
             ),

@@ -12,7 +12,7 @@
 
 ## 1. The question
 
-What happens when a user installs **EnvoyMesh** (social), **EnvoyCoder** (coding) and **EnvoyAgent** (agents) on the same machine — and what should happen?
+What happens when a user installs **EnvoyMesh** (social), **EnvoyDev** (coding) and **EnvoyAgent** (agents) on the same machine — and what should happen?
 
 This is not hypothetical. It is the first question a second product forces, and it is the one the refactor's boundary work exists to make answerable.
 
@@ -35,7 +35,7 @@ Measured by starting `EnvoyMesh` from `packages/network/dist` in three configura
 
 **An unattributed observation.** The owner reports a running EnvoyMesh costing **>2 GB**. That is not the mesh (≈186 MB) and not an empty host (≈136 MB), so it is the product surface: the Tauri WKWebView rendering the social SPA, the social stores, the external `@envoymesh/envoy-harness*` runtime, and/or a spawned `llama-server`. **This figure must be attributed before any packaging decision is justified by memory** (§11, O5), because if a resident agent runtime is 1.2 GB, the highest-value change is making *that* lazy, not splitting apps.
 
-**Attributed so far (§13, S0).** The node process itself — the full social node, everything loaded, mDNS/DHT/relay off — starts at **~650 MB** and grew to **718 MB over 70 s** before a collection took it back to **513 MB**, holding 5 TCP sockets. A `tsx` wrapper adds a second process (~79–93 MB). So the node is the heavy component, and the rest of the 2 GB is the WebView and/or a model server. Two consequences: (a) a product that shares one node pays that node's full weight, which is an argument for *separating heavy runtimes* rather than sharing everything; (b) the honest comparison for D1 is "EnvoyCoder's node, built only from `reusable` + coder modules" against this 650 MB, which is measurable once EnvoyCoder exists.
+**Attributed so far (§13, S0).** The node process itself — the full social node, everything loaded, mDNS/DHT/relay off — starts at **~650 MB** and grew to **718 MB over 70 s** before a collection took it back to **513 MB**, holding 5 TCP sockets. A `tsx` wrapper adds a second process (~79–93 MB). So the node is the heavy component, and the rest of the 2 GB is the WebView and/or a model server. Two consequences: (a) a product that shares one node pays that node's full weight, which is an argument for *separating heavy runtimes* rather than sharing everything; (b) the honest comparison for D1 is "EnvoyDev's node, built only from `reusable` + coder modules" against this 650 MB, which is measurable once EnvoyDev exists.
 
 **The blocker, and its fix (§13, S0).** `npm run node:dev` did not start:
 
@@ -54,7 +54,7 @@ node_modules/@envoymesh/envoy-harness-adapter  -> ../../../envoy-harness/package
 
 Each product is its own app, its own OS process, its own installer, its own release cadence. Not one process hosting three surfaces.
 
-**Why.** (a) A user who installs only EnvoyCoder should never load the social surface — that is the entire point of the 556/252 split. (b) Isolation: separate processes are separate crash, upgrade and permission domains. (c) Independent install and update.
+**Why.** (a) A user who installs only EnvoyDev should never load the social surface — that is the entire point of the 556/252 split. (b) Isolation: separate processes are separate crash, upgrade and permission domains. (c) Independent install and update.
 
 **What it is not.** Separate apps do **not** imply separate mesh nodes, separate identities, or separate model runtimes. Those are D2 and D3.
 
@@ -81,9 +81,9 @@ The rule is already a type in the tree: `packages/models/src/index.ts:45` — `e
 
 D1–D3 say what the family **shares**. D4 says what it deliberately does **not** hand around.
 
-**The rule.** `@envoymesh/envoy-harness*` (the sibling checkout: `envoy-harness`, `-adapter`, `-peer`, `-client`) is a **peer** of every product in the family. EnvoyMesh keeps its own `file:../envoy-harness/…` link because it cannot run without it, but that link is a **local development arrangement, not a distribution channel**. A product that wants the harness — EnvoyCoder, EnvoyAgent, anything later — **clones or copies `envoy-harness` directly**, exactly as EnvoyMesh does.
+**The rule.** `@envoymesh/envoy-harness*` (the sibling checkout: `envoy-harness`, `-adapter`, `-peer`, `-client`) is a **peer** of every product in the family. EnvoyMesh keeps its own `file:../envoy-harness/…` link because it cannot run without it, but that link is a **local development arrangement, not a distribution channel**. A product that wants the harness — EnvoyDev, EnvoyAgent, anything later — **clones or copies `envoy-harness` directly**, exactly as EnvoyMesh does.
 
-**Why.** (a) If EnvoyCoder reached the harness *through* EnvoyMesh, EnvoyCoder would depend on **this repo** for somebody else's package, and inherit this repo's release cadence for code this repo does not own — the same coupling D1 exists to remove. (b) It would make EnvoyMesh a de-facto registry that nothing tests as one: the link is created by a local checkout, so "EnvoyMesh ships the harness" would be true on my machine and false on a fresh clone. (c) Vendoring it here inverts ownership: this repo would then be the place the harness is fixed, and its upstream would become a fork.
+**Why.** (a) If EnvoyDev reached the harness *through* EnvoyMesh, EnvoyDev would depend on **this repo** for somebody else's package, and inherit this repo's release cadence for code this repo does not own — the same coupling D1 exists to remove. (b) It would make EnvoyMesh a de-facto registry that nothing tests as one: the link is created by a local checkout, so "EnvoyMesh ships the harness" would be true on my machine and false on a fresh clone. (c) Vendoring it here inverts ownership: this repo would then be the place the harness is fixed, and its upstream would become a fork.
 
 **What EnvoyMesh owes the family instead is an honest failure.** **Sixteen static value imports across ten files sit on the node's boot path** — measured with the TypeScript parser, walking static relative imports from `apps/node/src/index.ts` (429 files reachable): `node-service-impl.ts` (×3), `agent-runtime-envoy/persistent-acp-host.ts` (×2), `node-service-setup-sponsor-friend.ts`, `envoy-harness-task.ts`, `agent-runtime-envoy/factory.ts`, `agent-runtime-envoy/manifest.ts`, `agent-runtime-envoy/local-runtime-registry.ts` (×2), `agent-runtime-envoy/runtime.ts` (×2), `agent-runtime-envoy/bridge-to-envoy-harness-skill.ts`, `agent-runtime-envoy/acp-host.ts` (×2). Across the workspace there are 19 such imports in 13 files (8 more are type-only and erased), and the boot path is what decides whether the process starts. So a missing sibling surfaced as `ERR_MODULE_NOT_FOUND` from four directories deep inside a `file:` path — the same test-path/run-path split that made S0 necessary (§2). `scripts/check-peer-deps.mjs` now resolves all four packages ahead of the dev entry points and, on failure, names the missing package, distinguishes "no link" from "link exists, no built entry", and prints the clone + build commands. It prints the counts it measured, and **fails if the sources import a harness package it does not check** — reporting OK for a package nobody resolved would be worse than not checking. Wired into `npm run node:dev` and `ci-node-hermetic.yml`.
 
@@ -137,7 +137,7 @@ There is **no `schemaVersion` / `storeVersion` anywhere** in `apps/node` or `pac
 }
 ```
 
-It gives the discovery dialog something real to show ("created by EnvoyMesh 0.5.0, last used yesterday by EnvoyCoder") and lets an app of an older schema **refuse politely** instead of writing a layout it does not understand. `deriveOwnerId(ownerPublicKeyPem)` already exists (`packages/identity/src/index.ts:621`), so `ownerId` is verifiable rather than trusted.
+It gives the discovery dialog something real to show ("created by EnvoyMesh 0.5.0, last used yesterday by EnvoyDev") and lets an app of an older schema **refuse politely** instead of writing a layout it does not understand. `deriveOwnerId(ownerPublicKeyPem)` already exists (`packages/identity/src/index.ts:621`), so `ownerId` is verifiable rather than trusted.
 
 ## 5. Layout
 
@@ -156,7 +156,7 @@ It gives the discovery dialog something real to show ("created by EnvoyMesh 0.5.
 - **Shared (kernel, 14):** agent identity, node config, capability manifest, session tokens, device authorization, contact owner keys, peer-profile cache, discovery seeds, multi-hop discovery, peer reputation, sensitivity overrides, intent history, continuity, capability index.
 - **Per product (34):** chat logs, chat rooms and their pending queues, drafts, auto-reply limits, family profiles and rooms, shop, market cache and search history, commerce receipts, reputation anchors, social proxy sessions, agent circles, document-acquisition and capability-provider jobs, coding heartbeat/runtime/schedule, chains, delegated chains, published library, web-content cache, worker leases/reliability/receipts, harness sessions and memory, published external exports.
 
-So "EnvoyCoder checks the existing profile and uses it" means **kernel state shared, product state not** — which is what a user means by "use my existing setup", and also why EnvoyCoder must not read your chat transcripts.
+So "EnvoyDev checks the existing profile and uses it" means **kernel state shared, product state not** — which is what a user means by "use my existing setup", and also why EnvoyDev must not read your chat transcripts.
 
 **Payoffs of this layout.** The vault lives with the identity → **one index, one set of embeddings**, no reindexing per product. The engine assets live in `runtime/` → **one llama-server binary and one set of weights** (today they are installed under `{profile}/envoy-local/runtime/{tag}/` — `apps/node/src/envoy-local-runtime.ts:138`, `:660` — i.e. *per profile*, so two profiles currently mean two multi-GB downloads).
 
@@ -189,7 +189,7 @@ The owner's rule: **check the common place; tell the user a profile exists; let 
 - **Probe:** `GET /v1/models` on the shared engine port (the watchdog already does this — `envoy-local-runtime.ts:951`). "Is the local model running" is answered by the engine, not by a flag in the app.
 - **Spawn lock:** two apps must not race to start an engine. One lock, first winner starts, the other waits and then attaches.
 - **Assets:** move `llama-server` and the GGUFs from `{profile}/envoy-local/` to `<root>/runtime/` so multiple profiles do not each download GBs.
-- **The model-lease problem — the real complexity.** One `llama-server` serves **one model**. If EnvoyMesh holds a chat model and EnvoyCoder wants a code model, the shared engine cannot serve both without a reload (tens of seconds, GBs of churn). Options: (a) one agreed shared model; (b) a lease — the holder picks, others queue or fall back; (c) do not share chat models, only embeddings. **Embeddings (18791) are the easy win** — same model, useful to every product, and sharing them is what avoids reindexing the vault per product.
+- **The model-lease problem — the real complexity.** One `llama-server` serves **one model**. If EnvoyMesh holds a chat model and EnvoyDev wants a code model, the shared engine cannot serve both without a reload (tens of seconds, GBs of churn). Options: (a) one agreed shared model; (b) a lease — the holder picks, others queue or fall back; (c) do not share chat models, only embeddings. **Embeddings (18791) are the easy win** — same model, useful to every product, and sharing them is what avoids reindexing the vault per product.
   **Decided (2026-09-13): (a) one agreed shared model.** A request for a different model is refused with an actionable message; the same model is shared; the port is the arbiter for an engine no claim explains. Implementation and the residual gap: §13, "The model lease — decided".
 - **Cloud/peer providers are per-app and unshared**, including credentials.
 
@@ -197,8 +197,8 @@ The owner's rule: **check the common place; tell the user a profile exists; let 
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
-| **O1** | Who hosts the node? | first app to start · a designated host (EnvoyMesh only) | **first to start** — more robust when only EnvoyCoder is installed; needs the ownership checks in §7 |
-| **O2** | EnvoyCoder with no node running | start a node from the shared profile · **local-only mode** (no mesh) | **local-only by default** for a coding tool: nothing on the mesh unless a mesh app is running |
+| **O1** | Who hosts the node? | first app to start · a designated host (EnvoyMesh only) | **first to start** — more robust when only EnvoyDev is installed; needs the ownership checks in §7 |
+| **O2** | EnvoyDev with no node running | start a node from the shared profile · **local-only mode** (no mesh) | **local-only by default** for a coding tool: nothing on the mesh unless a mesh app is running |
 | **O3** | Profiles per root | one · many with a `current` pointer | layout supports many, **ship MVP with one** |
 | **O4** | Existing installs | adopt/move the old per-app dir · leave it and start fresh | **offer to move** (Tauri used `app_data_dir/profile` — `main.rs:1698`; and `./data/default` may exist beside old checkouts); never duplicate silently |
 | **O5** | Attribute the >2 GB before justifying D1 by memory | measure WebView / node / harness runtime / llama-server separately | do it in S0/S1 |
@@ -480,13 +480,13 @@ Three things the owner asked for, two of which were missing.
 | the compact codec (`pairing-token.ts`) | `app` travels inside the gzip token, and stays **absent** when it was never set |
 | the URI (`envoy-pair-uri.ts`) | built and parsed with the rest |
 | the node | its pairing payload claims `resolveAppName()` (`ENVOYMESH_APP_NAME`, default `EnvoyMesh`), and `pairThinClient` refuses another app's code |
-| the rule | `pairingAppMismatch()` in `node-core`, returning an **end-user sentence**: *"That code was made by EnvoyCoder, and this is EnvoyMesh. Open EnvoyCoder and show its pairing code, or install EnvoyCoder here."* |
+| the rule | `pairingAppMismatch()` in `node-core`, returning an **end-user sentence**: *"That code was made by EnvoyDev, and this is EnvoyMesh. Open EnvoyDev and show its pairing code, or install EnvoyDev here."* |
 
 A code minted before the field existed is accepted: refusing it would break every QR already printed, and the phone still authenticates afterwards.
 
 **2. A product is refused by default, not allowed by omission.** Owner-only enforcement is a deny-list, so a product scope was refused that list and allowed *everything else* — measured on a real node, a product session could call `getNodeStatus` and would have been allowed any other unlisted method too. `PRODUCT_ALLOWED_RPC_METHODS` now names what a product may do at all: diagnostics, plus the coding surface (each of which is *also* capability-gated, so the list is a boundary rather than a permission). Terminals stay owner-only — a product runs its own tooling in its own process. Where both gates cover a method, owner-only fires first.
 
-**3. Coding is granted per product, by the owner.** `mayFamilyProfileUseCoding()` is family-profile policy and a product scope is not a family profile, so an attached EnvoyCoder was refused the surface it exists for. `NodeConfig.productGrants` — owner-set through the already owner-only `updateNodeConfig` — now answers for products, with **nothing** as the default and a fail-closed read. Example: `{ "EnvoyCoder": ["coding"] }`. Pinned by test: denied before the grant, allowed after, unaffected for a *different* product, revoked by an empty list.
+**3. Coding is granted per product, by the owner.** `mayFamilyProfileUseCoding()` is family-profile policy and a product scope is not a family profile, so an attached EnvoyDev was refused the surface it exists for. `NodeConfig.productGrants` — owner-set through the already owner-only `updateNodeConfig` — now answers for products, with **nothing** as the default and a fail-closed read. Example: `{ "EnvoyDev": ["coding"] }`. Pinned by test: denied before the grant, allowed after, unaffected for a *different* product, revoked by an empty list.
 
 ### S9 — §5's migration: the check that says it is a slice, not an edit (2026-09-13)
 
@@ -524,7 +524,7 @@ Both runtimes resolved that path with their own one-line `rootDir()` (chat and e
 **What S4 still owes, with the mechanism now known rather than guessed.** The halves that remain are the **spawn lock** and the **model lease**:
 
 * the lock can reuse the node registry as-is — `acquireNodeLock(runtimeDir, …)` writes `<runtime>/lock` and `writeNodeEndpoint(runtimeDir, …)` publishes where the engine is, so a second product finds the running engine instead of starting a second one (`resolveRunningNode(runtimeDir)` already answers that question, verified, for a *node*);
-* the lease is the genuinely hard half and the reason S4 is not a single slice: **one `llama-server` serves one model**, so EnvoyMesh holding a chat model while EnvoyCoder wants a code model cannot both be satisfied without a reload (tens of seconds, GBs of churn). That is a policy — one agreed model, a lease with a queue, or embeddings-only sharing — and it needs deciding, not coding.
+* the lease is the genuinely hard half and the reason S4 is not a single slice: **one `llama-server` serves one model**, so EnvoyMesh holding a chat model while EnvoyDev wants a code model cannot both be satisfied without a reload (tens of seconds, GBs of churn). That is a policy — one agreed model, a lease with a queue, or embeddings-only sharing — and it needs deciding, not coding.
 
 **§5 and the harness packaging are unchanged from §S7.**
 
@@ -598,7 +598,7 @@ envoy-reuse-host --home <shared home> --token t
 
 `--standalone` forces the old behaviour, and an attach failure (an old build, a permission) falls back to serving rather than exiting. Pinned by a test that stands up a real `WsServer` plus the real lock/`node.json`, runs the CLI, and asserts it **did not bind a port of its own** — a second node on one profile being what the whole design avoids. Writing that test re-proved the identity check: the first version failed because the fake node reported no identity, so `resolveRunningNode` correctly said `unverified` and the CLI correctly served its own host. `canAttach: false` stays, now with the reason written down.
 
-**3. EnvoyGo did not check which app a code belongs to — fixed.** The Social scanner did; the phone — the side that actually scans — did not, so an EnvoyCoder QR could still pair EnvoyGo with the wrong desktop app. `PairingService.appMismatch` applies the shared rule in the scan screen before anything is dialled; four Dart tests cover own-app, no-claim, other-app and the family default.
+**3. EnvoyGo did not check which app a code belongs to — fixed.** The Social scanner did; the phone — the side that actually scans — did not, so an EnvoyDev QR could still pair EnvoyGo with the wrong desktop app. `PairingService.appMismatch` applies the shared rule in the scan screen before anything is dialled; four Dart tests cover own-app, no-claim, other-app and the family default.
 
 **Also fixed while in there:** `ws` was a **devDependency** of `@envoymesh/reuse-host` although `attach-client.ts` imports it at runtime — the tests passed because the root hoists it, and a real install of that package would not have had it. Promoted to a dependency. Lockfiles refreshed with `npm install --package-lock-only`, per `AGENTS.md`.
 
@@ -644,10 +644,10 @@ The exchange, end to end: a second app on this machine asks the running node for
 ```
 resolveRunningNode      → running  ws://127.0.0.1:3030/ws
 LAN attach attempt      → {"code":"UNAUTHORIZED","message":"This can only be done from the machine running the node"}
-grant                   → scopeKey "product:EnvoyCoder", ownerId envoy:owner:8fIvWQay…, token 36 chars
+grant                   → scopeKey "product:EnvoyDev", ownerId envoy:owner:8fIvWQay…, token 36 chars
 product session → getNodeStatus    → OK
 product session → updateNodeConfig → ERROR owner-only: Only the node owner can call updateNodeConfig
-stored record           → product "EnvoyCoder", deviceId "product:EnvoyCoder", no profileId, no family binding
+stored record           → product "EnvoyDev", deviceId "product:EnvoyDev", no profileId, no family binding
 ```
 
 That last line is the whole design in one result: a product attaches, works, and **cannot touch an owner-only RPC** — least privilege by construction, not by good intentions. `apps/node/test/product-attach.test.ts` (7 tests) pins the scope, the ownership refusal, token replacement and per-product isolation; `host-connect/test/attach-client.test.ts` (6) pins the exchange and both gates, including a raw socket to this machine's LAN address for the refusal.
@@ -656,7 +656,7 @@ That last line is the whole design in one result: a product attaches, works, and
 
 **A known gap, pinned rather than hidden.** Owner-only enforcement is a *deny-list* (`OWNER_ONLY_RPC_METHODS` plus the `terminal*` prefix), so a product session is refused everything on that list and **allowed everything else** — `getNodeStatus` is the proof in the run above. That is not least privilege; the honest follow-up is a product **allow-list** (what a product *may* call) rather than relying on the deny-list's coverage. A test asserts today's behaviour so the next slice has to change it deliberately.
 
-**One more thing the scope does not solve:** `mayFamilyProfileUseCoding()` is family-profile policy, and a product scope is not a family profile — so an attached EnvoyCoder would be refused the `coding`-gated RPCs it exists for. Wiring per-product capability grants (which product may use which capability) is the next slice, and it is policy the product owns, not the transport.
+**One more thing the scope does not solve:** `mayFamilyProfileUseCoding()` is family-profile policy, and a product scope is not a family profile — so an attached EnvoyDev would be refused the `coding`-gated RPCs it exists for. Wiring per-product capability grants (which product may use which capability) is the next slice, and it is policy the product owns, not the transport.
 
 Two things the seeded suite and a read-through found after S2 was written:
 
@@ -743,11 +743,11 @@ The asset half landed earlier (S8): assets resolve through `localEngineAssetsDir
 
 **Wiring.** `startSidecarOnce` acquires the claim immediately before it stops the old child and spawns; a loser polls the holder's `/v1/models` (the probe the watchdog already uses) and, when it answers, adopts it — "engine already running on port N (started by X) — using it instead of starting a second one" — or fails with a message naming the holder, its pid and the lock path to remove if it crashed. The claim is released on child exit, on `stopChild`, and synchronously from the process `exit` handler (the same lesson as `releaseNodeLockSync`: an `exit` handler cannot await).
 
-**Evidence.** `packages/node-core/test/engine-lock.test.ts` (12: grant, refusal naming the holder, stale takeover, unreadable claim, ownership-checked release in sync and async form, and that the two roles do not block each other) and two tests in `apps/node/test/envoy-local-runtime.test.ts` that drive the real start path with a fake `llama-server`: with a live claim held by `EnvoyCoder`, **`spawn` is never called** and the failure names the holder; with a stale claim, the engine is started and the claim is gone once that child exits.
+**Evidence.** `packages/node-core/test/engine-lock.test.ts` (12: grant, refusal naming the holder, stale takeover, unreadable claim, ownership-checked release in sync and async form, and that the two roles do not block each other) and two tests in `apps/node/test/envoy-local-runtime.test.ts` that drive the real start path with a fake `llama-server`: with a live claim held by `EnvoyDev`, **`spawn` is never called** and the failure names the holder; with a stale claim, the engine is started and the claim is gone once that child exits.
 
 **The gap this entry used to state is closed** (2026-09-13): the embeddings contention branch *is* driven end-to-end now — `apps/node/test/envoy-local-embed-runtime.test.ts` seeds a fake `llama-server`, a sparse model and a stubbed engine that models "the port is free, then our engine answers", and covers holding the claim through a successful start, refusing to spawn against a live holder, refusing a different model, and taking over a stale claim. Writing those tests found a defect of the same class as the watchdog one: the pre-acquire `stopEmbedListenerHard` also kills every non-self listener on the port.
 
-**Still open, and it is a decision rather than code: the model lease.** One `llama-server` serves one model, so EnvoyMesh holding a chat model while EnvoyCoder wants a code model cannot both be satisfied without a reload. Options remain (a) one agreed shared model, (b) a lease where the holder picks and others queue or fall back, (c) share embeddings only. The lock now makes the *contention* observable — the holder's model id is in the claim file — but the policy is the owner's call.
+**Still open, and it is a decision rather than code: the model lease.** One `llama-server` serves one model, so EnvoyMesh holding a chat model while EnvoyDev wants a code model cannot both be satisfied without a reload. Options remain (a) one agreed shared model, (b) a lease where the holder picks and others queue or fall back, (c) share embeddings only. The lock now makes the *contention* observable — the holder's model id is in the claim file — but the policy is the owner's call.
 
 ### The review round — six real defects, and two gates that now guard them (2026-09-13)
 
@@ -777,7 +777,7 @@ Both extensions have seeded negative controls in `scripts/test/gates.test.mjs` (
 
 The same reviewer's second pass verified all six fixes (each confirmed against the current tree and its call sites, plus a file-level sweep of 26 kernel filenames against every product token: zero hits) and then found four more defects. Three of them were in the S4 engine lock I had just written and tested.
 
-**(1) The claim was released immediately after it was acquired.** `stopChild(state)` / `stopEmbedListenerHard(state)` run *after* the acquire in the start path, and with no child yet they take their "no child, so release any stale claim" branch — deleting the claim we had just created, microseconds before the spawn. The engine then ran **unclaimed**, so a second process (EnvoyCoder, or a second node on the same root — the exact case the module exists for) found a free lock, acquired it, and started a competitor. Deterministic, no race needed, and my own tests could not see it: they asserted "a foreign holder means `spawn` is not called" and "after a timed-out start the claim is gone", and *both pass while the bug is present*. The fix is the order (stop the old child first, then take the claim) plus a release if `spawn` throws — without which a failed start leaves a claim the next attempt waits on. The regression test the reviewer asked for is in place: a **successful** start must leave the claim present with our pid while the child runs, and the takeover test's old `toBeNull()` assertion — which passed *because of* the bug — now asserts the claim is ours.
+**(1) The claim was released immediately after it was acquired.** `stopChild(state)` / `stopEmbedListenerHard(state)` run *after* the acquire in the start path, and with no child yet they take their "no child, so release any stale claim" branch — deleting the claim we had just created, microseconds before the spawn. The engine then ran **unclaimed**, so a second process (EnvoyDev, or a second node on the same root — the exact case the module exists for) found a free lock, acquired it, and started a competitor. Deterministic, no race needed, and my own tests could not see it: they asserted "a foreign holder means `spawn` is not called" and "after a timed-out start the claim is gone", and *both pass while the bug is present*. The fix is the order (stop the old child first, then take the claim) plus a release if `spawn` throws — without which a failed start leaves a claim the next attempt waits on. The regression test the reviewer asked for is in place: a **successful** start must leave the claim present with our pid while the child runs, and the takeover test's old `toBeNull()` assertion — which passed *because of* the bug — now asserts the claim is ours.
 
 **(2) The `exit`-handler release targeted a path that cannot exist.** `index.ts` released `runtimeDirIn(homeDir)/engine-*.lock`, while both runtimes lock inside `localEngineAssetsDir({ profileDir }).dir` — `<home>/runtime/envoy-local`. Proven by resolving both paths side by side (`…/runtime/engine-chat.lock` vs `…/runtime/envoy-local/engine-chat.lock`). Both calls were silent no-ops, so the claim outlived a killed node and the next start depended on stale takeover. Now released at the real engine root.
 
@@ -796,7 +796,7 @@ The same reviewer's second pass verified all six fixes (each confirmed against t
 | Piece | What it does |
 |---|---|
 | The claim records the loaded model | `engine-<role>.lock` carries `modelId`, so "the engine I found is the engine I asked for" is answerable without guessing |
-| A held engine with a different model | **refused** — "The shared local model engine is already running the model “X” (started by EnvoyCoder), but this app is set to “Y”. One engine can only serve one model at a time: set this app to the same model in Settings → AI, or stop the engine first (EnvoyCoder owns it until it stops)." Same for embeddings, naming the embeddings model |
+| A held engine with a different model | **refused** — "The shared local model engine is already running the model “X” (started by EnvoyDev), but this app is set to “Y”. One engine can only serve one model at a time: set this app to the same model in Settings → AI, or stop the engine first (EnvoyDev owns it until it stops)." Same for embeddings, naming the embeddings model |
 | A held engine with the same model | adopted — the loser waits for it to answer and uses it, which is D3's "share the local engine" |
 | An engine on the port with **no claim** | the port is the arbiter: `/v1/models` is read, and the engine is adopted when its model matches and refused when it does not. This covers an orphan from a node that crashed *and* the asset-root race below |
 

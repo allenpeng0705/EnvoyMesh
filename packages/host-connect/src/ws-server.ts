@@ -962,6 +962,7 @@ export class WsServer<TCaller = unknown> {
       "eh:permission",
       "eh:user_question",
       "eh:timeline",
+      "eh:chats_updated",
       // Phase 38 — voice/video call events
       "call:incoming",
       "call:reinvite",
@@ -1115,17 +1116,12 @@ export class WsServer<TCaller = unknown> {
     // what they are or how many there are: `socketMethods.handle` answers, and
     // `true` means "already replied, stop" (§2.5 (c)).
     //
-    // They hand the caller a **live stream** — a terminal, an agent core — so they
-    // require the owner's scope, and that check has to live here rather than in the
-    // dispatcher: `socketMethods` runs *before* it, which is also where a product's
-    // allow-list lives. Without this, an attached product or a family session could open
-    // a terminal through the one path that has no allow-list at all. A tokenless client
-    // is the owner's own UI, which is why an absent session is allowed.
-    const socketSession = this.authenticatedSessions.get(ws);
-    if (this._socketMethods && socketSession && socketSession.isOwnerScope !== true) {
-      this.sendError(ws, id ?? "unknown", "Only the node owner can do that", "UNAUTHORIZED");
-      return;
-    }
+    // **Owner scope is the product's rule, not a blanket host gate.** An earlier
+    // version refused *every* method whenever `socketMethods` was configured and
+    // the session was non-owner — which locked a paired phone out of ordinary
+    // product RPC (`coder.hello`, `coder.listTasks`, …) and out of
+    // `coder.subscribe` (EnvoyDev's only socket method). Terminal / live-stream
+    // methods that must stay owner-only refuse inside their own `handle`.
     if (this._socketMethods) {
       const handled = await this._socketMethods.handle({
         connection: ws,
@@ -1133,9 +1129,11 @@ export class WsServer<TCaller = unknown> {
         params: params ?? {},
         session: this.authenticatedSessions.get(ws),
         send: (event, data) => this.sendEvent(ws, event, data),
-        ok: (result) => this.sendResponse(ws, String(id), result),
+        // Preserve the client's id type (number or string) — `String(id)` made
+        // `ask()` in access-gate miss the reply (`id !== 1` when id is `"1"`).
+        ok: (result) => this.sendResponse(ws, id ?? "unknown", result),
         fail: (message) =>
-          this.sendResponse(ws, String(id), { ok: false, error: message }),
+          this.sendError(ws, id ?? "unknown", message, "UNAUTHORIZED"),
       });
       if (handled) return;
     }
@@ -1321,8 +1319,16 @@ export class WsServer<TCaller = unknown> {
   // Message Sending Helpers
   // ============================================
 
-  private sendResponse(ws: WebSocket, id: string, result?: unknown, error?: { code: string; message: string }): void {
-    const response: JsonRpcResponse = { id };
+  private sendResponse(
+    ws: WebSocket,
+    id: string | number,
+    result?: unknown,
+    error?: { code: string; message: string },
+  ): void {
+    const response: JsonRpcResponse = { id: String(id) };
+    // Prefer the client's own id shape when it was a number — callers that match
+    // on `id === 1` (access-gate) must not see `"1"`.
+    if (typeof id === "number") (response as { id: string | number }).id = id;
     if (error) {
       response.error = error;
     } else {
@@ -1331,7 +1337,7 @@ export class WsServer<TCaller = unknown> {
     ws.send(JSON.stringify(response));
   }
 
-  private sendError(ws: WebSocket, id: string, message: string, code: string = "ERROR"): void {
+  private sendError(ws: WebSocket, id: string | number, message: string, code: string = "ERROR"): void {
     this.sendResponse(ws, id, undefined, { code, message });
   }
 

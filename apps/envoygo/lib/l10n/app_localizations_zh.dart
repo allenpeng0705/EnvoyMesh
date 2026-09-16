@@ -51,10 +51,172 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingEmptyHint => '在家用电脑上开始一个编程任务。';
 
   @override
+  String get codingHomeEmptyProjects => '先添加项目，再在该项目下创建任务。';
+
+  @override
+  String get codingHomeAddProjectHint => '注册家用电脑上的一个文件夹。';
+
+  @override
+  String get codingHomeNewTaskHint => '选择项目和编程引擎。';
+
+  @override
+  String get codingAddProjectTitle => '添加项目';
+
+  @override
+  String get codingAddProjectDesc => '将文件夹注册为项目，并选择默认编程引擎。';
+
+  @override
+  String get codingAddProjectConfirm => '添加项目';
+
+  @override
+  String get codingAddProjectCta => '添加项目';
+
+  @override
+  String get codingRemoveFromCoding => '从编程中移除';
+
+  @override
+  String get codingRemoveProjectTitle => '从编程中移除此项目？';
+
+  @override
+  String codingRemoveProjectBody(String title) {
+    return '从编程中移除“$title”？其下的任务也会离开编程。磁盘上的文件夹和文件不会被删除。';
+  }
+
+  @override
+  String get codingCancelTurn => '取消';
+
+  @override
   String get codingGated => '此档案无法使用编程。';
 
   @override
   String get codingSectionProjects => '项目';
+
+  @override
+  String get codingSectionTasks => '任务';
+
+  @override
+  String get codingHistoryAll => '全部';
+
+  @override
+  String get codingHistoryArchived => '已归档';
+
+  @override
+  String get codingArchive => '归档';
+
+  @override
+  String get codingUnarchive => '取消归档';
+
+  @override
+  String get codingComposerModelHint => '模型';
+
+  @override
+  String get codingModeAsk => '询问';
+
+  @override
+  String get codingModePlan => '计划';
+
+  @override
+  String get codingModeCode => '编码';
+
+  @override
+  String get codingModeFast => '快速';
+
+  @override
+  String get codingModeThink => '思考';
+
+  @override
+  String get codingImportSession => '导入会话';
+
+  @override
+  String get codingAttachFile => '附加文件';
+
+  @override
+  String get codingSchedulesTitle => '定时任务';
+
+  @override
+  String get codingScheduleCreate => '新建定时任务';
+
+  @override
+  String get codingScheduleRunNow => '立即运行';
+
+  @override
+  String get codingHarnessMinimax => 'MiniMax Code';
+
+  @override
+  String get codingHarnessChecking => '检查中…';
+
+  @override
+  String get codingHarnessNotReady => '未就绪';
+
+  @override
+  String get codingHarnessProbeUnknown => '需确认安装';
+
+  @override
+  String get codingHarnessProbeHint =>
+      'Envoy/Pi 为内置；其他工具是家用电脑上的 CLI——编程页只是调用。就绪 / 未就绪表示是否可用。';
+
+  @override
+  String get codingHarnessHowToFix => '如何解决';
+
+  @override
+  String codingHarnessResolveTitle(String name) {
+    return '配置 $name';
+  }
+
+  @override
+  String codingHarnessResolveBody(String name) {
+    return '$name 在家用电脑上尚未就绪。请按下列步骤操作，然后点刷新。';
+  }
+
+  @override
+  String get codingHarnessInstallCmd => '安装命令（在家用电脑上运行）';
+
+  @override
+  String get codingHarnessFirstRunCmd => '首次运行命令（在家用电脑上运行）';
+
+  @override
+  String get codingHarnessCopyCmd => '复制命令';
+
+  @override
+  String get codingHarnessCmdCopied => '命令已复制';
+
+  @override
+  String get codingHarnessOpenDocs => '打开文档';
+
+  @override
+  String get codingHarnessOurGap => '这是产品能力限制——此智能体无需在电脑上安装其他内容。';
+
+  @override
+  String get codingAgentsSettingsTitle => '编程工具';
+
+  @override
+  String get codingAgentsSettingsIntro =>
+      'Envoy 与 Pi 内置在 EnvoyMesh 中。其他工具（Claude Code、Codex、Cursor 等）安装在家用电脑上——编程页只是调用它们。此页仅检查就绪 / 未就绪。';
+
+  @override
+  String get codingAgentsRecheck => '重新检查';
+
+  @override
+  String get codingAgentsPiSettings => 'Pi 设置';
+
+  @override
+  String codingAgentsOnMachine(int ready, int total) {
+    return '本机 · $ready/$total 就绪';
+  }
+
+  @override
+  String codingAgentsGroupBuiltIn(int ready, int total) {
+    return 'EnvoyMesh 内置 · $ready/$total 就绪';
+  }
+
+  @override
+  String codingAgentsGroupExternal(int ready, int total) {
+    return '编程页可用（不属于 EnvoyMesh）· $ready/$total 就绪';
+  }
+
+  @override
+  String get codingAgentsExternalHint =>
+      '请自行安装并登录这些 CLI。EnvoyMesh 不负责配置它们——仅在编程页选中时运行。';
 
   @override
   String get codingStatusIdle => '空闲';
@@ -287,6 +449,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get piStartingHint => 'Pi 正在启动 — 请稍后再试。';
+
+  @override
+  String get piStartAction => '启动 Pi';
 
   @override
   String get piStateReady => '就绪';
@@ -714,10 +879,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get meEnvoyLocalHint => '家庭节点本地模型（在电脑上下载并启动）';
 
   @override
-  String get mePiAgent => '编码助手';
+  String get mePiAgent => '编程工具';
 
   @override
-  String get mePiAgentHint => 'Pi 与 Envoy Harness 设置';
+  String get mePiAgentHint => '内置 Envoy/Pi，以及编程页可调用的外部 CLI';
 
   @override
   String get meDarkMode => '深色模式';
@@ -826,7 +991,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get meAiModelHint => '此家庭节点助手使用的模型提供方';
 
   @override
-  String get mePiAgentHintLong => '家庭节点上的本地编码助手（Pi 与 Envoy Harness）';
+  String get mePiAgentHintLong => '查看内置 Envoy/Pi，以及编程页可调用的外部 CLI 是否就绪';
 
   @override
   String get mePushNotificationsHintLong => '应用在后台时接收新消息、联系人请求与审批提醒。';

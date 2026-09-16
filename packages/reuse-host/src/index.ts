@@ -12,7 +12,7 @@
  * workspace entries, that a second product could depend on:
  *
  * ```
- *   product (EnvoyCoder, …)
+ *   product (EnvoyDev, …)
  *        │  depends on
  *        ▼
  *   @envoymesh/reuse-host      ← this package: transport + pairing + harness

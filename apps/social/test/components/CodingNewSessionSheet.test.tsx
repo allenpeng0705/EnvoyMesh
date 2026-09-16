@@ -47,7 +47,7 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
     expect(screen.getByTestId("coding-harness-cursor")).toBeTruthy();
     expect(screen.getByTestId("coding-harness-codewhale")).toBeTruthy();
     expect(screen.getByTestId("coding-harness-probe-codex").textContent).toMatch(/Ready/i);
-    expect(screen.getByTestId("coding-harness-probe-opencode").textContent).toMatch(/Install/i);
+    expect(screen.getByTestId("coding-harness-probe-opencode").textContent).toMatch(/Not ready/i);
 
     fireEvent.click(screen.getByTestId("coding-harness-codex"));
     fireEvent.click(screen.getByTestId("coding-new-session-confirm"));
@@ -106,6 +106,15 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
     expect(
       (screen.getByTestId("coding-new-task-provider") as HTMLSelectElement)
         .options[0]?.textContent,
-    ).toMatch(/Agent default/i);
+    ).toMatch(/Agent.?s own login/i);
+    expect(screen.getByTestId("coding-model-hint-task").textContent).toMatch(
+      /own login and default model/i,
+    );
+    expect(screen.getByTestId("coding-provider-hint-task").textContent).toMatch(
+      /CLI.?s auth/i,
+    );
+    expect(
+      screen.getByPlaceholderText(/Empty = agent default \(gpt-5\.1-codex\)/i),
+    ).toBeTruthy();
   });
 });

@@ -7,7 +7,7 @@
  * stores**: the owner key, the peer key, trust, peer directory, session tokens, node
  * config, the audit trail, the vault index. A product's own state — chat transcripts,
  * family profiles, shop listings, published library, harness sessions, coding schedules —
- * belongs under `<home>/<product>/`, so that installing EnvoyCoder does not mean reading
+ * belongs under `<home>/<product>/`, so that installing EnvoyDev does not mean reading
  * EnvoyMesh's chats (`docs/envoymesh-multi-product-design.md` §5).
  *
  * Two directories, then, and this module is the only place that decides the second one:

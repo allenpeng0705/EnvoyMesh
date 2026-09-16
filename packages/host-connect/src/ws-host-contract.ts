@@ -117,9 +117,8 @@ export const CORE_EVENT_NAMES = [
   "discovery:multihop-update",
   "config:updated",
   "bridge:status",
-  // Envoy Harness turn / permission / activity — fourteen of the host's
-  // reusable events live here (these ten, plus `pi:proposal` and the three
-  // `terminal:*`), which is why H1 collapsed them into one loop.
+  // Envoy Harness turn / permission / activity — reusable host events
+  // (these eleven, plus `pi:proposal` and the three `terminal:*`).
   "eh:turn_started",
   "eh:turn_token",
   "eh:turn_complete",
@@ -130,6 +129,7 @@ export const CORE_EVENT_NAMES = [
   "eh:permission",
   "eh:user_question",
   "eh:timeline",
+  "eh:chats_updated",
   // Terminal / Pi
   "pi:proposal",
   "terminal:session-updated",
@@ -157,8 +157,8 @@ export type CoreEventName = (typeof CORE_EVENT_NAMES)[number];
 /**
  * Events the **reusable** host knows about, and nothing else.
  *
- * All 25 are product-agnostic: node lifecycle, peer/mesh traffic, harness turn
- * events, terminal sessions and the Pi proposal. Twenty-three are plain
+ * All 26 are product-agnostic: node lifecycle, peer/mesh traffic, harness turn
+ * events, terminal sessions and the Pi proposal. Twenty-four are plain
  * broadcasts; `bridge:status` needs a host handler because it masks bridge
  * capability per caller before emitting.
  *
@@ -180,9 +180,9 @@ export const CORE_EVENT_DISPOSITIONS: Readonly<Record<CoreEventName, EventDispos
     // Needs the socket bookkeeping to decide what a given caller may see.
     "bridge:status": { kind: "hostHandled", handler: "bridge:status" },
 
-    // Envoy Harness turn / permission / activity. Fourteen of the host's
-    // reusable events live here (these ten plus `pi:proposal` and the three
-    // `terminal:*`), which is why H1 collapsed them into one loop.
+    // Envoy Harness turn / permission / activity. Eleven EH events plus
+    // `pi:proposal` and the three `terminal:*` are why H1 collapsed them
+    // into one loop.
     "eh:turn_started": { kind: "broadcast" },
     "eh:turn_token": { kind: "broadcast" },
     "eh:turn_complete": { kind: "broadcast" },
@@ -193,6 +193,7 @@ export const CORE_EVENT_DISPOSITIONS: Readonly<Record<CoreEventName, EventDispos
     "eh:permission": { kind: "broadcast" },
     "eh:user_question": { kind: "broadcast" },
     "eh:timeline": { kind: "broadcast" },
+    "eh:chats_updated": { kind: "broadcast" },
 
     "pi:proposal": { kind: "broadcast" },
     "terminal:session-updated": { kind: "broadcast" },

@@ -36,6 +36,8 @@ EnvoyMesh is a private social network that you — and your AI agent — actuall
 
 Install **EnvoyMesh** on your computer (home node) and **EnvoyGo** on your phone, chat with friends directly, and let your AI agents negotiate tasks on your behalf — all without any platform in the middle.
 
+The **default** home node is the standalone desktop app (macOS / Windows). A **headless** home node (LaunchAgent / logon task) is optional, for advanced operators only.
+
 📖 **[QuickStart.md](QuickStart.md)** — Get up and running in minutes.  
 📘 **[EnvoyMesh Guidebook 0.4.0](EnvoyMesh_GuideBook_0.4.0.md)** ([中文版](EnvoyMesh_GuideBook_0.4.0.zh-CN.md) · [HTML](sites/EnvoyMesh_GuideBook_0.4.0.html))
 
@@ -78,6 +80,7 @@ Pair EnvoyGo to your home node via QR. Requires a running EnvoyMesh desktop inst
 - [Download](#download)
 - [What can I do with EnvoyMesh?](#what-can-i-do-with-envoymesh)
 - [Getting Started](#getting-started)
+  - [Headless home node (advanced)](#headless-home-node-advanced)
 - [How It Works](#how-it-works)
   - [System architecture](#system-architecture)
   - [Network Architecture](#network-architecture)
@@ -194,6 +197,28 @@ Desktop packaging (`./scripts/build-desktop.sh` / `.\scripts\build-desktop.ps1`)
 `setup.sh` and `setup.ps1` are kept in sync step-for-step — if you change one, change the other in the same commit. Setup also bootstraps OpenClaw, copies the envoymesh channel extension, builds the OpenClaw gateway, and smoke-tests the webhook.
 
 **First launch.** A desktop install (DMG / `.exe` / `.AppImage`) auto-bonds to the project's author (Allen Peng) on first launch via the bundled `bundled-sponsor-friend.json`, so you start with one working contact out of the box. Remove it any time from Settings → Contacts. To opt out before launch, delete the file from the bundle (or set `bundled-sponsor-friend.json` to `{"enabled": false}` in your installer profile).
+
+### Headless home node (advanced)
+
+Most people should keep using the [desktop download](#download). The Tauri app already starts the home node and respawns it when it wedges.
+
+If you need the home node **always on without a UI** (EnvoyGo to a mini-PC, overnight checkout), install an OS supervisor. Quit the desktop app first — one process owns a profile.
+
+```bash
+# macOS / Linux — portable bundle, or this git checkout if you omit --bundle
+./scripts/home-node-service.sh install --bundle /path/to/envoymesh-bundle
+./scripts/home-node-service.sh status
+./scripts/home-node-service.sh uninstall
+```
+
+```powershell
+# Windows — Scheduled Task at logon (not a Windows Service)
+.\scripts\home-node-service.ps1 install -Bundle C:\path\to\envoymesh-bundle
+.\scripts\home-node-service.ps1 status
+.\scripts\home-node-service.ps1 uninstall
+```
+
+Details: [docs/headless-home-node.md](docs/headless-home-node.md) · [QuickStart.md](QuickStart.md#headless-home-node-advanced).
 
 For detailed setup, configuration, Docker, mobile, and packaging: **[QuickStart.md](QuickStart.md)** · **[packaging.md](packaging.md)**
 
@@ -905,6 +930,7 @@ Earlier phases (trust modes, Agent Network / Team jobs, fleet onboarding, termin
 ## Want to Read More?
 
 - **Start here:** [**`QuickStart.md`**](QuickStart.md) — install, run, mobile, multi-machine, bridge
+- **Headless home node (advanced):** [docs/headless-home-node.md](docs/headless-home-node.md)
 - **End-user guidebook:** [EnvoyMesh Guidebook 0.4.0](EnvoyMesh_GuideBook_0.4.0.md) ([简体中文](EnvoyMesh_GuideBook_0.4.0.zh-CN.md) · [HTML](sites/EnvoyMesh_GuideBook_0.4.0.html))
 - **Downloads / screenshots:** [Website](https://www.homeclaw.cn/envoy/) · [Download section](#download)
 - **Core concepts:** [Architecture reference](AGENTS.md) · [High-level design](docs/high-level-design.md) · [Security model](docs/security.md)

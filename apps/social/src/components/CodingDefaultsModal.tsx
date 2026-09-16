@@ -90,7 +90,7 @@ export function CodingDefaultsModal({
           <p className="modal-desc coding-job-modal__desc">
             {t(
               "codingView.defaultsDesc",
-              "Used when a project has no override. Empty model or provider for Envoy and Pi uses EnvoyMesh AI.",
+              "Used when a project has no override. Envoy and Pi with empty model use EnvoyMesh AI. Other agents use their own login unless you set a model or a compatible endpoint.",
             )}
           </p>
 

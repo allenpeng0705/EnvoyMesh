@@ -44,7 +44,7 @@ class PairingService {
   /// Why this code belongs to another app, or `null` when it is ours.
   ///
   /// A pairing code names the app that minted it, and this phone belongs to
-  /// `EnvoyMesh` — so a code from EnvoyCoder's desktop app must be refused **here**,
+  /// `EnvoyMesh` — so a code from EnvoyDev's desktop app must be refused **here**,
   /// before anything is dialled. Nobody else can: the token inside the code is opaque
   /// and app-local, so the desktop node only ever sees its own, and the outcome without
   /// this check is a phone that quietly pairs with the wrong product's desktop app.

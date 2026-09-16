@@ -139,7 +139,7 @@ describe("acquireEngineLock", () => {
 
     const second = await acquireEngineLock(root, {
       pid: process.pid,
-      app: "EnvoyCoder",
+      app: "EnvoyDev",
       port: 18791,
     });
     expect(second.acquired).toBe(false);
@@ -177,7 +177,7 @@ describe("acquireEngineLock", () => {
     });
     const result = await acquireEngineLock(
       root,
-      { pid: process.pid, app: "EnvoyCoder", port: 18790 },
+      { pid: process.pid, app: "EnvoyDev", port: 18790 },
       { processStartTimeOf: () => Date.now() - 120_000 },
     );
     expect(result.acquired).toBe(true);
@@ -193,7 +193,7 @@ describe("acquireEngineLock", () => {
     writeForeignClaim(root, { pid: process.ppid, app: "EnvoyMesh", port: 18790, pidStartedAt: recorded });
     const result = await acquireEngineLock(
       root,
-      { pid: process.pid, app: "EnvoyCoder", port: 18790 },
+      { pid: process.pid, app: "EnvoyDev", port: 18790 },
       { processStartTimeOf: () => recorded + 1_500 },
     );
     expect(result.acquired).toBe(false);

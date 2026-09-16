@@ -1465,6 +1465,8 @@ export interface NodeServiceEvents {
   "eh:files_changed": import("./eh-files-changed.js").EhFilesChangedEvent;
   /** Shared semantic timeline update (parallel to legacy events during migration). */
   "eh:timeline": import("./eh-timeline.js").EhTimelineUpdate;
+  /** EH chat list / title changed (e.g. first-prompt auto-title). */
+  "eh:chats_updated": { chatId: string; title: string };
   "eh:ux_telemetry": import("./eh-ux-telemetry.js").EhUxTelemetryEvent;
 
   /** Home terminal PTY tunnel bytes (Phase 30E — mobile HomeRemote). */

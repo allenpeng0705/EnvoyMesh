@@ -8,6 +8,7 @@ import {
 } from "../../hooks/useNodeService.js";
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import { AgentSettings } from "./settings/AgentSettings.js";
+import { CodingAgentsSettings } from "./settings/CodingAgentsSettings.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import type {
   AiIdentityMode,
@@ -4317,10 +4318,23 @@ export function SettingsAITab() {
         <EnvoyLocalSettings refreshNodeConfig={refreshNodeConfig} />
       </section>
 
-      {/* Envoy Harness = coding chat (+ Terminal). Pi = Terminal (+ Ext Agent). No shared active-engine switch. */}
-      <section className="settings-section">
-        <h4>{t("settings.ai.aiEngine.piAgent")}</h4>
-        <p className="section-desc">{t("settings.ai.aiEngine.piAgentDesc")}</p>
+      <section className="settings-section" data-testid="settings-coding-agents">
+        <h4>{t("settings.ai.codingAgents.heading", "Coding tools")}</h4>
+        <CodingAgentsSettings />
+
+        {/* Envoy / Pi config lives under Coding tools (not a separate “Coding harnesses” section). */}
+        <p className="coding-agents-settings__count coding-agents-settings__count--spaced">
+          {t(
+            "settings.ai.codingAgents.builtInConfig",
+            "Envoy & Pi settings",
+          )}
+        </p>
+        <p className="coding-agents-settings__group-hint">
+          {t(
+            "settings.ai.codingAgents.builtInConfigHint",
+            "Configure the built-in Coding engines. External CLIs above are installed and signed in outside EnvoyMesh.",
+          )}
+        </p>
 
         <div className="coding-agents-stack">
         <div

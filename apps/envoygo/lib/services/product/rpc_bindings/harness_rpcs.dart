@@ -1,4 +1,5 @@
 import '../../../coding/coding_heartbeat.dart';
+import '../../../coding/coding_schedule.dart';
 import '../../home_rpc_session.dart';
 
 /// Coding-harness bindings: Envoy Harness chats/turns, coding heartbeats.
@@ -13,10 +14,19 @@ mixin HarnessRpcs on HomeRpcSession {
   Future<Map<String, dynamic>> createEnvoyHarnessChat({
     required String cwd,
     String? title,
+    bool forceNew = false,
+    String? model,
+    String? endpoint,
+    String? apiKey,
   }) async {
     return await homeClient.call('createEnvoyHarnessChat', {
           'cwd': cwd,
           if (title != null) 'title': title,
+          if (forceNew) 'forceNew': true,
+          if (model != null && model.trim().isNotEmpty) 'model': model.trim(),
+          if (endpoint != null && endpoint.trim().isNotEmpty)
+            'endpoint': endpoint.trim(),
+          if (apiKey != null && apiKey.trim().isNotEmpty) 'apiKey': apiKey.trim(),
         }, const Duration(seconds: 30))
         as Map<String, dynamic>;
   }
@@ -103,6 +113,69 @@ mixin HarnessRpcs on HomeRpcSession {
     return CodingHeartbeat.fromJson(
       Map<String, dynamic>.from(result as Map),
     );
+  }
+
+  /// Phase 68-C7 — list Coding schedules (new task each fire).
+  Future<List<CodingSchedule>> listCodingSchedules() async {
+    final result = await homeClient.call('listCodingSchedules');
+    final list = (result as List<dynamic>?) ?? const [];
+    return list
+        .whereType<Map>()
+        .map((e) => CodingSchedule.fromJson(Map<String, dynamic>.from(e)))
+        .toList(growable: false);
+  }
+
+  Future<CodingSchedule> createCodingSchedule(
+    CreateCodingScheduleInput input,
+  ) async {
+    final result = await homeClient.call(
+      'createCodingSchedule',
+      input.toJson(),
+      const Duration(seconds: 30),
+    );
+    return CodingSchedule.fromJson(Map<String, dynamic>.from(result as Map));
+  }
+
+  Future<CodingSchedule> updateCodingSchedule({
+    required String id,
+    bool? enabled,
+    String? cron,
+    String? prompt,
+    String? name,
+    String? cwd,
+    String? harness,
+  }) async {
+    final result = await homeClient.call(
+      'updateCodingSchedule',
+      {
+        'id': id.trim(),
+        if (enabled != null) 'enabled': enabled,
+        if (cron != null) 'cron': cron,
+        if (prompt != null) 'prompt': prompt,
+        if (name != null) 'name': name,
+        if (cwd != null) 'cwd': cwd,
+        if (harness != null) 'harness': harness,
+      },
+      const Duration(seconds: 30),
+    );
+    return CodingSchedule.fromJson(Map<String, dynamic>.from(result as Map));
+  }
+
+  Future<bool> deleteCodingSchedule(String id) async {
+    final result = await homeClient.call('deleteCodingSchedule', {
+      'id': id.trim(),
+    });
+    if (result is Map && result['deleted'] == true) return true;
+    return result == true;
+  }
+
+  Future<CodingSchedule> runCodingScheduleNow(String id) async {
+    final result = await homeClient.call(
+      'runCodingScheduleNow',
+      {'id': id.trim()},
+      const Duration(seconds: 60),
+    );
+    return CodingSchedule.fromJson(Map<String, dynamic>.from(result as Map));
   }
 
   Future<Map<String, dynamic>> openEnvoyHarnessChat(String chatId) async {

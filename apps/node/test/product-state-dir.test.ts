@@ -68,9 +68,9 @@ describe("resolveProductStateDirFor (§5)", () => {
   it("honours the product name a launcher sets", () => {
     const { home, profile } = tempHome();
     writeFileSync(join(profile, "profile.json"), "{}");
-    const state = resolveProductStateDirFor(profile, "EnvoyCoder");
-    expect(state.dir).toBe(join(home, "EnvoyCoder"));
-    expect(currentProductName({ ENVOYMESH_APP_NAME: "EnvoyCoder" })).toBe("EnvoyCoder");
+    const state = resolveProductStateDirFor(profile, "EnvoyDev");
+    expect(state.dir).toBe(join(home, "EnvoyDev"));
+    expect(currentProductName({ ENVOYMESH_APP_NAME: "EnvoyDev" })).toBe("EnvoyDev");
     expect(currentProductName({})).toBe("EnvoyMesh");
   });
 

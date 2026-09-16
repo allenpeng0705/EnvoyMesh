@@ -2,7 +2,7 @@
 
 **Status:** living reference · **Created:** 2026-09-13 · **Companions:** `docs/envoymesh-multi-product-design.md` (why the family works this way), `docs/envoymesh-refactoring-plan.md` (how the reusable layer was carved out)
 
-> **Read this before starting EnvoyCoder or EnvoyAgent.** It answers four questions: what you get for free, how to build a desktop/CLI app, how to build its mobile app, and how to stay in sync with EnvoyMesh as it moves. Every command here is one you can run today, and every rule is enforced by a gate — so "I followed the guide" is checkable rather than a claim.
+> **Read this before starting EnvoyDev or EnvoyAgent.** It answers four questions: what you get for free, how to build a desktop/CLI app, how to build its mobile app, and how to stay in sync with EnvoyMesh as it moves. Every command here is one you can run today, and every rule is enforced by a gate — so "I followed the guide" is checkable rather than a claim.
 
 ---
 
@@ -99,7 +99,7 @@ import { resolveHomeDir, profileDirIn, productDirIn, ensureHomeDirs } from "@env
 
 const home = resolveHomeDir();            // ENVOYMESH_HOME → per-OS default → legacy ~/.envoymesh
 const kernel = profileDirIn(home);        // identity + the 14 kernel stores (shared)
-const mine = productDirIn(home, "EnvoyCoder");  // your 34-ish product stores (yours alone)
+const mine = productDirIn(home, "EnvoyDev");  // your 34-ish product stores (yours alone)
 ```
 
 The kernel/product split is not a convention you invent: `node scripts/inventory-node-stores.mjs --check` reports **48 stores (14 kernel / 34 product)** and fails if a product store is reachable without a profile-directory guard. Put your own stores in `productDirIn(home, "<Product>")` and they will be yours.
@@ -114,9 +114,9 @@ const running = await resolveRunningNode(home);
 if (running.status === "running") {
   const grant = await requestProductSession(
     { port: running.endpoint!.port, path: running.endpoint!.path },
-    { product: "EnvoyCoder", version: ENVOYMESH_VERSION },
+    { product: "EnvoyDev", version: ENVOYMESH_VERSION },
   );
-  // grant.wsUrl already carries the token; grant.scopeKey is "product:EnvoyCoder"
+  // grant.wsUrl already carries the token; grant.scopeKey is "product:EnvoyDev"
 } else {
   // no node is running: become it (`acquireNodeLock`), or start in a local-only mode
 }
@@ -136,7 +136,7 @@ Coding is the first capability, and it is owner-set:
 
 ```ts
 // owner-only, on the node that hosts you
-await node.updateNodeConfig({ productGrants: { EnvoyCoder: ["coding"] } });
+await node.updateNodeConfig({ productGrants: { EnvoyDev: ["coding"] } });
 ```
 
 Until the owner does that, your product scope is refused the coding surface it exists for. The default is **nothing**, the read fails closed, and the vocabulary is open — add capability names as your product needs them, on both sides.
@@ -173,7 +173,7 @@ desktop app                       phone app
 ───────────                       ─────────
 mints a short-lived token
 builds PairingPayload{ wsUrl, lanWsUrl, token, ownerPublicKey, ownerId,
-                       relayPeerId?, relayWsUrls?, app: "EnvoyCoder" }
+                       relayPeerId?, relayWsUrls?, app: "EnvoyDev" }
       │  encodePairingToken()  →  a compact gzip code, or the envoy://pair URI
       ▼                                  │  scan
    shows QR ───────────────────────────► │
@@ -189,9 +189,9 @@ builds PairingPayload{ wsUrl, lanWsUrl, token, ownerPublicKey, ownerId,
 ```dart
 // Dart (package:envoy_thin_client) — the twin of the TS rule, in the shared contract
 final data = parsePairingUri(scanned);
-final mismatch = pairingAppMismatch(data?.app, 'EnvoyCoder'); // your own product name
+final mismatch = pairingAppMismatch(data?.app, 'EnvoyDev'); // your own product name
 if (mismatch != null) {
-  return showMessage(mismatch); // "That code was made by EnvoyMesh, and this is EnvoyCoder. …"
+  return showMessage(mismatch); // "That code was made by EnvoyMesh, and this is EnvoyDev. …"
 }
 ```
 
@@ -245,7 +245,7 @@ Three options, in the order I would pick them:
 
 ### 7.3 Versioning
 
-`ENVOYMESH_VERSION` is generated into `packages/protocol/src/version.ts` by `node scripts/sync-version.mjs`; `@envoymesh/api` re-exports it. Do not hand-edit either. Record the version in your own `envoymesh.json` marker via `touchHomeMarker(home, { app: "EnvoyCoder", version })` — that is how the discovery dialog can say "last used by EnvoyCoder 1.2.0".
+`ENVOYMESH_VERSION` is generated into `packages/protocol/src/version.ts` by `node scripts/sync-version.mjs`; `@envoymesh/api` re-exports it. Do not hand-edit either. Record the version in your own `envoymesh.json` marker via `touchHomeMarker(home, { app: "EnvoyDev", version })` — that is how the discovery dialog can say "last used by EnvoyDev 1.2.0".
 
 ### 7.4 Contract changes go upstream, never in a fork
 
@@ -264,7 +264,7 @@ Everything in §7.2 assumes the thing you need is **core**, so vendoring or `fil
 
 > **A product that wants the Envoy Harness clones or copies `envoy-harness` directly — never through EnvoyMesh's link, and never vendored into EnvoyMesh.**
 
-EnvoyMesh keeps its own `file:../envoy-harness/…` link because it needs the harness to run at all; that link is a **local development arrangement, not a distribution channel**. If EnvoyCoder reached the harness *through* EnvoyMesh, then EnvoyCoder would depend on this repo for someone else's package — and inherit this repo's release cadence for code this repo does not own.
+EnvoyMesh keeps its own `file:../envoy-harness/…` link because it needs the harness to run at all; that link is a **local development arrangement, not a distribution channel**. If EnvoyDev reached the harness *through* EnvoyMesh, then EnvoyDev would depend on this repo for someone else's package — and inherit this repo's release cadence for code this repo does not own.
 
 The task is entirely yours to do:
 
@@ -306,16 +306,16 @@ Do **not** pass the EnvoyMesh home. That would place the lock where no runtime l
 - [ ] Your mobile app refuses another product's QR with the shared sentence
 - [ ] Nothing you added is reachable by a caller the family would not trust: no new anonymous path, no new cross-app path, no shared key
 
-## 9. Pre-flight for EnvoyCoder and EnvoyAgent
+## 9. Pre-flight for EnvoyDev and EnvoyAgent
 
-| | EnvoyCoder | EnvoyAgent |
+| | EnvoyDev | EnvoyAgent |
 |---|---|---|
 | App package | `apps/coder` (host + harness driven from your own dispatcher) | `apps/agent` |
-| Product scope | `product:EnvoyCoder` via `attachLocalProduct` | `product:EnvoyAgent` |
+| Product scope | `product:EnvoyDev` via `attachLocalProduct` | `product:EnvoyAgent` |
 | Capabilities to request | `["coding"]` (owner-granted, via `updateNodeConfig`) | likely `["agents"]` — **the vocabulary does not exist yet**; add it where `"coding"` lives |
-| Product state | `<home>/EnvoyCoder/` — repos, runs, transcripts | `<home>/EnvoyAgent/` — sessions, leases, results |
+| Product state | `<home>/EnvoyDev/` — repos, runs, transcripts | `<home>/EnvoyAgent/` — sessions, leases, results |
 | Mobile app | `apps/coder-mobile` (Flutter, thin client + pairing) | `apps/agent-mobile` |
-| Pairing `app` name | `ENVOYMESH_APP_NAME=EnvoyCoder` | `ENVOYMESH_APP_NAME=EnvoyAgent` |
+| Pairing `app` name | `ENVOYMESH_APP_NAME=EnvoyDev` | `ENVOYMESH_APP_NAME=EnvoyAgent` |
 | Relay | the shared roster, unchanged | the shared roster, unchanged |
 | Biggest open question | what a product may call beyond the current allow-list | same, plus capability vocabulary |
 

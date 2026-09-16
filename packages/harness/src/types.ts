@@ -61,7 +61,8 @@ export type ExtAgentAskOpts = {
 };
 
 export interface ExtAgentBackend {
-  readonly kind: ExtAgentSidecarKind;
+  /** Sidecar kind, or a Coding catalog provider id. */
+  readonly kind: ExtAgentSidecarKind | string;
   /** Human-readable label for logs /status. */
   readonly label: string;
   ask(text: string, sessionKey: string, opts?: ExtAgentAskOpts): Promise<string>;

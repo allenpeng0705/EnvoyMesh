@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   addCodingProject,
+  codingHarnessModelSuggestions,
+  codingModelSuggestionsForAgent,
   codingModelToEhHostModel,
   ensureCodingProjectsFromCwds,
   getCodingProject,
@@ -50,6 +52,31 @@ afterEach(() => {
 describe("coding-projects", () => {
   it("normalizes trailing slashes", () => {
     expect(normalizeCodingProjectPath("/a/b/")).toBe("/a/b");
+  });
+
+  it("addCodingProject stores default agent and model", () => {
+    installMemoryStorage();
+    const p = addCodingProject("/projects/app", {
+      defaultHarness: "codex",
+      defaultModel: "gpt-4o",
+      defaultProviderKind: "openai-compatible",
+      defaultEndpoint: "https://api.openai.com/v1",
+    });
+    expect(p.defaultHarness).toBe("codex");
+    expect(p.defaultModel).toBe("gpt-4o");
+    expect(p.defaultProviderKind).toBe("openai-compatible");
+    expect(getCodingProject("/projects/app")?.defaultHarness).toBe("codex");
+  });
+
+  it("addCodingProject does not overwrite an existing harness", () => {
+    installMemoryStorage();
+    addCodingProject("/projects/app", { defaultHarness: "cursor" });
+    const again = addCodingProject("/projects/app", {
+      defaultHarness: "codex",
+      defaultModel: "gpt-4o",
+    });
+    expect(again.defaultHarness).toBe("cursor");
+    expect(again.defaultModel).toBe("gpt-4o");
   });
 
   it("addCodingProject is idempotent by path", () => {
@@ -319,5 +346,35 @@ describe("coding-projects", () => {
     });
     expect(again?.defaultHarness).toBe("cursor");
     expect(again?.defaultModel).toBe("auto");
+  });
+});
+
+describe("codingHarnessModelSuggestions", () => {
+  it("follows the selected agent family", () => {
+    expect(codingHarnessModelSuggestions("codex")[0]).toMatch(/gpt|o3|o4/i);
+    expect(codingHarnessModelSuggestions("claudecode")[0]).toMatch(/claude/i);
+    expect(codingHarnessModelSuggestions("minimax-code")[0]).toMatch(/MiniMax/i);
+  });
+
+  it("puts compatible-provider models first when custom endpoint is chosen", () => {
+    const openai = codingModelSuggestionsForAgent({
+      harness: "claudecode",
+      providerKind: "openai-compatible",
+    });
+    expect(openai[0]).toMatch(/gpt|o4|o3/i);
+    const anthropic = codingModelSuggestionsForAgent({
+      harness: "codex",
+      providerKind: "anthropic-compatible",
+    });
+    expect(anthropic[0]).toMatch(/claude/i);
+  });
+
+  it("uses agent defaults when provider is agent login", () => {
+    const list = codingModelSuggestionsForAgent({
+      harness: "minimax-code",
+      providerKind: "",
+    });
+    expect(list).toContain("MiniMax-M3");
+    expect(list[0]).toBe("MiniMax-M3");
   });
 });

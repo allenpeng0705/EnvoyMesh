@@ -14,8 +14,92 @@
   "codingPiConsoleHint": "本地编程助手",
   "codingEmptyTitle": "暂无任务",
   "codingEmptyHint": "在家用电脑上开始一个编程任务。",
+  "codingHomeEmptyProjects": "先添加项目，再在该项目下创建任务。",
+  "codingHomeAddProjectHint": "注册家用电脑上的一个文件夹。",
+  "codingHomeNewTaskHint": "选择项目和编程引擎。",
+  "codingAddProjectTitle": "添加项目",
+  "codingAddProjectDesc": "将文件夹注册为项目，并选择默认编程引擎。",
+  "codingAddProjectConfirm": "添加项目",
+  "codingAddProjectCta": "添加项目",
+  "codingRemoveFromCoding": "从编程中移除",
+  "codingRemoveProjectTitle": "从编程中移除此项目？",
+  "codingRemoveProjectBody": "从编程中移除“{title}”？其下的任务也会离开编程。磁盘上的文件夹和文件不会被删除。",
+  "@codingRemoveProjectBody": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "codingCancelTurn": "取消",
   "codingGated": "此档案无法使用编程。",
   "codingSectionProjects": "项目",
+  "codingSectionTasks": "任务",
+  "codingHistoryAll": "全部",
+  "codingHistoryArchived": "已归档",
+  "codingArchive": "归档",
+  "codingUnarchive": "取消归档",
+  "codingComposerModelHint": "模型",
+  "codingModeAsk": "询问",
+  "codingModePlan": "计划",
+  "codingModeCode": "编码",
+  "codingModeFast": "快速",
+  "codingModeThink": "思考",
+  "codingImportSession": "导入会话",
+  "codingAttachFile": "附加文件",
+  "codingSchedulesTitle": "定时任务",
+  "codingScheduleCreate": "新建定时任务",
+  "codingScheduleRunNow": "立即运行",
+  "codingHarnessMinimax": "MiniMax Code",
+  "codingHarnessChecking": "检查中…",
+  "codingHarnessNotReady": "未就绪",
+  "codingHarnessProbeUnknown": "需确认安装",
+  "codingHarnessProbeHint": "Envoy/Pi 为内置；其他工具是家用电脑上的 CLI——编程页只是调用。就绪 / 未就绪表示是否可用。",
+  "codingHarnessHowToFix": "如何解决",
+  "codingHarnessResolveTitle": "配置 {name}",
+  "@codingHarnessResolveTitle": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "codingHarnessResolveBody": "{name} 在家用电脑上尚未就绪。请按下列步骤操作，然后点刷新。",
+  "@codingHarnessResolveBody": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "codingHarnessInstallCmd": "安装命令（在家用电脑上运行）",
+  "codingHarnessFirstRunCmd": "首次运行命令（在家用电脑上运行）",
+  "codingHarnessCopyCmd": "复制命令",
+  "codingHarnessCmdCopied": "命令已复制",
+  "codingHarnessOpenDocs": "打开文档",
+  "codingHarnessOurGap": "这是产品能力限制——此智能体无需在电脑上安装其他内容。",
+  "codingAgentsSettingsTitle": "编程工具",
+  "codingAgentsSettingsIntro": "Envoy 与 Pi 内置在 EnvoyMesh 中。其他工具（Claude Code、Codex、Cursor 等）安装在家用电脑上——编程页只是调用它们。此页仅检查就绪 / 未就绪。",
+  "codingAgentsRecheck": "重新检查",
+  "codingAgentsPiSettings": "Pi 设置",
+  "codingAgentsOnMachine": "本机 · {ready}/{total} 就绪",
+  "@codingAgentsOnMachine": {
+    "placeholders": {
+      "ready": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "codingAgentsGroupBuiltIn": "EnvoyMesh 内置 · {ready}/{total} 就绪",
+  "@codingAgentsGroupBuiltIn": {
+    "placeholders": {
+      "ready": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "codingAgentsGroupExternal": "编程页可用（不属于 EnvoyMesh）· {ready}/{total} 就绪",
+  "@codingAgentsGroupExternal": {
+    "placeholders": {
+      "ready": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "codingAgentsExternalHint": "请自行安装并登录这些 CLI。EnvoyMesh 不负责配置它们——仅在编程页选中时运行。",
   "codingStatusIdle": "空闲",
   "codingExtHarnessHint": "通过 Ext Agent 在家用电脑上运行。",
   "codingExtEmpty": "向 {name} 询问此项目。每条消息作为一次性 CLI 提问运行。",
@@ -145,6 +229,7 @@
     }
   },
   "piStartingHint": "Pi 正在启动 — 请稍后再试。",
+  "piStartAction": "启动 Pi",
   "piStateReady": "就绪",
   "piStateStarting": "启动中",
   "piStateDisabled": "已禁用",
@@ -201,8 +286,8 @@
   "meAiModel": "AI 模型",
   "meEnvoyLocal": "Envoy Local",
   "meEnvoyLocalHint": "家庭节点本地模型（在电脑上下载并启动）",
-  "mePiAgent": "编码助手",
-  "mePiAgentHint": "Pi 与 Envoy Harness 设置",
+  "mePiAgent": "编程工具",
+  "mePiAgentHint": "内置 Envoy/Pi，以及编程页可调用的外部 CLI",
   "meDarkMode": "深色模式",
   "meDarkModeHint": "跟随系统设置",
   "mePushNotifications": "推送通知",
@@ -234,7 +319,7 @@
   "meTeamJobs": "团队任务",
   "meStartTeamJobHint": "预览计划并在家庭节点上启动",
   "meAiModelHint": "此家庭节点助手使用的模型提供方",
-  "mePiAgentHintLong": "家庭节点上的本地编码助手（Pi 与 Envoy Harness）",
+  "mePiAgentHintLong": "查看内置 Envoy/Pi，以及编程页可调用的外部 CLI 是否就绪",
   "mePushNotificationsHintLong": "应用在后台时接收新消息、联系人请求与审批提醒。",
   "meRecentTeamJobsHintLong": "查看家庭节点上发布的任务报告",
   "meActiveTeamJobsHintLong": "监视家庭节点上进行中的团队任务",

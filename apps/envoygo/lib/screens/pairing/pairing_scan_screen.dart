@@ -63,7 +63,7 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
       return;
     }
     // Another product's code, refused before anything is dialled — this phone belongs to
-    // EnvoyMesh, so an EnvoyCoder QR is not a pairing code for us.
+    // EnvoyMesh, so an EnvoyDev QR is not a pairing code for us.
     final mismatch = PairingService.appMismatch(data);
     if (mismatch != null) {
       ScaffoldMessenger.of(context).showSnackBar(

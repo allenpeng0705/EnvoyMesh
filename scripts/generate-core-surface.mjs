@@ -104,7 +104,7 @@ const SECTIONS = {
   "Node Lifecycle": { disposition: "undecided", reason: "2 of 5 methods reference product-bound module types" },
   "Event Subscription": { disposition: "undecided", reason: "`on`/`off` are typed by `NodeServiceEvents`, whose vocabulary names `FamilyRoom` — the 67-entry event map has to be partitioned first (the host package already declares a local core-event subset for this reason, plan §6b)" },
   "Agent Bridge": { disposition: "product", reason: "the external-agent/HomeClaw bridge is product plumbing (175 methods, 32 tainted, 1 concept)" },
-  "Terminals (Phase 30)": { disposition: "core", reason: "terminal/agent execution is what EnvoyCoder is built on" },
+  "Terminals (Phase 30)": { disposition: "core", reason: "terminal/agent execution is what EnvoyDev is built on" },
   "Connection Status": { disposition: "core", reason: "connectivity state, product-agnostic" },
   "AI / Knowledge Query": { disposition: "undecided", reason: "2 of 5 methods reference product-bound module types" },
   "Phase 16 — EnvoyAI postures": { disposition: "product", reason: "EnvoyAI is the social product's AI surface" },

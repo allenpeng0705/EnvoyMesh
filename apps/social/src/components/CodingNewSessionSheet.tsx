@@ -15,14 +15,14 @@ import type {
 import { resolveCodingTaskPrefill } from "../lib/coding-projects.js";
 import {
   CodingAgentModelProviderFields,
-  codingPrefillToValue,
   type CodingAgentModelProviderValue,
 } from "./CodingAgentModelProviderFields.js";
+import { codingPrefillToValue } from "../lib/coding-agent-model-provider.js";
 import { ModalPortal } from "./ModalPortal.js";
 
 export type { CodingHarnessId };
 
-export type HarnessProbeBadge = "ready" | "install" | "unknown" | "checking";
+export type HarnessProbeBadge = "ready" | "not-ready" | "checking" | "install" | "unknown";
 
 export type CodingNewSessionConfirm = {
   harness: CodingHarnessId;

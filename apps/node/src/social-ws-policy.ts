@@ -213,7 +213,7 @@ export function createSocialSessionIdentityResolver(
 
       // A product session is **not** a family profile, so it skips the lookup and the
       // healing below entirely: there is no family profile called
-      // `product:EnvoyCoder`, and "healing" it could rewrite a product scope into a
+      // `product:EnvoyDev`, and "healing" it could rewrite a product scope into a
       // family one — handing the product the owner's scope, which is precisely what
       // giving it a scope of its own exists to prevent.
       if (record.product?.trim()) {

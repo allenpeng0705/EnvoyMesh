@@ -6,7 +6,7 @@ import 'package:envoygo/services/product/pairing_service.dart';
 /// **The phone half of "my app pairs only with my desktop app".**
 ///
 /// `PairingService.appMismatch` is where EnvoyGo applies the shared rule. Without it the
-/// scan screen dials whatever `wsUrl` the scanned code contains, so an EnvoyCoder QR
+/// scan screen dials whatever `wsUrl` the scanned code contains, so an EnvoyDev QR
 /// would pair this phone with the wrong product's desktop app — and no other side can
 /// catch it, because the token inside the code is opaque and app-local.
 void main() {
@@ -29,9 +29,9 @@ void main() {
   });
 
   test('refuses another product, and says what to do', () {
-    final message = PairingService.appMismatch(dataWith('EnvoyCoder'));
+    final message = PairingService.appMismatch(dataWith('EnvoyDev'));
     expect(message, isNotNull);
-    expect(message, contains('EnvoyCoder'));
+    expect(message, contains('EnvoyDev'));
     expect(message, contains('EnvoyMesh'));
     expect(message, anyOf(contains('show its pairing code'), contains('install')));
   });

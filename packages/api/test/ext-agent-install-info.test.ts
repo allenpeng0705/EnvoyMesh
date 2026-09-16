@@ -67,4 +67,11 @@ describe("getExtAgentInstallInfo", () => {
     expect(info.homepageUrl).toBe("https://codewhale.net/")
     expect(info.startHint.toLowerCase()).toContain("codewhale")
   })
+
+  it("returns Gemini CLI install from the coding catalog", () => {
+    const info = getExtAgentInstallInfo("gemini")
+    expect(info.builtIn).toBe(false)
+    expect(info.homepageUrl).toContain("geminicli.com")
+    expect(info.startHint.toLowerCase()).toMatch(/gemini|npx/)
+  })
 })

@@ -69,36 +69,36 @@ async function nodeWithProfile(): Promise<NodeServiceImpl> {
 describe("attachLocalProduct", () => {
   it("mints a session scoped to the product, never to the owner", async () => {
     const ns = await nodeWithProfile();
-    const grant = await ns.attachLocalProduct({ product: "EnvoyCoder", version: "1.0.0" });
+    const grant = await ns.attachLocalProduct({ product: "EnvoyDev", version: "1.0.0" });
 
-    expect(grant.scopeKey).toBe(productScopeKey("EnvoyCoder"));
+    expect(grant.scopeKey).toBe(productScopeKey("EnvoyDev"));
     expect(grant.ownerId).toMatch(/^envoy:owner:/);
     expect(grant.token).toMatch(/[0-9a-f-]{36}/);
 
     const record = await ns.lookupSessionToken(grant.token);
-    expect(record?.product).toBe("EnvoyCoder");
+    expect(record?.product).toBe("EnvoyDev");
     // Not a family profile binding: this must never be "healed" into one.
     expect(record?.profileId).toBeUndefined();
     expect(record?.boundFamilyProfileId).toBeUndefined();
-    expect(record?.deviceId).toBe("product:EnvoyCoder");
+    expect(record?.deviceId).toBe("product:EnvoyDev");
   });
 
   it("resolves that token to a non-owner, product-scoped session", async () => {
     const ns = await nodeWithProfile();
-    const grant = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+    const grant = await ns.attachLocalProduct({ product: "EnvoyDev" });
     const resolver = createSocialSessionIdentityResolver(ns);
 
     const session = await resolver.resolveSession(grant.token);
-    expect(session?.scopeKey).toBe("product:EnvoyCoder");
+    expect(session?.scopeKey).toBe("product:EnvoyDev");
     expect(session?.isOwnerScope).toBe(false);
     expect(session?.ownerId).toBe(grant.ownerId);
     expect(session?.caller?.isOwnerProfile).toBe(false);
-    expect(session?.caller?.profileId).toBe("product:EnvoyCoder");
+    expect(session?.caller?.profileId).toBe("product:EnvoyDev");
   });
 
   it("gives the caller no owner privileges, so owner-only RPCs stay refused", async () => {
     const ns = await nodeWithProfile();
-    const grant = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+    const grant = await ns.attachLocalProduct({ product: "EnvoyDev" });
     const record = await ns.lookupSessionToken(grant.token);
     const caller = sessionCallerFromToken(record!);
 
@@ -118,7 +118,7 @@ describe("attachLocalProduct", () => {
     // Pinned here so the next slice has to change this test on purpose rather than
     // discover the gap in production: a product allow-list is the honest follow-up.
     const ns = await nodeWithProfile();
-    const grant = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+    const grant = await ns.attachLocalProduct({ product: "EnvoyDev" });
     const caller = sessionCallerFromToken((await ns.lookupSessionToken(grant.token))!);
 
     const ownerOnly = await runWithRpcCaller(caller, () =>
@@ -140,22 +140,22 @@ describe("attachLocalProduct", () => {
 
   it("replaces the previous token for the same product instead of accumulating", async () => {
     const ns = await nodeWithProfile();
-    const first = await ns.attachLocalProduct({ product: "EnvoyCoder" });
-    const second = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+    const first = await ns.attachLocalProduct({ product: "EnvoyDev" });
+    const second = await ns.attachLocalProduct({ product: "EnvoyDev" });
 
     expect(second.token).not.toBe(first.token);
     // Upsert by device id: one live token per product, so a stale copy stops working.
     expect(await ns.lookupSessionToken(first.token)).toBeUndefined();
-    expect((await ns.lookupSessionToken(second.token))?.product).toBe("EnvoyCoder");
+    expect((await ns.lookupSessionToken(second.token))?.product).toBe("EnvoyDev");
   });
 
   it("keeps two products in separate scopes", async () => {
     const ns = await nodeWithProfile();
-    const coder = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+    const coder = await ns.attachLocalProduct({ product: "EnvoyDev" });
     const agent = await ns.attachLocalProduct({ product: "EnvoyAgent" });
     const resolver = createSocialSessionIdentityResolver(ns);
 
-    expect((await resolver.resolveSession(coder.token))?.scopeKey).toBe("product:EnvoyCoder");
+    expect((await resolver.resolveSession(coder.token))?.scopeKey).toBe("product:EnvoyDev");
     expect((await resolver.resolveSession(agent.token))?.scopeKey).toBe("product:EnvoyAgent");
   });
 
@@ -166,7 +166,7 @@ describe("attachLocalProduct", () => {
     // product is an application, not a person, so the default is now "nothing, plus
     // what its job needs".
     const ns = await nodeWithProfile();
-    const grant = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+    const grant = await ns.attachLocalProduct({ product: "EnvoyDev" });
     const caller = sessionCallerFromToken((await ns.lookupSessionToken(grant.token))!);
 
     const attempt = (method: string) =>
@@ -194,7 +194,7 @@ describe("attachLocalProduct", () => {
     // A product scope is not a family profile, so `mayFamilyProfileUseCoding` cannot
     // describe it — the grant is per product, owner-set, and defaults to none.
     const ns = await nodeWithProfile();
-    const grant = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+    const grant = await ns.attachLocalProduct({ product: "EnvoyDev" });
     const caller = sessionCallerFromToken((await ns.lookupSessionToken(grant.token))!);
 
     const codingAllowed = () =>
@@ -202,7 +202,7 @@ describe("attachLocalProduct", () => {
     expect(await codingAllowed()).toBe(false);
 
     // The owner grants it through the already owner-only `updateNodeConfig`.
-    await ns.updateNodeConfig({ productGrants: { EnvoyCoder: ["coding"] } });
+    await ns.updateNodeConfig({ productGrants: { EnvoyDev: ["coding"] } });
     expect(await codingAllowed()).toBe(true);
 
     // …and a *different* product is unaffected: grants are per product.
@@ -211,7 +211,7 @@ describe("attachLocalProduct", () => {
     expect(await runWithRpcCaller(otherCaller, () => ns.mayCallerUseCoding())).toBe(false);
 
     // Revoking is the same call with an empty list.
-    await ns.updateNodeConfig({ productGrants: { EnvoyCoder: [] } });
+    await ns.updateNodeConfig({ productGrants: { EnvoyDev: [] } });
     expect(await codingAllowed()).toBe(false);
   });
 
@@ -222,12 +222,12 @@ describe("attachLocalProduct", () => {
     // it a thin-client session bound to a family profile. That is an escalation out of
     // the product scope, which is exactly what the scope exists to prevent.
     const ns = await nodeWithProfile();
-    const grant = await ns.attachLocalProduct({ product: "EnvoyCoder" });
+    const grant = await ns.attachLocalProduct({ product: "EnvoyDev" });
 
     await expect(
       ns.pairThinClient({
         pairingToken: grant.token,
-        deviceName: "EnvoyCoder",
+        deviceName: "EnvoyDev",
         platform: "node",
       } as never),
     ).rejects.toThrow(/cannot pair as a device/i);

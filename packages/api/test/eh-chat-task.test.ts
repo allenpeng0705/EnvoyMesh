@@ -38,7 +38,7 @@ describe("eh-chat-task titles", () => {
     expect(titled.endsWith("…")).toBe(true);
   });
 
-  it("auto-sets placeholder and empty titles; legacy basename only with no turns", () => {
+  it("auto-sets placeholder, empty, and legacy folder-basename titles", () => {
     expect(shouldAutoSetEhChatTitle(undefined, "/p/app")).toBe(true);
     expect(shouldAutoSetEhChatTitle(EH_CHAT_PLACEHOLDER_TITLE, "/p/app")).toBe(
       true,
@@ -46,9 +46,11 @@ describe("eh-chat-task titles", () => {
     expect(
       shouldAutoSetEhChatTitle("app", "/p/app", { messageCount: 0 }),
     ).toBe(true);
+    // Folder basename was never a user-chosen title — still replaceable
+    // after prior turns (Paseo: first prompt becomes the task name).
     expect(
       shouldAutoSetEhChatTitle("app", "/p/app", { messageCount: 2 }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldAutoSetEhChatTitle("Fix login", "/p/app", { messageCount: 0 }),
     ).toBe(false);

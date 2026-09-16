@@ -43,14 +43,14 @@ describe("relay fallback in the URI form (§7.4 upstream change)", () => {
   it("round-trips relayWsUrls, which the compact codec and the contract already carried", () => {
     // The gap this closes: `PairingPayload.relayWsUrls` existed in the contract and in the compact
     // token codec, but the `envoy://pair` URI could not express it — so a QR code could not offer a
-    // relay fallback at all. Found while building EnvoyCoder (guide §7.4: contract changes travel
+    // relay fallback at all. Found while building EnvoyDev (guide §7.4: contract changes travel
     // upstream, never into a product).
     const uri = buildEnvoyPairUri({
       wsUrl: "wss://relay.example:9000/ws",
       token: "tok",
       ownerPublicKey: "pk",
       ownerId: "envoy:owner:abc",
-      app: "EnvoyCoder",
+      app: "EnvoyDev",
       relayPeerId: "12D3KooWrelay",
       relayWsUrls: ["wss://relay-a.example/ws", "wss://relay-b.example/ws"],
     });
@@ -61,7 +61,7 @@ describe("relay fallback in the URI form (§7.4 upstream change)", () => {
     ]);
     expect(parsed.relayPeerId).toBe("12D3KooWrelay");
     // The app claim survives the round trip, which is what keeps the family's apps apart.
-    expect(parsed.app).toBe("EnvoyCoder");
+    expect(parsed.app).toBe("EnvoyDev");
   });
 
   it("omits the field when there is nothing to advertise, and tolerates an empty list", () => {

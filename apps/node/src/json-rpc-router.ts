@@ -221,7 +221,7 @@ export const CODING_GATED_RPC = new Set<string>([
  * separate application, not a person, so the honest default is **nothing**, plus what
  * its job needs.
  *
- * The coding surface is listed because that is what an attached EnvoyCoder attaches
+ * The coding surface is listed because that is what an attached EnvoyDev attaches
  * *for* — and every one of those is *also* gated by the product's capability grant
  * (`mayCallerUseCoding`), so this list is a boundary rather than a permission. Terminals
  * stay owner-only: a product runs its own tooling in its own process.

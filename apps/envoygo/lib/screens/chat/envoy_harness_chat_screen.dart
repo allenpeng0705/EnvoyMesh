@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../coding/coding_composer.dart';
 import '../../coding/coding_heartbeat.dart';
 import '../../eh/eh_review_prefs.dart';
 import '../../eh/eh_timeline.dart';
@@ -14,15 +15,19 @@ import '../../eh/envoy_harness_history.dart';
 import '../../ext_agent/agent_attachments.dart';
 import '../../ext_agent/envoy_harness_slash_commands.dart';
 import '../../l10n/app_localizations.dart';
+import '../../models/chat_thread.dart';
 import '../../models/contact.dart';
+import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart'
     show contactProvider, nodeServiceProvider;
 import '../../widgets/agent_attachment_bar.dart';
 import '../../widgets/chat/slash_command_suggest.dart';
+import '../../widgets/coding_composer_toolbar.dart';
 import '../../widgets/eh/eh_changes_banner.dart';
 import '../../widgets/eh/eh_turn_review_sheet.dart';
 import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
 import '../coding/coding_heartbeat_ui.dart';
+import '../coding/coding_import_session_sheet.dart';
 import '../files/home_file_pick_screen.dart';
 
 /// Envoy Harness coding chat — multi-turn agent thread per project folder.
@@ -85,6 +90,10 @@ class _EnvoyHarnessChatScreenState
   bool _reviewSheetOpen = false;
   final List<AgentDraftAttachment> _attachments = [];
   List<AgentDraftAttachment>? _pendingDisplayAttachments;
+  CodingComposerPrefs _composerPrefs = const CodingComposerPrefs();
+  late final CodingComposerCapabilities _composerCaps;
+  late final String _composerPrefsKey;
+  final TextEditingController _modelController = TextEditingController();
 
   bool get _busy => _queue?.busy ?? false;
   List<Map<String, dynamic>> get _nonMessageTimeline => _timeline.items
@@ -98,15 +107,92 @@ class _EnvoyHarnessChatScreenState
   void initState() {
     super.initState();
     _timeline = EhTimelineState(chatId: widget.chatId ?? '__envoy_harness__');
+    _composerCaps = codingComposerCapabilities('envoy-harness');
+    _composerPrefsKey = codingComposerSessionKey(
+      kind: 'eh',
+      id: widget.chatId ?? widget.threadId,
+    );
     _controller.addListener(_onDraftChanged);
     _searchController.addListener(_onSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _wireQueue();
       unawaited(_restoreComposerState());
       unawaited(_restoreReviewPrefs());
+      unawaited(_loadComposerPrefs());
       unawaited(_loadHistory());
       unawaited(_refreshStatus());
     });
+  }
+
+  Future<void> _loadComposerPrefs() async {
+    final prefs = await loadCodingComposerPrefs(_composerPrefsKey);
+    if (!mounted) return;
+    setState(() {
+      _composerPrefs = prefs;
+      if ((prefs.model ?? '').trim().isNotEmpty) {
+        _modelController.text = prefs.model!.trim();
+      }
+    });
+  }
+
+  Future<void> _patchComposerPrefs(CodingComposerPrefs next) async {
+    final prevFast = _composerPrefs.fast;
+    // Match Social: refuse /fast while a turn is running (cancel first).
+    if (_composerCaps.fast && prevFast != next.fast && _busy) {
+      if (mounted) {
+        _setSystem(AppLocalizations.of(context).ehSlashWhileBusy);
+      }
+      return;
+    }
+    final saved = await saveCodingComposerPrefs(_composerPrefsKey, next);
+    if (!mounted) return;
+    setState(() => _composerPrefs = saved);
+    if (_composerCaps.fast && prevFast != saved.fast) {
+      await _handleSlashCommand(fastToggleSlash(saved.fast));
+    }
+  }
+
+  Future<void> _importEhSession() async {
+    final current = widget.chatId ?? '';
+    final rows = ref
+        .read(chatProvider)
+        .threads
+        .where((t) => t.type == ChatThreadType.envoyHarness)
+        .where((t) {
+          final id = t.id.contains(':') ? t.id.split(':').last : t.id;
+          return id != current && t.id != widget.threadId;
+        })
+        .map(
+          (t) => CodingImportSessionRow(
+            id: t.id.contains(':') ? t.id.split(':').last : t.id,
+            title: t.displayName,
+            subtitle: t.lastMessageText,
+          ),
+        )
+        .toList();
+    await showCodingImportSessionSheet(
+      context,
+      rows: rows,
+      onPick: (chatId) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => EnvoyHarnessChatScreen(
+              threadId: 'eh:$chatId',
+              chatId: chatId,
+              displayName: rows
+                  .firstWhere(
+                    (r) => r.id == chatId,
+                    orElse: () => CodingImportSessionRow(
+                      id: chatId,
+                      title: chatId,
+                    ),
+                  )
+                  .title,
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _onSearchChanged() {
@@ -481,6 +567,7 @@ class _EnvoyHarnessChatScreenState
     _controller.removeListener(_onDraftChanged);
     _queue?.dispose();
     _controller.dispose();
+    _modelController.dispose();
     _searchController
       ..removeListener(_onSearchChanged)
       ..dispose();
@@ -1135,6 +1222,8 @@ class _EnvoyHarnessChatScreenState
       return;
     }
 
+    final shaped = shapeCodingComposerPrompt(text, _composerPrefs, _composerCaps);
+
     if (_status != null && _status!['state'] != 'ready') {
       final state = _status!['state']?.toString();
       final l10n = AppLocalizations.of(context);
@@ -1161,13 +1250,13 @@ class _EnvoyHarnessChatScreenState
     if (effective == EhSubmitMode.queue) {
       // Queued follow-ups are text-only (same as Social).
       setState(() => _attachments.clear());
-      await queue.submit(text, effective);
+      await queue.submit(shaped, effective);
       return;
     }
     _pendingDisplayAttachments = List.of(_attachments);
     setState(() => _attachments.clear());
     await queue.submit(
-      text,
+      shaped,
       effective,
       attachments: refs.isEmpty ? null : refs,
     );
@@ -1348,7 +1437,7 @@ class _EnvoyHarnessChatScreenState
             ),
           if (!widget.readOnlyReview && _busy)
             IconButton(
-              tooltip: l10n.ehTurnCancelled,
+              tooltip: l10n.codingCancelTurn,
               icon: const Icon(Icons.stop_circle_outlined),
               onPressed: () => unawaited(_queue?.cancelActiveTurn()),
             ),
@@ -1630,6 +1719,14 @@ class _EnvoyHarnessChatScreenState
               ),
             ),
           if (!widget.readOnlyReview) ...[
+            CodingComposerToolbar(
+              caps: _composerCaps,
+              prefs: _composerPrefs,
+              onPrefsChanged: (p) => unawaited(_patchComposerPrefs(p)),
+              onImportSession: () => unawaited(_importEhSession()),
+              onAttach: () => unawaited(_pickHomeAttachment()),
+              modelController: _modelController,
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
               child: _buildSlashSuggest(),
@@ -1652,7 +1749,7 @@ class _EnvoyHarnessChatScreenState
                         ),
                       ),
                     IconButton(
-                      tooltip: 'Attach home file',
+                      tooltip: AppLocalizations.of(context).codingAttachFile,
                       onPressed: () => unawaited(_pickHomeAttachment()),
                       icon: const Icon(Icons.attach_file),
                     ),

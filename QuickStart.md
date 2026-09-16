@@ -12,6 +12,7 @@ Requirements narrative: [docs/UserStory.md](docs/UserStory.md). Scenario backlog
 - [Local Data Layout](#local-data-layout)
 - [Knowledge Base (Obsidian, MCP)](#knowledge-base-phase-44)
 - [Run An Envoy Node](#run-an-envoy-node)
+- [Headless Home Node (Advanced)](#headless-home-node-advanced)
 - [AI Agent & External Agents](#ai-agent--external-agents)
 - [Agent Network Collaboration](#agent-network-collaboration-phase-40)
 - [Terminals](#terminals-phase-30)
@@ -307,6 +308,47 @@ npm run node:dev -- --profile ./data/node-a --listen /ip4/0.0.0.0/tcp/0 --discov
 ```
 
 The relay stores short-lived `relay.checkin` rows, answers bounded `relay.lookup` requests, and can forward lookups across selected relay neighbors using summaries, `maxHops`, `maxFanout`, query IDs, and negative caching.
+
+## Headless Home Node (Advanced)
+
+**Default for end users** is still the standalone Tauri desktop app (`npm run tauri:dev` / a DMG or EXE). It already supervises the home node.
+
+Use a headless supervisor only when the home node must stay up **without a UI**. Quit the desktop app first — one process owns a profile. The scripts default to the **shared home** so EnvoyGo sees the same identity as the desktop app:
+
+- macOS: `~/Library/Application Support/EnvoyMesh/profile`
+- Windows: `%LOCALAPPDATA%\EnvoyMesh\profile`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/EnvoyMesh/profile`
+
+**Production** — portable bundle from `scripts/bundle.sh` / `scripts/bundle.ps1`:
+
+```bash
+./scripts/home-node-service.sh install --bundle /path/to/envoymesh-bundle
+./scripts/home-node-service.sh status
+./scripts/home-node-service.sh uninstall
+```
+
+```powershell
+.\scripts\home-node-service.ps1 install -Bundle C:\path\to\envoymesh-bundle
+.\scripts\home-node-service.ps1 status
+.\scripts\home-node-service.ps1 uninstall
+```
+
+macOS installs a LaunchAgent (`KeepAlive`). Linux installs a systemd **user** unit. Windows registers a **logon Scheduled Task** (not a Windows Service). `--dry-run` / `-DryRun` prints paths without installing.
+
+**Dev** — this git checkout (needs Node/npm on `PATH`):
+
+```bash
+./scripts/home-node-service.sh install
+# or a restart loop without launchd/systemd:
+npm run node:supervised
+```
+
+```powershell
+.\scripts\home-node-service.ps1 install
+.\scripts\supervise-home-node.ps1
+```
+
+The wrapper sets `ENVOYMESH_GUARDIAN_EXIT_ON_LAG=1` so a wedged event loop exits and the OS supervisor can start a new process. Full notes: [docs/headless-home-node.md](docs/headless-home-node.md).
 
 ## AI Agent & External Agents
 
@@ -654,13 +696,15 @@ npm run social:challenge -w @envoymesh/node -- --target "<victim-multiaddr>" --s
 
 ## Run the Social UI (Tauri or browser)
 
-**Tauri (end-user style):** native window loading the same web UI as production.
+**Tauri (end-user style):** native window loading the same web UI as production. This is the **default** home-node distribution.
 
 ```bash
 npm run tauri:dev
 ```
 
-The packaged app stores profile data under the Tauri app-data directory and sets `ENVOYMESH_PROFILE` for the spawned Node process (see `apps/tauri/src-tauri/src/main.rs`).
+The packaged app stores profile data under the shared EnvoyMesh home (`~/Library/Application Support/EnvoyMesh/profile` on macOS, `%LOCALAPPDATA%\EnvoyMesh\profile` on Windows) and sets `ENVOYMESH_PROFILE` for the spawned Node process. Do not also run `home-node-service` against that profile.
+
+A headless always-on node (no window) is [optional and advanced](#headless-home-node-advanced).
 
 **Browser (full control of profile flags):** run the node with your profile, then open the Vite dev server.
 
@@ -1031,6 +1075,9 @@ npm run test:orchestrator -- full    # All tests + libp2p E2E + smoke (~10 min)
 npm run node:dev
 npm run social:dev
 npm run tauri:dev
+npm run node:supervised              # headless restart loop (dev checkout)
+bash scripts/home-node-service.sh status
+pwsh scripts/home-node-service.ps1 status
 npm run setup                        # mac/Linux first-time bootstrap
 npm run setup:win                    # Windows first-time bootstrap
 

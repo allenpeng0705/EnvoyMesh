@@ -2899,7 +2899,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  Future<String> createEhChat({required String projectPath}) async {
+  Future<String> createEhChat({
+    required String projectPath,
+    String? model,
+    String? endpoint,
+    String? apiKey,
+  }) async {
     final nodeService = _ref.read(nodeServiceProvider);
     final nodeState = _ref.read(nodeProvider);
     if (nodeService == null || nodeState.activeNode == null) {
@@ -2909,7 +2914,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (path.isEmpty) {
       throw ArgumentError('Choose a project folder.');
     }
-    final created = await nodeService.createEnvoyHarnessChat(cwd: path);
+    final created = await nodeService.createEnvoyHarnessChat(
+      cwd: path,
+      forceNew: true,
+      model: model,
+      endpoint: endpoint,
+      apiKey: apiKey,
+    );
     final chatId = created['id']?.toString().trim() ?? '';
     if (chatId.isEmpty) {
       throw StateError('Failed to create coding chat');
@@ -3006,7 +3017,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// Start a Pi coding TUI on the home node (same as Social “π Pi”).
   ///
   /// Returns `sessionId` on success, or throws with the home-node reason.
-  Future<String> createPiTerminal({required String projectPath}) async {
+  Future<String> createPiTerminal({
+    required String projectPath,
+    Map<String, dynamic>? modelOverride,
+  }) async {
     final nodeService = _ref.read(nodeServiceProvider);
     final nodeState = _ref.read(nodeProvider);
     if (nodeService == null || nodeState.activeNode == null) {
@@ -3020,6 +3034,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     final result = await nodeService.ensurePiTerminalSession(
       projectPath: path,
+      forceRestart: true,
+      modelOverride: modelOverride,
     );
     if (result['ok'] != true) {
       throw StateError(

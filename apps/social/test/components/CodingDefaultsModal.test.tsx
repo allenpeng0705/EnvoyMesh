@@ -57,4 +57,34 @@ describe("CodingDefaultsModal", () => {
       apiKey: "",
     });
   });
+
+  it("shows agent-own-login empty state for CLI harnesses", () => {
+    renderWithI18n(
+      <CodingDefaultsModal
+        defaults={{
+          harness: "codex",
+          model: "",
+          providerKind: "",
+          endpoint: "",
+          apiKey: "",
+        }}
+        onCancel={() => {}}
+        onSave={() => {}}
+      />,
+    );
+
+    expect(
+      (screen.getByTestId("coding-defaults-settings-provider") as HTMLSelectElement)
+        .options[0]?.textContent,
+    ).toMatch(/Agent.?s own login/i);
+    expect(screen.getByTestId("coding-model-hint-defaults").textContent).toMatch(
+      /own login and default model/i,
+    );
+    expect(
+      screen.getByTestId("coding-provider-hint-defaults").textContent,
+    ).toMatch(/most CLIs do not need it/i);
+    expect(
+      screen.getByPlaceholderText(/Empty = agent default \(gpt-5\.1-codex\)/i),
+    ).toBeTruthy();
+  });
 });

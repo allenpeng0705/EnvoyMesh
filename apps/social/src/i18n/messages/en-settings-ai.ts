@@ -1,6 +1,38 @@
 export const aiSettingsMessages = {
   title: "AI Assistant Settings",
   sectionDesc: "Configure how the AI responds on your behalf.",
+  codingAgents: {
+    heading: "Coding tools",
+    intro:
+      "Envoy and Pi are built into EnvoyMesh. Other tools are CLIs on this computer — Coding just uses them. Featured tools are listed here; the full catalogue is below.",
+    groupBuiltIn: "In EnvoyMesh · {ready}/{total} ready",
+    groupExternal: "Used by Coding (featured) · {ready}/{total} ready",
+    groupCatalogue: "Catalogue · {total}",
+    catalogueReady: "{ready} ready",
+    catalogueHint:
+      "Every other CLI Coding can drive. Same Ready / Not ready check — not part of EnvoyMesh.",
+    browseCatalogue: "Browse the catalogue ({total})",
+    hideCatalogue: "Hide catalogue",
+    externalHint:
+      "Shown on the new-task picker. Install and sign in yourself — EnvoyMesh only runs them when you pick one in Coding.",
+    onMachine: "On this machine · {ready}/{total} ready",
+    recheck: "Check again",
+    recheckHint:
+      "Re-check whether each tool is on PATH. Does not start agents or install packages.",
+    checking: "Checking…",
+    ready: "Ready",
+    notReady: "Not ready",
+    notReadyAria: "Not ready — see how to resolve this for {agent}",
+    resolveBody:
+      "{name} isn’t ready on this home computer yet. Install or fix it there, then tap Check again. EnvoyMesh only uses it from Coding — it does not configure the product itself.",
+    installCmd: "Install command (run on this computer)",
+    firstRunCmd: "First-run command (run on this computer)",
+    copyCmd: "Copy command",
+    openDocs: "Open docs",
+    builtInConfig: "Envoy & Pi settings",
+    builtInConfigHint:
+      "Configure the built-in Coding engines. External CLIs above are installed and signed in outside EnvoyMesh.",
+  },
   aiEngine: {
     heading: "AI Engine",
     desc: "Which Envoy agent surfaces the AI on this home node. Built-in OpenClaw is always present; the External Agent Bridge is opt-in. (The 'Agent Network' tab is for onboarding other nodes — this is the AI engine.)",
@@ -77,10 +109,11 @@ export const aiSettingsMessages = {
     installCard: {
       title: "Install required",
       notInstalledBody:
-        "{command} isn't on this machine yet. Run the install command below, then click Retry.",
+        "{command} isn’t ready on this machine yet. Follow the steps below, then click Retry.",
       unknownBody:
         "Couldn't detect whether {command} is installed. Run the install command to be sure, then click Retry.",
       commandLabel: "Install",
+      firstRunLabel: "First-run command",
       verifyLabel: "Verify",
       docsLabel: "Open install docs",
       copyCommand: "Copy",

@@ -72,7 +72,7 @@ describe("acquireNodeLock", () => {
       peerId: "12D3KooWHome",
     });
 
-    const second = await acquireNodeLock(home, { pid: DEAD_PID, app: "EnvoyCoder", version: "1.0.0" });
+    const second = await acquireNodeLock(home, { pid: DEAD_PID, app: "EnvoyDev", version: "1.0.0" });
     expect(second.acquired).toBe(false);
     if (second.acquired) return;
     expect(second.holder.pid).toBe(process.pid);

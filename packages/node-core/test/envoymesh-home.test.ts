@@ -119,7 +119,7 @@ describe("path helpers", () => {
   it("places the profile, product state and runtime inside the home", () => {
     const home = "/home/alice/envoymesh";
     expect(profileDirIn(home)).toBe(path.join(home, "profile"));
-    expect(productDirIn(home, "EnvoyCoder")).toBe(path.join(home, "EnvoyCoder"));
+    expect(productDirIn(home, "EnvoyDev")).toBe(path.join(home, "EnvoyDev"));
     expect(runtimeDirIn(home)).toBe(path.join(home, "runtime"));
   });
 
@@ -159,13 +159,13 @@ describe("the home marker", () => {
     expect(first.marker.lastUsedBy).toMatchObject({ app: "EnvoyMesh", version: "0.5.0" });
 
     // A different app finds the same marker and only refreshes lastUsedBy.
-    const second = await touchHomeMarker(home, { app: "EnvoyCoder", version: "1.0.0" });
+    const second = await touchHomeMarker(home, { app: "EnvoyDev", version: "1.0.0" });
     expect(second.created).toBe(false);
     expect(second.marker.createdAt).toBe(first.marker.createdAt);
-    expect(second.marker.lastUsedBy).toMatchObject({ app: "EnvoyCoder", version: "1.0.0" });
+    expect(second.marker.lastUsedBy).toMatchObject({ app: "EnvoyDev", version: "1.0.0" });
 
     const read = await readHomeMarker(home);
-    expect(read?.lastUsedBy?.app).toBe("EnvoyCoder");
+    expect(read?.lastUsedBy?.app).toBe("EnvoyDev");
   });
 
   it("never downgrades a newer schema", async () => {

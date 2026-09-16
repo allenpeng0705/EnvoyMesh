@@ -60,7 +60,7 @@ const sessionIdentity: SessionIdentityResolver = {
   localScopeKey: "owner",
   resolveSession: async (token) =>
     token === "granted-token"
-      ? { scopeKey: "product:EnvoyCoder", ownerId: "owner-1", isOwnerScope: false, caller: undefined }
+      ? { scopeKey: "product:EnvoyDev", ownerId: "owner-1", isOwnerScope: false, caller: undefined }
       : null,
 };
 
@@ -70,7 +70,7 @@ async function boot(opts: { loopbackOnly?: boolean } = {}): Promise<{
 }> {
   const attach = vi.fn(async () => ({
     token: "granted-token",
-    scopeKey: "product:EnvoyCoder",
+    scopeKey: "product:EnvoyDev",
     ownerId: "owner-1",
   }));
   const dispatch: HostRpcDispatcher = async (method) => {
@@ -116,10 +116,10 @@ async function askDirect(host: string, port: number, method: string, params: unk
 describe("requestProductSession", () => {
   it("gets a product-scoped session from a running node on this machine", async () => {
     const { port, attach } = await boot();
-    const grant = await requestProductSession({ port }, { product: "EnvoyCoder", version: "1.0.0" });
+    const grant = await requestProductSession({ port }, { product: "EnvoyDev", version: "1.0.0" });
 
     expect(attach).toHaveBeenCalledTimes(1);
-    expect(grant.scopeKey).toBe("product:EnvoyCoder");
+    expect(grant.scopeKey).toBe("product:EnvoyDev");
     expect(grant.ownerId).toBe("owner-1");
     expect(grant.token).toBe("granted-token");
     // Ready to dial: the caller must not have to reassemble the URL.
@@ -129,7 +129,7 @@ describe("requestProductSession", () => {
   it("hands back a URL whose token the same host accepts", async () => {
     // The claim that matters to a product: the granted session actually works.
     const { port } = await boot();
-    const grant = await requestProductSession({ port }, { product: "EnvoyCoder" });
+    const grant = await requestProductSession({ port }, { product: "EnvoyDev" });
 
     const { WebSocket } = await import("ws");
     const socket = new WebSocket(grant.wsUrl);
@@ -153,7 +153,7 @@ describe("requestProductSession", () => {
 
   it("grants the session from loopback but refuses it from the network", async () => {
     const { port, attach } = await boot();
-    const params = { product: "EnvoyCoder" };
+    const params = { product: "EnvoyDev" };
 
     // 1) This machine — no token needed, and the handler runs.
     const local = await askDirect("127.0.0.1", port, DEFAULT_ATTACH_METHOD, params);
@@ -187,7 +187,7 @@ describe("requestProductSession", () => {
     await server.waitUntilListening();
 
     await expect(
-      requestProductSession({ port: server.boundPort }, { product: "EnvoyCoder" }),
+      requestProductSession({ port: server.boundPort }, { product: "EnvoyDev" }),
     ).rejects.toThrow(/Attach is not supported here/);
   });
 
@@ -211,7 +211,7 @@ describe("requestProductSession", () => {
     };
     const dispatch: HostRpcDispatcher = async (method) => {
       if (method === DEFAULT_ATTACH_METHOD) {
-        return { token: "slow-token", scopeKey: "product:EnvoyCoder", ownerId: "owner-1" };
+        return { token: "slow-token", scopeKey: "product:EnvoyDev", ownerId: "owner-1" };
       }
       return { ok: method };
     };
@@ -227,7 +227,7 @@ describe("requestProductSession", () => {
 
     const grant = await requestProductSession(
       { port: server.boundPort },
-      { product: "EnvoyCoder", timeoutMs: 5_000 },
+      { product: "EnvoyDev", timeoutMs: 5_000 },
     );
     expect(grant.token).toBe("slow-token");
 
@@ -253,7 +253,7 @@ describe("requestProductSession", () => {
 
   it("reports a missing node as an error, not a hang", async () => {
     await expect(
-      requestProductSession({ port: 1 }, { product: "EnvoyCoder", timeoutMs: 1_000 }),
+      requestProductSession({ port: 1 }, { product: "EnvoyDev", timeoutMs: 1_000 }),
     ).rejects.toThrow();
   });
 });

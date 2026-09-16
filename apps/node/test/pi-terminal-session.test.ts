@@ -6,6 +6,7 @@ import {
   ensurePiTerminalSession,
   piSessionTitle,
   resolvePiProjectDir,
+  shouldAutoSetPiSessionTitle,
 } from "../src/pi-terminal-session.js";
 import type { TerminalManager } from "../src/terminal-manager.js";
 
@@ -33,6 +34,15 @@ describe("resolvePiProjectDir", () => {
 describe("piSessionTitle", () => {
   it("uses the folder basename", () => {
     expect(piSessionTitle("/Users/me/my-repo")).toBe("Pi · my-repo");
+  });
+});
+
+describe("shouldAutoSetPiSessionTitle", () => {
+  it("allows empty, New task, and Pi · folder defaults", () => {
+    expect(shouldAutoSetPiSessionTitle(undefined, "/p/app")).toBe(true);
+    expect(shouldAutoSetPiSessionTitle("New task", "/p/app")).toBe(true);
+    expect(shouldAutoSetPiSessionTitle("Pi · app", "/p/app")).toBe(true);
+    expect(shouldAutoSetPiSessionTitle("Fix login", "/p/app")).toBe(false);
   });
 });
 

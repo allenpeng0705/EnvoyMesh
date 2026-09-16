@@ -2,8 +2,9 @@
 # Restart loop for a headless home node (24×7 without Tauri guardian).
 #
 # Prefer the desktop Tauri app for everyday machines — it already respawns on
-# /health timeout. Use this script (or launchd/systemd KeepAlive) when you must
-# run `npm run node:dev` headless overnight.
+# /health timeout. Use this script for a bare restart loop, or
+# scripts/home-node-service.sh to install a LaunchAgent / systemd user unit.
+# See docs/headless-home-node.md.
 #
 # Pairs with:
 #   - in-process sibling liveness watchdog (SIGKILL on /health timeout)

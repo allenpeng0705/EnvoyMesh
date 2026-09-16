@@ -80,6 +80,10 @@ export function ExtAgentInstallGuideCard({
   // for a built-in agent.
   if (installGuide.installed) return null
 
+  // Prefer the probe's actionable startHint (EnvoyCoder-style install copy)
+  // over the generic "{command} isn't on this machine" template — especially
+  // for npx/uvx catalog agents where `command` is the product title.
+  const hint = installGuide.startHint?.trim() ?? ""
   const bodyKey =
     installState === "unknown"
       ? "aiEngine.installCard.unknownBody"
@@ -87,8 +91,16 @@ export function ExtAgentInstallGuideCard({
   const bodyFallback =
     installState === "unknown"
       ? "Couldn't detect whether {command} is installed. Run the install command to be sure, then click Retry."
-      : "{command} isn't on this machine yet. Run the install command below, then click Retry."
-  const body = t(bodyKey, bodyFallback).replace("{command}", installGuide.command)
+      : "{command} isn’t ready on this machine yet. Follow the steps below, then click Retry."
+  const body =
+    hint ||
+    t(bodyKey, bodyFallback).replace("{command}", installGuide.command)
+
+  const cmdLabel =
+    hint.toLowerCase().includes("fetched from npm") ||
+    hint.toLowerCase().includes("fetched from pypi")
+      ? t("aiEngine.installCard.firstRunLabel", "First-run command")
+      : t("aiEngine.installCard.commandLabel", "Install")
 
   return (
     <div
@@ -106,7 +118,7 @@ export function ExtAgentInstallGuideCard({
 
       <div className="ext-agent-install-card-row">
         <span className="ext-agent-install-card-label">
-          {t("aiEngine.installCard.commandLabel", "Install")}
+          {cmdLabel}
         </span>
         <code
           className="ext-agent-install-card-cmd"

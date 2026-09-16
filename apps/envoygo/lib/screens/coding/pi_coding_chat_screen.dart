@@ -3,11 +3,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../coding/coding_composer.dart';
 import '../../coding/coding_heartbeat.dart';
+import '../../coding/coding_transcript_store.dart';
 import '../../eh/eh_timeline.dart';
+import '../../ext_agent/agent_attachments.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
+import '../../providers/terminal_provider.dart';
+import '../../screens/files/home_file_pick_screen.dart';
+import '../../widgets/agent_attachment_bar.dart';
+import '../../widgets/coding_composer_toolbar.dart';
 import 'coding_heartbeat_ui.dart';
+import 'coding_import_session_sheet.dart';
 
 /// Wire chatId for a Pi coding session (`__pi__:$sessionId`).
 String piTimelineChatId(String sessionId) => '__pi__:${sessionId.trim()}';
@@ -32,20 +40,27 @@ class PiCodingChatScreen extends ConsumerStatefulWidget {
 
 class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
   final TextEditingController _controller = TextEditingController();
+  final TextEditingController _modelController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<void Function()> _unsubs = [];
+  final List<AgentDraftAttachment> _attachments = [];
 
   late EhTimelineState _timeline;
+  List<CodingTranscriptMessage> _seedMessages = const [];
+  late CodingComposerPrefs _prefs;
+  late final CodingComposerCapabilities _caps;
+  late final String _prefsKey;
   Map<String, dynamic>? _status;
   Map<String, dynamic>? _pendingProposal;
   Timer? _statusPoll;
   Timer? _proposalTimeout;
   bool _busy = false;
+  bool _didWarmStart = false;
   String? _localError;
 
   String get _chatId => piTimelineChatId(widget.sessionId);
 
-  List<Map<String, dynamic>> get _messages => _timeline.items
+  List<Map<String, dynamic>> get _liveMessages => _timeline.items
       .where((item) => item['type'] == 'message')
       .toList(growable: false);
 
@@ -60,17 +75,100 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
       })
       .toList(growable: false);
 
+  List<_PiDisplayMsg> get _displayMessages {
+    final liveIds = <String>{};
+    final live = <_PiDisplayMsg>[];
+    for (final item in _liveMessages) {
+      final id = item['id']?.toString() ?? '';
+      if (id.isNotEmpty) liveIds.add(id);
+      live.add(
+        _PiDisplayMsg(
+          id: id,
+          role: item['role']?.toString() ?? 'assistant',
+          text: item['text']?.toString() ?? '',
+          streaming: item['streaming'] == true,
+        ),
+      );
+    }
+    final seed = [
+      for (final m in _seedMessages)
+        if (!liveIds.contains(m.id))
+          _PiDisplayMsg(id: m.id, role: m.role, text: m.text),
+    ];
+    return [...seed, ...live];
+  }
+
   @override
   void initState() {
     super.initState();
     _timeline = EhTimelineState(chatId: _chatId);
+    _caps = codingComposerCapabilities('pi');
+    _prefsKey = codingComposerSessionKey(kind: 'pi', id: widget.sessionId);
+    _prefs = const CodingComposerPrefs();
     _controller.addListener(() {
       if (mounted) setState(() {});
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _wireEvents();
+      unawaited(_loadLocalState());
       unawaited(_refreshStatus());
     });
+  }
+
+  Future<void> _loadLocalState() async {
+    final prefs = await loadCodingComposerPrefs(_prefsKey);
+    final seed = await loadCodingTranscript(
+      kind: 'pi',
+      id: widget.sessionId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _prefs = prefs;
+      _seedMessages = seed;
+      if ((prefs.model ?? '').trim().isNotEmpty) {
+        _modelController.text = prefs.model!.trim();
+      }
+    });
+  }
+
+  Future<void> _persistTranscript([
+    List<CodingTranscriptMessage>? messages,
+  ]) async {
+    final next = messages ??
+        () {
+          final byId = <String, CodingTranscriptMessage>{
+            for (final m in _seedMessages) m.id: m,
+          };
+          for (final m in codingMessagesFromTimelineItems(_timeline.items)) {
+            byId[m.id] = m;
+          }
+          return byId.values.toList();
+        }();
+    await saveCodingTranscript(
+      kind: 'pi',
+      id: widget.sessionId,
+      messages: next,
+    );
+    if (mounted) setState(() => _seedMessages = next);
+  }
+
+  void _mergeTimelineIntoTranscript() {
+    final completed = codingMessagesFromTimelineItems(_timeline.items);
+    if (completed.isEmpty) return;
+    final byId = <String, CodingTranscriptMessage>{
+      for (final m in _seedMessages) m.id: m,
+    };
+    var changed = false;
+    for (final m in completed) {
+      final prev = byId[m.id];
+      if (prev == null || prev.text != m.text || prev.role != m.role) {
+        byId[m.id] = m;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    final next = byId.values.toList();
+    unawaited(_persistTranscript(next));
   }
 
   @override
@@ -80,7 +178,9 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
     for (final u in _unsubs) {
       u();
     }
+    unawaited(_persistTranscript());
     _controller.dispose();
+    _modelController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -97,6 +197,7 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
         );
         if (!identical(next, _timeline) && mounted) {
           setState(() => _timeline = next);
+          _mergeTimelineIntoTranscript();
           _scrollToEnd();
         }
       }),
@@ -134,8 +235,19 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
       final s = await client.getPiStatus();
       if (!mounted) return;
       setState(() => _status = s);
+      final modelSpec = s['modelSpec']?.toString().trim() ?? '';
+      if (modelSpec.isNotEmpty && _modelController.text.trim().isEmpty) {
+        _modelController.text = modelSpec;
+        unawaited(_patchPrefs(_prefs.copyWith(model: modelSpec)));
+      }
+      final state = s['state']?.toString();
+      // Warm-start once when stopped so the first send is not blocked forever.
+      if (!_didWarmStart && state == 'stopped') {
+        _didWarmStart = true;
+        unawaited(_ensurePiRunning());
+      }
       _statusPoll?.cancel();
-      if (s['state']?.toString() != 'ready') {
+      if (state != null && state != 'ready' && state != 'disabled') {
         _statusPoll = Timer.periodic(const Duration(seconds: 5), (_) {
           unawaited(_refreshStatus());
         });
@@ -143,6 +255,30 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
     } catch (_) {
       // Keep last-known.
     }
+  }
+
+  /// Start Pi chat runtime on the home node (distinct from the TUI terminal).
+  Future<bool> _ensurePiRunning() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return false;
+    try {
+      final s = await client.restartPi();
+      if (!mounted) return false;
+      setState(() => _status = s);
+      return s['state']?.toString() == 'ready';
+    } catch (_) {
+      try {
+        final s = await client.getPiStatus();
+        if (mounted) setState(() => _status = s);
+      } catch (_) {}
+      return false;
+    }
+  }
+
+  Future<void> _patchPrefs(CodingComposerPrefs next) async {
+    final saved = await saveCodingComposerPrefs(_prefsKey, next);
+    if (!mounted) return;
+    setState(() => _prefs = saved);
   }
 
   void _scrollToEnd() {
@@ -180,22 +316,98 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
     }
   }
 
+  Future<void> _pickAttachment() async {
+    final path = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => HomeFilePickScreen(
+          initialPath:
+              (widget.cwd != null && widget.cwd!.trim().isNotEmpty)
+                  ? widget.cwd
+                  : null,
+        ),
+      ),
+    );
+    if (!mounted || path == null || path.isEmpty) return;
+    setState(() {
+      _attachments.add(
+        AgentDraftAttachment(
+          id: 'att_${DateTime.now().microsecondsSinceEpoch}',
+          path: path,
+          name: attachmentBasename(path),
+          mimeType: guessMimeFromName(path),
+        ),
+      );
+    });
+  }
+
+  Future<void> _importSession() async {
+    final cwd = widget.cwd?.trim() ?? '';
+    final sessions = ref.read(terminalProvider).sessions.where((s) {
+      if (!s.isPi || s.id == widget.sessionId) return false;
+      if (cwd.isEmpty) return true;
+      return (s.cwd ?? '').trim() == cwd;
+    }).toList();
+    await showCodingImportSessionSheet(
+      context,
+      rows: [
+        for (final s in sessions)
+          CodingImportSessionRow(
+            id: s.id,
+            title: s.name,
+            subtitle: s.cwd,
+          ),
+      ],
+      onPick: (id) {
+        final s = ref
+            .read(terminalProvider)
+            .sessions
+            .where((x) => x.id == id)
+            .firstOrNull;
+        if (s == null || !mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => PiCodingChatScreen(
+              sessionId: s.id,
+              sessionName: s.name,
+              cwd: s.cwd,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _busy) return;
+    if ((text.isEmpty && _attachments.isEmpty) || _busy) return;
     final l10n = AppLocalizations.of(context);
     final state = _status?['state']?.toString();
-    if (state != null && state != 'ready') {
-      setState(() {
-        _localError = switch (state) {
-          'disabled' => l10n.piDisabledHint,
-          'not-installed' => l10n.piNotInstalledHint,
-          _ => _status?['error']?.toString().trim().isNotEmpty == true
-              ? l10n.piErrorHint(_status!['error'].toString())
-              : l10n.piStartingHint,
-        };
-      });
+
+    // Only hard-block when Pi cannot be started. `stopped` / `starting` are OK —
+    // sendToPi calls ensurePiReady on the home node. The old UI treated `stopped`
+    // like "starting" and never sent, so users saw "Pi is starting" forever.
+    if (state == 'disabled') {
+      setState(() => _localError = l10n.piDisabledHint);
       return;
+    }
+    if (state == 'not-installed') {
+      setState(() => _localError = l10n.piNotInstalledHint);
+      return;
+    }
+    if (state == 'error') {
+      setState(() => _localError = l10n.piStartingHint);
+      final ok = await _ensurePiRunning();
+      if (!mounted) return;
+      if (!ok && _status?['state']?.toString() != 'ready') {
+        final err = _status?['error']?.toString().trim();
+        setState(() {
+          _localError = (err != null && err.isNotEmpty)
+              ? l10n.piErrorHint(err)
+              : l10n.piStartingHint;
+        });
+        return;
+      }
+      setState(() => _localError = null);
     }
 
     final client = ref.read(nodeServiceProvider);
@@ -204,13 +416,61 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
       return;
     }
 
+    if (state == 'stopped' || state == 'starting' || state == null) {
+      setState(() => _localError = l10n.piStartingHint);
+      final ok = await _ensurePiRunning();
+      if (!mounted) return;
+      if (!ok && _status?['state']?.toString() != 'ready') {
+        final err = _status?['error']?.toString().trim();
+        setState(() {
+          _localError = (err != null && err.isNotEmpty)
+              ? l10n.piErrorHint(err)
+              : l10n.piStartingHint;
+        });
+        if (_status?['state']?.toString() == 'disabled') {
+          setState(() => _localError = l10n.piDisabledHint);
+        }
+        return;
+      }
+      setState(() => _localError = null);
+    }
+
+    var outbound = shapeCodingComposerPrompt(text, _prefs, _caps);
+    final atts = List<AgentDraftAttachment>.from(_attachments);
+    if (atts.isNotEmpty) {
+      try {
+        final built = await client.buildAgentAttachmentContext(
+          atts.map((a) => a.toRpc()).toList(),
+        );
+        if (built['ok'] != true) {
+          throw StateError(
+            built['error']?.toString() ?? 'Attachment context failed',
+          );
+        }
+        outbound = mergeAgentPromptWithAttachments(
+          outbound,
+          built['contextText']?.toString(),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _localError = l10n.piSendFailed(
+            e.toString().replaceFirst('Exception: ', ''),
+          );
+        });
+        return;
+      }
+    }
+    if (outbound.trim().isEmpty) return;
+
     setState(() {
       _busy = true;
       _localError = null;
+      _attachments.clear();
     });
     _controller.clear();
     try {
-      await client.sendToPi(text, sessionId: widget.sessionId);
+      await client.sendToPi(outbound, sessionId: widget.sessionId);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -244,11 +504,24 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
     final agentLabel = _timeline.agentState?['label']?.toString();
     final statusState = _status?['state']?.toString();
     final modelSpec = _status?['modelSpec']?.toString();
+    final display = _displayMessages;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.sessionName),
         actions: [
+          if (statusState == 'stopped' ||
+              statusState == 'error' ||
+              statusState == 'not-installed')
+            TextButton(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      _didWarmStart = true;
+                      unawaited(_ensurePiRunning());
+                    },
+              child: Text(l10n.piStartAction),
+            ),
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value != 'add-heartbeat') return;
@@ -352,7 +625,7 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
               controller: _scrollController,
               padding: const EdgeInsets.all(12),
               children: [
-                if (_messages.isEmpty && !_busy)
+                if (display.isEmpty && !_busy)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 32),
                     child: Column(
@@ -372,11 +645,11 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
                       ],
                     ),
                   ),
-                for (final item in _messages)
+                for (final item in display)
                   _PiMessageBubble(
-                    role: item['role']?.toString() ?? 'assistant',
-                    text: item['text']?.toString() ?? '',
-                    streaming: item['streaming'] == true,
+                    role: item.role,
+                    text: item.text,
+                    streaming: item.streaming,
                   ),
                 for (final item in _feedItems) _PiTimelineCard(item: item),
                 if (_localError != null)
@@ -457,6 +730,25 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
                 ),
               ),
             ),
+          CodingComposerToolbar(
+            caps: _caps,
+            prefs: _prefs,
+            modelController: _modelController,
+            onPrefsChanged: (p) => unawaited(_patchPrefs(p)),
+            onImportSession: _importSession,
+            onAttach: _pickAttachment,
+          ),
+          if (_attachments.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+              child: AgentAttachmentBar(
+                attachments: _attachments,
+                onRemove: (id) => setState(
+                  () => _attachments.removeWhere((a) => a.id == id),
+                ),
+                onClearAll: () => setState(() => _attachments.clear()),
+              ),
+            ),
           SafeArea(
             top: false,
             child: Padding(
@@ -482,7 +774,9 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    onPressed: _busy || _controller.text.trim().isEmpty
+                    onPressed: _busy ||
+                            (_controller.text.trim().isEmpty &&
+                                _attachments.isEmpty)
                         ? null
                         : () => unawaited(_send()),
                     icon: const Icon(Icons.send),
@@ -496,6 +790,20 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
       ),
     );
   }
+}
+
+class _PiDisplayMsg {
+  const _PiDisplayMsg({
+    required this.id,
+    required this.role,
+    required this.text,
+    this.streaming = false,
+  });
+
+  final String id;
+  final String role;
+  final String text;
+  final bool streaming;
 }
 
 class _PiMessageBubble extends StatelessWidget {
@@ -528,7 +836,7 @@ class _PiMessageBubble extends StatelessWidget {
                 : scheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: SelectableText(streaming ? '$text▍' : text),
+          child: SelectableText(streaming ? '$text…' : text),
         ),
       ),
     );

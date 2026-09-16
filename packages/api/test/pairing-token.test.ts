@@ -59,9 +59,9 @@ describe("pairing-token multi-relay", () => {
       wsUrl: "ws://192.168.1.20:3030/ws",
       token: "pair-token",
       ownerId: "envoy:owner:alice",
-      app: "EnvoyCoder",
+      app: "EnvoyDev",
     });
-    expect(decodePairingToken(token).app).toBe("EnvoyCoder");
+    expect(decodePairingToken(token).app).toBe("EnvoyDev");
 
     // Absent stays absent: codes minted before the field existed must decode unchanged
     // rather than inventing an app name.

@@ -6,6 +6,13 @@
 // Re-exported from `@envoymesh/protocol` so `@envoymesh/api`'s public surface is
 // unchanged (see the note at each declaration site below).
 import type { ExtAgentCommandDescriptor, ExtAgentDefinition } from "@envoymesh/protocol";
+import {
+  codingProviderInstallDocsUrl,
+  codingProviderInstallHint,
+  codingProviderIsBundler,
+  codingProviderProbeBinary,
+  getCodingProvider,
+} from "./coding-provider-catalog.js";
 // The other four moved types are re-exported below but not used in this file,
 // so they are deliberately absent from the import above (an unused `import type`
 // survives no lint here and only invites the question of whether it is needed).
@@ -484,8 +491,11 @@ export function defaultExtAgentStartHint(agentId: string): string {
       return "Install CodeWhale: `curl -fsSL https://codewhale.net/install.sh | sh` (or `npm install -g codewhale`). Then `codewhale --version` and `codewhale auth set --provider deepseek` (or set your provider key).";
     case "pi":
       return "Pi is built into full desktop installs. If chat stays silent, reinstall a full build (Pi sidecar staged) and confirm Settings → AI has a real model (not mock/disabled).";
-    default:
+    default: {
+      const cat = getCodingProvider(agentId);
+      if (cat) return codingProviderInstallHint(cat);
       return "Start the external agent process, then confirm its HTTP endpoint is reachable.";
+    }
   }
 }
 
@@ -596,13 +606,24 @@ export function getExtAgentInstallInfo(agentId: string): ExtAgentInstallInfo {
         startHint: defaultExtAgentStartHint(id),
         builtIn: false,
       };
-    default:
+    default: {
+      const cat = getCodingProvider(id);
+      if (cat) {
+        return {
+          agentId: id,
+          homepageUrl: cat.installLink,
+          homepageLabel: `${cat.title} docs`,
+          startHint: codingProviderInstallHint(cat),
+          builtIn: false,
+        };
+      }
       return {
         agentId: id,
         homepageLabel: "Docs",
         startHint: defaultExtAgentStartHint(id),
         builtIn: false,
       };
+    }
   }
 }
 
@@ -799,11 +820,27 @@ export function getExtAgentInstallGuide(
 
   const row = INSTALL_TABLE[id];
   if (!row) {
-    // Unknown / custom agent. We have a homepage label from
-    // getExtAgentInstallInfo, but no install command. UI should
-    // render a "no install recipe" hint. The `command` / `verify`
-    // fields are intentionally empty — we don't guess at a binary
-    // name the user might not even have.
+    const cat = getCodingProvider(id);
+    if (cat) {
+      const probeBin = codingProviderProbeBinary(cat);
+      const bundler = codingProviderIsBundler(cat);
+      const runCmd = cat.installCommand ?? cat.command.join(" ");
+      return {
+        agentId: id,
+        installed: isInstalled,
+        // Prefer the product name for card body ("Nova isn't…"), not `npx`.
+        command: bundler ? cat.title : probeBin,
+        installCommand: runCmd,
+        verifyCommand:
+          cat.verifyCommand ?? (bundler ? runCmd : `${probeBin} --version`),
+        startHint: info.startHint,
+        homepageUrl: cat.installLink,
+        homepageLabel: bundler
+          ? `${cat.title} docs`
+          : info.homepageLabel,
+        commonIssues: [codingProviderInstallHint(cat)],
+      };
+    }
     return {
       agentId: id,
       installed: isInstalled,

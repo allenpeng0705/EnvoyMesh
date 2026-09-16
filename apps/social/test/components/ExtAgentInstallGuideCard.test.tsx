@@ -56,7 +56,7 @@ describe("ExtAgentInstallGuideCard (Phase 55D.1)", () => {
     expect(issues.textContent).toContain("codex --version")
   })
 
-  it("renders the notInstalledBody when installState is 'not-installed'", () => {
+  it("prefers startHint over the generic not-installed template", () => {
     render(
       <ExtAgentInstallGuideCard
         agentId="codex"
@@ -64,22 +64,54 @@ describe("ExtAgentInstallGuideCard (Phase 55D.1)", () => {
         installState="not-installed"
       />,
     )
-    const body = screen.getByText(/isn't on this machine yet/)
+    const body = screen.getByText(/Install the Codex CLI/)
+    expect(body).toBeTruthy()
+  })
+
+  it("falls back to notInstalledBody when startHint is absent", () => {
+    const { startHint: _drop, ...guide } = SAMPLE_GUIDE
+    render(
+      <ExtAgentInstallGuideCard
+        agentId="codex"
+        installGuide={guide}
+        installState="not-installed"
+      />,
+    )
+    const body = screen.getByText(/isn.t ready on this machine yet/)
     expect(body).toBeTruthy()
     expect(body.textContent).toContain("codex")
   })
 
-  it("renders the unknownBody when installState is 'unknown'", () => {
+  it("falls back to unknownBody when startHint is absent", () => {
+    const { startHint: _drop, ...guide } = SAMPLE_GUIDE
     render(
       <ExtAgentInstallGuideCard
         agentId="codex"
-        installGuide={SAMPLE_GUIDE}
+        installGuide={guide}
         installState="unknown"
       />,
     )
     const body = screen.getByText(/Couldn't detect whether/)
     expect(body).toBeTruthy()
     expect(body.textContent).toContain("codex")
+  })
+
+  it("labels npx first-run recipes as First-run command", () => {
+    render(
+      <ExtAgentInstallGuideCard
+        agentId="nova"
+        installGuide={{
+          ...SAMPLE_GUIDE,
+          agentId: "nova",
+          command: "Nova",
+          installCommand: "npx -y @compass-ai/nova acp",
+          startHint:
+            "Nova is fetched from npm on the first run (@compass-ai/nova). No separate install.",
+        }}
+        installState="not-installed"
+      />,
+    )
+    expect(screen.getByText("First-run command")).toBeTruthy()
   })
 
   it("copies the install command to clipboard on Copy click and shows Copied label", async () => {

@@ -22,12 +22,9 @@ mixin AgentRpcs on HomeRpcSession {
         as Map<String, dynamic>;
   }
 
-  /// Sync ask to an Ext Agent (Coding Tier B).
+  /// Sync ask to an Ext Agent (legacy Ext Agent bridge).
   ///
-  /// When [streamSessionId] is set, streaming backends (codex / claudecode)
-  /// emit assistant token upserts on `eh:timeline` under
-  /// `__ext__:$streamSessionId`. One-shot backends ignore streaming and
-  /// still return a sync reply.
+  /// Prefer [askCodingHarness] for Coding Tier B tasks.
   Future<String> askExtAgent({
     required String prompt,
     String? agentId,
@@ -45,6 +42,51 @@ mixin AgentRpcs on HomeRpcSession {
       return result['text'] as String;
     }
     return result?.toString() ?? '';
+  }
+
+  /// Coding Tier B ask — isolated from Ext Agent bridge state.
+  Future<String> askCodingHarness({
+    required String codingSessionId,
+    required String harness,
+    required String prompt,
+    required String cwd,
+    Map<String, dynamic>? runtime,
+  }) async {
+    final result = await homeClient.call('askCodingHarness', {
+      'codingSessionId': codingSessionId.trim(),
+      'harness': harness.trim(),
+      'prompt': prompt,
+      'cwd': cwd.trim(),
+      if (runtime != null && runtime.isNotEmpty) 'runtime': runtime,
+    }, const Duration(minutes: 5));
+    if (result is String) return result;
+    if (result is Map && result['text'] is String) {
+      return result['text'] as String;
+    }
+    return result?.toString() ?? '';
+  }
+
+  /// Persist Tier B cwd / model / compatible creds on the home node.
+  Future<Map<String, dynamic>> setCodingHarnessRuntime({
+    required String codingSessionId,
+    required String cwd,
+    Map<String, dynamic>? runtime,
+  }) async {
+    return await homeClient.call('setCodingHarnessRuntime', {
+          'codingSessionId': codingSessionId.trim(),
+          'cwd': cwd.trim(),
+          if (runtime != null && runtime.isNotEmpty) 'runtime': runtime,
+        })
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> clearCodingHarnessRuntime({
+    required String codingSessionId,
+  }) async {
+    return await homeClient.call('clearCodingHarnessRuntime', {
+          'codingSessionId': codingSessionId.trim(),
+        })
+        as Map<String, dynamic>;
   }
 
   /// Slash-command catalog for Ext Agent chat autocomplete.
@@ -285,7 +327,12 @@ mixin AgentRpcs on HomeRpcSession {
   }
 
   Future<Map<String, dynamic>> restartPi() async {
-    return await homeClient.call('restartPi') as Map<String, dynamic>;
+    return await homeClient.call(
+          'restartPi',
+          const {},
+          const Duration(seconds: 90),
+        )
+        as Map<String, dynamic>;
   }
 
   /// One-shot Pi prompt. May take up to ~2 minutes for long tool turns.
@@ -339,11 +386,13 @@ mixin AgentRpcs on HomeRpcSession {
     required String projectPath,
     String? sessionId,
     bool forceRestart = false,
+    Map<String, dynamic>? modelOverride,
   }) async {
     return await homeClient.call('ensurePiTerminalSession', {
           'projectPath': projectPath,
           if (sessionId != null) 'sessionId': sessionId,
           'forceRestart': forceRestart,
+          if (modelOverride != null) 'modelOverride': modelOverride,
         })
         as Map<String, dynamic>;
   }

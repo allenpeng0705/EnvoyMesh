@@ -71,6 +71,20 @@ export function piSessionTitle(projectPath: string): string {
 }
 
 /**
+ * Whether the first user prompt may replace the Pi session title.
+ * Empty / "New task" / create-time `Pi · <folder>` are replaceable.
+ */
+export function shouldAutoSetPiSessionTitle(
+  title: string | undefined,
+  cwd: string | undefined,
+): boolean {
+  const trimmed = title?.trim() ?? ""
+  if (!trimmed || trimmed === "New task") return true
+  if (cwd?.trim() && trimmed === piSessionTitle(cwd)) return true
+  return false
+}
+
+/**
  * Ensure a Pi interactive TUI is running for the given project folder.
  *
  * Does not auto-start without `projectPath` — callers (ChatView “Open Pi”)

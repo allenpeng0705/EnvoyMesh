@@ -37,7 +37,7 @@ The target is that **future products are built on EnvoyMesh's modules instead of
 
 | Future product | What it is | What it needs to reuse |
 |---|---|---|
-| **EnvoyCoder** | a paseo-class coding app with its own desktop host and mobile client, plus distributed features; `envoy-harness` built in | transport, pairing/QR, host, harness adapters |
+| **EnvoyDev** | a paseo-class coding app with its own desktop host and mobile client, plus distributed features; `envoy-harness` built in | transport, pairing/QR, host, harness adapters |
 | **EnvoyAgent** | one agent, in the spirit of HomeClaw / hermes / OpenClaw, stable and extensible, with EnvoyMesh as its channel to the home computer | transport, pairing/QR, host |
 
 > **Neither product is designed in this document and neither is a deliverable of this work.** They are the *reason* for the refactoring and, later, the *proof* that it succeeded. This document contains no product design.
@@ -53,7 +53,7 @@ The target is that **future products are built on EnvoyMesh's modules instead of
 The boundary **already largely exists**, it has simply never been declared or checked:
 
 - **198 of 507** files in `apps/node/src` are `reusable` under the manifest's three-condition test — and **350** would be if `@envoymesh/api` were a core package, which is what E9 unlocks (§2.7).
-- The host's **45** wired events already split **25 product-agnostic / 20 social**, and **14 of the 25** are the harness/terminal stream EnvoyCoder wants (§6.1).
+- The host's **45** wired events already split **25 product-agnostic / 20 social**, and **14 of the 25** are the harness/terminal stream EnvoyDev wants (§6.1).
 - The npm packages are already layered correctly on a true-leaf `protocol` package (§2.1).
 
 So this is a **declaration-and-enforcement** problem, not a rewrite — with one real decoupling job: the host's routing policy (§2.5, §6.1).
@@ -80,7 +80,7 @@ So this is a **declaration-and-enforcement** problem, not a rewrite — with one
 | **Every step is independently revertible** | Steps are metadata or additive checks, except the Dart split, which is a mechanical import update |
 | **In-flight work is landed first** | Phase 68 (Coding tab) is committed before shared files are touched — see Step 0 |
 | **No extraction before declaration** | Extracting first reproduces today's problem one level down |
-| **No product design** | EnvoyCoder / EnvoyAgent are motivation and future validation only (§11) |
+| **No product design** | EnvoyDev / EnvoyAgent are motivation and future validation only (§11) |
 
 ### The plan at a glance
 
@@ -121,7 +121,7 @@ Today, (2) fails outright (§2.3) and (1) and (3) are unenforced (§2.2).
 ### 1.2 What this is not
 
 - **Not a rewrite.** The existing layering is mostly sound (§2.1) — the work is declaring and enforcing boundaries, not re-architecting.
-- **Not product design.** EnvoyCoder/EnvoyAgent are names for *future consumers*, nothing more (§11).
+- **Not product design.** EnvoyDev/EnvoyAgent are names for *future consumers*, nothing more (§11).
 - **Not the permission/scope model.** Agent capabilities and client scopes are useful, but they are **downstream** of encapsulation and are confined to §12 here.
 - **Not a big-bang split of `node-service-impl.ts`.** That file is decomposed last, if at all (§8.9).
 
@@ -134,7 +134,7 @@ The products that motivate this work have a specific shape, and that shape place
 | **V1** | Each product ships its **own desktop app** that hands out a **QR code and host:port** for its mobile app | The **host** side must be reusable and **package-extractable**: WS host, QR/pairing-payload issuance, token validation, relay registration. The consumer is a *different app*, so "declared in place" is not enough |
 | **V2** | Mobile apps connect **the same way EnvoyMesh's mobile does** | Largely satisfied already: `envoy_thin_client` (2,434 lines, **zero** social constructs) + pairing URI + candidate resolution |
 | **V3** | **Other instances of a product** can connect by the same methods | A **connection-authorization** primitive that is *not* social bonds: connect by QR/host:port, then authorize a session on that connection |
-| **V4** | **EnvoyCoder** reuses `envoy-harness` and supports paseo-class harnesses | The harness / `ext-agent-adapter` layer must be reusable and package-extractable |
+| **V4** | **EnvoyDev** reuses `envoy-harness` and supports paseo-class harnesses | The harness / `ext-agent-adapter` layer must be reusable and package-extractable |
 | **V5** | **EnvoyMesh is the *channel*** to the home computer, not a feature of the social app | Transport must be a first-class reusable product, not a subsystem of `apps/node` |
 
 **V1 and V3 are the two the plan did not cover**, and V1 revises the plan's core assumption (§8.9, E1).
@@ -430,7 +430,7 @@ A consumer fixture built from **`reusable` modules only** (plus the clean Dart S
 - it compiles with no social import available;
 - no social symbol is reachable through the declared surface.
 
-**This is the proof that encapsulation succeeded**, and it is exactly the test a future EnvoyCoder or EnvoyAgent will satisfy — which is the only role those names play in this document.
+**This is the proof that encapsulation succeeded**, and it is exactly the test a future EnvoyDev or EnvoyAgent will satisfy — which is the only role those names play in this document.
 
 ---
 
@@ -463,7 +463,7 @@ A consumer fixture built from **`reusable` modules only** (plus the clean Dart S
 
 ### 6.1 The host split — design of B4
 
-**Requirement (V1):** a product's own desktop app must be able to host QR + host:port **without inheriting any social concept**. Concretely, EnvoyCoder must never ship chat rooms, mesh/family rooms, a family-profile model, profile-aware authentication, family presence tracking, or family/AI-bot fan-out (§2.5).
+**Requirement (V1):** a product's own desktop app must be able to host QR + host:port **without inheriting any social concept**. Concretely, EnvoyDev must never ship chat rooms, mesh/family rooms, a family-profile model, profile-aware authentication, family presence tracking, or family/AI-bot fan-out (§2.5).
 
 **The split is already visible in the event list.** Of the 45 events the host wires, **25 are product-agnostic and 20 are social**:
 
@@ -472,7 +472,7 @@ A consumer fixture built from **`reusable` modules only** (plus the clean Dart S
 | **Reusable** | **25** | `node:*` (4), `peer:*` (2), `p2p:envelope`, `crdt:sync`, `discovery:multihop-update`, `config:updated`, `bridge:status`, **`eh:*` (10)**, `pi:proposal`, `terminal:*` (3) |
 | **Product-bound** | **20** | `chat:*` (9), `bond:*` (2), `home:*` (3), `agent:*` (2), `profile:updated`, `hello:*` (2), `share:agent-proposed` |
 
-**14 of the 25 reusable events are the harness/terminal stream EnvoyCoder actually wants** — and they are *already* product-agnostic. So the host split is not a re-classification; it is making an existing boundary explicit and injectable.
+**14 of the 25 reusable events are the harness/terminal stream EnvoyDev actually wants** — and they are *already* product-agnostic. So the host split is not a re-classification; it is making an existing boundary explicit and injectable.
 
 **H1 — Event disposition becomes data.** Replace the 36 hand-wired `nodeServiceImpl.on(…)` call sites (covering 45 events) with a declared table:
 
@@ -526,7 +526,7 @@ export interface SessionIdentityResolver {
 
 plus `HostNodeService` (5 members in place of the 436-member `NodeService`), `HOST_WS_BIND_HOST` (in place of `@envoymesh/node-core`), the wire types moved to `@envoymesh/protocol` (in place of `@envoymesh/api`), and `preAuthMethods` as data (in place of two hard-coded method names). **Result: `ws-server.ts` is classifiable `reusable`** — the precondition §8.8's extraction step was missing.
 
-**Resulting host surface for EnvoyCoder:** the 25 reusable events (14 of which it uses directly), plus its own — and no product concept reachable, no product module importable.
+**Resulting host surface for EnvoyDev:** the 25 reusable events (14 of which it uses directly), plus its own — and no product concept reachable, no product module importable.
 
 **Acceptance — two layers, because a symbol grep is not a behaviour test (review point #1).**
 
@@ -1233,7 +1233,7 @@ The facts that shape the decision:
 |---|---|
 | **A second maintainer owns a subsystem** | The split only means something when the names differ; today every area would resolve to the same human |
 | **A subsystem's change rate justifies a dedicated reviewer** | e.g. one area dominating a quarter's commits — measure it from `git log --name-only`, not by feeling |
-| **A second product ships from this tree** (EnvoyCoder / EnvoyAgent) | The reusable/product split already implies areas, and the product-bound side becomes a natural review boundary |
+| **A second product ships from this tree** (EnvoyDev / EnvoyAgent) | The reusable/product split already implies areas, and the product-bound side becomes a natural review boundary |
 
 Cost: nothing. What you get today: GitHub already requests `@allenpeng0705` on every PR. **What it explicitly does *not* claim:** that one owner per area would be wrong — only that writing it down before there is a second name produces a document that looks authoritative and says nothing.
 
@@ -1366,7 +1366,7 @@ A fourth review pass confirmed Steps 0–6 / H1–H5 / E9 as landed and named fi
 | **`@envoymesh/api` taint** | **241 modules are product-bound only via a package**; `api` is not in `corePackages`. Simulated (classifier copy, `--out /tmp`, nothing tracked): adding `api` → **438 → 568 reusable (+130)**, viaPackage 241 → 72 | The *decision*, not the code. A blanket `corePackages` entry would admit product types whose names the concept pattern does not cover (`ChatMessage`, `FeedPostSummary`, `BondRecord`) into `reusable` modules — the same class the E9 review caught in `CoreRpcMethods`. The safe shape is a declared **`@envoymesh/api/core` subpath** with an E9-style disposition + veto generator | E9-sized |
 | **`@envoymesh/harness` reusability (V4)** | **7 of 24 modules reusable**; 17 product-bound. Only **5** import `api` directly — and what they need is a *handful of symbols*: `extAgentUsesProjectPath` and `ExtAgentCommandIntercept`/`ExtAgentCommandDescriptor` are already in core packages, but `ExtAgentDefinition`, `ExtAgentCommandCatalog`, `ENVOYMESH_VERSION`, `defaultExtAgentStartHint`, `getExtAgentInstallGuide`, `ExtAgentReachability`, `InstallState`, the `Pi*` types and `ModelProviderConfig` exist **only in `api`** | Moving ~6–8 contract types into `@envoymesh/protocol`/`node-core` (re-exported by `api`, exactly as the ext-agent contract move already did for `extAgentUsesProjectPath`). **`project-path-store.ts` needs one type** and taints 5 modules directly plus 4 more through `one-shot-cli-backend.ts` — the cheapest real win in this table | small per symbol; ~10–16 modules unlocked |
 | **Kernel constructor** | 48 stores, **14 kernel / 28 product / 6 undecided** (`inventory-node-stores.mjs`); the RPC probe passes but the constructor still hardcodes `this._profileDir = profileDir ?? "/tmp/unknown"` and two call sites compare against that string literal | The `productStoreDir` gate across all product-classified stores, plus a decision on the sentinel (make "no profile dir" a typed absence instead of a magic path) | behaviour-sensitive edit in an 18k-line file; own step (§8.9) |
-| **Second-product proof** | `packages/envoy-reuse-fixture` is **Dart-only** | A minimal **TypeScript/desktop consumer** that hosts QR + the harness from the extracted packages — the real EnvoyCoder spike. Note this is also what would *measure* the two rows above, rather than argue them | new work, not a fix |
+| **Second-product proof** | `packages/envoy-reuse-fixture` is **Dart-only** | A minimal **TypeScript/desktop consumer** that hosts QR + the harness from the extracted packages — the real EnvoyDev spike. Note this is also what would *measure* the two rows above, rather than argue them | new work, not a fix |
 | **This document's durability** | `docs/` is gitignored; **E7 decided that deliberately**, with the banner and "reversible at any time by moving both files" | `git add -f docs/envoymesh-refactoring-plan.md` (or an un-ignore rule) — one command, needs the owner's call | trivial |
 
 **Recommended order**, cheapest true unblock first: (1) the harness contract-symbol move — it is small, it is the V4 requirement, and it does not depend on the `api` decision; (2) re-measure, then decide the `api/core` subpath with real numbers; (3) the kernel `productStoreDir` gate as its own step; (4) the TS reuse host, which then becomes the acceptance test for all of it.
@@ -1452,7 +1452,7 @@ Two details worth recording, because both were mine: the test's reuse check was 
 The acceptance test proved a core-only consumer can boot a host; this is the artifact a reviewer asked for instead of a test: a real package, with its own `package.json`, project references, workspace entries and lockfile lines, that a product which is *not* EnvoyMesh social can depend on.
 
 ```
-product (EnvoyCoder, …) → @envoymesh/reuse-host → host-connect · harness · protocol
+product (EnvoyDev, …) → @envoymesh/reuse-host → host-connect · harness · protocol
 ```
 
 Three surfaces, all from the reusable layer:
@@ -1799,7 +1799,7 @@ The plan asks each module to have a "declared owner" (§2.4, Step 4). The repo h
 
 ## 11. Explicitly out of scope
 
-- **No product design.** EnvoyCoder and EnvoyAgent are motivation and future validation only; no scope, surface, or topology is specified for them. **Where that work now lives:** `docs/envoymesh-multi-product-design.md` (tracked) — the packaging design for installing the three products next to each other (separate apps, one shared profile root, one mesh owner at a time, local-model sharing). The how-to companion is `docs/envoymesh-new-app-guide.md` — what to depend on, how to boot a host, how the mobile pairing works, and how to sync with this repo. It is a separate document precisely because of the rule above; it consumes this plan's 556/252 split and changes nothing in it. **One boundary in that design matters here:** `@envoymesh/envoy-harness*` is a **peer** every product clones or copies itself, never something this repo distributes (design **D4**, guide §7.5). The `file:../envoy-harness/…` link this repo carries is a local development arrangement — the same link whose stale `@envoymesh/protocol` copy S0 had to repair — and `scripts/check-peer-deps.mjs` makes its absence legible instead of an `ERR_MODULE_NOT_FOUND`.
+- **No product design.** EnvoyDev and EnvoyAgent are motivation and future validation only; no scope, surface, or topology is specified for them. **Where that work now lives:** `docs/envoymesh-multi-product-design.md` (tracked) — the packaging design for installing the three products next to each other (separate apps, one shared profile root, one mesh owner at a time, local-model sharing). The how-to companion is `docs/envoymesh-new-app-guide.md` — what to depend on, how to boot a host, how the mobile pairing works, and how to sync with this repo. It is a separate document precisely because of the rule above; it consumes this plan's 556/252 split and changes nothing in it. **One boundary in that design matters here:** `@envoymesh/envoy-harness*` is a **peer** every product clones or copies itself, never something this repo distributes (design **D4**, guide §7.5). The `file:../envoy-harness/…` link this repo carries is a local development arrangement — the same link whose stale `@envoymesh/protocol` copy S0 had to repair — and `scripts/check-peer-deps.mjs` makes its absence legible instead of an `ERR_MODULE_NOT_FOUND`.
 - **No changes to `apps/social` behaviour or feature set.** The Coding tab work in flight is a feature addition to Social, not part of this refactor.
 - **No removal of social identity, bonds, roster, or family profiles.** Encapsulation keeps them reachable from `product-bound` modules; it only stops them leaking into `reusable` ones.
 - **No reassignment of product capabilities.** Capability tags are labels; reusability is the only enforced axis (§3).
@@ -1823,7 +1823,7 @@ The only scope specified anywhere in this document, because the Coding tab is th
 
 #### Tier A — `coding`, confirmed by today's gate (48)
 
-Identical to `CODING_GATED_RPC`. No decision required — this is the EnvoyCoder core surface as the owner already defines it.
+Identical to `CODING_GATED_RPC`. No decision required — this is the EnvoyDev core surface as the owner already defines it.
 
 | Method | Scope | Today's gate | Handler home |
 |---|---|---|---|
@@ -1876,9 +1876,9 @@ Identical to `CODING_GATED_RPC`. No decision required — this is the EnvoyCoder
 | `updateCodingHeartbeat` | `coding` | coding-gated | `node-service-impl.ts` |
 | `updateCodingSchedule` | `coding` | coding-gated | `node-service-impl.ts` |
 
-#### Tiers B and B3 — EnvoyCoder surface, NOT granted today (44)
+#### Tiers B and B3 — EnvoyDev surface, NOT granted today (44)
 
-**A product decision, not a derivation** — the decision is recorded in §12.2. These are the EnvoyCoder surface (harness, `terminal*`, `ExtAgent*`, project-folder picker) but today 36 are `owner-only` and 7 are `open`. The **Bucket** column is what the method actually lets a client do: **B1** = metadata/config/suggestions, **B2** = reads host content, **B3** = executes on the host.
+**A product decision, not a derivation** — the decision is recorded in §12.2. These are the EnvoyDev surface (harness, `terminal*`, `ExtAgent*`, project-folder picker) but today 36 are `owner-only` and 7 are `open`. The **Bucket** column is what the method actually lets a client do: **B1** = metadata/config/suggestions, **B2** = reads host content, **B3** = executes on the host.
 
 | Method | Bucket | Granted by | Today's gate | Handler home |
 |---|---|---|---|---|
@@ -1948,12 +1948,12 @@ Never routed through the switch — an open finding, see §12.4.
 
 | Concern | Design |
 |---|---|
-| **Where consent is captured** | The pairing flow, as a distinct step — *not* a checkbox among others. Text must name the capability plainly: "Allow EnvoyCoder on this device to run commands on this computer." This is the highest-privilege grant the system issues |
+| **Where consent is captured** | The pairing flow, as a distinct step — *not* a checkbox among others. Text must name the capability plainly: "Allow EnvoyDev on this device to run commands on this computer." This is the highest-privilege grant the system issues |
 | **What is issued** | Consent → `scopes: ["coding", "coding.exec"]`. Declined or skipped → `scopes: ["coding"]`. No path issues `coding.exec` implicitly |
 | **Default** | **Fail-closed.** No consent means no scope, and a B3 call is denied |
 | **Audit** | An audit event at issuance recording the grant and the granting profile (audit-first, per repo convention). Revocation is audited the same way |
 | **Revocation** | Partial and independent of unpairing: dropping `coding.exec` while keeping `coding` withdraws shell access without a re-pair. Needs a token-store operation alongside `removeTokensForDeviceId` (see §12.4) |
-| **Denial the client sees** | A distinct reason (*"this device is not permitted to run commands"*) a product UI can act on — not a generic forbidden error — so EnvoyCoder degrades to 72-method mode instead of appearing broken |
+| **Denial the client sees** | A distinct reason (*"this device is not permitted to run commands"*) a product UI can act on — not a generic forbidden error — so EnvoyDev degrades to 72-method mode instead of appearing broken |
 | **Owner sessions** | Unaffected — the owner carries no scopes and already has full access. The flow must not ask the owner for consent |
 | **Family profiles** | Unaffected — no scopes, so the existing `terminal*` owner-only rule still denies them. Granting a family profile shell access would be a separate decision with its own consent surface |
 

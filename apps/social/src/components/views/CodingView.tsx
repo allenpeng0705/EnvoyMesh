@@ -23,6 +23,7 @@ import { EnvoyHarnessPanel } from "./EnvoyHarnessPanel.js";
 import { CodingHarnessPanel } from "./ExtAgentCodingPanel.js";
 import { PiCodingPanel } from "./PiCodingPanel.js";
 import { codingHarnessLabel } from "@envoymesh/api";
+import { loadCodingExtSessions } from "../../lib/coding-sessions.js";
 
 export type CodingViewProps = {
   /** Whether the Coding tab is the visible top view. */
@@ -276,6 +277,12 @@ export function CodingView({ active }: CodingViewProps) {
                   readOnlyReview={reviewOnly}
                   onTouchedFilesChange={handleTouchedFiles}
                   openReviewRequest={openEhReviewRequest}
+                  onSwitchChat={(chatId) =>
+                    selectSession({
+                      kind: "eh",
+                      chatId,
+                    })
+                  }
                 />
               }
               shellBody={
@@ -306,6 +313,9 @@ export function CodingView({ active }: CodingViewProps) {
                   key={selected.sessionId}
                   sessionId={selected.sessionId}
                   onBusyChange={setPiBusy}
+                  onSwitchSession={(sessionId) =>
+                    selectSession({ kind: "pi", sessionId })
+                  }
                 />
               }
             />
@@ -325,6 +335,19 @@ export function CodingView({ active }: CodingViewProps) {
                   harness={selected.harness}
                   cwd={selected.cwd}
                   onStatusChange={setExtStatus}
+                  onSwitchSession={(sessionId) => {
+                    const s = loadCodingExtSessions().find(
+                      (x) => x.id === sessionId,
+                    );
+                    if (!s) return;
+                    selectSession({
+                      kind: "ext",
+                      sessionId: s.id,
+                      harness: s.harness,
+                      cwd: s.cwd,
+                      title: s.title,
+                    });
+                  }}
                 />
               }
             />

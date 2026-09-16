@@ -24,10 +24,10 @@ void main() {
     test('from the legacy query form', () {
       final data = parsePairingUri(
         'envoy://pair?wsUrl=${Uri.encodeComponent("ws://127.0.0.1:3030/ws")}'
-        '&token=t&app=EnvoyCoder',
+        '&token=t&app=EnvoyDev',
       );
       expect(data, isNotNull);
-      expect(data!.app, 'EnvoyCoder');
+      expect(data!.app, 'EnvoyDev');
     });
 
     test('from the compact code a QR actually carries', () {
@@ -36,11 +36,11 @@ void main() {
         'ws': 'ws://127.0.0.1:3030/ws',
         'tok': 't',
         'oid': 'envoy:owner:alice',
-        'app': 'EnvoyCoder',
+        'app': 'EnvoyDev',
       });
       final data = parsePairingUri(uri);
       expect(data, isNotNull);
-      expect(data!.app, 'EnvoyCoder');
+      expect(data!.app, 'EnvoyDev');
     });
 
     test('and leaves it null when the code predates the field', () {
@@ -54,18 +54,18 @@ void main() {
 
   group('pairingAppMismatch', () {
     test('accepts its own app, and a code that names none', () {
-      expect(pairingAppMismatch('EnvoyCoder', 'EnvoyCoder'), isNull);
+      expect(pairingAppMismatch('EnvoyDev', 'EnvoyDev'), isNull);
       // Codes minted before the field existed must keep working: refusing them would
       // break every QR already printed, and the phone still has to authenticate.
-      expect(pairingAppMismatch(null, 'EnvoyCoder'), isNull);
-      expect(pairingAppMismatch('   ', 'EnvoyCoder'), isNull);
+      expect(pairingAppMismatch(null, 'EnvoyDev'), isNull);
+      expect(pairingAppMismatch('   ', 'EnvoyDev'), isNull);
     });
 
     test('refuses another app, in words the user can act on', () {
-      final message = pairingAppMismatch('EnvoyMesh', 'EnvoyCoder');
+      final message = pairingAppMismatch('EnvoyMesh', 'EnvoyDev');
       expect(message, isNotNull);
       expect(message, contains('EnvoyMesh'));
-      expect(message, contains('EnvoyCoder'));
+      expect(message, contains('EnvoyDev'));
       expect(message, anyOf(contains('show its pairing code'), contains('install')));
       // The user is the audience: no wire vocabulary.
       expect(message, isNot(contains('token')));
@@ -73,7 +73,7 @@ void main() {
     });
 
     test('does not let a scanned code put arbitrary text in the dialog', () {
-      final message = pairingAppMismatch('${'x' * 200}\u001b[31mEVIL', 'EnvoyCoder');
+      final message = pairingAppMismatch('${'x' * 200}\u001b[31mEVIL', 'EnvoyDev');
       expect(message, isNotNull);
       expect(message, isNot(contains('\u001b')));
       // The label is capped (the sentence around it is fixed prose).

@@ -254,29 +254,106 @@ export function codingModelToEhHostModel(
   return m;
 }
 
-/** Common model suggestions for compatible providers (EH / Pi). */
+/** Common model suggestions for compatible providers (EH / Pi / custom endpoint). */
 export function codingCompatibleModelSuggestions(
   kind: CodingProviderKind | "" | null | undefined,
 ): string[] {
   const k = normalizeCodingProviderKind(kind ?? undefined);
   if (k === "anthropic-compatible") {
     return [
+      "claude-sonnet-4-5",
+      "claude-opus-4",
+      "claude-haiku-4-5",
       "claude-sonnet-4-20250514",
-      "claude-opus-4-20250514",
       "claude-3-5-haiku-latest",
-      "anthropic:claude-sonnet-4-20250514",
     ];
   }
   if (k === "openai-compatible") {
     return [
-      "gpt-4o",
+      "gpt-5",
       "gpt-4.1",
+      "gpt-4o",
       "o4-mini",
-      "openai:gpt-4o",
+      "o3",
       "deepseek-chat",
     ];
   }
-  return ["gpt-4o", "claude-sonnet-4-20250514", "openai:gpt-4o"];
+  return [];
+}
+
+/**
+ * Default model suggestions for an agent's own login (no custom provider).
+ * Codex → OpenAI-family; Claude Code → Anthropic; MiniMax Code → MiniMax; etc.
+ */
+export function codingHarnessModelSuggestions(
+  harness: CodingHarnessId | string | null | undefined,
+): string[] {
+  const id = typeof harness === "string" ? harness.trim() : "";
+  switch (id) {
+    case "claudecode":
+      return [
+        "claude-sonnet-4-5",
+        "claude-opus-4",
+        "claude-haiku-4-5",
+        "claude-sonnet-4-20250514",
+      ];
+    case "codex":
+      return ["gpt-5.1-codex", "gpt-5", "gpt-4.1", "o3", "o4-mini"];
+    case "opencode":
+      return ["gpt-4o", "claude-sonnet-4-5", "gemini-2.5-pro"];
+    case "cursor":
+      return ["auto", "gpt-5", "claude-sonnet-4-5", "gemini-2.5-pro"];
+    case "codewhale":
+    case "deepseek-harness":
+    case "deepseek-tui":
+      return ["deepseek-chat", "deepseek-reasoner", "deepseek-coder"];
+    case "minimax-code":
+      return ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"];
+    case "gemini":
+      return ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"];
+    case "grok":
+      return ["grok-4", "grok-3", "grok-3-mini"];
+    case "copilot":
+      return ["gpt-4.1", "gpt-4o", "claude-sonnet-4"];
+    case "qoder":
+      return ["qoder-auto"];
+    case "traecli":
+      return ["trae-auto"];
+    case "envoy-harness":
+    case "pi":
+      return [
+        "gpt-4o",
+        "claude-sonnet-4-20250514",
+        "MiniMax-M3",
+        "openai:gpt-4o",
+      ];
+    default:
+      return [];
+  }
+}
+
+/**
+ * Merge live catalog models + harness defaults + optional compatible-provider list.
+ * When a custom OpenAI/Anthropic provider is selected, those suggestions lead.
+ */
+export function codingModelSuggestionsForAgent(opts: {
+  harness: CodingHarnessId | string;
+  providerKind?: CodingProviderKind | "" | null;
+  catalogModels?: readonly string[] | null;
+}): string[] {
+  const compat = codingCompatibleModelSuggestions(opts.providerKind);
+  const harnessDefaults = codingHarnessModelSuggestions(opts.harness);
+  const catalog = (opts.catalogModels ?? [])
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of [...compat, ...catalog, ...harnessDefaults]) {
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
 }
 
 export function loadCodingLastUsedPrefill(): Partial<CodingTaskPrefill> | null {
@@ -481,7 +558,16 @@ export function getCodingProject(path: string): CodingProject | null {
 }
 
 /** Register a project root. Returns the project; no-op if already present. */
-export function addCodingProject(path: string): CodingProject {
+export function addCodingProject(
+  path: string,
+  opts?: {
+    defaultHarness?: CodingHarnessId;
+    defaultModel?: string;
+    defaultProviderKind?: CodingProviderKind;
+    defaultEndpoint?: string;
+    defaultApiKey?: string;
+  },
+): CodingProject {
   const normalized = normalizeCodingProjectPath(path);
   if (!normalized) {
     throw new Error("Project path required");
@@ -492,11 +578,46 @@ export function addCodingProject(path: string): CodingProject {
   }
   const projects = loadCodingProjects();
   const existing = projects.find((p) => p.path === normalized);
-  if (existing) return existing;
+  if (existing) {
+    if (!opts) return existing;
+    // Existing project: only fill defaults that are still empty.
+    return (
+      updateCodingProject(normalized, {
+        ...(opts.defaultHarness && !existing.defaultHarness
+          ? { defaultHarness: opts.defaultHarness }
+          : {}),
+        ...(opts.defaultModel && !existing.defaultModel
+          ? { defaultModel: opts.defaultModel }
+          : {}),
+        ...(opts.defaultProviderKind && !existing.defaultProviderKind
+          ? { defaultProviderKind: opts.defaultProviderKind }
+          : {}),
+        ...(opts.defaultEndpoint && !existing.defaultEndpoint
+          ? { defaultEndpoint: opts.defaultEndpoint }
+          : {}),
+        ...(opts.defaultApiKey && !existing.defaultApiKey
+          ? { defaultApiKey: opts.defaultApiKey }
+          : {}),
+      }) ?? existing
+    );
+  }
+  const model = normalizeCodingModelSpec(opts?.defaultModel);
+  const endpoint = normalizeCodingModelSpec(opts?.defaultEndpoint);
+  const apiKey = normalizeCodingModelSpec(opts?.defaultApiKey);
+  const providerKind = normalizeCodingProviderKind(opts?.defaultProviderKind);
+  const harness =
+    opts?.defaultHarness && isCodingHarnessId(opts.defaultHarness)
+      ? opts.defaultHarness
+      : undefined;
   const next: CodingProject = {
     path: normalized,
     label: codingProjectLabel(normalized),
     addedAt: new Date().toISOString(),
+    ...(harness ? { defaultHarness: harness } : {}),
+    ...(model ? { defaultModel: model } : {}),
+    ...(providerKind ? { defaultProviderKind: providerKind } : {}),
+    ...(endpoint ? { defaultEndpoint: endpoint } : {}),
+    ...(apiKey ? { defaultApiKey: apiKey } : {}),
   };
   saveCodingProjects([next, ...projects]);
   return next;

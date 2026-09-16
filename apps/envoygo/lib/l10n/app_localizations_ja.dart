@@ -53,10 +53,178 @@ class AppLocalizationsJa extends AppLocalizations {
   String get codingEmptyHint => 'Start a coding task on your home computer.';
 
   @override
+  String get codingHomeEmptyProjects =>
+      'Add a project to start. Then create a task under that project.';
+
+  @override
+  String get codingHomeAddProjectHint =>
+      'Register a folder on your home computer.';
+
+  @override
+  String get codingHomeNewTaskHint => 'Pick a project and coding agent.';
+
+  @override
+  String get codingAddProjectTitle => 'Add project';
+
+  @override
+  String get codingAddProjectDesc =>
+      'Register a folder as a project and choose its default coding agent.';
+
+  @override
+  String get codingAddProjectConfirm => 'Add project';
+
+  @override
+  String get codingAddProjectCta => 'Add project';
+
+  @override
+  String get codingRemoveFromCoding => 'Remove from Coding';
+
+  @override
+  String get codingRemoveProjectTitle => 'Remove project from Coding?';
+
+  @override
+  String codingRemoveProjectBody(String title) {
+    return 'Remove “$title” from Coding? Tasks under it leave Coding too. Your folder and files on disk are not deleted.';
+  }
+
+  @override
+  String get codingCancelTurn => 'Cancel';
+
+  @override
   String get codingGated => 'Coding isn’t available for this profile.';
 
   @override
   String get codingSectionProjects => 'Projects';
+
+  @override
+  String get codingSectionTasks => 'Tasks';
+
+  @override
+  String get codingHistoryAll => 'All';
+
+  @override
+  String get codingHistoryArchived => 'Archived';
+
+  @override
+  String get codingArchive => 'Archive';
+
+  @override
+  String get codingUnarchive => 'Unarchive';
+
+  @override
+  String get codingComposerModelHint => 'Model';
+
+  @override
+  String get codingModeAsk => 'Ask';
+
+  @override
+  String get codingModePlan => 'Plan';
+
+  @override
+  String get codingModeCode => 'Code';
+
+  @override
+  String get codingModeFast => 'Fast';
+
+  @override
+  String get codingModeThink => 'Think';
+
+  @override
+  String get codingImportSession => 'Import session';
+
+  @override
+  String get codingAttachFile => 'Attach file';
+
+  @override
+  String get codingSchedulesTitle => 'Schedules';
+
+  @override
+  String get codingScheduleCreate => 'New schedule';
+
+  @override
+  String get codingScheduleRunNow => 'Run now';
+
+  @override
+  String get codingHarnessMinimax => 'MiniMax Code';
+
+  @override
+  String get codingHarnessChecking => 'Checking…';
+
+  @override
+  String get codingHarnessNotReady => 'Not ready';
+
+  @override
+  String get codingHarnessProbeUnknown => 'Check install';
+
+  @override
+  String get codingHarnessProbeHint =>
+      'Envoy/Pi are built in. Other tools are CLIs on your home computer — Coding just uses them. Ready / Not ready shows whether each is available.';
+
+  @override
+  String get codingHarnessHowToFix => 'How to fix';
+
+  @override
+  String codingHarnessResolveTitle(String name) {
+    return 'Set up $name';
+  }
+
+  @override
+  String codingHarnessResolveBody(String name) {
+    return '$name isn’t ready on your home computer yet. Follow the steps below, then tap Refresh.';
+  }
+
+  @override
+  String get codingHarnessInstallCmd =>
+      'Install command (run on home computer)';
+
+  @override
+  String get codingHarnessFirstRunCmd =>
+      'First-run command (run on home computer)';
+
+  @override
+  String get codingHarnessCopyCmd => 'Copy command';
+
+  @override
+  String get codingHarnessCmdCopied => 'Command copied';
+
+  @override
+  String get codingHarnessOpenDocs => 'Open docs';
+
+  @override
+  String get codingHarnessOurGap =>
+      'This is a product limit — there is nothing to install on your computer for this agent.';
+
+  @override
+  String get codingAgentsSettingsTitle => 'Coding tools';
+
+  @override
+  String get codingAgentsSettingsIntro =>
+      'Envoy and Pi are built into EnvoyMesh. Other tools (Claude Code, Codex, Cursor, …) live on your home computer — Coding just uses them. This page only checks Ready / Not ready.';
+
+  @override
+  String get codingAgentsRecheck => 'Check again';
+
+  @override
+  String get codingAgentsPiSettings => 'Pi settings';
+
+  @override
+  String codingAgentsOnMachine(int ready, int total) {
+    return 'On this machine · $ready/$total ready';
+  }
+
+  @override
+  String codingAgentsGroupBuiltIn(int ready, int total) {
+    return 'In EnvoyMesh · $ready/$total ready';
+  }
+
+  @override
+  String codingAgentsGroupExternal(int ready, int total) {
+    return 'Used by Coding (not part of EnvoyMesh) · $ready/$total ready';
+  }
+
+  @override
+  String get codingAgentsExternalHint =>
+      'Install and sign in to these CLIs yourself. EnvoyMesh does not configure them — it only runs them when you pick one in Coding.';
 
   @override
   String get codingStatusIdle => 'Idle';
@@ -297,6 +465,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get piStartingHint => 'Pi is starting — try again in a moment.';
+
+  @override
+  String get piStartAction => 'Start Pi';
 
   @override
   String get piStateReady => 'Ready';

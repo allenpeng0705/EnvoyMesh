@@ -624,7 +624,7 @@ export interface NodeConfig {
    * the default is **nothing**, and the vocabulary is open (`"coding"` today), because
    * which capabilities exist is the products' business, not the transport's.
    *
-   * Example: `{ "EnvoyCoder": ["coding"] }`.
+   * Example: `{ "EnvoyDev": ["coding"] }`.
    */
   productGrants?: Record<string, string[]>;
   /** Model provider configuration. Default: mock provider only. */

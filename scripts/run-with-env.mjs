@@ -38,10 +38,42 @@ const child = spawn(command.join(" "), {
   shell: true,
 });
 
+function forwardSignal(signal) {
+  if (!child.pid || child.killed) return;
+  try {
+    // Prefer process-group kill so `npm` + nested `vite` both stop cleanly.
+    process.kill(-child.pid, signal);
+  } catch {
+    try {
+      child.kill(signal);
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(signal, () => {
+    console.error(`[run-with-env] received ${signal} — stopping child…`);
+    forwardSignal(signal);
+  });
+}
+
 child.on("exit", (code, signal) => {
   if (signal) {
-    process.kill(process.pid, signal);
+    console.error(
+      `[run-with-env] child exited on ${signal} (npm often reports this as code ${128 + ({ SIGINT: 2, SIGTERM: 15, SIGHUP: 1 }[signal] ?? 0)})`,
+    );
+    // Re-raise so shells / npm preserve the same failure mode.
+    try {
+      process.kill(process.pid, signal);
+    } catch {
+      process.exit(1);
+    }
     return;
+  }
+  if (code && code !== 0) {
+    console.error(`[run-with-env] child exited with code ${code}`);
   }
   process.exit(code ?? 1);
 });

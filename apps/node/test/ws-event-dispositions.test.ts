@@ -187,9 +187,14 @@ describe("H1 — the reusable/social boundary in the tables", () => {
 
   it("the core table is product-agnostic: no owner/profile concept in its vocabulary", () => {
     const encoded = JSON.stringify(CORE_EVENT_DISPOSITIONS);
-    for (const concept of ["ownerOnly", "profile", "chat", "bond", "family"]) {
+    for (const concept of ["ownerOnly", "profile", "bond", "family"]) {
       expect(encoded.toLowerCase()).not.toContain(concept.toLowerCase());
     }
+    // Social chat:* events belong in the product table — not core.
+    // (EH uses "chats" in names like eh:chats_updated; that is coding tasks.)
+    expect(
+      Object.keys(CORE_EVENT_DISPOSITIONS).some((k) => k.startsWith("chat:")),
+    ).toBe(false);
   });
 
   it("every core event name is a real RPC event (drift guard)", () => {
@@ -225,7 +230,7 @@ describe("H1 — the reusable/social boundary in the tables", () => {
     const social = new Set(Object.keys(SOCIAL_EVENT_DISPOSITIONS));
     const overlap = [...core].filter((k) => social.has(k));
     expect(overlap, "a product table must not redefine a core event").toEqual([]);
-    expect(core.size).toBe(25);
+    expect(core.size).toBe(26);
     expect(social.size).toBe(20);
   });
 });

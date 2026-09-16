@@ -618,7 +618,7 @@ import { saveEnvoyUpload } from "./envoy-uploads.js";
 import { buildAgentAttachmentContext } from "./agent-attachment-context.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
-import { createBackend } from "@envoymesh/harness";
+import { createBackend, createCodingHarnessBackend } from "@envoymesh/harness";
 import { isExtAgentSidecarKind } from "@envoymesh/harness";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import { OPENCLAW_SKILLS, PI_SKILLS, type AgentAdapter } from "@envoymesh/agent-adapter";
@@ -1353,6 +1353,7 @@ import { buildEhPromptPayload, pathFromEhActivity } from "./agent-runtime-envoy/
 import {
   ensurePiTerminalSession,
   resolvePiProjectDir,
+  shouldAutoSetPiSessionTitle,
 } from "./pi-terminal-session.js";
 import { ensureEnvoyTerminalSession } from "./envoy-terminal-session.js";
 import {
@@ -1372,8 +1373,8 @@ import {
   LEGACY_EH_CHAT_ID,
   EH_CHAT_PLACEHOLDER_TITLE,
   CODING_REVIEW_REF_KIND,
+  codingHarnessLabel,
   codingHarnessSessionKey,
-  codingHarnessToExtAgentId,
   ehChatTitleFromUserPrompt,
   extTimelineChatId,
   formatCodingReviewInviteMessage,
@@ -6579,9 +6580,7 @@ class NodeServiceImpl implements NodeService {
       throw new Error("Coding is not available for this profile");
     }
     await this._ensureCodingRuntimeStore();
-    const agentId =
-      codingHarnessToExtAgentId(parsed.harness) ?? parsed.harness;
-    if (!isExtAgentSidecarKind(agentId) || !isCodingTierBHarness(parsed.harness)) {
+    if (!isCodingTierBHarness(parsed.harness)) {
       throw new Error(`askCodingHarness: unsupported harness ${parsed.harness}`);
     }
     const stored = this._codingRuntimeStore.get(parsed.codingSessionId);
@@ -6622,8 +6621,11 @@ class NodeServiceImpl implements NodeService {
         },
       });
     };
-    const canStream = agentId === "codex" || agentId === "claudecode";
-    const text = await createBackend(agentId).ask(parsed.prompt, sessionKey, {
+    const canStream = true;
+    const text = await createCodingHarnessBackend(parsed.harness).ask(
+      parsed.prompt,
+      sessionKey,
+      {
       cwd,
       ...(model ? { model } : {}),
       ...(env ? { env } : {}),
@@ -7708,13 +7710,27 @@ class NodeServiceImpl implements NodeService {
     chat: import("@envoymesh/api").EhChatTask,
     prompt: string,
   ): Promise<void> {
+    // Resolve history for logging / future gates; folder-basename titles
+    // are always replaceable (see shouldAutoSetEhChatTitle).
     let messageCount = 0;
-    if (chat.sessionId) {
+    const sessionStore = createEnvoyHarnessSessionStore(
+      requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"),
+    );
+    const { sessionByCwd } = await this._loadEhChatState();
+    const sessionId =
+      chat.sessionId ??
+      (
+        await resolveEhSessionIdForCwd({
+          cwd: chat.cwd,
+          sessionByCwd,
+          sessionStore,
+        })
+      ).sessionId;
+    if (sessionId) {
       try {
-        const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
         const history = await loadEhChatHistoryFromStore({
           sessionStore,
-          sessionId: chat.sessionId,
+          sessionId,
           cwd: chat.cwd,
         });
         messageCount = history.turns.length;
@@ -7726,10 +7742,43 @@ class NodeServiceImpl implements NodeService {
       return;
     }
     const nextTitle = ehChatTitleFromUserPrompt(prompt);
-    if (!nextTitle || nextTitle === chat.title?.trim()) return;
+    const current = chat.title?.trim() ?? "";
+    if (!nextTitle || nextTitle === current) return;
+    if (nextTitle === EH_CHAT_PLACEHOLDER_TITLE) return;
     const { chats } = await this._loadEhChatState();
     const nextChats = updateEhChatTitle(chats, chat.id, nextTitle);
     await this.updateNodeConfig({ envoyHarnessChats: nextChats });
+    // Ensure Coding sidebar refreshes even if config-updated is coalesced.
+    this.emit("eh:chats_updated", {
+      chatId: chat.id,
+      title: nextTitle,
+    });
+  }
+
+  private async _maybeAutoTitlePiSessionFromPrompt(
+    sessionId: string | undefined,
+    prompt: string,
+  ): Promise<void> {
+    const manager = this._terminalManager;
+    if (!manager) return;
+    const id = sessionId?.trim();
+    const sessions = manager.listPiSessions();
+    const session = id
+      ? sessions.find((s) => s.sessionId === id)
+      : manager.findPiSession();
+    if (!session) return;
+    if (!shouldAutoSetPiSessionTitle(session.title, session.cwd)) return;
+    const nextTitle = ehChatTitleFromUserPrompt(prompt);
+    if (!nextTitle || nextTitle === EH_CHAT_PLACEHOLDER_TITLE) return;
+    if (nextTitle === (session.title?.trim() ?? "")) return;
+    try {
+      await manager.renameTerminalSession({
+        sessionId: session.sessionId,
+        title: nextTitle,
+      });
+    } catch {
+      // Best-effort — prompt still proceeds.
+    }
   }
 
   private async _resolveEhChat(
@@ -8659,6 +8708,8 @@ class NodeServiceImpl implements NodeService {
     text: string,
     opts: { emitPushHint: boolean; sessionId?: string },
   ): Promise<string> {
+    // Paseo-aligned: first user prompt becomes the Pi task title.
+    await this._maybeAutoTitlePiSessionFromPrompt(opts.sessionId, text);
     // Always Pi. Coding chat uses askEnvoyHarness / startEnvoyHarnessTurn.
     const result = await askPiViaRuntime(
       this._piState,
@@ -14494,10 +14545,18 @@ class NodeServiceImpl implements NodeService {
     const status = this.getBridgeStatusSnapshot() ?? (await this.getBridgeStatus());
     const agents = mergeExtAgentPresets(status.extAgents);
     const requested = params?.agentId?.trim();
+    const matched = requested
+      ? agents.find((a) => a.id === requested)
+      : undefined;
+    if (requested && (matched || isCodingTierBHarness(requested))) {
+      return probeExtAgentReachability({
+        agentId: requested,
+        agentName: matched?.name ?? codingHarnessLabel(requested),
+        agentUrl: matched?.url ?? "",
+      });
+    }
     const active =
-      (requested
-        ? agents.find((a) => a.id === requested)
-        : undefined) ??
+      matched ??
       resolveActiveExtAgent(agents, status.activeExtAgentId) ??
       agents[0];
     const agentId = active?.id ?? requested ?? "pi";
@@ -16167,7 +16226,7 @@ class NodeServiceImpl implements NodeService {
     const product = params?.product?.trim() ?? "";
     if (!isValidProductName(product)) {
       throw new Error(
-        "product must be a short name beginning with a letter, for example EnvoyCoder",
+        "product must be a short name beginning with a letter, for example EnvoyDev",
       );
     }
     if (!this._sessionTokenStore) {

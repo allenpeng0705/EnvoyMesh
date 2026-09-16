@@ -369,15 +369,15 @@ describe("envoy-local-embed engine lock", () => {
     const { engineRoot } = await seedEmbedRuntimeAndModel();
     // A different live process: `process.ppid`, because a claim naming this process is
     // re-acquired on purpose (that is what a restart in the same process looks like).
-    writeForeignClaim(engineRoot, { role: "embed", pid: process.ppid, app: "EnvoyCoder", port: 18791 });
+    writeForeignClaim(engineRoot, { role: "embed", pid: process.ppid, app: "EnvoyDev", port: 18791 });
     mockedSpawn.mockClear();
 
     await runEnable();
 
     expect(mockedSpawn, "no second embed engine may be spawned").not.toHaveBeenCalled();
     expect(state.lastError ?? "").toMatch(/embeddings engine lock/);
-    expect(state.lastError ?? "").toMatch(/EnvoyCoder/);
-    expect(readEngineLock(engineRoot, "embed")?.app).toBe("EnvoyCoder");
+    expect(state.lastError ?? "").toMatch(/EnvoyDev/);
+    expect(readEngineLock(engineRoot, "embed")?.app).toBe("EnvoyDev");
     // …and it must not have been killed: the reclaim path stops whatever listens on the port,
     // which for a live holder is *their* engine. Killing it would leave them restarting an
     // engine we then blame for not answering.
@@ -390,7 +390,7 @@ describe("envoy-local-embed engine lock", () => {
     writeForeignClaim(engineRoot, {
       role: "embed",
       pid: process.ppid,
-      app: "EnvoyCoder",
+      app: "EnvoyDev",
       port: 18791,
       modelId: "local:some-other-embed-model",
     });

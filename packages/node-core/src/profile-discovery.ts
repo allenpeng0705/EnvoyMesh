@@ -108,7 +108,7 @@ export interface ProfileSituation {
 }
 
 export interface DescribeProfileSituationInput {
-  /** The product asking, e.g. `"EnvoyCoder"` — used in the wording only. */
+  /** The product asking, e.g. `"EnvoyDev"` — used in the wording only. */
   product: string;
   home: string;
   profileDir: string;

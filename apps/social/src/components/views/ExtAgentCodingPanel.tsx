@@ -16,11 +16,35 @@ import {
 import { useT } from "../../context/I18nContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useEhTimeline } from "../../hooks/useEhTimeline.js";
+import { useEhAttachments } from "../../hooks/useEhAttachments.js";
 import type { ExtProbeStatus } from "../../lib/coding-status-label.js";
 import {
+  codingComposerCapabilities,
+} from "../../lib/coding-composer-capabilities.js";
+import {
+  fastToggleSlash,
+  shapeCodingComposerPrompt,
+} from "../../lib/coding-composer-prompt.js";
+import {
+  codingComposerSessionKey,
+  loadCodingComposerPrefs,
+  saveCodingComposerPrefs,
+  type CodingComposerPrefs,
+} from "../../lib/coding-composer-state.js";
+import {
   getCodingExtSession,
+  loadCodingExtSessions,
   maybeAutoTitleCodingExtSession,
+  updateCodingExtSessionRuntime,
 } from "../../lib/coding-sessions.js";
+import {
+  mergeAgentPromptWithAttachments,
+  toAgentAttachmentRefs,
+} from "../../lib/agent-attachments.js";
+import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeading.js";
+import { CodingComposerToolbar } from "../CodingComposerToolbar.js";
+import { CodingImportSessionModal } from "../CodingImportSessionModal.js";
+import { EhChatComposer } from "../ehui/EhChatComposer.js";
 import { ExtAgentInstallGuideCard } from "../ExtAgentInstallGuideCard.js";
 import { ExtAgentSwitcherInstallDialog } from "../ExtAgentSwitcherInstallDialog.js";
 
@@ -36,6 +60,8 @@ export type CodingHarnessPanelProps = {
   sessionId: string;
   /** Coding task header / sidebar status (busy + probe). */
   onStatusChange?: (status: ExtProbeStatus | null) => void;
+  /** Switch to another Ext session (Import session). */
+  onSwitchSession?: (sessionId: string) => void;
 };
 
 /** @deprecated Use CodingHarnessPanelProps */
@@ -53,6 +79,7 @@ export function CodingHarnessPanel({
   cwd,
   sessionId,
   onStatusChange,
+  onSwitchSession,
 }: CodingHarnessPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
@@ -64,34 +91,97 @@ export function CodingHarnessPanel({
     [sessionId],
   );
   const timeline = useEhTimeline(nodeService, timelineChatId);
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
+  const prefsKey = codingComposerSessionKey({ kind: "ext", id: sessionId });
+  const caps = useMemo(() => codingComposerCapabilities(harness), [harness]);
 
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<LocalMsg[]>([]);
   const [reach, setReach] = useState<ExtAgentReachability | null>(null);
   const [installOpen, setInstallOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [prefs, setPrefs] = useState<CodingComposerPrefs>(() =>
+    loadCodingComposerPrefs(prefsKey),
+  );
+  const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
+
+  const attachments = useEhAttachments(cwd, (message) => setLocalError(message));
+
+  useEffect(() => {
+    setPrefs(loadCodingComposerPrefs(prefsKey));
+  }, [prefsKey]);
+
+  useEffect(() => {
+    const session = getCodingExtSession(sessionId);
+    if (session?.model && !prefs.model) {
+      setPrefs((p) => {
+        const next = saveCodingComposerPrefs(prefsKey, { model: session.model });
+        return next;
+      });
+    }
+  }, [sessionId, prefsKey, prefs.model]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const getCatalog = nodeService.getExtAgentCommandCatalog;
+    if (!getCatalog) {
+      setModelSuggestions([]);
+      return;
+    }
+    void getCatalog({ agentId })
+      .then((cat) => {
+        if (cancelled) return;
+        setModelSuggestions(cat.models?.map((m) => m.id ?? String(m)) ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setModelSuggestions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId, nodeService]);
+
+  const patchPrefs = useCallback(
+    (patch: Partial<CodingComposerPrefs>) => {
+      const next = saveCodingComposerPrefs(prefsKey, patch);
+      setPrefs(next);
+      if (patch.model !== undefined) {
+        updateCodingExtSessionRuntime(sessionId, { model: patch.model });
+        const session = getCodingExtSession(sessionId);
+        void nodeService.setCodingHarnessRuntime?.({
+          codingSessionId: sessionId,
+          cwd: session?.cwd || cwd,
+          runtime: {
+            ...(patch.model.trim() ? { model: patch.model.trim() } : {}),
+            ...(session?.providerKind
+              ? { providerKind: session.providerKind }
+              : {}),
+            ...(session?.endpoint ? { endpoint: session.endpoint } : {}),
+          },
+        });
+      }
+    },
+    [prefsKey, sessionId, cwd, nodeService],
+  );
 
   const refreshProbe = useCallback(async () => {
     try {
       const r = await nodeService.probeExtAgent({ agentId });
       setReach(r);
       return r;
-    } catch (e: unknown) {
-      setLocalError(e instanceof Error ? e.message : String(e));
+    } catch {
+      setReach(null);
       return null;
     }
   }, [agentId, nodeService]);
 
   useEffect(() => {
-    setMessages([]);
-    setLocalError(null);
     void refreshProbe();
-  }, [agentId, cwd, refreshProbe, sessionId]);
+  }, [refreshProbe]);
 
-  const streamingAssistant = useMemo((): LocalMsg | null => {
+  const streamingAssistant = useMemo(() => {
     if (!canStream || !busy) return null;
     const item = timeline.items.find(
       (i) =>
@@ -103,7 +193,7 @@ export function CodingHarnessPanel({
     if (!item.text.trim() && !item.streaming) return null;
     return {
       id: item.id,
-      role: "assistant",
+      role: "assistant" as const,
       text: item.text,
       streaming: item.streaming === true,
     };
@@ -140,9 +230,24 @@ export function CodingHarnessPanel({
     } else onStatusChange("unknown");
   }, [busy, reach, needsInstall, onStatusChange]);
 
+  const importRows = useMemo(() => {
+    return loadCodingExtSessions()
+      .filter(
+        (s) =>
+          s.id !== sessionId &&
+          s.harness === harness &&
+          s.cwd === cwd,
+      )
+      .map((s) => ({
+        id: s.id,
+        title: s.title,
+        subtitle: s.model,
+      }));
+  }, [sessionId, harness, cwd, importOpen]);
+
   const send = async () => {
     const text = draft.trim();
-    if (!text || busy) return;
+    if ((!text && attachments.attachments.length === 0) || busy) return;
     setLocalError(null);
 
     const latest = await refreshProbe();
@@ -154,14 +259,32 @@ export function CodingHarnessPanel({
       return;
     }
 
+    let contextText = "";
+    if (attachments.attachments.length > 0 && nodeService.buildAgentAttachmentContext) {
+      try {
+        const built = await nodeService.buildAgentAttachmentContext({
+          attachments: toAgentAttachmentRefs(attachments.attachments),
+        });
+        contextText = built.contextText?.trim() ?? "";
+      } catch (e: unknown) {
+        setLocalError(e instanceof Error ? e.message : String(e));
+        return;
+      }
+    }
+
+    const shaped = shapeCodingComposerPrompt(text, prefs, caps);
+    const prompt = mergeAgentPromptWithAttachments(shaped, contextText);
+    if (!prompt.trim()) return;
+
     setDraft("");
+    attachments.clear();
     const userMsg: LocalMsg = {
       id: `u-${Date.now()}`,
       role: "user",
-      text,
+      text: prompt,
     };
     setMessages((prev) => [...prev, userMsg]);
-    maybeAutoTitleCodingExtSession(sessionId, text);
+    maybeAutoTitleCodingExtSession(sessionId, text || prompt);
     setBusy(true);
     try {
       const session = getCodingExtSession(sessionId);
@@ -170,13 +293,14 @@ export function CodingHarnessPanel({
           "askCodingHarness is not available on this home node — update EnvoyMesh.",
         );
       }
+      const model = (prefs.model ?? session?.model)?.trim();
       const reply = await nodeService.askCodingHarness({
         codingSessionId: sessionId,
         harness,
-        prompt: text,
+        prompt,
         cwd: session?.cwd || cwd,
         runtime: {
-          ...(session?.model ? { model: session.model } : {}),
+          ...(model ? { model } : {}),
           ...(session?.providerKind
             ? { providerKind: session.providerKind }
             : {}),
@@ -208,7 +332,6 @@ export function CodingHarnessPanel({
       ]);
     } finally {
       setBusy(false);
-      inputRef.current?.focus();
     }
   };
 
@@ -308,35 +431,64 @@ export function CodingHarnessPanel({
         </p>
       ) : null}
 
-      <form
-        className="ext-agent-coding-panel__composer"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
-        <input
-          ref={inputRef}
-          type="text"
-          value={draft}
-          disabled={busy}
-          placeholder={t(
-            "codingView.extAgentPlaceholder",
-            "Message {name}…",
-            { name: label },
-          )}
-          onChange={(e) => setDraft(e.target.value)}
-          data-testid="ext-agent-coding-input"
+      <div className="ext-agent-coding-panel__composer-stack">
+        <CodingComposerToolbar
+          harness={harness}
+          prefs={prefs}
+          onPrefsChange={patchPrefs}
+          modelSuggestions={modelSuggestions}
+          busy={busy}
+          onImportSession={() => setImportOpen(true)}
+          onFastToggle={(enabled) => {
+            if (!caps.fast) return;
+            void sendFastSlash(enabled);
+          }}
         />
-        <button
-          type="submit"
-          className="primary"
-          disabled={busy || !draft.trim()}
-          data-testid="ext-agent-coding-send"
+        <form
+          className="ext-agent-coding-panel__composer pi-chat-composer eh-composer"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send();
+          }}
         >
-          {t("common.send", "Send")}
-        </button>
-      </form>
+          <EhChatComposer
+            value={draft}
+            onChange={setDraft}
+            busy={busy}
+            onSubmit={() => void send()}
+            placeholder={t(
+              "codingView.extAgentPlaceholder",
+              "Message {name}…",
+              { name: label },
+            )}
+            hasAttachments={attachments.attachments.length > 0}
+            attachLeading={
+              <AgentAttachmentComposerLeading
+                attachments={attachments.attachments}
+                busy={attachments.busy}
+                disabled={!cwd}
+                pickTitle={t("eh.attachProjectFile", "Attach project file")}
+                attachAriaLabel={t("eh.attachProjectFile", "Attach project file")}
+                fileInputRef={attachments.fileInputRef}
+                onFileInputChange={attachments.handleFileInputChange}
+                onOpenPicker={attachments.openPicker}
+                onRemove={attachments.remove}
+                onClearAll={attachments.clear}
+              />
+            }
+          />
+        </form>
+      </div>
+
+      <CodingImportSessionModal
+        open={importOpen}
+        rows={importRows}
+        onClose={() => setImportOpen(false)}
+        onPick={(id) => {
+          setImportOpen(false);
+          onSwitchSession?.(id);
+        }}
+      />
 
       {installOpen && guide && reach ? (
         <ExtAgentSwitcherInstallDialog
@@ -355,6 +507,28 @@ export function CodingHarnessPanel({
       ) : null}
     </div>
   );
+
+  async function sendFastSlash(enabled: boolean) {
+    if (!nodeService.askCodingHarness) return;
+    const session = getCodingExtSession(sessionId);
+    try {
+      await nodeService.askCodingHarness({
+        codingSessionId: sessionId,
+        harness,
+        prompt: fastToggleSlash(enabled),
+        cwd: session?.cwd || cwd,
+        runtime: {
+          ...(session?.model ? { model: session.model } : {}),
+          ...(session?.providerKind
+            ? { providerKind: session.providerKind }
+            : {}),
+          ...(session?.endpoint ? { endpoint: session.endpoint } : {}),
+        },
+      });
+    } catch {
+      /* best-effort */
+    }
+  }
 }
 
 /** @deprecated Prefer CodingHarnessPanel */

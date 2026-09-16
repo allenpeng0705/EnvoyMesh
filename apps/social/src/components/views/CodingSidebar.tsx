@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   MAX_ENVOY_HARNESS_CHATS,
   CODING_ALL_HARNESSES,
+  CODING_FEATURED_HARNESSES,
   codingHarnessLabel,
   codingHarnessToExtAgentId,
   familyProfileMayUseCoding,
@@ -336,12 +337,16 @@ export function CodingSidebar({
       // Title may update from the first prompt before the turn finishes.
       void refreshEhChats();
     });
+    const unsubChats = nodeService.on("eh:chats_updated", () => {
+      void refreshEhChats();
+    });
     const unsubConfig = nodeService.on("home:config-updated", () => {
       void refreshEhChats();
     });
     return () => {
       unsubTurn();
       unsubStarted();
+      unsubChats();
       unsubConfig();
     };
   }, [nodeService, nodeService.isConnected]);
@@ -369,6 +374,24 @@ export function CodingSidebar({
       uiBucket: nextBucket,
     });
   }, [ehChats, selected, onSelect]);
+
+  // Keep shell title in sync when Pi session title updates (first prompt).
+  useEffect(() => {
+    if (selected?.kind !== "pi") return;
+    const session = piSessions.find((s) => s.sessionId === selected.sessionId);
+    if (!session) return;
+    if (
+      selected.session?.title === session.title &&
+      selected.session?.cwd === session.cwd
+    ) {
+      return;
+    }
+    onSelect({
+      kind: "pi",
+      sessionId: session.sessionId,
+      session,
+    });
+  }, [piSessions, selected, onSelect]);
 
   // Keep shell title in sync when Ext session title updates (first prompt).
   useEffect(() => {
@@ -438,39 +461,29 @@ export function CodingSidebar({
       window.removeEventListener(CODING_EXT_SESSIONS_CHANGED_EVENT, tick);
   }, []);
 
-  // Probe Tier B harnesses when the create sheet opens.
+  // Probe all featured harnesses when create / add-project / project settings opens.
   useEffect(() => {
-    if (!taskSheetOpen || !nodeService.isConnected) return;
+    const shouldProbe =
+      taskSheetOpen || addProjectOpen || projectSettingsTarget != null;
+    if (!shouldProbe || !nodeService.isConnected) return;
     let cancelled = false;
-    const tierB = CODING_ALL_HARNESSES.filter((h) => isCodingTierBHarness(h));
+    const targets = CODING_FEATURED_HARNESSES.filter((h) =>
+      CODING_ALL_HARNESSES.includes(h),
+    );
     setHarnessProbe((prev) => {
       const next = { ...prev };
-      for (const h of tierB) next[h] = "checking";
+      for (const h of targets) next[h] = "checking";
       return next;
     });
     void (async () => {
+      const { probeCodingHarness } = await import(
+        "../../lib/coding-harness-probe.js"
+      );
       const next: Partial<Record<CodingHarnessId, HarnessProbeBadge>> = {};
       await Promise.all(
-        tierB.map(async (h) => {
-          const agentId = codingHarnessToExtAgentId(h);
-          if (!agentId) {
-            next[h] = "unknown";
-            return;
-          }
-          try {
-            const r = await nodeService.probeExtAgent({ agentId });
-            if (r.installState === "installed" && r.reachable) {
-              next[h] = "ready";
-            } else if (r.installState === "not-installed") {
-              next[h] = "install";
-            } else if (r.installState === "installed") {
-              next[h] = "ready";
-            } else {
-              next[h] = "unknown";
-            }
-          } catch {
-            next[h] = "unknown";
-          }
+        targets.map(async (h) => {
+          const r = await probeCodingHarness(nodeService, h);
+          next[h] = r.badge === "not-ready" ? "install" : r.badge;
         }),
       );
       if (!cancelled) setHarnessProbe((prev) => ({ ...prev, ...next }));
@@ -480,9 +493,14 @@ export function CodingSidebar({
     };
     // Intentionally omit nodeService object identity — only sheet open + connection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskSheetOpen, nodeService.isConnected]);
+  }, [
+    taskSheetOpen,
+    addProjectOpen,
+    projectSettingsTarget,
+    nodeService.isConnected,
+  ]);
 
-  // Probe harnesses that already have Ext sessions (sidebar Ready/Install chips).
+  // Probe harnesses that already have Ext sessions (sidebar Ready/Not ready chips).
   useEffect(() => {
     if (!nodeService.isConnected || extSessions.length === 0) return;
     let cancelled = false;
@@ -490,22 +508,14 @@ export function CodingSidebar({
       ...new Set(extSessions.map((s) => s.harness)),
     ].filter(isCodingTierBHarness);
     void (async () => {
+      const { probeCodingHarness } = await import(
+        "../../lib/coding-harness-probe.js"
+      );
       const next: Partial<Record<CodingHarnessId, HarnessProbeBadge>> = {};
       await Promise.all(
         harnesses.map(async (h) => {
-          const agentId = codingHarnessToExtAgentId(h);
-          if (!agentId) {
-            next[h] = "unknown";
-            return;
-          }
-          try {
-            const r = await nodeService.probeExtAgent({ agentId });
-            if (r.installState === "not-installed") next[h] = "install";
-            else if (r.installState === "installed") next[h] = "ready";
-            else next[h] = "unknown";
-          } catch {
-            next[h] = "unknown";
-          }
+          const r = await probeCodingHarness(nodeService, h);
+          next[h] = r.badge === "not-ready" ? "install" : r.badge;
         }),
       );
       if (!cancelled) setHarnessProbe((prev) => ({ ...prev, ...next }));
@@ -874,14 +884,31 @@ export function CodingSidebar({
     setAddProjectOpen(true);
   };
 
-  const confirmAddProject = () => {
-    const path = normalizeCodingProjectPath(addProjectPath);
+  const confirmAddProject = (opts: {
+    path: string;
+    harness: CodingHarnessId;
+    model: string;
+    providerKind: CodingProviderKind | "";
+    endpoint: string;
+    apiKey: string;
+  }) => {
+    const path = normalizeCodingProjectPath(opts.path);
     if (!path) {
       setSheetError(t("eh.projectPathRequired", "Choose a project folder."));
       return;
     }
     try {
-      const project = addCodingProject(path);
+      const model = normalizeCodingModelSpec(opts.model);
+      const endpoint = normalizeCodingModelSpec(opts.endpoint);
+      const apiKey = normalizeCodingModelSpec(opts.apiKey);
+      const providerKind = normalizeCodingProviderKind(opts.providerKind);
+      const project = addCodingProject(path, {
+        defaultHarness: opts.harness,
+        ...(model ? { defaultModel: model } : {}),
+        ...(providerKind ? { defaultProviderKind: providerKind } : {}),
+        ...(endpoint ? { defaultEndpoint: endpoint } : {}),
+        ...(apiKey ? { defaultApiKey: apiKey } : {}),
+      });
       setProjects(loadCodingProjects());
       setAddProjectOpen(false);
       setSheetError(null);
@@ -2001,10 +2028,15 @@ export function CodingSidebar({
           title={t("codingView.addProjectTitle", "Add project")}
           description={t(
             "codingView.addProjectDesc",
-            "Register a folder as a project. You can create tasks under it next.",
+            "Register a folder as a project and choose its default coding agent. You can change this later in project settings.",
           )}
           value={addProjectPath}
           onChange={setAddProjectPath}
+          initialPrefill={resolveCodingTaskPrefill({
+            defaults: codingDefaults,
+          })}
+          codingDefaultsModelHint={codingDefaultsModelHint}
+          harnessProbe={harnessProbe}
           error={sheetError}
           busy={false}
           confirmLabel={t("codingView.addProjectConfirm", "Add project")}
@@ -2024,6 +2056,7 @@ export function CodingSidebar({
           error={projectSettingsError}
           revealBusy={revealBusyPath === projectSettingsTarget.path}
           codingDefaultsModelHint={codingDefaultsModelHint}
+          harnessProbe={harnessProbe}
           onOpenCodingDefaults={() => {
             setProjectSettingsTarget(null);
             setProjectSettingsError(null);

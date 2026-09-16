@@ -5,7 +5,7 @@
  * policy, not an accident:
  *
  *   * **EnvoyMesh is not the distribution channel for the harness.** A product that wants it
- *     (EnvoyCoder, EnvoyAgent, …) clones or copies `envoy-harness` directly, the way
+ *     (EnvoyDev, EnvoyAgent, …) clones or copies `envoy-harness` directly, the way
  *     EnvoyMesh does. Vendoring it here would make every product depend on *this* repo for
  *     someone else's package, and this repo's release cadence for its code.
  *   * What EnvoyMesh owes everyone else is an **honest failure**: a missing sibling must say

@@ -171,15 +171,25 @@ describe("the access gate", () => {
     expect(reply["error"]).toMatchObject({ code: "UNAUTHORIZED" });
   });
 
-  it("refuses a live stream to a family session, and allows it to the owner's UI", async () => {
-    // Socket methods (a terminal, an agent core) run *before* the dispatcher, so the
-    // product allow-list never sees them: the owner-scope check has to be here. Found by
-    // reviewing that claim rather than trusting it — `homeTerminalWsOpen` had no caller
-    // check of its own either.
+  it("lets the product refuse a live stream to a family session, and allows it to the owner's UI", async () => {
+    // Socket methods (a terminal, an agent core) run *before* the dispatcher. Owner-only
+    // gating belongs in the product's `handle` (see `createSocialSocketMethods`) — the host
+    // used to refuse *every* method for non-owner sessions whenever socketMethods was set,
+    // which locked paired phones out of ordinary product RPC. This test pins the new split:
+    // the product refuses the stream; the host still reaches `handle` so that refusal can run.
     const handled: string[] = [];
     const socketMethods = {
-      handle: async (ctx: { method: string }) => {
+      handle: async (ctx: {
+        method: string;
+        session?: { isOwnerScope?: boolean };
+        fail: (message: string) => void;
+      }) => {
+        if (ctx.method !== "homeTerminalWsOpen") return false;
         handled.push(ctx.method);
+        if (ctx.session && ctx.session.isOwnerScope !== true) {
+          ctx.fail("Only the node owner can do that");
+          return true;
+        }
         return false;
       },
     };
@@ -200,13 +210,16 @@ describe("the access gate", () => {
     await server.waitUntilListening();
 
     const family = await ask("127.0.0.1", server.boundPort, "family-token", "homeTerminalWsOpen");
-    expect(family["error"]).toMatchObject({ code: "UNAUTHORIZED" });
-    expect(handled).toEqual([]); // never reached the handler
+    expect(family["error"]).toMatchObject({
+      code: "UNAUTHORIZED",
+      message: "Only the node owner can do that",
+    });
+    expect(handled).toEqual(["homeTerminalWsOpen"]);
 
-    // The owner's own UI (no token, loopback) still gets through.
+    // The owner's own UI (no token, loopback) still gets through to the dispatcher.
     const owner = await ask("127.0.0.1", server.boundPort, null, "homeTerminalWsOpen");
     expect(owner["error"]).toBeUndefined();
-    expect(handled).toEqual(["homeTerminalWsOpen"]);
+    expect(handled).toEqual(["homeTerminalWsOpen", "homeTerminalWsOpen"]);
   });
 
   it("still refuses a wrong token from loopback", async () => {

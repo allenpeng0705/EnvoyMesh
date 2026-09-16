@@ -4,27 +4,27 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CODING_ALL_HARNESSES,
-  CODING_TIER_B_HARNESSES,
+  CODING_FEATURED_HARNESSES,
+  CODING_TIER_A_HARNESSES,
+  codingHarnessHint,
   codingHarnessLabel,
   codingHarnessToExtAgentId,
+  isCodingFeaturedHarness,
   isCodingTierBHarness,
   type CodingHarnessId,
 } from "@envoymesh/api";
+import {
+  harnessProbeLabelKey,
+} from "../lib/coding-harness-probe.js";
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
 import {
-  codingCompatibleModelSuggestions,
+  codingModelSuggestionsForAgent,
   type CodingProviderKind,
-  type CodingTaskPrefill,
 } from "../lib/coding-projects.js";
+import type { CodingAgentModelProviderValue } from "../lib/coding-agent-model-provider.js";
 
-export type CodingAgentModelProviderValue = {
-  harness: CodingHarnessId;
-  model: string;
-  providerKind: CodingProviderKind | "";
-  endpoint: string;
-  apiKey: string;
-};
+export type { CodingAgentModelProviderValue } from "../lib/coding-agent-model-provider.js";
 
 export type CodingAgentModelProviderFieldsProps = {
   value: CodingAgentModelProviderValue;
@@ -35,7 +35,7 @@ export type CodingAgentModelProviderFieldsProps = {
   harnessAsRadios?: boolean;
   enabledHarnesses?: readonly CodingHarnessId[];
   harnessProbe?: Partial<
-    Record<CodingHarnessId, "ready" | "install" | "unknown" | "checking">
+    Record<CodingHarnessId, "ready" | "not-ready" | "install" | "unknown" | "checking">
   >;
   /** Scope hint for copy: coding defaults vs project vs this task. */
   scope?: "defaults" | "project" | "task";
@@ -54,28 +54,6 @@ export type CodingAgentModelProviderFieldsProps = {
   settingsAiModelHint?: string;
 };
 
-const HARNESS_HINT: Partial<Record<CodingHarnessId, string>> = {
-  "envoy-harness": "Coding Agent (ACP)",
-  pi: "Coding Agent",
-  claudecode: "Claude Code CLI",
-  codex: "OpenAI Codex CLI",
-  opencode: "OpenCode CLI",
-  cursor: "Cursor Agent CLI",
-  codewhale: "CodeWhale CLI",
-};
-
-export function codingPrefillToValue(
-  prefill: CodingTaskPrefill,
-): CodingAgentModelProviderValue {
-  return {
-    harness: prefill.harness,
-    model: prefill.model,
-    providerKind: prefill.providerKind,
-    endpoint: prefill.endpoint,
-    apiKey: prefill.apiKey,
-  };
-}
-
 export function CodingAgentModelProviderFields({
   value,
   onChange,
@@ -92,7 +70,6 @@ export function CodingAgentModelProviderFields({
   const t = useT();
   const nodeService = useNodeService();
   const [catalogModels, setCatalogModels] = useState<string[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
   const locked = busy || disabled;
   const datalistId = `coding-model-suggestions-${scope}`;
   const isEhOrPi =
@@ -120,20 +97,31 @@ export function CodingAgentModelProviderFields({
       setCatalogModels([]);
       return;
     }
-    setCatalogLoading(true);
     void getCatalog({ agentId })
       .then((catalog) => {
         if (cancelled) return;
         const ids = (catalog.models ?? [])
           .map((m) => m.id?.trim())
           .filter((id): id is string => Boolean(id));
-        setCatalogModels(ids);
+        // Prefer catalog default when the field is still empty.
+        if (
+          !value.model.trim() &&
+          catalog.defaultModel?.trim() &&
+          !cancelled
+        ) {
+          // Do not auto-write into the form — only seed suggestions.
+        }
+        setCatalogModels(
+          [
+            ...(catalog.defaultModel?.trim()
+              ? [catalog.defaultModel.trim()]
+              : []),
+            ...ids,
+          ].filter((id, i, arr) => arr.indexOf(id) === i),
+        );
       })
       .catch(() => {
         if (!cancelled) setCatalogModels([]);
-      })
-      .finally(() => {
-        if (!cancelled) setCatalogLoading(false);
       });
     return () => {
       cancelled = true;
@@ -142,18 +130,24 @@ export function CodingAgentModelProviderFields({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value.harness]);
 
-  const modelSuggestions = useMemo(() => {
-    const fromCompat = codingCompatibleModelSuggestions(value.providerKind);
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const s of [...catalogModels, ...fromCompat]) {
-      const n = s.trim();
-      if (!n || seen.has(n)) continue;
-      seen.add(n);
-      out.push(n);
-    }
-    return out;
-  }, [catalogModels, value.providerKind]);
+  const modelSuggestions = useMemo(
+    () =>
+      codingModelSuggestionsForAgent({
+        harness: value.harness,
+        providerKind: value.providerKind,
+        catalogModels,
+      }),
+    [catalogModels, value.harness, value.providerKind],
+  );
+
+  const defaultAgentModelHint = useMemo(() => {
+    const list = codingModelSuggestionsForAgent({
+      harness: value.harness,
+      providerKind: "",
+      catalogModels,
+    });
+    return list[0] ?? "";
+  }, [catalogModels, value.harness]);
 
   const showCompatFields =
     value.providerKind === "openai-compatible" ||
@@ -163,10 +157,26 @@ export function CodingAgentModelProviderFields({
     onChange({ ...value, ...partial });
   };
 
+  const moreHarnesses = CODING_ALL_HARNESSES.filter(
+    (id) => !isCodingFeaturedHarness(id) && enabledHarnesses.includes(id),
+  );
+  const featuredSet = new Set<string>(CODING_FEATURED_HARNESSES);
+
+  const probeSuffix = (id: CodingHarnessId): string => {
+    const key = harnessProbeLabelKey(harnessProbe[id]);
+    if (key === "ready")
+      return ` · ${t("codingView.harnessReady", "Ready")}`;
+    if (key === "not-ready")
+      return ` · ${t("codingView.harnessNotReady", "Not ready")}`;
+    if (key === "checking")
+      return ` · ${t("codingView.harnessChecking", "Checking…")}`;
+    return "";
+  };
+
   const renderHarnessRadio = (id: CodingHarnessId) => {
     const enabled = enabledHarnesses.includes(id);
     const badge = harnessProbe[id];
-    const isTierB = (CODING_TIER_B_HARNESSES as readonly string[]).includes(id);
+    const labelKey = harnessProbeLabelKey(badge);
     return (
       <label
         key={id}
@@ -178,28 +188,35 @@ export function CodingAgentModelProviderFields({
           value={id}
           checked={value.harness === id}
           disabled={!enabled || locked}
-          onChange={() => patch({ harness: id })}
+          onChange={() =>
+            patch({
+              harness: id,
+              // Reset custom provider when switching agents so suggestions
+              // follow the new agent's defaults unless the user opts in again.
+              ...(value.harness !== id
+                ? { providerKind: "", endpoint: "", apiKey: "" }
+                : {}),
+            })
+          }
           data-testid={`coding-harness-${id}`}
         />
         <span>
           <strong>{codingHarnessLabel(id)}</strong>
           <span className="coding-harness-option__hint">
             {enabled
-              ? t(`codingView.harnessHint.${id}`, HARNESS_HINT[id] ?? id)
+              ? t(`codingView.harnessHint.${id}`, codingHarnessHint(id))
               : t("codingView.harnessUnavailable", "Not available")}
           </span>
-          {isTierB && enabled && badge ? (
+          {enabled && labelKey ? (
             <span
-              className={`coding-harness-probe coding-harness-probe--${badge}`}
+              className={`coding-harness-probe coding-harness-probe--${labelKey === "not-ready" ? "install" : labelKey}`}
               data-testid={`coding-harness-probe-${id}`}
             >
-              {badge === "ready"
+              {labelKey === "ready"
                 ? t("codingView.harnessReady", "Ready")
-                : badge === "install"
-                  ? t("codingView.harnessNeedsInstall", "Install")
-                  : badge === "checking"
-                    ? t("codingView.harnessChecking", "Checking…")
-                    : t("codingView.harnessProbeUnknown", "Check install")}
+                : labelKey === "checking"
+                  ? t("codingView.harnessChecking", "Checking…")
+                  : t("codingView.harnessNotReady", "Not ready")}
             </span>
           ) : null}
         </span>
@@ -207,12 +224,76 @@ export function CodingAgentModelProviderFields({
     );
   };
 
+  const renderGroupedOptions = () => (
+    <>
+      <optgroup label={t("codingView.harnessGroupBuiltin", "Built-in")}>
+        {CODING_TIER_A_HARNESSES.map((h) => (
+          <option key={h} value={h}>
+            {codingHarnessLabel(h)}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label={t("codingView.harnessGroupFeatured", "Featured CLIs")}>
+        {CODING_FEATURED_HARNESSES.filter((h) => isCodingTierBHarness(h)).map(
+          (h) => (
+            <option key={h} value={h}>
+              {codingHarnessLabel(h)}
+              {probeSuffix(h)}
+            </option>
+          ),
+        )}
+      </optgroup>
+      <optgroup label={t("codingView.harnessGroupMore", "More agents")}>
+        {moreHarnesses.map((h) => (
+          <option key={h} value={h}>
+            {codingHarnessLabel(h)}
+            {probeSuffix(h)}
+          </option>
+        ))}
+      </optgroup>
+    </>
+  );
+
   return (
     <>
       {harnessAsRadios ? (
         <fieldset className="coding-harness-fieldset" disabled={locked}>
           <legend>{t("codingView.harnessLabel", "Agent")}</legend>
-          {CODING_ALL_HARNESSES.map((id) => renderHarnessRadio(id))}
+          {CODING_FEATURED_HARNESSES.map((id) => renderHarnessRadio(id))}
+          <label className="modal-field coding-harness-more">
+            <span>{t("codingView.harnessMore", "More agents")}</span>
+            <select
+              value={featuredSet.has(value.harness) ? "" : value.harness}
+              disabled={locked}
+              data-testid="coding-harness-more"
+              onChange={(e) => {
+                const next = e.target.value.trim();
+                if (!next) return;
+                patch({
+                  harness: next as CodingHarnessId,
+                  ...(value.harness !== next
+                    ? { providerKind: "", endpoint: "", apiKey: "" }
+                    : {}),
+                });
+              }}
+            >
+              <option value="">
+                {t("codingView.harnessMorePlaceholder", "Choose another…")}
+              </option>
+              {moreHarnesses.map((h) => (
+                <option key={h} value={h}>
+                  {codingHarnessLabel(h)}
+                  {probeSuffix(h)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="coding-harness-catalog-hint">
+            {t(
+              "codingView.harnessCatalogHint",
+              "Envoy and Pi are built in. Other agents are CLIs on this computer — pick one now; if it isn’t installed yet, we’ll show install steps when you start a task.",
+            )}
+          </p>
         </fieldset>
       ) : (
         <label className="modal-field">
@@ -230,16 +311,24 @@ export function CodingAgentModelProviderFields({
                 ? "coding-defaults-settings-harness"
                 : "coding-project-settings-harness"
             }
-            onChange={(e) =>
-              patch({ harness: e.target.value as CodingHarnessId })
-            }
+            onChange={(e) => {
+              const next = e.target.value as CodingHarnessId;
+              patch({
+                harness: next,
+                ...(value.harness !== next
+                  ? { providerKind: "", endpoint: "", apiKey: "" }
+                  : {}),
+              });
+            }}
           >
-            {CODING_ALL_HARNESSES.map((h) => (
-              <option key={h} value={h}>
-                {codingHarnessLabel(h)}
-              </option>
-            ))}
+            {renderGroupedOptions()}
           </select>
+          <span className="coding-harness-catalog-hint">
+            {t(
+              "codingView.harnessCatalogHint",
+              "Envoy and Pi are built in. Other agents are CLIs on this computer — pick one now; if it isn’t installed yet, we’ll show install steps when you start a task.",
+            )}
+          </span>
         </label>
       )}
 
@@ -251,31 +340,48 @@ export function CodingAgentModelProviderFields({
           disabled={locked}
           list={datalistId}
           placeholder={
-            catalogLoading
-              ? t("codingView.modelLoading", "Loading models…")
-              : useCodingDefaultsFallback
+            useCodingDefaultsFallback
+              ? hint
+                ? t(
+                    "codingView.modelPlaceholderCodingDefaults",
+                    "Empty = Coding defaults ({model})",
+                    { model: hint },
+                  )
+                : t(
+                    "codingView.modelPlaceholderCodingDefaultsEmpty",
+                    "Empty = Coding defaults",
+                  )
+              : useEnvoymeshAiFallback
                 ? hint
                   ? t(
-                      "codingView.modelPlaceholderCodingDefaults",
-                      "Empty = Coding defaults ({model})",
+                      "codingView.modelPlaceholderEnvoymeshAi",
+                      "Empty = EnvoyMesh AI ({model})",
                       { model: hint },
                     )
                   : t(
-                      "codingView.modelPlaceholderCodingDefaultsEmpty",
-                      "Empty = Coding defaults",
+                      "codingView.modelPlaceholderEnvoymeshAiEmpty",
+                      "Empty = EnvoyMesh AI",
                     )
-                : useEnvoymeshAiFallback
-                  ? hint
+                : isEhOrPi
+                  ? t(
+                      "codingView.modelPlaceholder",
+                      "e.g. gpt-4o or claude-sonnet…",
+                    )
+                  : showCompatFields
                     ? t(
-                        "codingView.modelPlaceholderEnvoymeshAi",
-                        "Empty = EnvoyMesh AI ({model})",
-                        { model: hint },
+                        "codingView.modelPlaceholderCompat",
+                        "Model id for your compatible endpoint",
                       )
-                    : t(
-                        "codingView.modelPlaceholderEnvoymeshAiEmpty",
-                        "Empty = EnvoyMesh AI",
-                      )
-                  : t("codingView.modelPlaceholder", "e.g. gpt-4o or claude-sonnet…")
+                    : defaultAgentModelHint
+                      ? t(
+                          "codingView.modelPlaceholderAgentDefault",
+                          "Empty = agent default ({model})",
+                          { model: defaultAgentModelHint },
+                        )
+                      : t(
+                          "codingView.modelPlaceholderAgentLogin",
+                          "Empty = this agent’s own login",
+                        )
           }
           data-testid={
             scope === "defaults"
@@ -291,7 +397,10 @@ export function CodingAgentModelProviderFields({
             <option key={s} value={s} />
           ))}
         </datalist>
-        <p className="coding-job-modal__hint">
+        <p
+          className="coding-job-modal__hint"
+          data-testid={`coding-model-hint-${scope}`}
+        >
           {useCodingDefaultsFallback
             ? t(
                 "codingView.modelHintCodingDefaults",
@@ -302,20 +411,25 @@ export function CodingAgentModelProviderFields({
                   "codingView.modelHintEnvoymeshAi",
                   "Envoy and Pi use EnvoyMesh AI when empty. Set a model here only to override.",
                 )
-              : scope === "defaults"
-                ? t(
-                    "codingView.defaultsModelHint",
-                    "Applied when a project has no model override.",
-                  )
-                : scope === "project"
+              : isEhOrPi
+                ? scope === "defaults"
                   ? t(
-                      "codingView.projectDefaultModelHint",
-                      "Used when creating a new task. The task can override it.",
+                      "codingView.defaultsModelHint",
+                      "Applied when a project has no model override.",
                     )
-                  : t(
-                      "codingView.modelLockHint",
-                      "Locked for this task at start. Overrides the project default.",
-                    )}
+                  : scope === "project"
+                    ? t(
+                        "codingView.projectDefaultModelHint",
+                        "Used when creating a new task. The task can override it.",
+                      )
+                    : t(
+                        "codingView.modelLockHint",
+                        "Locked for this task at start. Overrides the project default.",
+                      )
+                : t(
+                    "codingView.modelHintAgentLogin",
+                    "Leave empty to use this agent’s own login and default model. Set a model only if the CLI supports an override.",
+                  )}
         </p>
       </label>
 
@@ -346,7 +460,10 @@ export function CodingAgentModelProviderFields({
               ? resolvedFallbackKind === "envoymesh-ai"
                 ? t("codingView.providerEnvoymeshAi", "EnvoyMesh AI (default)")
                 : t("codingView.providerCodingDefaults", "Coding defaults")
-              : t("codingView.providerAgentDefault", "Agent default")}
+              : t(
+                  "codingView.providerAgentLogin",
+                  "Agent’s own login (default)",
+                )}
           </option>
           <option value="openai-compatible">
             {t("codingView.providerOpenAI", "OpenAI-compatible")}
@@ -355,7 +472,10 @@ export function CodingAgentModelProviderFields({
             {t("codingView.providerAnthropic", "Anthropic-compatible")}
           </option>
         </select>
-        <p className="coding-job-modal__hint">
+        <p
+          className="coding-job-modal__hint"
+          data-testid={`coding-provider-hint-${scope}`}
+        >
           {useCodingDefaultsFallback
             ? t(
                 "codingView.providerKindHintCodingDefaults",
@@ -366,10 +486,15 @@ export function CodingAgentModelProviderFields({
                   "codingView.providerKindHintEnvoymeshAi",
                   "Leave on EnvoyMesh AI to reuse your EnvoyMesh model and keys. Pick OpenAI/Anthropic-compatible only for a custom endpoint and key.",
                 )
-              : t(
-                  "codingView.providerKindHint",
-                  "Optional custom endpoint and API key for this project or task.",
-                )}
+              : isEhOrPi
+                ? t(
+                    "codingView.providerKindHint",
+                    "Optional custom endpoint and API key for this project or task.",
+                  )
+                : t(
+                    "codingView.providerKindHintAgentLogin",
+                    "Leave on Agent’s own login to use this CLI’s auth. Pick OpenAI/Anthropic-compatible only for a custom endpoint and key — most CLIs do not need it.",
+                  )}
         </p>
       </label>
 

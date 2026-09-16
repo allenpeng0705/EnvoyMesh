@@ -72,6 +72,14 @@ export function createSocialSocketMethods(node: NodeService): SocketMethodPort<R
   return {
     async handle(ctx): Promise<boolean> {
       if (!HANDLED.has(ctx.method)) return false;
+      // Terminal / OpenClaw core proxies hand out a live stream — owner only.
+      // The host used to refuse every non-owner RPC whenever socketMethods was
+      // configured; that gate moved here so paired / family sessions can still
+      // call ordinary product methods on the same socket.
+      if (ctx.session && ctx.session.isOwnerScope !== true) {
+        ctx.fail("Only the node owner can do that");
+        return true;
+      }
       const { method, params, connection } = ctx;
       try {
         switch (method) {

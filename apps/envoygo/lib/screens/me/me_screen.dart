@@ -27,8 +27,8 @@ import '../pairing/pairing_scan_screen.dart';
 import '../profile/profile_screen.dart';
 import '../settings/ai_engine_settings_screen.dart';
 import '../settings/ai_model_settings_screen.dart';
+import '../settings/coding_agents_settings_screen.dart';
 import '../settings/envoy_local_settings_screen.dart';
-import '../settings/pi_settings_screen.dart';
 import 'node_switcher_sheet.dart';
 
 /// Profile + node management screen.
@@ -731,7 +731,9 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                   subtitle: Text(l10n.mePiAgentHintLong),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PiSettingsScreen()),
+                    MaterialPageRoute(
+                      builder: (_) => const CodingAgentsSettingsScreen(),
+                    ),
                   ),
                 ),
               ],

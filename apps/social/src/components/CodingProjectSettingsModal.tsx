@@ -34,6 +34,9 @@ export type CodingProjectSettingsModalProps = {
   onOpenCodingDefaults?: () => void;
   /** Coding defaults model hint for empty Envoy/Pi fields. */
   codingDefaultsModelHint?: string;
+  harnessProbe?: Partial<
+    Record<CodingHarnessId, "ready" | "install" | "unknown" | "checking">
+  >;
 };
 
 function projectToValue(project: CodingProject): CodingAgentModelProviderValue {
@@ -56,6 +59,7 @@ export function CodingProjectSettingsModal({
   onReveal,
   onOpenCodingDefaults,
   codingDefaultsModelHint = "",
+  harnessProbe = {},
 }: CodingProjectSettingsModalProps) {
   const t = useT();
   const [label, setLabel] = useState(project.label);
@@ -124,7 +128,7 @@ export function CodingProjectSettingsModal({
           <p className="modal-desc coding-job-modal__desc">
             {t(
               "codingView.projectSettingsDesc",
-              "Overrides for new tasks in this project. Leave agent or model empty to use Coding defaults.",
+              "Overrides for new tasks in this project. Leave agent or model empty to use Coding defaults. Envoy and Pi then fall back to EnvoyMesh AI; other agents use their own login.",
             )}
           </p>
 
@@ -172,6 +176,7 @@ export function CodingProjectSettingsModal({
               scope="project"
               fallbackKind="coding-defaults"
               fallbackModelHint={codingDefaultsModelHint}
+              harnessProbe={harnessProbe}
             />
 
             {onOpenCodingDefaults ? (

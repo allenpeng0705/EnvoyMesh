@@ -29,9 +29,9 @@ import {
 
 describe("product scopes", () => {
   it("encodes and decodes a product name", () => {
-    expect(productScopeKey("EnvoyCoder")).toBe("product:EnvoyCoder");
-    expect(isProductScope("product:EnvoyCoder")).toBe(true);
-    expect(productFromScope("product:EnvoyCoder")).toBe("EnvoyCoder");
+    expect(productScopeKey("EnvoyDev")).toBe("product:EnvoyDev");
+    expect(isProductScope("product:EnvoyDev")).toBe(true);
+    expect(productFromScope("product:EnvoyDev")).toBe("EnvoyDev");
   });
 
   it("is distinguishable from a family profile id", () => {
@@ -44,7 +44,7 @@ describe("product scopes", () => {
   });
 
   it("requires a usable product name", () => {
-    expect(isValidProductName("EnvoyCoder")).toBe(true);
+    expect(isValidProductName("EnvoyDev")).toBe(true);
     expect(isValidProductName("Envoy Agent")).toBe(true);
     for (const bad of ["", "  ", "9lives", "a", "a/b", "-lead", "x".repeat(41)]) {
       expect(isValidProductName(bad), bad).toBe(false);
@@ -63,10 +63,10 @@ describe("which app a pairing code belongs to", () => {
   });
 
   it("refuses another app's code, and says what to do about it", () => {
-    const message = pairingAppMismatch("EnvoyCoder", "EnvoyMesh");
+    const message = pairingAppMismatch("EnvoyDev", "EnvoyMesh");
     expect(message).toBeTruthy();
     // End-user wording: the person holding the phone is the one who has to act.
-    expect(message).toContain("EnvoyCoder");
+    expect(message).toContain("EnvoyDev");
     expect(message).toContain("EnvoyMesh");
     expect(message).toMatch(/show its pairing code|install/i);
     expect(message).not.toMatch(/mismatch|token|scope/i);
@@ -74,7 +74,7 @@ describe("which app a pairing code belongs to", () => {
 
   it("names the app from the environment, defaulting to EnvoyMesh", () => {
     expect(resolveAppName({})).toBe("EnvoyMesh");
-    expect(resolveAppName({ ENVOYMESH_APP_NAME: "EnvoyCoder" })).toBe("EnvoyCoder");
+    expect(resolveAppName({ ENVOYMESH_APP_NAME: "EnvoyDev" })).toBe("EnvoyDev");
     expect(resolveAppName({ ENVOYMESH_APP_NAME: "  " })).toBe("EnvoyMesh");
     // The default is what every existing install already is.
     expect(DEFAULT_APP_NAME).toBe("EnvoyMesh");

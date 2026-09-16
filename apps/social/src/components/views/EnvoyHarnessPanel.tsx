@@ -42,6 +42,21 @@ import { EhComposerDockStack } from "../ehui/EhComposerDockStack.js"
 import { EhTrackPills, type EhTrackId } from "../ehui/EhTrackPills.js"
 import { EnvoyHarnessEhuiRail } from "../ehui/EnvoyHarnessEhuiRail.js"
 import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeading.js"
+import { CodingComposerToolbar } from "../CodingComposerToolbar.js"
+import { CodingImportSessionModal } from "../CodingImportSessionModal.js"
+import {
+  codingComposerCapabilities,
+} from "../../lib/coding-composer-capabilities.js"
+import {
+  fastToggleSlash,
+  shapeCodingComposerPrompt,
+} from "../../lib/coding-composer-prompt.js"
+import {
+  codingComposerSessionKey,
+  loadCodingComposerPrefs,
+  saveCodingComposerPrefs,
+  type CodingComposerPrefs,
+} from "../../lib/coding-composer-state.js"
 import {
   EhuiPanelModal,
   EhuiShell,
@@ -81,6 +96,8 @@ export interface EnvoyHarnessPanelProps {
   onTouchedFilesChange?: (files: readonly string[]) => void
   /** Bump to open turn / git-diff review (Coding Changes overlay). */
   openReviewRequest?: number
+  /** Switch to another EH chat (Import session). */
+  onSwitchChat?: (chatId: string) => void
 }
 
 function stateLabelKey(state: EnvoyHarnessStatus["state"]): string {
@@ -176,6 +193,7 @@ export function EnvoyHarnessPanel({
   readOnlyReview = false,
   onTouchedFilesChange,
   openReviewRequest = 0,
+  onSwitchChat,
 }: EnvoyHarnessPanelProps) {
   const t = useT()
   const toast = useToast()
@@ -189,6 +207,30 @@ export function EnvoyHarnessPanel({
   // chatReady(false → true) render loop.
   const nodeServiceRef = useRef(nodeService)
   nodeServiceRef.current = nodeService
+
+  const prefsKey = codingComposerSessionKey({
+    kind: "eh",
+    id: chatId?.trim() || "active",
+  })
+  const caps = useMemo(() => codingComposerCapabilities("envoy-harness"), [])
+  const [prefs, setPrefs] = useState<CodingComposerPrefs>(() =>
+    loadCodingComposerPrefs(prefsKey),
+  )
+  const [importOpen, setImportOpen] = useState(false)
+  const [importRows, setImportRows] = useState<
+    Array<{ id: string; title: string; subtitle?: string }>
+  >([])
+
+  useEffect(() => {
+    setPrefs(loadCodingComposerPrefs(prefsKey))
+  }, [prefsKey])
+
+  const patchPrefs = useCallback(
+    (patch: Partial<CodingComposerPrefs>) => {
+      setPrefs(saveCodingComposerPrefs(prefsKey, patch))
+    },
+    [prefsKey],
+  )
 
   const [draft, setDraft] = useState("")
   const [transcriptSearchOpen, setTranscriptSearchOpen] = useState(false)
@@ -1136,16 +1178,19 @@ export function EnvoyHarnessPanel({
         effective = "inject"
       }
 
-      submitToQueue(trimmed, effective, refs)
+      const shaped = shapeCodingComposerPrompt(trimmed, prefs, caps)
+      submitToQueue(shaped || trimmed, effective, refs)
       setDraft("")
       ehAttachments.clear()
     },
     [
       busyRef,
+      caps,
       draft,
       ehAttachments,
       chatReady,
       handleSlashCommand,
+      prefs,
       setSystem,
       status,
       submitToQueue,
@@ -1618,40 +1663,89 @@ export function EnvoyHarnessPanel({
         reviewMinFiles={ehReview.reviewMinFiles}
         onReviewMinFilesChange={ehReview.setReviewMinFiles}
         composer={
-          <form
-            className="pi-chat-composer eh-composer"
-            onSubmit={(e) => {
-              e.preventDefault()
-              submitDraft(busyRef.current ? "queue" : "send")
-            }}
-          >
-            <EhChatComposer
-              value={draft}
-              onChange={setDraft}
-              busy={busy}
-              onSubmit={(mode) => {
-                submitDraft(mode)
+          <div className="eh-composer-with-toolbar">
+            <CodingComposerToolbar
+              harness="envoy-harness"
+              prefs={{
+                ...prefs,
+                model: prefs.model || status?.model || "",
               }}
-              placeholder={placeholder}
-              autoFocus
-              slashCommands={slashCommands}
-              hasAttachments={ehAttachments.attachments.length > 0}
-              attachLeading={
-                <AgentAttachmentComposerLeading
-                  attachments={ehAttachments.attachments}
-                  busy={ehAttachments.busy}
-                  disabled={!status?.cwd}
-                  pickTitle={t("eh.attachProjectFile", "Attach project file")}
-                  attachAriaLabel={t("eh.attachProjectFile", "Attach project file")}
-                  fileInputRef={ehAttachments.fileInputRef}
-                  onFileInputChange={ehAttachments.handleFileInputChange}
-                  onOpenPicker={ehAttachments.openPicker}
-                  onRemove={ehAttachments.remove}
-                  onClearAll={ehAttachments.clear}
-                />
-              }
+              onPrefsChange={patchPrefs}
+              modelSuggestions={status?.model ? [status.model] : []}
+              busy={busy}
+              onImportSession={() => {
+                void (async () => {
+                  try {
+                    const list = await nodeService.listEnvoyHarnessChats()
+                    const cwd = status?.cwd
+                    setImportRows(
+                      list
+                        .filter(
+                          (c) =>
+                            c.id !== effectiveChatId &&
+                            (!cwd || c.cwd === cwd),
+                        )
+                        .map((c) => ({
+                          id: c.id,
+                          title: c.title,
+                          subtitle: c.cwd,
+                        })),
+                    )
+                  } catch {
+                    setImportRows([])
+                  }
+                  setImportOpen(true)
+                })()
+              }}
+              onFastToggle={(enabled) => {
+                if (!caps.fast) return
+                void handleSlashCommand(fastToggleSlash(enabled))
+              }}
             />
-          </form>
+            <form
+              className="pi-chat-composer eh-composer"
+              onSubmit={(e) => {
+                e.preventDefault()
+                submitDraft(busyRef.current ? "queue" : "send")
+              }}
+            >
+              <EhChatComposer
+                value={draft}
+                onChange={setDraft}
+                busy={busy}
+                onSubmit={(mode) => {
+                  submitDraft(mode)
+                }}
+                placeholder={placeholder}
+                autoFocus
+                slashCommands={slashCommands}
+                hasAttachments={ehAttachments.attachments.length > 0}
+                attachLeading={
+                  <AgentAttachmentComposerLeading
+                    attachments={ehAttachments.attachments}
+                    busy={ehAttachments.busy}
+                    disabled={!status?.cwd}
+                    pickTitle={t("eh.attachProjectFile", "Attach project file")}
+                    attachAriaLabel={t("eh.attachProjectFile", "Attach project file")}
+                    fileInputRef={ehAttachments.fileInputRef}
+                    onFileInputChange={ehAttachments.handleFileInputChange}
+                    onOpenPicker={ehAttachments.openPicker}
+                    onRemove={ehAttachments.remove}
+                    onClearAll={ehAttachments.clear}
+                  />
+                }
+              />
+            </form>
+            <CodingImportSessionModal
+              open={importOpen}
+              rows={importRows}
+              onClose={() => setImportOpen(false)}
+              onPick={(id) => {
+                setImportOpen(false)
+                onSwitchChat?.(id)
+              }}
+            />
+          </div>
         }
       />
       </>

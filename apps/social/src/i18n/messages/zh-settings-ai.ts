@@ -1,6 +1,36 @@
 export const zhAiSettingsMessages = {
   title: "AI 助手设置",
   sectionDesc: "配置 AI 如何代表你回复。",
+  codingAgents: {
+    heading: "编程工具",
+    intro:
+      "Envoy 与 Pi 内置在 EnvoyMesh 中。其他工具是本机上的 CLI——编程页只是调用它们。常用工具列在上方；完整目录在下方。",
+    groupBuiltIn: "EnvoyMesh 内置 · {ready}/{total} 就绪",
+    groupExternal: "编程页常用（精选）· {ready}/{total} 就绪",
+    groupCatalogue: "目录 · {total}",
+    catalogueReady: "{ready} 就绪",
+    catalogueHint: "编程页可调用的其余 CLI。同样检查就绪 / 未就绪——不属于 EnvoyMesh。",
+    browseCatalogue: "浏览目录（{total}）",
+    hideCatalogue: "收起目录",
+    externalHint:
+      "会显示在新建任务选择器中。请自行安装并登录——EnvoyMesh 仅在编程页选中时运行。",
+    onMachine: "本机 · {ready}/{total} 就绪",
+    recheck: "重新检查",
+    recheckHint: "重新检测各工具是否在 PATH 上。不会启动智能体或安装软件包。",
+    checking: "检查中…",
+    ready: "就绪",
+    notReady: "未就绪",
+    notReadyAria: "未就绪——查看如何解决 {agent} 的问题",
+    resolveBody:
+      "{name} 在此家用电脑上尚未就绪。请在本机安装或修复，然后点重新检查。EnvoyMesh 仅在编程页调用它——不负责配置该产品本身。",
+    installCmd: "安装命令（在此电脑上运行）",
+    firstRunCmd: "首次运行命令（在此电脑上运行）",
+    copyCmd: "复制命令",
+    openDocs: "打开文档",
+    builtInConfig: "Envoy 与 Pi 设置",
+    builtInConfigHint:
+      "配置内置编程引擎。上方的外部 CLI 需在 EnvoyMesh 之外自行安装并登录。",
+  },
   model: {
     heading: "模型提供商",
     sectionDescCloud: "在此设备上配置云端 API，用于聊天辅助与知识问答。",
@@ -223,6 +253,7 @@ export const zhAiSettingsMessages = {
       notInstalledBody: "本机尚未检测到 {command}。请运行下方安装命令，然后点击「重试」。",
       unknownBody: "无法确认 {command} 是否已安装。请运行安装命令以确保安装完成，然后点击「重试」。",
       commandLabel: "安装",
+      firstRunLabel: "首次运行命令",
       verifyLabel: "验证",
       docsLabel: "打开安装文档",
       copyCommand: "复制",

@@ -1,9 +1,28 @@
 /**
- * Polished project-folder picker for Coding-section chats (Envoy Harness threads).
+ * Add Coding project — folder + default agent / model / provider.
  */
+import { useEffect, useState } from "react";
+import type { CodingHarnessId } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
+import type { CodingTaskPrefill } from "../lib/coding-projects.js";
 import { HomeFolderPicker } from "./HomeFolderPicker.js";
+import {
+  CodingAgentModelProviderFields,
+  type CodingAgentModelProviderValue,
+} from "./CodingAgentModelProviderFields.js";
+import { codingPrefillToValue } from "../lib/coding-agent-model-provider.js";
 import { ModalPortal } from "./ModalPortal.js";
+
+export type CodingAddProjectConfirm = {
+  path: string;
+  harness: CodingAgentModelProviderValue["harness"];
+  model: string;
+  providerKind: CodingAgentModelProviderValue["providerKind"];
+  endpoint: string;
+  apiKey: string;
+};
+
+type HarnessProbeBadge = "ready" | "install" | "unknown" | "checking";
 
 export interface CodingProjectPickerModalProps {
   open: boolean;
@@ -11,13 +30,17 @@ export interface CodingProjectPickerModalProps {
   description: string;
   value: string;
   onChange: (path: string) => void;
+  /** Prefill agent defaults (usually Coding defaults). */
+  initialPrefill?: CodingTaskPrefill;
+  codingDefaultsModelHint?: string;
+  harnessProbe?: Partial<Record<CodingHarnessId, HarnessProbeBadge>>;
   error?: string | null;
   busy?: boolean;
   confirmLabel: string;
   busyLabel?: string;
   pickerTitle?: string;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (result: CodingAddProjectConfirm) => void;
 }
 
 export function CodingProjectPickerModal({
@@ -26,6 +49,9 @@ export function CodingProjectPickerModal({
   description,
   value,
   onChange,
+  initialPrefill,
+  codingDefaultsModelHint = "",
+  harnessProbe = {},
   error,
   busy = false,
   confirmLabel,
@@ -35,6 +61,26 @@ export function CodingProjectPickerModal({
   onConfirm,
 }: CodingProjectPickerModalProps) {
   const t = useT();
+  const [agentModel, setAgentModel] = useState<CodingAgentModelProviderValue>(
+    () =>
+      codingPrefillToValue(
+        initialPrefill ?? {
+          harness: "envoy-harness",
+          model: "",
+          providerKind: "",
+          endpoint: "",
+          apiKey: "",
+        },
+      ),
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    if (initialPrefill) setAgentModel(codingPrefillToValue(initialPrefill));
+    // Reset only when the modal opens — not on every parent re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   if (!open) return null;
 
   const trimmed = value.trim();
@@ -45,12 +91,13 @@ export function CodingProjectPickerModal({
       <div
         className="modal-overlay coding-project-modal-overlay"
         role="presentation"
+        data-testid="coding-add-project-modal"
         onClick={() => {
           if (!busy) onClose();
         }}
       >
         <div
-          className="modal-panel coding-project-modal"
+          className="modal-panel coding-project-modal coding-job-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="coding-project-modal-title"
@@ -83,21 +130,33 @@ export function CodingProjectPickerModal({
 
           <p className="modal-desc coding-project-modal__desc">{description}</p>
 
-          <div className="coding-project-modal__picker-wrap">
-            <label className="modal-field coding-project-modal__field">
-              {t("pi.projectPathLabel", "Project folder")}
-              <HomeFolderPicker
-                value={trimmed || undefined}
-                onChange={(path) => onChange(path ?? "")}
-                title={pickerTitle ?? title}
-                disabled={busy}
-              />
-            </label>
-            {trimmed ? (
-              <p className="coding-project-modal__path-hint" title={trimmed}>
-                {trimmed}
-              </p>
-            ) : null}
+          <div className="coding-job-modal__body">
+            <div className="coding-project-modal__picker-wrap">
+              <label className="modal-field coding-project-modal__field">
+                {t("pi.projectPathLabel", "Project folder")}
+                <HomeFolderPicker
+                  value={trimmed || undefined}
+                  onChange={(path) => onChange(path ?? "")}
+                  title={pickerTitle ?? title}
+                  disabled={busy}
+                />
+              </label>
+              {trimmed ? (
+                <p className="coding-project-modal__path-hint" title={trimmed}>
+                  {trimmed}
+                </p>
+              ) : null}
+            </div>
+
+            <CodingAgentModelProviderFields
+              value={agentModel}
+              onChange={setAgentModel}
+              busy={busy}
+              scope="project"
+              fallbackKind="coding-defaults"
+              fallbackModelHint={codingDefaultsModelHint}
+              harnessProbe={harnessProbe}
+            />
           </div>
 
           {error ? (
@@ -120,7 +179,17 @@ export function CodingProjectPickerModal({
               className="primary"
               disabled={!canConfirm}
               data-testid="coding-add-project-confirm"
-              onClick={onConfirm}
+              onClick={() => {
+                if (!canConfirm) return;
+                onConfirm({
+                  path: trimmed,
+                  harness: agentModel.harness,
+                  model: agentModel.model,
+                  providerKind: agentModel.providerKind,
+                  endpoint: agentModel.endpoint,
+                  apiKey: agentModel.apiKey,
+                });
+              }}
             >
               {busy ? (busyLabel ?? "…") : confirmLabel}
             </button>

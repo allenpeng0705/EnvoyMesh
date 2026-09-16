@@ -818,7 +818,7 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(engineRoot).toBe(dirname(dirname(dirname(exePath))));
     // A different live process (`process.ppid`): a claim naming *this* process would be
     // re-acquired, because that is what a restart in the same process does.
-    writeForeignClaim(engineRoot, { pid: process.ppid, app: "EnvoyCoder", port: 18790 });
+    writeForeignClaim(engineRoot, { pid: process.ppid, app: "EnvoyDev", port: 18790 });
     cfg = { ...cfg, serverParams: { startupTimeoutMs: 100 } };
     mockedSpawn.mockClear();
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503 })));
@@ -833,9 +833,9 @@ describe("envoy-local-runtime lifecycle", () => {
     expect(mockedSpawn).not.toHaveBeenCalled();
     // …and the failure names who holds it, rather than a bare port error.
     expect(status.lastError ?? "").toMatch(/holds the local engine lock/);
-    expect(status.lastError ?? "").toMatch(/EnvoyCoder/);
+    expect(status.lastError ?? "").toMatch(/EnvoyDev/);
     // The winner's claim is intact: the loser must not have taken it over.
-    expect(readEngineLock(engineRoot)?.app).toBe("EnvoyCoder");
+    expect(readEngineLock(engineRoot)?.app).toBe("EnvoyDev");
     await releaseEngineLock(engineRoot, process.ppid);
   });
 

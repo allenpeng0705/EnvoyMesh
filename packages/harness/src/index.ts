@@ -139,10 +139,13 @@ export {
   type OpenCodeBackendOptions,
 } from "./opencode-backend.js";
 export {
-  CodeWhaleBackend,
-  createCodeWhaleBackend,
-  type CodeWhaleBackendOptions,
-} from "./codewhale-backend.js";
+  createCodingHarnessBackend,
+} from "./coding-harness-backend.js";
+export {
+  CatalogAcpBackend,
+  createCatalogAcpBackend,
+} from "./catalog-acp-backend.js";
+export { runCatalogAcpPrompt, _test as _catalogAcpTest } from "./catalog-acp-session.js";
 export {
   extractContentBlocks,
   extractOneShotAssistantText,

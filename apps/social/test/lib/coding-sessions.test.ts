@@ -57,6 +57,17 @@ describe("coding-sessions auto-title", () => {
     expect(shouldAutoSetCodingExtTitle(label, "opencode")).toBe(true);
   });
 
+  it("replaces folder-basename titles from first prompt", () => {
+    const s = createCodingExtSession({
+      harness: "opencode",
+      cwd: "/tmp/demo",
+      title: "demo",
+    });
+    expect(shouldAutoSetCodingExtTitle(s.title, s.harness, s.cwd)).toBe(true);
+    const next = maybeAutoTitleCodingExtSession(s.id, "Ship the feature");
+    expect(next).toBe("Ship the feature");
+  });
+
   it("does not persist apiKey in localStorage", () => {
     createCodingExtSession({
       harness: "cursor",

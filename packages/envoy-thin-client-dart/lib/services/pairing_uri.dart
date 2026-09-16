@@ -267,7 +267,7 @@ class PairingData {
   final List<String>? bootstrapPresetNames;
   final List<String>? relayWsUrls;
 
-  /// Which app minted this code (`"EnvoyMesh"`, `"EnvoyCoder"`, …), when the code says.
+  /// Which app minted this code (`"EnvoyMesh"`, `"EnvoyDev"`, …), when the code says.
   ///
   /// A phone app belongs to the same product as the desktop app it pairs with, so it
   /// must refuse a code from another one. Check it with [pairingAppMismatch] **before**

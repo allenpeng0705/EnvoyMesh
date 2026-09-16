@@ -15,15 +15,22 @@ void main() {
         harness: 'codex',
         cwd: '/projects/app',
         title: 'Codex',
+        model: 'gpt-5',
+        providerKind: 'openai-compatible',
+        endpoint: 'https://api.example.com/v1',
       );
       expect(created.id, startsWith('ext:codex:'));
       expect(created.harness, 'codex');
       expect(created.cwd, '/projects/app');
       expect(created.title, 'Codex');
+      expect(created.model, 'gpt-5');
+      expect(created.providerKind, 'openai-compatible');
+      expect(created.endpoint, 'https://api.example.com/v1');
 
       final loaded = await loadCodingExtSessions();
       expect(loaded, hasLength(1));
       expect(loaded.first.id, created.id);
+      expect(loaded.first.model, 'gpt-5');
 
       await Future<void>.delayed(const Duration(milliseconds: 2));
       await touchCodingExtSession(created.id);
@@ -36,6 +43,45 @@ void main() {
 
       await removeCodingExtSession(created.id);
       expect(await loadCodingExtSessions(), isEmpty);
+    });
+
+    test('maybeAutoTitleCodingExtSession updates placeholder titles', () async {
+      final created = await createCodingExtSession(
+        harness: 'minimax-code',
+        cwd: '/projects/app',
+      );
+      expect(created.title, 'app');
+      expect(isCodingTierBHarnessId('minimax-code'), isTrue);
+
+      final titled = await maybeAutoTitleCodingExtSession(
+        created.id,
+        'Fix the login redirect bug\nsecond line',
+      );
+      expect(titled, 'Fix the login redirect bug');
+      final again = await maybeAutoTitleCodingExtSession(
+        created.id,
+        'Should not replace',
+      );
+      expect(again, isNull);
+      expect(
+        (await getCodingExtSession(created.id))!.title,
+        'Fix the login redirect bug',
+      );
+    });
+
+    test('updateCodingExtSessionRuntime patches model fields', () async {
+      final created = await createCodingExtSession(
+        harness: 'codex',
+        cwd: '/x',
+      );
+      await updateCodingExtSessionRuntime(
+        created.id,
+        model: 'claude-sonnet',
+        providerKind: 'anthropic-compatible',
+      );
+      final updated = await getCodingExtSession(created.id);
+      expect(updated?.model, 'claude-sonnet');
+      expect(updated?.providerKind, 'anthropic-compatible');
     });
 
     test('rejects non Tier B harness and empty cwd', () async {

@@ -192,6 +192,72 @@ abstract class AppLocalizations {
   /// **'Start a coding task on your home computer.'**
   String get codingEmptyHint;
 
+  /// No description provided for @codingHomeEmptyProjects.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a project to start. Then create a task under that project.'**
+  String get codingHomeEmptyProjects;
+
+  /// No description provided for @codingHomeAddProjectHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Register a folder on your home computer.'**
+  String get codingHomeAddProjectHint;
+
+  /// No description provided for @codingHomeNewTaskHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a project and coding agent.'**
+  String get codingHomeNewTaskHint;
+
+  /// No description provided for @codingAddProjectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add project'**
+  String get codingAddProjectTitle;
+
+  /// No description provided for @codingAddProjectDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Register a folder as a project and choose its default coding agent.'**
+  String get codingAddProjectDesc;
+
+  /// No description provided for @codingAddProjectConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Add project'**
+  String get codingAddProjectConfirm;
+
+  /// No description provided for @codingAddProjectCta.
+  ///
+  /// In en, this message translates to:
+  /// **'Add project'**
+  String get codingAddProjectCta;
+
+  /// No description provided for @codingRemoveFromCoding.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from Coding'**
+  String get codingRemoveFromCoding;
+
+  /// No description provided for @codingRemoveProjectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove project from Coding?'**
+  String get codingRemoveProjectTitle;
+
+  /// No description provided for @codingRemoveProjectBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove “{title}” from Coding? Tasks under it leave Coding too. Your folder and files on disk are not deleted.'**
+  String codingRemoveProjectBody(String title);
+
+  /// No description provided for @codingCancelTurn.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get codingCancelTurn;
+
   /// No description provided for @codingGated.
   ///
   /// In en, this message translates to:
@@ -203,6 +269,234 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Projects'**
   String get codingSectionProjects;
+
+  /// No description provided for @codingSectionTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Tasks'**
+  String get codingSectionTasks;
+
+  /// No description provided for @codingHistoryAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get codingHistoryAll;
+
+  /// No description provided for @codingHistoryArchived.
+  ///
+  /// In en, this message translates to:
+  /// **'Archived'**
+  String get codingHistoryArchived;
+
+  /// No description provided for @codingArchive.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive'**
+  String get codingArchive;
+
+  /// No description provided for @codingUnarchive.
+  ///
+  /// In en, this message translates to:
+  /// **'Unarchive'**
+  String get codingUnarchive;
+
+  /// No description provided for @codingComposerModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get codingComposerModelHint;
+
+  /// No description provided for @codingModeAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask'**
+  String get codingModeAsk;
+
+  /// No description provided for @codingModePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Plan'**
+  String get codingModePlan;
+
+  /// No description provided for @codingModeCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Code'**
+  String get codingModeCode;
+
+  /// No description provided for @codingModeFast.
+  ///
+  /// In en, this message translates to:
+  /// **'Fast'**
+  String get codingModeFast;
+
+  /// No description provided for @codingModeThink.
+  ///
+  /// In en, this message translates to:
+  /// **'Think'**
+  String get codingModeThink;
+
+  /// No description provided for @codingImportSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Import session'**
+  String get codingImportSession;
+
+  /// No description provided for @codingAttachFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Attach file'**
+  String get codingAttachFile;
+
+  /// No description provided for @codingSchedulesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Schedules'**
+  String get codingSchedulesTitle;
+
+  /// No description provided for @codingScheduleCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'New schedule'**
+  String get codingScheduleCreate;
+
+  /// No description provided for @codingScheduleRunNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Run now'**
+  String get codingScheduleRunNow;
+
+  /// No description provided for @codingHarnessMinimax.
+  ///
+  /// In en, this message translates to:
+  /// **'MiniMax Code'**
+  String get codingHarnessMinimax;
+
+  /// No description provided for @codingHarnessChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get codingHarnessChecking;
+
+  /// No description provided for @codingHarnessNotReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Not ready'**
+  String get codingHarnessNotReady;
+
+  /// No description provided for @codingHarnessProbeUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Check install'**
+  String get codingHarnessProbeUnknown;
+
+  /// No description provided for @codingHarnessProbeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy/Pi are built in. Other tools are CLIs on your home computer — Coding just uses them. Ready / Not ready shows whether each is available.'**
+  String get codingHarnessProbeHint;
+
+  /// No description provided for @codingHarnessHowToFix.
+  ///
+  /// In en, this message translates to:
+  /// **'How to fix'**
+  String get codingHarnessHowToFix;
+
+  /// No description provided for @codingHarnessResolveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up {name}'**
+  String codingHarnessResolveTitle(String name);
+
+  /// No description provided for @codingHarnessResolveBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} isn’t ready on your home computer yet. Follow the steps below, then tap Refresh.'**
+  String codingHarnessResolveBody(String name);
+
+  /// No description provided for @codingHarnessInstallCmd.
+  ///
+  /// In en, this message translates to:
+  /// **'Install command (run on home computer)'**
+  String get codingHarnessInstallCmd;
+
+  /// No description provided for @codingHarnessFirstRunCmd.
+  ///
+  /// In en, this message translates to:
+  /// **'First-run command (run on home computer)'**
+  String get codingHarnessFirstRunCmd;
+
+  /// No description provided for @codingHarnessCopyCmd.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy command'**
+  String get codingHarnessCopyCmd;
+
+  /// No description provided for @codingHarnessCmdCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Command copied'**
+  String get codingHarnessCmdCopied;
+
+  /// No description provided for @codingHarnessOpenDocs.
+  ///
+  /// In en, this message translates to:
+  /// **'Open docs'**
+  String get codingHarnessOpenDocs;
+
+  /// No description provided for @codingHarnessOurGap.
+  ///
+  /// In en, this message translates to:
+  /// **'This is a product limit — there is nothing to install on your computer for this agent.'**
+  String get codingHarnessOurGap;
+
+  /// No description provided for @codingAgentsSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding tools'**
+  String get codingAgentsSettingsTitle;
+
+  /// No description provided for @codingAgentsSettingsIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy and Pi are built into EnvoyMesh. Other tools (Claude Code, Codex, Cursor, …) live on your home computer — Coding just uses them. This page only checks Ready / Not ready.'**
+  String get codingAgentsSettingsIntro;
+
+  /// No description provided for @codingAgentsRecheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get codingAgentsRecheck;
+
+  /// No description provided for @codingAgentsPiSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Pi settings'**
+  String get codingAgentsPiSettings;
+
+  /// No description provided for @codingAgentsOnMachine.
+  ///
+  /// In en, this message translates to:
+  /// **'On this machine · {ready}/{total} ready'**
+  String codingAgentsOnMachine(int ready, int total);
+
+  /// No description provided for @codingAgentsGroupBuiltIn.
+  ///
+  /// In en, this message translates to:
+  /// **'In EnvoyMesh · {ready}/{total} ready'**
+  String codingAgentsGroupBuiltIn(int ready, int total);
+
+  /// No description provided for @codingAgentsGroupExternal.
+  ///
+  /// In en, this message translates to:
+  /// **'Used by Coding (not part of EnvoyMesh) · {ready}/{total} ready'**
+  String codingAgentsGroupExternal(int ready, int total);
+
+  /// No description provided for @codingAgentsExternalHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Install and sign in to these CLIs yourself. EnvoyMesh does not configure them — it only runs them when you pick one in Coding.'**
+  String get codingAgentsExternalHint;
 
   /// No description provided for @codingStatusIdle.
   ///
@@ -617,6 +911,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Pi is starting — try again in a moment.'**
   String get piStartingHint;
+
+  /// No description provided for @piStartAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Pi'**
+  String get piStartAction;
 
   /// No description provided for @piStateReady.
   ///
@@ -1461,13 +1761,13 @@ abstract class AppLocalizations {
   /// No description provided for @mePiAgent.
   ///
   /// In en, this message translates to:
-  /// **'Coding agents'**
+  /// **'Coding tools'**
   String get mePiAgent;
 
   /// No description provided for @mePiAgentHint.
   ///
   /// In en, this message translates to:
-  /// **'Pi and Envoy Harness settings'**
+  /// **'Built-in Envoy/Pi plus external CLIs Coding can use'**
   String get mePiAgentHint;
 
   /// No description provided for @meDarkMode.
@@ -1659,7 +1959,7 @@ abstract class AppLocalizations {
   /// No description provided for @mePiAgentHintLong.
   ///
   /// In en, this message translates to:
-  /// **'Local coding agents on the home node (Pi and Envoy Harness)'**
+  /// **'See built-in Envoy/Pi and whether external CLIs Coding can use are Ready'**
   String get mePiAgentHintLong;
 
   /// No description provided for @mePushNotificationsHintLong.

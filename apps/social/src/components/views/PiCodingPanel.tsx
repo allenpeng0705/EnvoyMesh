@@ -12,10 +12,29 @@ import {
   type PiRuntimeState,
   type PiStatus,
   type PiToolProposal,
+  type TerminalSessionSummary,
 } from "@envoymesh/api"
 import { useT } from "../../context/I18nContext.js"
 import { useNodeService } from "../../hooks/useNodeService.js"
 import { useEhTimeline } from "../../hooks/useEhTimeline.js"
+import { useEhAttachments } from "../../hooks/useEhAttachments.js"
+import { useTerminalSessions } from "../../hooks/useNodeService.js"
+import { codingComposerCapabilities } from "../../lib/coding-composer-capabilities.js"
+import { shapeCodingComposerPrompt } from "../../lib/coding-composer-prompt.js"
+import {
+  codingComposerSessionKey,
+  loadCodingComposerPrefs,
+  saveCodingComposerPrefs,
+  type CodingComposerPrefs,
+} from "../../lib/coding-composer-state.js"
+import {
+  mergeAgentPromptWithAttachments,
+  toAgentAttachmentRefs,
+} from "../../lib/agent-attachments.js"
+import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeading.js"
+import { CodingComposerToolbar } from "../CodingComposerToolbar.js"
+import { CodingImportSessionModal } from "../CodingImportSessionModal.js"
+import { EhChatComposer } from "../ehui/EhChatComposer.js"
 import { EhTimelineFeed } from "../ehui/EhTimelineFeed.js"
 import { EhChatMessageText } from "../ehui/EhChatMessageText.js"
 
@@ -23,6 +42,8 @@ export type PiCodingPanelProps = {
   sessionId: string
   /** Coding task header / sidebar live busy state. */
   onBusyChange?: (busy: boolean) => void
+  /** Switch to another Pi session (Import session). */
+  onSwitchSession?: (sessionId: string) => void
 }
 
 function stateLabelKey(state: PiRuntimeState): string {
@@ -60,19 +81,74 @@ function stateBadgeClass(state: PiRuntimeState): string {
   }
 }
 
-export function PiCodingPanel({ sessionId, onBusyChange }: PiCodingPanelProps) {
+export function PiCodingPanel({
+  sessionId,
+  onBusyChange,
+  onSwitchSession,
+}: PiCodingPanelProps) {
   const t = useT()
   const nodeService = useNodeService()
+  const { sessions: terminalSessions } = useTerminalSessions()
   const chatId = useMemo(() => piTimelineChatId(sessionId), [sessionId])
   const timeline = useEhTimeline(nodeService, chatId)
   const threadRef = useRef<HTMLDivElement | null>(null)
-  const inputRef = useRef<HTMLInputElement | null>(null)
+  const prefsKey = codingComposerSessionKey({ kind: "pi", id: sessionId })
+  const caps = useMemo(() => codingComposerCapabilities("pi"), [])
 
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<PiStatus | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
   const [pendingProposal, setPendingProposal] = useState<PiToolProposal | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [prefs, setPrefs] = useState<CodingComposerPrefs>(() =>
+    loadCodingComposerPrefs(prefsKey),
+  )
+
+  const piSession = useMemo(
+    () =>
+      terminalSessions.find(
+        (s: TerminalSessionSummary) => s.sessionId === sessionId,
+      ),
+    [terminalSessions, sessionId],
+  )
+  const projectCwd = piSession?.cwd
+  const attachments = useEhAttachments(projectCwd, (message) =>
+    setLocalError(message),
+  )
+
+  useEffect(() => {
+    setPrefs(loadCodingComposerPrefs(prefsKey))
+  }, [prefsKey])
+
+  useEffect(() => {
+    if (status?.modelSpec && !prefs.model) {
+      setPrefs(saveCodingComposerPrefs(prefsKey, { model: status.modelSpec }))
+    }
+  }, [status?.modelSpec, prefs.model, prefsKey])
+
+  const patchPrefs = useCallback(
+    (patch: Partial<CodingComposerPrefs>) => {
+      setPrefs(saveCodingComposerPrefs(prefsKey, patch))
+    },
+    [prefsKey],
+  )
+
+  const importRows = useMemo(() => {
+    return terminalSessions
+      .filter(
+        (s) =>
+          s.role === "pi" &&
+          s.state === "running" &&
+          s.sessionId !== sessionId &&
+          (!projectCwd || s.cwd === projectCwd),
+      )
+      .map((s) => ({
+        id: s.sessionId,
+        title: s.title,
+        subtitle: s.cwd,
+      }))
+  }, [terminalSessions, sessionId, projectCwd, importOpen])
 
   useEffect(() => {
     onBusyChange?.(busy)
@@ -153,7 +229,7 @@ export function PiCodingPanel({ sessionId, onBusyChange }: PiCodingPanelProps) {
   const submit = useCallback(
     async (text: string) => {
       const trimmed = text.trim()
-      if (!trimmed || busy) return
+      if ((!trimmed && attachments.attachments.length === 0) || busy) return
 
       if (status && status.state !== "ready") {
         const hint =
@@ -168,21 +244,51 @@ export function PiCodingPanel({ sessionId, onBusyChange }: PiCodingPanelProps) {
         return
       }
 
+      let contextText = ""
+      if (
+        attachments.attachments.length > 0 &&
+        nodeService.buildAgentAttachmentContext
+      ) {
+        try {
+          const built = await nodeService.buildAgentAttachmentContext({
+            attachments: toAgentAttachmentRefs(attachments.attachments),
+          })
+          contextText = built.contextText?.trim() ?? ""
+        } catch (err: unknown) {
+          setLocalError(err instanceof Error ? err.message : String(err))
+          return
+        }
+      }
+
+      const shaped = shapeCodingComposerPrompt(trimmed, prefs, caps)
+      const prompt = mergeAgentPromptWithAttachments(shaped, contextText)
+      if (!prompt.trim()) return
+
       setBusy(true)
       setLocalError(null)
       setDraft("")
+      attachments.clear()
       try {
-        await nodeService.sendToPi(trimmed, { sessionId })
+        await nodeService.sendToPi(prompt, { sessionId })
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
         setLocalError(t("pi.sendFailed", `Failed to reach Pi: ${msg}`))
         void refresh()
       } finally {
         setBusy(false)
-        window.requestAnimationFrame(() => inputRef.current?.focus())
       }
     },
-    [busy, nodeService, refresh, sessionId, status, t],
+    [
+      attachments,
+      busy,
+      caps,
+      nodeService,
+      prefs,
+      refresh,
+      sessionId,
+      status,
+      t,
+    ],
   )
 
   const placeholder = busy
@@ -302,34 +408,58 @@ export function PiCodingPanel({ sessionId, onBusyChange }: PiCodingPanelProps) {
         </div>
       ) : null}
 
-      <form
-        className="pi-chat-composer"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void submit(draft)
-        }}
-      >
-        <input
-          ref={inputRef}
-          type="text"
-          className="pi-chat-input"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          disabled={busy}
-          placeholder={placeholder}
-          aria-label={t("pi.promptAriaLabel", "Prompt Pi")}
-          data-testid="pi-coding-input"
+      <div className="pi-coding-panel__composer-stack">
+        <CodingComposerToolbar
+          harness="pi"
+          prefs={prefs}
+          onPrefsChange={patchPrefs}
+          modelSuggestions={
+            status?.modelSpec ? [status.modelSpec] : []
+          }
+          busy={busy}
+          onImportSession={() => setImportOpen(true)}
         />
-        <button
-          type="submit"
-          className="pi-chat-send"
-          disabled={busy || !draft.trim()}
-          aria-label={t("pi.send", "Send")}
-          data-testid="pi-coding-send"
+        <form
+          className="pi-chat-composer eh-composer"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void submit(draft)
+          }}
         >
-          ↑
-        </button>
-      </form>
+          <EhChatComposer
+            value={draft}
+            onChange={setDraft}
+            busy={busy}
+            onSubmit={() => void submit(draft)}
+            placeholder={placeholder}
+            hasAttachments={attachments.attachments.length > 0}
+            attachLeading={
+              <AgentAttachmentComposerLeading
+                attachments={attachments.attachments}
+                busy={attachments.busy}
+                disabled={!projectCwd}
+                pickTitle={t("eh.attachProjectFile", "Attach project file")}
+                attachAriaLabel={t("eh.attachProjectFile", "Attach project file")}
+                fileInputRef={attachments.fileInputRef}
+                onFileInputChange={attachments.handleFileInputChange}
+                onOpenPicker={attachments.openPicker}
+                onRemove={attachments.remove}
+                onClearAll={attachments.clear}
+              />
+            }
+          />
+        </form>
+      </div>
+
+      <CodingImportSessionModal
+        open={importOpen}
+        rows={importRows}
+        onClose={() => setImportOpen(false)}
+        onPick={(id) => {
+          setImportOpen(false)
+          onSwitchSession?.(id)
+        }}
+      />
     </section>
   )
 }

@@ -130,7 +130,7 @@ describe("the EnvoyMesh apps group", () => {
       homeNodePeerId: "12D3KooWHome",
       // Which app minted the code travels with it: that is what lets a phone app
       // refuse another product's QR instead of pairing with the wrong desktop app.
-      app: "EnvoyCoder",
+      app: "EnvoyDev",
     };
     const uri = buildPairingUri(params);
     expect(uri.startsWith("envoy://pair?")).toBe(true);

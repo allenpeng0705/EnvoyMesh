@@ -6,6 +6,7 @@
 
 import {
   codingHarnessLabel,
+  defaultEhChatTitle,
   ehChatTitleFromUserPrompt,
   EH_CHAT_PLACEHOLDER_TITLE,
   isCodingTierBHarness,
@@ -167,6 +168,7 @@ export function touchCodingExtSession(id: string): void {
 export function shouldAutoSetCodingExtTitle(
   title: string,
   harness: CodingHarnessId,
+  cwd?: string,
 ): boolean {
   const trimmed = title.trim();
   if (!trimmed || trimmed === EH_CHAT_PLACEHOLDER_TITLE) return true;
@@ -176,6 +178,7 @@ export function shouldAutoSetCodingExtTitle(
   } catch {
     /* unknown harness label */
   }
+  if (cwd?.trim() && trimmed === defaultEhChatTitle(cwd)) return true;
   return false;
 }
 
@@ -195,6 +198,39 @@ export function updateCodingExtSessionTitle(id: string, title: string): void {
   saveCodingExtSessions(all);
 }
 
+/** Update model (and optional provider fields) on a Tier B session. */
+export function updateCodingExtSessionRuntime(
+  id: string,
+  patch: {
+    model?: string;
+    providerKind?: CodingExtSession["providerKind"];
+    endpoint?: string;
+  },
+): void {
+  const all = loadCodingExtSessions();
+  const i = all.findIndex((s) => s.id === id);
+  if (i < 0) return;
+  const cur = all[i];
+  const model =
+    patch.model !== undefined ? patch.model.trim() || undefined : cur.model;
+  const endpoint =
+    patch.endpoint !== undefined
+      ? patch.endpoint.trim() || undefined
+      : cur.endpoint;
+  all[i] = {
+    ...cur,
+    ...(model ? { model } : { model: undefined }),
+    ...(patch.providerKind !== undefined
+      ? patch.providerKind
+        ? { providerKind: patch.providerKind }
+        : { providerKind: undefined }
+      : {}),
+    ...(endpoint ? { endpoint } : patch.endpoint !== undefined ? { endpoint: undefined } : {}),
+    lastUsedAt: new Date().toISOString(),
+  };
+  saveCodingExtSessions(all);
+}
+
 /**
  * If the session still has a placeholder title, set it from the first user prompt.
  * Returns the title that was applied, or null if unchanged.
@@ -205,7 +241,8 @@ export function maybeAutoTitleCodingExtSession(
 ): string | null {
   const session = getCodingExtSession(id);
   if (!session) return null;
-  if (!shouldAutoSetCodingExtTitle(session.title, session.harness)) return null;
+  if (!shouldAutoSetCodingExtTitle(session.title, session.harness, session.cwd))
+    return null;
   const next = ehChatTitleFromUserPrompt(prompt);
   if (next === EH_CHAT_PLACEHOLDER_TITLE) return null;
   updateCodingExtSessionTitle(id, next);

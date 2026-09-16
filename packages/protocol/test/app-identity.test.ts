@@ -13,7 +13,7 @@ describe("resolveAppName", () => {
   it("defaults to EnvoyMesh — what every existing install already is", () => {
     expect(DEFAULT_APP_NAME).toBe("EnvoyMesh");
     expect(resolveAppName({})).toBe("EnvoyMesh");
-    expect(resolveAppName({ ENVOYMESH_APP_NAME: "EnvoyCoder" })).toBe("EnvoyCoder");
+    expect(resolveAppName({ ENVOYMESH_APP_NAME: "EnvoyDev" })).toBe("EnvoyDev");
     // A blank launcher value is not a name.
     expect(resolveAppName({ ENVOYMESH_APP_NAME: "   " })).toBe("EnvoyMesh");
   });
@@ -42,9 +42,9 @@ describe("pairingAppMismatch", () => {
   });
 
   it("refuses another app's code, with something a person can act on", () => {
-    const message = pairingAppMismatch("EnvoyCoder", "EnvoyMesh");
+    const message = pairingAppMismatch("EnvoyDev", "EnvoyMesh");
     expect(message).toBeTruthy();
-    expect(message).toContain("EnvoyCoder");
+    expect(message).toContain("EnvoyDev");
     expect(message).toContain("EnvoyMesh");
     expect(message).toMatch(/show its pairing code|install/i);
     // The user is the audience: no wire vocabulary.

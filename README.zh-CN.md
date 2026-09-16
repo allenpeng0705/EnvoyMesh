@@ -36,6 +36,8 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 
 在电脑上安装 **EnvoyMesh**（家庭主节点），在手机上安装 **EnvoyGo**，直接与朋友聊天，并让您的 AI 代理代表您协商任务 — 全程无需任何平台介入。
 
+**默认**主节点是独立桌面应用（macOS / Windows）。**无界面**主节点（LaunchAgent / 登录计划任务）仅给高级用户，可选。
+
 📖 **[快速入门指南](QuickStart.md)** — 几分钟即可上手运行。  
 📘 **[EnvoyMesh 完整指南 0.4.0](EnvoyMesh_GuideBook_0.4.0.zh-CN.md)**（[English](EnvoyMesh_GuideBook_0.4.0.md) · [HTML](sites/EnvoyMesh_GuideBook_0.4.0.zh-CN.html)）
 
@@ -78,6 +80,7 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 - [下载](#下载)
 - [功能一览](#功能一览)
 - [快速开始](#快速开始)
+  - [无界面主节点（高级）](#无界面主节点高级)
 - [工作原理](#工作原理)
   - [系统架构](#系统架构)
   - [网络架构](#网络架构)
@@ -263,6 +266,28 @@ npm run social:dev    # 打开 http://localhost:5173
 `setup.sh` 和 `setup.ps1` 严格保持同步 — 修改其中一个时，请在同一次提交中同步另一个。setup 还会部署 OpenClaw、复制 envoymesh 通道扩展、构建 OpenClaw 网关并冒烟测试 webhook。
 
 **首次启动。** 桌面安装包（DMG / `.exe` / `.AppImage`）在首次启动时通过捆绑的 `bundled-sponsor-friend.json` 自动与项目作者（Allen Peng）建立绑定，因此您开箱即有一个可用联系人。随时可在 Settings → Contacts 中移除。若要在启动前退出，请从安装包中删除该文件（或在安装配置中将 `bundled-sponsor-friend.json` 设为 `{"enabled": false}`）。
+
+### 无界面主节点（高级）
+
+大多数人应继续使用[桌面下载](#下载)。Tauri 应用已经会启动主节点，并在卡住时自动拉起。
+
+若需要**没有界面也一直在线**的主节点（手机 EnvoyGo 连迷你主机、通宵开发检出），再安装操作系统级守护。请先退出桌面应用 — 同一份 profile 只能由一个进程占用。
+
+```bash
+# macOS / Linux — 便携包；省略 --bundle 则使用本仓库检出
+./scripts/home-node-service.sh install --bundle /path/to/envoymesh-bundle
+./scripts/home-node-service.sh status
+./scripts/home-node-service.sh uninstall
+```
+
+```powershell
+# Windows — 登录时的计划任务（不是 Windows 服务）
+.\scripts\home-node-service.ps1 install -Bundle C:\path\to\envoymesh-bundle
+.\scripts\home-node-service.ps1 status
+.\scripts\home-node-service.ps1 uninstall
+```
+
+详情：[docs/headless-home-node.md](docs/headless-home-node.md) · [QuickStart.md](QuickStart.md#headless-home-node-advanced)。
 
 详细的设置、配置、Docker、移动和打包指南：**[QuickStart.md](QuickStart.md)** · **[packaging.md](packaging.md)**
 
@@ -893,6 +918,7 @@ EnvoyMesh/
 ## 更多阅读
 
 - **入门：** [**`QuickStart.md`**](QuickStart.md) — 安装、运行、移动、多机、桥接
+- **无界面主节点（高级）：** [docs/headless-home-node.md](docs/headless-home-node.md)
 - **终端用户指南：** [EnvoyMesh 完整指南 0.4.0](EnvoyMesh_GuideBook_0.4.0.zh-CN.md)（[English](EnvoyMesh_GuideBook_0.4.0.md) · [HTML](sites/EnvoyMesh_GuideBook_0.4.0.zh-CN.html)）
 - **下载 / 截图：** [官网](https://www.homeclaw.cn/envoy/) · [下载章节](#下载)
 - **核心概念：** [架构参考](AGENTS.md) · [高级设计](docs/high-level-design.md) · [安全模型](docs/security.md)

@@ -56,12 +56,12 @@ export interface PairingPayload {
   /** Bridge agent display name from bridge-config.json (optional) */
   agentName?: string;
   /**
-   * Which app minted this code (`"EnvoyMesh"`, `"EnvoyCoder"`, …).
+   * Which app minted this code (`"EnvoyMesh"`, `"EnvoyDev"`, …).
    *
    * A phone app belongs to the same product as the desktop app it pairs with, so the
    * code says who made it and the node checks it on exchange. Without this, any
    * EnvoyMesh-family phone app could pair with any desktop app — which is not what
-   * "EnvoyCoder's app pairs with EnvoyCoder" means. Absent on codes minted before the
+   * "EnvoyDev's app pairs with EnvoyDev" means. Absent on codes minted before the
    * field existed, and treated as "any app" for exactly that reason.
    */
   app?: string;
