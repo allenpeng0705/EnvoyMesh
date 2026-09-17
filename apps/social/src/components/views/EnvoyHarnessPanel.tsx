@@ -232,6 +232,9 @@ export function EnvoyHarnessPanel({
     [prefsKey],
   )
 
+  const prefsRef = useRef(prefs)
+  prefsRef.current = prefs
+
   const [draft, setDraft] = useState("")
   const [transcriptSearchOpen, setTranscriptSearchOpen] = useState(false)
   const [transcriptQuery, setTranscriptQuery] = useState("")
@@ -263,6 +266,27 @@ export function EnvoyHarnessPanel({
   /** For the legacy bare thread key: the active chat that owns this cwd. */
   const [resolvedChatId, setResolvedChatId] = useState<string | null>(null)
   const effectiveChatId = chatId ?? resolvedChatId
+  const effectiveChatIdRef = useRef(effectiveChatId)
+  effectiveChatIdRef.current = effectiveChatId
+
+  const applyCollaborationMode = useCallback(
+    async (modeId: string | undefined) => {
+      const mode =
+        modeId === "plan" || modeId === "review" || modeId === "default"
+          ? modeId
+          : "default"
+      try {
+        await nodeService.setEnvoyHarnessCollaborationMode?.(
+          mode,
+          effectiveChatIdRef.current ?? undefined,
+        )
+      } catch {
+        // Host may not be warm; next turn still passes collaborationMode.
+      }
+    },
+    [nodeService],
+  )
+
   const timeline = useEhTimeline(nodeService, effectiveChatId)
   const visibleTurns = useMemo(() => {
     const query = transcriptQuery.trim().toLocaleLowerCase()
@@ -648,10 +672,26 @@ export function EnvoyHarnessPanel({
     cancelActiveTurn,
   } = useEhTurnQueue({
     chatId: effectiveChatId,
-    startTurn: (text, attachments) =>
-      effectiveChatId
-        ? nodeService.startEnvoyHarnessTurn(text, attachments, effectiveChatId)
-        : nodeService.startEnvoyHarnessTurn(text, attachments),
+    startTurn: (text, attachments) => {
+      const modeId = prefsRef.current.agentModeId
+      const collaborationMode =
+        modeId === "plan" || modeId === "review" || modeId === "default"
+          ? modeId
+          : undefined
+      return effectiveChatId
+        ? nodeService.startEnvoyHarnessTurn(
+            text,
+            attachments,
+            effectiveChatId,
+            collaborationMode,
+          )
+        : nodeService.startEnvoyHarnessTurn(
+            text,
+            attachments,
+            undefined,
+            collaborationMode,
+          )
+    },
     subscribeTurnComplete: (handler) => nodeService.on("eh:turn_complete", handler),
     subscribeTurnToken: (handler) => nodeService.on("eh:turn_token", handler),
     subscribePromptBusy: (handler) => nodeService.on("eh:prompt_busy", handler),
@@ -908,6 +948,49 @@ export function EnvoyHarnessPanel({
         setDraft("")
         return
       }
+      // `/mode` — the harness's own collaboration mode (`session/set_mode`: Default / Plan / Review).
+      //
+      // The sibling of `/permissions` above, and deliberately the same shape: an empty argument
+      // *reports* rather than guessing, an unknown argument names the three it accepts, and success is
+      // confirmed from what the daemon answered rather than from what was sent. `setEnvoyHarnessCollaborationMode`
+      // was declared, implemented and tabled in the RPC layer long before anything could call it —
+      // the catalogue entry was missing — so this is the first caller it has ever had.
+      if (slash === "mode") {
+        const chosen = trimmed.slice("/mode".length).trim().toLowerCase()
+        const MODES = ["default", "plan", "review"] as const
+        if (!chosen) {
+          setSystem(
+            t("eh.modeUsage", "Use /mode default | plan | review.", {}),
+            "info",
+          )
+          setDraft("")
+          return
+        }
+        if (!(MODES as readonly string[]).includes(chosen)) {
+          // Named, not implied: "unknown mode" leaves a user guessing at the vocabulary.
+          setSystem(
+            t("eh.modeUnknown", "“{mode}” is not a mode. Use default, plan or review.", {
+              mode: chosen,
+            }),
+            "error",
+          )
+          setDraft("")
+          return
+        }
+        try {
+          const answer = await nodeService.setEnvoyHarnessCollaborationMode(chosen)
+          setSystem(
+            t("eh.modeSet", "Collaboration mode → {mode}.", { mode: answer.mode }),
+            "success",
+          )
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          setSystem(t("eh.modeFailed", "Could not change the mode: {error}", { error: msg }), "error")
+        }
+        setDraft("")
+        return
+      }
+
       if (slash === "permissions") {
         const mode = trimmed.slice("/permissions".length).trim().toLowerCase()
         if (!mode) {
@@ -1296,6 +1379,7 @@ export function EnvoyHarnessPanel({
             confirmLabel={t("eh.projectSetBtn", "Set project folder")}
           />
           <div className="eh-header-actions">
+            {/* Perms live in the Coding composer toolbar; header keeps a thin alias. */}
             <label className="eh-permission-control">
               <span className="eh-permission-label">
                 {t("eh.permissionsShort", "Perms")}
@@ -1306,18 +1390,26 @@ export function EnvoyHarnessPanel({
                 aria-label={t("eh.permissionsAria", "Permission policy")}
                 title={t(
                   "eh.permissionsTitle",
-                  "Permission policy: Default auto-runs read-only tools + safe bash, Always ask confirms every tool, Always approve never prompts. Changes apply from the next turn.",
+                  "Same as composer Perms: Safe default / Ask every time / Full access. Changes apply from the next turn.",
                 )}
-                onChange={(e) => void applyPolicy(e.target.value)}
+                onChange={(e) => {
+                  patchPrefs({
+                    permissionPolicy: e.target.value as
+                      | "safe-only"
+                      | "always-confirm"
+                      | "off",
+                  })
+                  void applyPolicy(e.target.value)
+                }}
               >
                 <option value="safe-only">
-                  {t("eh.permsSafe", "Default · auto-run safe")}
+                  {t("eh.permsSafe", "Safe default")}
                 </option>
                 <option value="always-confirm">
-                  {t("eh.permsAsk", "Always ask")}
+                  {t("eh.permsAsk", "Ask every time")}
                 </option>
                 <option value="off">
-                  {t("eh.permsNever", "Always approve")}
+                  {t("eh.permsNever", "Full access (no ask)")}
                 </option>
               </select>
             </label>
@@ -1669,8 +1761,21 @@ export function EnvoyHarnessPanel({
               prefs={{
                 ...prefs,
                 model: prefs.model || status?.model || "",
+                permissionPolicy:
+                  (status?.autoRunPolicy === "never"
+                    ? "off"
+                    : status?.autoRunPolicy === "always-confirm" ||
+                        status?.autoRunPolicy === "safe-only" ||
+                        status?.autoRunPolicy === "off"
+                      ? status.autoRunPolicy
+                      : prefs.permissionPolicy) ?? "safe-only",
               }}
-              onPrefsChange={patchPrefs}
+              onPrefsChange={(patch) => {
+                patchPrefs(patch)
+                if (patch.agentModeId !== undefined) {
+                  void applyCollaborationMode(patch.agentModeId)
+                }
+              }}
               modelSuggestions={status?.model ? [status.model] : []}
               busy={busy}
               onImportSession={() => {
@@ -1700,6 +1805,9 @@ export function EnvoyHarnessPanel({
               onFastToggle={(enabled) => {
                 if (!caps.fast) return
                 void handleSlashCommand(fastToggleSlash(enabled))
+              }}
+              onPermissionPolicyChange={(policy) => {
+                void applyPolicy(policy)
               }}
             />
             <form

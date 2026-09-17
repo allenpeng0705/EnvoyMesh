@@ -5,12 +5,13 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { KnowledgeIndexChip } from "../../src/components/views/KnowledgeIndexChip.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const getRagIndexStatus = vi.fn();
 const on = vi.fn(() => () => {});
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     getRagIndexStatus,
     on,
   }),

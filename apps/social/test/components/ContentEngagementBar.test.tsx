@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { ContentEngagementBar } from "../../src/components/ContentEngagementBar.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const getContentEngagement = vi.fn();
 const toggleContentStar = vi.fn();
@@ -13,7 +14,7 @@ const addContentComment = vi.fn();
 const removeContentComment = vi.fn();
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     getContentEngagement,
     toggleContentStar,
     addContentComment,

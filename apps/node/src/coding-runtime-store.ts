@@ -12,12 +12,18 @@ import {
 
 const FILE_NAME = "coding-harness-runtime.json";
 
+export type CodingRuntimePermissionPolicy =
+  | "safe-only"
+  | "always-confirm"
+  | "off";
+
 export type CodingRuntimeRecord = {
   cwd: string;
   model?: string;
   providerKind?: CodingHarnessProviderKind;
   endpoint?: string;
   apiKey?: string;
+  permissionPolicy?: CodingRuntimePermissionPolicy;
   updatedAt: string;
 };
 
@@ -46,6 +52,12 @@ function parseRecord(raw: unknown): CodingRuntimeRecord | null {
     typeof r.apiKey === "string" && r.apiKey.trim()
       ? r.apiKey.trim()
       : undefined;
+  const permissionPolicy =
+    r.permissionPolicy === "safe-only" ||
+    r.permissionPolicy === "always-confirm" ||
+    r.permissionPolicy === "off"
+      ? r.permissionPolicy
+      : undefined;
   const updatedAt =
     typeof r.updatedAt === "string" && r.updatedAt
       ? r.updatedAt
@@ -57,6 +69,7 @@ function parseRecord(raw: unknown): CodingRuntimeRecord | null {
     ...(providerKind ? { providerKind } : {}),
     ...(endpoint ? { endpoint } : {}),
     ...(apiKey ? { apiKey } : {}),
+    ...(permissionPolicy ? { permissionPolicy } : {}),
   };
 }
 
@@ -103,6 +116,7 @@ export class CodingRuntimeStore {
       providerKind?: CodingHarnessProviderKind;
       endpoint?: string;
       apiKey?: string;
+      permissionPolicy?: CodingRuntimePermissionPolicy;
     },
   ): Promise<CodingRuntimeRecord> {
     const id = codingSessionId.trim();
@@ -117,6 +131,8 @@ export class CodingRuntimeStore {
         ? patch.apiKey.trim() || undefined
         : prev?.apiKey;
     const providerKind = patch.providerKind ?? prev?.providerKind;
+    const permissionPolicy =
+      patch.permissionPolicy ?? prev?.permissionPolicy;
     const next: CodingRuntimeRecord = {
       cwd,
       updatedAt: new Date().toISOString(),
@@ -124,6 +140,7 @@ export class CodingRuntimeStore {
       ...(providerKind ? { providerKind } : {}),
       ...(endpoint ? { endpoint } : {}),
       ...(nextApiKey ? { apiKey: nextApiKey } : {}),
+      ...(permissionPolicy ? { permissionPolicy } : {}),
     };
     this.sessions.set(id, next);
     await this.persist();

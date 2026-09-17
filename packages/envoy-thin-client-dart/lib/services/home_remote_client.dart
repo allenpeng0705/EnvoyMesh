@@ -44,6 +44,9 @@ Uint8List encodeTerminalResize(int cols, int rows) {
 
 typedef EventHandler = void Function(dynamic data);
 
+/// Handler for [HomeRemoteClient.onAny]: the event's name and its payload.
+typedef AnyEventHandler = void Function(String event, dynamic data);
+
 /// A transport candidate for reaching the home node.
 ///
 /// The [url] format determines which transport is used:
@@ -61,9 +64,13 @@ class HomeRemoteCandidate {
   /// Required for relay candidates. The session token for authentication.
   final String? sessionToken;
 
-  /// For libp2p circuit relay candidates. The relay's libp2p multiaddr
-  /// to dial through, e.g. /ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR...
-  /// When non-null, _createTransportForCandidate routes to Libp2pTransport.
+  /// For libp2p candidates: the multiaddr the dial goes to, when it is not a WebSocket.
+  ///
+  /// Non-null is what marks a candidate as a libp2p dial rather than a `ws://` URL. For a circuit
+  /// candidate it is the **relay's** multiaddr that [url] is dialled through
+  /// (`/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR…`, with [url] the
+  /// `/p2p/<relay>/p2p-circuit/p2p/<home>` path); for a direct candidate it is the home peer's own
+  /// address and [url] repeats it, because there is no relay hop to name.
   final String? libp2pRelayAddr;
 
   const HomeRemoteCandidate({
@@ -153,6 +160,7 @@ class HomeRemoteClient {
   Completer<void>? _connectCompleter;
   final Map<String, _PendingRpc> _pending = {};
   final Map<String, Set<EventHandler>> _eventHandlers = {};
+  final Set<AnyEventHandler> _anyHandlers = {};
   Timer? _reconnectTimer;
   Timer? _upgradeSweepTimer;
   late int _reconnectDelayMs;
@@ -205,12 +213,31 @@ class HomeRemoteClient {
     return () => _eventHandlers[event]?.remove(handler);
   }
 
+  /// Subscribe to **every** push event, whatever it is called. Returns an unsubscribe function.
+  ///
+  /// [on] makes the caller know the event catalogue, and that catalogue belongs to the daemon, not to
+  /// this client: a forwarding layer that re-publishes whatever arrives would otherwise need editing
+  /// every time the other side adds an event — a change on one side that silently loses a message on
+  /// the other. Those layers use this instead.
+  void Function() onAny(AnyEventHandler handler) {
+    _anyHandlers.add(handler);
+    return () => _anyHandlers.remove(handler);
+  }
+
   void _emit(String event, dynamic data) {
     final handlers = _eventHandlers[event];
-    if (handlers == null) return;
-    for (final handler in handlers) {
+    if (handlers != null) {
+      for (final handler in handlers) {
+        try {
+          handler(data);
+        } catch (_) {
+          // Swallow handler errors.
+        }
+      }
+    }
+    for (final handler in _anyHandlers) {
       try {
-        handler(data);
+        handler(event, data);
       } catch (_) {
         // Swallow handler errors.
       }
@@ -354,10 +381,15 @@ class HomeRemoteClient {
       if (completer.isCompleted) return;
       fastFailTimer?.cancel();
       slowTimer?.cancel();
+      // Complete **before** closing. Closing can invoke `onClose` synchronously (a transport is free
+      // to do that, and Dart's own `WebSocket` does not promise otherwise), and that handler calls
+      // back into this function — the re-entrant call would then reach `completeError` on a future
+      // the outer call had already completed, which is `Bad state: Future already completed` thrown
+      // out of a connect attempt instead of the connect failure it was reporting.
+      completer.completeError(error);
       try {
         ws.close();
       } catch (_) {}
-      completer.completeError(error);
     }
 
     void succeed() {

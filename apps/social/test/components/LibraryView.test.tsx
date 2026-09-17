@@ -7,6 +7,7 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import type { LibraryItem } from "@envoymesh/api";
 import { LibraryView } from "../../src/components/views/LibraryView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listLibraryItems = vi.fn();
 const listAllLocalFiles = vi.fn();
@@ -23,7 +24,7 @@ let nodeConfig: {
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     listLibraryItems,
     listAllLocalFiles,
     getBonds,

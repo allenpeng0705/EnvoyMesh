@@ -1,10 +1,12 @@
 /**
- * Sticky Coding composer prefs (mode / fast / thinking) per task key.
+ * Sticky Coding composer prefs (mode / fast / thinking / permissions) per task key.
  */
 
-import type {
-  CodingThinkingEffort,
-  CodingWorkingMode,
+import {
+  normalizeCodingPermissionPolicy,
+  type CodingPermissionPolicy,
+  type CodingThinkingEffort,
+  type CodingWorkingMode,
 } from "./coding-composer-capabilities.js";
 
 const STORAGE_KEY = "envoymesh.codingComposerPrefs";
@@ -15,12 +17,17 @@ export type CodingComposerPrefs = {
   thinking: CodingThinkingEffort;
   /** Last model string shown/chosen in the toolbar. */
   model?: string;
+  /** Agent-native mode id when the harness publishes modes. */
+  agentModeId?: string;
+  /** Permission policy when the harness supports it. */
+  permissionPolicy?: CodingPermissionPolicy;
 };
 
 const DEFAULT_PREFS: CodingComposerPrefs = {
   mode: "code",
   fast: false,
   thinking: "off",
+  permissionPolicy: "safe-only",
 };
 
 function loadAll(): Record<string, CodingComposerPrefs> {
@@ -55,6 +62,8 @@ export function loadCodingComposerPrefs(
 ): CodingComposerPrefs {
   const row = loadAll()[sessionKey];
   if (!row) return { ...DEFAULT_PREFS };
+  const permissionPolicy =
+    normalizeCodingPermissionPolicy(row.permissionPolicy) ?? "safe-only";
   return {
     mode:
       row.mode === "ask" || row.mode === "plan" || row.mode === "code"
@@ -69,6 +78,10 @@ export function loadCodingComposerPrefs(
         ? row.thinking
         : "off",
     ...(row.model?.trim() ? { model: row.model.trim() } : {}),
+    ...(row.agentModeId?.trim()
+      ? { agentModeId: row.agentModeId.trim() }
+      : {}),
+    permissionPolicy,
   };
 }
 

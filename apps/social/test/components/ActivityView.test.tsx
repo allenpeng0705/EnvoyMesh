@@ -7,6 +7,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { AgentActivityRecord, AuditEventSummary, TaskJournalSummary } from "@envoymesh/api";
 import { ActivityView } from "../../src/components/views/ActivityView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const sampleRow: AgentActivityRecord = {
   activityId: "act-ui-1",
@@ -45,7 +46,7 @@ const getBonds = vi.fn();
 const on = vi.fn();
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     listAgentActivity,
     listAuditEvents,
     listTaskJournalEntries,

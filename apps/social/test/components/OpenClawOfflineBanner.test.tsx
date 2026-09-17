@@ -14,13 +14,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { OpenClawOfflineBanner } from "../../src/components/views/OpenClawOfflineBanner.js";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const mockGetOpenClawStatus = vi.fn();
 const mockRestartOpenClaw = vi.fn();
 const mockOn = vi.fn(() => () => {});
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     getOpenClawStatus: mockGetOpenClawStatus,
     restartOpenClaw: mockRestartOpenClaw,
     on: mockOn,

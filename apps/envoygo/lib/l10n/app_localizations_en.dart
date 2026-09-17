@@ -133,6 +133,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get codingImportSession => 'Import session';
 
   @override
+  String get codingPermSafe => 'Safe default';
+
+  @override
+  String get codingPermAsk => 'Ask every time';
+
+  @override
+  String get codingPermFull => 'Full access (no ask)';
+
+  @override
   String get codingAttachFile => 'Attach file';
 
   @override

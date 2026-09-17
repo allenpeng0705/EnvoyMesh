@@ -2,12 +2,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
 import { NoteEditorView } from "../../src/components/views/NoteEditorView.js"
+import { partialNodeService } from "../helpers/node-service-mock.js"
 
 const createNote = vi.fn()
 const readLibraryItemContent = vi.fn()
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     createNote,
     readLibraryItemContent,
   }),

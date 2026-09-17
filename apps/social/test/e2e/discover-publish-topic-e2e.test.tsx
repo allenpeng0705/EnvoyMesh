@@ -10,6 +10,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import type { HumanProfile, PeerSearchResult } from "@envoymesh/api";
 import { SearchView } from "../../src/components/views/SearchView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const searchPeers = vi.fn();
 const runCapabilityDiscovery = vi.fn().mockResolvedValue(undefined);
@@ -24,7 +25,7 @@ const stableNodeConfig = {
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     searchPeers,
     runCapabilityDiscovery,
     getMorningReport,
@@ -74,6 +75,7 @@ beforeEach(() => {
     ownerId: "envoy:owner:me",
     displayName: "Me",
     username: "me01",
+    profileVisibility: "public",
     updatedAt: "2026-05-28T12:00:00.000Z",
     signature: "sig",
   };
@@ -159,6 +161,7 @@ describe("E2E Discover By topic (interest + publish)", () => {
       ownerId: "envoy:owner:alice",
       displayName: "Interest Alice",
       username: "alice",
+      profileVisibility: "public",
       interests: ["photography"],
       bio: "",
       trustLevel: "unknown",
@@ -169,6 +172,7 @@ describe("E2E Discover By topic (interest + publish)", () => {
       ownerId: "envoy:owner:alice",
       displayName: "Publish Alice",
       username: "alice",
+      profileVisibility: "public",
       interests: [],
       bio: "",
       trustLevel: "unknown",
@@ -179,6 +183,7 @@ describe("E2E Discover By topic (interest + publish)", () => {
       ownerId: "envoy:owner:bob",
       displayName: "Photo Bob",
       username: "photobob",
+      profileVisibility: "public",
       interests: [],
       bio: "",
       trustLevel: "unknown",

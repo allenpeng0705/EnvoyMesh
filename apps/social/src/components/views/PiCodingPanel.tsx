@@ -122,6 +122,24 @@ export function PiCodingPanel({
   }, [prefsKey])
 
   useEffect(() => {
+    let cancelled = false
+    void nodeService.getNodeConfig?.().then((cfg) => {
+      if (cancelled || !cfg) return
+      const policy = cfg.piSettings?.autoRunPolicy
+      if (
+        policy === "safe-only" ||
+        policy === "always-confirm" ||
+        policy === "off"
+      ) {
+        setPrefs(saveCodingComposerPrefs(prefsKey, { permissionPolicy: policy }))
+      }
+    }).catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [nodeService, prefsKey])
+
+  useEffect(() => {
     if (status?.modelSpec && !prefs.model) {
       setPrefs(saveCodingComposerPrefs(prefsKey, { model: status.modelSpec }))
     }
@@ -418,6 +436,22 @@ export function PiCodingPanel({
           }
           busy={busy}
           onImportSession={() => setImportOpen(true)}
+          onPermissionPolicyChange={(policy) => {
+            // Prefs already saved via onPrefsChange; only push node config.
+            void (async () => {
+              try {
+                const cfg = await nodeService.getNodeConfig()
+                await nodeService.updateNodeConfig({
+                  piSettings: {
+                    ...(cfg.piSettings ?? {}),
+                    autoRunPolicy: policy,
+                  },
+                })
+              } catch {
+                /* ignore */
+              }
+            })()
+          }}
         />
         <form
           className="pi-chat-composer eh-composer"

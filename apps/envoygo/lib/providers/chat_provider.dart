@@ -4,6 +4,7 @@ import 'package:envoy_mesh/envoy_mesh.dart';
 import 'package:envoy_mesh/envoy_mesh_social.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../coding/coding_projects.dart' show normalizeCodingProjectPath;
 import '../ext_agent/agent_attachments.dart';
 import '../mesh/social_model_adapters.dart';
 import '../models/chat_message.dart';
@@ -2870,6 +2871,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         if (chatId.isEmpty) continue;
         seen.add(chatId);
         final title = raw['title']?.toString().trim() ?? chatId;
+        final cwd = normalizeCodingProjectPath(raw['cwd']?.toString() ?? '');
         final threadId = '$nodeId:eh:$chatId';
         _upsertThread(
           threadId: threadId,
@@ -2877,9 +2879,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
           type: ChatThreadType.envoyHarness,
           displayName: title,
           agentType: 'envoy-harness',
+          description: cwd.isEmpty ? null : cwd,
           lastMessageText: raw['messageCount'] != null
               ? '${raw['messageCount']} messages'
-              : null,
+              : (cwd.isEmpty ? null : cwd),
         );
       }
       final stale = state.threads.where((t) {

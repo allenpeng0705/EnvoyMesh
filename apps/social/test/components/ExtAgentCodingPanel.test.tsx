@@ -6,15 +6,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { ExtAgentCodingPanel } from "../../src/components/views/ExtAgentCodingPanel.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const askCodingHarness = vi.fn();
 const probeExtAgent = vi.fn();
 const onHandlers = new Map<string, Set<(payload: unknown) => void>>();
 
 const mockNodeService = {
-  askCodingHarness,
-  probeExtAgent,
-  isConnected: true,
+  ...partialNodeService({
+    askCodingHarness,
+    probeExtAgent,
+    isConnected: true,
+  }),
+  // `on` deliberately stays outside `partialNodeService`: NodeServiceClient.on is
+  // generic (`<K extends keyof NodeServiceEvents>(event: K, handler: (data: NodeServiceEvents[K]) => void)`),
+  // and a dispatcher that stores `unknown`-taking handlers cannot be assigned to
+  // that signature without a cast. The returned object is otherwise identical.
   on(event: string, handler: (payload: unknown) => void) {
     let set = onHandlers.get(event);
     if (!set) {
@@ -73,10 +80,13 @@ describe("CodingHarnessPanel (ExtAgentCodingPanel alias)", () => {
       ).toBe("true"),
     );
 
-    fireEvent.change(screen.getByTestId("ext-agent-coding-input"), {
-      target: { value: "hello" },
-    });
-    fireEvent.click(screen.getByTestId("ext-agent-coding-send"));
+    // The panel now delegates its input to the shared EH composer
+    // (`EhChatComposer` → `ChatComposer`), which carries no per-panel testid;
+    // its placeholder is the panel's `Message {name}…` copy. Submitting the
+    // panel's own <form> is the same path its send button takes.
+    const input = screen.getByPlaceholderText(/Message Codex/);
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.submit(input.closest("form")!);
 
     await waitFor(() =>
       expect(askCodingHarness).toHaveBeenCalledWith({
@@ -84,7 +94,7 @@ describe("CodingHarnessPanel (ExtAgentCodingPanel alias)", () => {
         harness: "codex",
         prompt: "hello",
         cwd: "/tmp/proj",
-        runtime: {},
+        runtime: { permissionPolicy: "safe-only" },
       }),
     );
 
@@ -142,10 +152,9 @@ describe("CodingHarnessPanel (ExtAgentCodingPanel alias)", () => {
       ).toBe("false"),
     );
 
-    fireEvent.change(screen.getByTestId("ext-agent-coding-input"), {
-      target: { value: "ping" },
-    });
-    fireEvent.click(screen.getByTestId("ext-agent-coding-send"));
+    const input = screen.getByPlaceholderText(/Message Cursor/);
+    fireEvent.change(input, { target: { value: "ping" } });
+    fireEvent.submit(input.closest("form")!);
 
     await waitFor(() =>
       expect(askCodingHarness).toHaveBeenCalledWith({
@@ -153,7 +162,7 @@ describe("CodingHarnessPanel (ExtAgentCodingPanel alias)", () => {
         harness: "cursor",
         prompt: "ping",
         cwd: "/tmp/proj",
-        runtime: {},
+        runtime: { permissionPolicy: "safe-only" },
       }),
     );
   });

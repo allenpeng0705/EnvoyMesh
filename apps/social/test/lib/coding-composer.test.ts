@@ -2,7 +2,10 @@
  * @vitest-environment jsdom
  */
 import { beforeEach, describe, expect, it } from "vitest";
-import { codingComposerCapabilities } from "../../src/lib/coding-composer-capabilities.js";
+import {
+  codingComposerCapabilities,
+  workingModeFromAgentMode,
+} from "../../src/lib/coding-composer-capabilities.js";
 import {
   shapeCodingComposerPrompt,
   fastToggleSlash,
@@ -14,10 +17,37 @@ import {
 } from "../../src/lib/coding-composer-state.js";
 
 describe("codingComposerCapabilities", () => {
-  it("enables attach and modes for Envoy, Pi, and Tier B", () => {
-    expect(codingComposerCapabilities("envoy-harness").attach).toBe(true);
-    expect(codingComposerCapabilities("pi").attach).toBe(true);
-    expect(codingComposerCapabilities("codex").attach).toBe(true);
+  it("publishes EH modes + permissions", () => {
+    const eh = codingComposerCapabilities("envoy-harness");
+    expect(eh.agentModes.map((m) => m.id)).toEqual([
+      "default",
+      "plan",
+      "review",
+    ]);
+    expect(eh.canSetMode).toBe(true);
+    expect(eh.permissions).toBe(true);
+    expect(eh.workingMode).toBe(false);
+  });
+
+  it("enables Pi permissions without native modes", () => {
+    const pi = codingComposerCapabilities("pi");
+    expect(pi.permissions).toBe(true);
+    expect(pi.agentModes).toEqual([]);
+    expect(pi.workingMode).toBe(true);
+  });
+
+  it("disables Full access for sidecar Tier B", () => {
+    const codex = codingComposerCapabilities("codex");
+    expect(codex.permissionFullDisabledReason).toMatch(/Mesh permission/);
+    expect(codex.permissionAskDisabledReason).toBeUndefined();
+    expect(codex.agentModes.some((m) => m.id === "agent")).toBe(true);
+    expect(codex.canSetMode).toBe(false);
+  });
+
+  it("disables Ask for catalog ACP until a Mesh dock ships", () => {
+    const gemini = codingComposerCapabilities("gemini");
+    expect(gemini.permissionAskDisabledReason).toMatch(/confirmation/i);
+    expect(gemini.permissionFullDisabledReason).toBeUndefined();
   });
 
   it("gates fast/plan/thinking for Codex and Claude Code", () => {
@@ -33,16 +63,20 @@ describe("codingComposerCapabilities", () => {
 });
 
 describe("shapeCodingComposerPrompt", () => {
-  const caps = codingComposerCapabilities("opencode");
-
-  it("prefixes Ask mode", () => {
+  it("uses agent mode Review prefix for EH", () => {
+    const caps = codingComposerCapabilities("envoy-harness");
     const out = shapeCodingComposerPrompt(
-      "why?",
-      { mode: "ask", fast: false, thinking: "off" },
+      "look over auth",
+      {
+        mode: "code",
+        fast: false,
+        thinking: "off",
+        agentModeId: "review",
+      },
       caps,
     );
-    expect(out).toContain("[Mode: Ask]");
-    expect(out).toContain("why?");
+    expect(out).toContain("[Mode: Review]");
+    expect(workingModeFromAgentMode(caps, "plan")).toBe("plan");
   });
 
   it("uses /plan when planSlash is available", () => {
@@ -54,7 +88,8 @@ describe("shapeCodingComposerPrompt", () => {
     expect(out).toBe("/plan refactor auth");
   });
 
-  it("leaves Code mode body unchanged", () => {
+  it("leaves Code mode body unchanged for catalog without agentModes", () => {
+    const caps = codingComposerCapabilities("gemini");
     expect(
       shapeCodingComposerPrompt(
         "fix it",
@@ -77,11 +112,18 @@ describe("codingComposerPrefs storage", () => {
     localStorage.clear();
   });
 
-  it("persists mode and fast per session key", () => {
+  it("persists mode, permissions, and agentModeId", () => {
     const key = codingComposerSessionKey({ kind: "ext", id: "ext:1" });
-    saveCodingComposerPrefs(key, { mode: "plan", fast: true });
+    saveCodingComposerPrefs(key, {
+      mode: "plan",
+      fast: true,
+      permissionPolicy: "always-confirm",
+      agentModeId: "agent",
+    });
     const loaded = loadCodingComposerPrefs(key);
     expect(loaded.mode).toBe("plan");
     expect(loaded.fast).toBe(true);
+    expect(loaded.permissionPolicy).toBe("always-confirm");
+    expect(loaded.agentModeId).toBe("agent");
   });
 });

@@ -1,0 +1,17 @@
+{
+  "//": "Why this project exists: `apps/node/tsconfig.json` includes only `src/**/*.ts`, so `tsc -b` never sees the test tree and a type error in a test cannot be a compile error. This project checks the node tests. It is deliberately NOT `composite` and NOT referenced from the root `tsconfig.json`: the tests import `../src/**`, which drags the whole product graph into the program, and build mode would then demand that every one of those files be listed in this project (TS6307) and would recompile them. A plain `tsc -p` program checks the tests plus whatever they import, without claiming to own the product build. It is invoked explicitly by `npm run typecheck` (`tsc -b && npm run typecheck:tests`) and by the CI node-refactor job — the same shape EnvoyCoder uses for its `tsconfig.unchecked.json`.",
+  "//paths": "`paths: {}` overrides the base config's `src` mappings so workspace packages resolve through their built declarations (the surface a consumer sees) instead of their sources. With the `src` mappings a test that reaches a package *subpath* (`@envoymesh/api/approval-queue`) resolves to `dist/` while the package root resolves to `src/`, and TypeScript then reports phantom `private property` clashes; it also re-checks `packages/vault/src` without `packages/vault`'s ambient `declare module` files. `tsc -b` builds the declarations first (see the `typecheck` script), so this is current.",
+  "//scope": "The include list is a seed, not the whole `apps/node/test` tree: widening it to `apps/node/test/**/*.ts` reports 1,167 pre-existing type errors across 269 files (measured with this project's settings, after the four fixes that created it), which is a separate migration. Add directories/globs here as they are cleaned.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {},
+    "lib": ["ES2022"]
+  },
+  "include": [
+    "apps/node/test/integration/**/*.ts",
+    "apps/node/test/profile-capabilities-discovery.test.ts",
+    "apps/node/test/geo-discovery-e2e.test.ts",
+    "apps/node/test/ws-host-wiring.test.ts"
+  ]
+}

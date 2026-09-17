@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react"
 import type { PiStatus } from "@envoymesh/api"
 import { renderWithI18n } from "../helpers/render-with-i18n.js"
+import { partialNodeService } from "../helpers/node-service-mock.js"
 import { SettingsAITab } from "../../src/components/views/SettingsAITab.js"
 
 // --- Mocks ---
@@ -41,11 +42,15 @@ let nodeConfig: {
 } = {}
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     updateNodeConfig,
     getOpenClawStatus,
     getPiStatus,
     restartPi,
+    // SettingsAITab reads the Envoy Harness status on mount; the shared
+    // `CodingAgentsSettings` block that now also lives under this tab probes it
+    // through the same hook. `null` is the "not configured" shape.
+    getEnvoyHarnessStatus: vi.fn().mockResolvedValue(null),
     getRagIndexStatus: vi.fn().mockResolvedValue(null),
     reindexRagKnowledge: vi.fn().mockResolvedValue(null),
     testRagEmbedding: vi.fn().mockResolvedValue({ ok: true, dimensions: 8, latencyMs: 1, modelKey: "mock", mode: "mock", modelName: "mock", endpoint: "mock://local", hasApiKey: false }),
@@ -159,7 +164,10 @@ describe("SettingsAITab — Pi block (Phase 49F)", () => {
 
   it("toggling the enable checkbox persists piEnabled + calls restartPi", async () => {
     renderWithI18n(<SettingsAITab />)
-    await screen.findByText("Ready")
+    // `findByText("Ready")` is no longer unique: the shared Coding-agents block
+    // now renders its own Pi verdict ("Ready") beside the Pi settings card.
+    // Wait on the Pi settings block itself — the card that holds the checkbox.
+    await findPiBlock()
 
     const checkbox = screen.getByRole("checkbox", { name: /enable pi/i })
     // Starts checked (nodeConfig.piEnabled = true).
@@ -185,6 +193,7 @@ describe("SettingsAITab — Pi block (Phase 49F)", () => {
       (s) => (s as HTMLSelectElement).value === "always-confirm",
     ) as HTMLSelectElement | undefined
     expect(select).toBeDefined()
+    if (!select) throw new Error("auto-run policy select not found")
     expect(select.value).toBe("always-confirm")
 
     // Switch to off (always preview / confirm).

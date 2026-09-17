@@ -1,6 +1,38 @@
 export const frAiSettingsMessages = {
   title: "Paramètres de l'assistant IA",
   sectionDesc: "Configurez la façon dont l'IA répond en votre nom.",
+  codingAgents: {
+    heading: "Outils de code",
+    intro:
+      "Envoy et Pi sont intégrés à EnvoyMesh. Les autres outils sont des CLI sur cet ordinateur — Coding les utilise simplement. Les outils en vedette sont listés ici ; le catalogue complet est plus bas.",
+    groupBuiltIn: "Dans EnvoyMesh · {ready}/{total} prêts",
+    groupExternal: "Utilisés par Coding (en vedette) · {ready}/{total} prêts",
+    groupCatalogue: "Catalogue · {total}",
+    catalogueReady: "{ready} prêts",
+    catalogueHint:
+      "Toutes les autres CLI que Coding peut piloter. Même vérification Prêt / Pas prêt — ne fait pas partie d'EnvoyMesh.",
+    browseCatalogue: "Parcourir le catalogue ({total})",
+    hideCatalogue: "Masquer le catalogue",
+    externalHint:
+      "Affiché dans le sélecteur de nouvelle tâche. Installez-vous et connectez-vous vous-même — EnvoyMesh ne les exécute que lorsque vous en choisissez un dans Coding.",
+    onMachine: "Sur cet ordinateur · {ready}/{total} prêts",
+    recheck: "Vérifier à nouveau",
+    recheckHint:
+      "Vérifie à nouveau si chaque outil est dans le PATH. Ne démarre pas d'agents et n'installe pas de paquets.",
+    checking: "Vérification…",
+    ready: "Prêt",
+    notReady: "Pas prêt",
+    notReadyAria: "Pas prêt — voir comment résoudre ce problème pour {agent}",
+    resolveBody:
+      "{name} n'est pas encore prêt sur cet ordinateur personnel. Installez-le ou réparez-le, puis appuyez sur Vérifier à nouveau. EnvoyMesh ne l'utilise que depuis Coding — il ne configure pas le produit lui-même.",
+    installCmd: "Commande d'installation (à exécuter sur cet ordinateur)",
+    firstRunCmd: "Commande de premier lancement (à exécuter sur cet ordinateur)",
+    copyCmd: "Copier la commande",
+    openDocs: "Ouvrir la documentation",
+    builtInConfig: "Paramètres Envoy et Pi",
+    builtInConfigHint:
+      "Configurez les moteurs de code intégrés. Les CLI externes ci-dessus s'installent et se connectent en dehors d'EnvoyMesh.",
+  },
   model: {
     heading: "Fournisseur de modèle",
     sectionDescCloud: "Configurez une API cloud pour l'assistance chat et les réponses de connaissances sur cet appareil.",
@@ -428,6 +460,7 @@ export const frAiSettingsMessages = {
       unknownBody:
         "Impossible de détecter si {command} est installé. Exécutez la commande d'installation pour en être sûr, puis cliquez sur Réessayer.",
       commandLabel: "Installer",
+      firstRunLabel: "Commande de premier lancement",
       verifyLabel: "Vérifier",
       docsLabel: "Ouvrir la doc d'installation",
       copyCommand: "Copier",

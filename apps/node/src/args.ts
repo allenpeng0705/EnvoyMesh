@@ -467,9 +467,10 @@ function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: Boo
   if (args.discoveryProfile === "contacts-only" || args.discoveryProfile === "relay-only") {
     args.bootstrapPresets = normalizeBootstrapPresetsForContactsOnly(args.bootstrapPresets);
   }
-  for (const preset of args.bootstrapPresets) {
-    args.bootstrapPeers = dedupePeers([...args.bootstrapPeers, ...bootstrapPeersForPreset(preset, customPresetRegistry)]);
-  }
+  args.bootstrapPeers = dedupePeers([
+    ...args.bootstrapPeers,
+    ...resolveBootstrapPresetPeers(args.bootstrapPresets, customPresetRegistry),
+  ]);
   if (args.discoveryProfile === "lan-fast") {
     return;
   }
@@ -719,4 +720,21 @@ function bootstrapPeersForPreset(preset: string, customPresetRegistry: Bootstrap
     return [DEFAULT_ENVOY_US_RELAY_BOOTSTRAP_ADDR];
   }
   throw new Error(`Unknown bootstrap preset: ${preset}`);
+}
+
+/**
+ * Expand bootstrap preset ids to concrete multiaddrs using the CLI's own
+ * preset table (the function `parseNodeArgs` applies at startup). Exported
+ * because `EnvoyMeshOptions` deliberately has no preset option — the node
+ * product resolves presets before constructing the mesh — so anything else
+ * that builds a mesh from node arguments (integration helpers, tooling) must
+ * go through this function to avoid silently bootstrapping nothing.
+ *
+ * Unknown presets throw here, exactly as they do from the CLI.
+ */
+export function resolveBootstrapPresetPeers(
+  presets: readonly string[],
+  customPresetRegistry: BootstrapPresetRegistry = new Map(),
+): string[] {
+  return dedupePeers(presets.flatMap((preset) => bootstrapPeersForPreset(preset, customPresetRegistry)));
 }

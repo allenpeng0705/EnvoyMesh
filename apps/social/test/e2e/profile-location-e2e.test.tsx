@@ -9,6 +9,7 @@ import type { BondRecord, HumanProfile } from "@envoymesh/api";
 import { NEARBY_GEOHASH_PRECISION } from "@envoymesh/api";
 import { ProfileView } from "../../src/components/views/ProfileView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const updateHumanProfile = vi.fn();
 const refreshHumanProfile = vi.fn().mockResolvedValue(undefined);
@@ -17,9 +18,8 @@ let humanProfile: HumanProfile | null = null;
 const bonds: BondRecord[] = [];
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     updateHumanProfile,
-    refreshHumanProfile,
     syncProfileToBonds: vi.fn(),
     getOwnerDidPresentation: vi.fn().mockResolvedValue(null),
     getNodeConfig: vi.fn().mockResolvedValue({}),
@@ -69,6 +69,7 @@ beforeEach(() => {
     ownerId: "envoy:owner:me",
     displayName: "Me",
     username: "me01",
+    profileVisibility: "private",
     updatedAt: "2026-05-28T12:00:00.000Z",
     signature: "sig",
     galleryPhotos: [],

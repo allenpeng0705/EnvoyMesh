@@ -7,6 +7,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { DEFAULT_DOCUMENT_AUTONOMY_POLICY } from "@envoymesh/api";
 import { SettingsAITab } from "../../src/components/views/SettingsAITab.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const updateNodeConfig = vi.fn();
 const refreshNodeConfig = vi.fn();
@@ -39,12 +40,16 @@ let nodeConfig: {
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     updateNodeConfig,
     getRagIndexStatus,
     reindexRagKnowledge,
     getAgentIdentity,
     updateAgentIdentity,
+    // SettingsAITab reads Envoy Harness status on mount; `null` is its
+    // "not configured" shape. Without it the mount effect logs a caught
+    // `getEnvoyHarnessStatus is not a function`.
+    getEnvoyHarnessStatus: vi.fn().mockResolvedValue(null),
     getEnvoyLocalStatus: vi.fn().mockResolvedValue({
       enabled: false,
       running: false,

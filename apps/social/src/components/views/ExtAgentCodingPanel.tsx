@@ -110,8 +110,17 @@ export function CodingHarnessPanel({
   const attachments = useEhAttachments(cwd, (message) => setLocalError(message));
 
   useEffect(() => {
-    setPrefs(loadCodingComposerPrefs(prefsKey));
-  }, [prefsKey]);
+    let next = loadCodingComposerPrefs(prefsKey);
+    if (
+      caps.permissionAskDisabledReason &&
+      next.permissionPolicy === "always-confirm"
+    ) {
+      next = saveCodingComposerPrefs(prefsKey, {
+        permissionPolicy: "safe-only",
+      });
+    }
+    setPrefs(next);
+  }, [prefsKey, caps.permissionAskDisabledReason]);
 
   useEffect(() => {
     const session = getCodingExtSession(sessionId);
@@ -147,18 +156,29 @@ export function CodingHarnessPanel({
     (patch: Partial<CodingComposerPrefs>) => {
       const next = saveCodingComposerPrefs(prefsKey, patch);
       setPrefs(next);
-      if (patch.model !== undefined) {
-        updateCodingExtSessionRuntime(sessionId, { model: patch.model });
+      if (patch.model !== undefined || patch.permissionPolicy !== undefined) {
+        updateCodingExtSessionRuntime(sessionId, {
+          ...(patch.model !== undefined ? { model: patch.model } : {}),
+        });
         const session = getCodingExtSession(sessionId);
         void nodeService.setCodingHarnessRuntime?.({
           codingSessionId: sessionId,
           cwd: session?.cwd || cwd,
           runtime: {
-            ...(patch.model.trim() ? { model: patch.model.trim() } : {}),
+            ...(patch.model?.trim()
+              ? { model: patch.model.trim() }
+              : session?.model
+                ? { model: session.model }
+                : next.model?.trim()
+                  ? { model: next.model.trim() }
+                  : {}),
             ...(session?.providerKind
               ? { providerKind: session.providerKind }
               : {}),
             ...(session?.endpoint ? { endpoint: session.endpoint } : {}),
+            ...(next.permissionPolicy
+              ? { permissionPolicy: next.permissionPolicy }
+              : {}),
           },
         });
       }
@@ -305,6 +325,9 @@ export function CodingHarnessPanel({
             ? { providerKind: session.providerKind }
             : {}),
           ...(session?.endpoint ? { endpoint: session.endpoint } : {}),
+          ...(prefs.permissionPolicy
+            ? { permissionPolicy: prefs.permissionPolicy }
+            : {}),
         },
       });
       setMessages((prev) => [

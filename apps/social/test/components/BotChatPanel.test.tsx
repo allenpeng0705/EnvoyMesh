@@ -35,6 +35,7 @@ import {
   sameOutgoingGroup,
 } from "../../src/components/views/BotChatPanel.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import type { ChatMessage } from "@envoymesh/api";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -58,7 +59,7 @@ describe("BotChatPanel — sameOutgoingGroup (Phase 56+ regression)", () => {
   // (one per side change). The previous bug would produce ONE big
   // stack (single-arg callback grouped everything because the prev
   // message was outgoing for all three).
-  const userMsg = {
+  const userMsg: ChatMessage = {
     messageId: "u-1",
     sender: {
       nodeId: "self",
@@ -71,7 +72,7 @@ describe("BotChatPanel — sameOutgoingGroup (Phase 56+ regression)", () => {
     metadata: { timestamp: new Date().toISOString() },
     signature: "",
   };
-  const botReply = {
+  const botReply: ChatMessage = {
     messageId: "a-1",
     sender: {
       nodeId: "bot:luna",

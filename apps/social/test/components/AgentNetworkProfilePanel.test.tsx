@@ -12,12 +12,13 @@ import {
 } from "@testing-library/react";
 import { AgentNetworkProfilePanel } from "../../src/components/views/settings/AgentNetworkProfilePanel.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const getNodeConfig = vi.fn();
 const updateNodeConfig = vi.fn();
 const showToast = vi.fn();
 
-const nodeService = { getNodeConfig, updateNodeConfig };
+const nodeService = partialNodeService({ getNodeConfig, updateNodeConfig });
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => nodeService,

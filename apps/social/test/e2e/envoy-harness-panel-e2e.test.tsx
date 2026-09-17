@@ -6,9 +6,10 @@
 import React from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, screen, waitFor, act } from "@testing-library/react"
-import type { EnvoyHarnessStatus } from "@envoymesh/api"
+import type { EnvoyHarnessStatus, NodeServiceEvents } from "@envoymesh/api"
 import { EnvoyHarnessPanel } from "../../src/components/views/EnvoyHarnessPanel.js"
 import { renderWithI18n } from "../helpers/render-with-i18n.js"
+import { partialNodeService } from "../helpers/node-service-mock.js"
 
 const getEnvoyHarnessStatus = vi.fn()
 const startEnvoyHarnessTurn = vi.fn()
@@ -23,10 +24,16 @@ const listEnvoyHarnessPeers = vi.fn()
 const setEnvoyHarnessProjectPath = vi.fn()
 const invokeEnvoyHarnessEhui = vi.fn()
 
-const eventHandlers = new Map<string, Set<(payload: unknown) => void>>()
+type EventHandlerMap = {
+  [K in keyof NodeServiceEvents]?: Set<(data: NodeServiceEvents[K]) => void>
+}
+let eventHandlers: EventHandlerMap = {}
 
-function emitEvent(event: string, payload: unknown) {
-  for (const handler of eventHandlers.get(event) ?? []) {
+function emitEvent<K extends keyof NodeServiceEvents>(
+  event: K,
+  payload: NodeServiceEvents[K],
+) {
+  for (const handler of eventHandlers[event] ?? []) {
     handler(payload)
   }
 }
@@ -66,7 +73,7 @@ vi.mock("../../src/components/HomeFolderPicker.js", () => ({
 }))
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     getEnvoyHarnessStatus,
     startEnvoyHarnessTurn,
     getEnvoyHarnessTurnStatus,
@@ -80,10 +87,22 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     setEnvoyHarnessProjectPath,
     invokeEnvoyHarnessEhui,
     isConnected: true,
-    on: (event: string, handler: (payload: unknown) => void) => {
-      if (!eventHandlers.has(event)) eventHandlers.set(event, new Set())
-      eventHandlers.get(event)!.add(handler)
-      return () => eventHandlers.get(event)?.delete(handler)
+    on: <K extends keyof NodeServiceEvents>(
+      event: K,
+      handler: (data: NodeServiceEvents[K]) => void,
+    ) => {
+      const existing = eventHandlers[event]
+      if (existing) {
+        existing.add(handler)
+        return () => {
+          existing.delete(handler)
+        }
+      }
+      const set = new Set<(data: NodeServiceEvents[K]) => void>([handler])
+      eventHandlers = { ...eventHandlers, [event]: set }
+      return () => {
+        set.delete(handler)
+      }
     },
   }),
 }))
@@ -98,7 +117,7 @@ function status(overrides: Partial<EnvoyHarnessStatus> = {}): EnvoyHarnessStatus
 }
 
 beforeEach(() => {
-  eventHandlers.clear()
+  eventHandlers = {}
   getEnvoyHarnessStatus.mockReset()
   startEnvoyHarnessTurn.mockReset()
   getEnvoyHarnessTurnStatus.mockReset()

@@ -1,0 +1,23 @@
+# Environment configuration for holepunch network integration tests
+# Copy this to .env in the same directory
+
+# NAT Gateway Types: cone, symmetric, port-restricted
+NAT_A_TYPE=cone
+NAT_B_TYPE=cone
+
+# Enable debugging features
+DEBUG_PACKETS=false
+VERBOSE_LOGGING=false
+
+# Test timeouts (in seconds)
+PEER_STARTUP_TIMEOUT=30
+HOLEPUNCH_TIMEOUT=60
+SCENARIO_TIMEOUT=120
+
+# Network configuration
+STUN_SERVERS=10.10.2.10:3478
+ENABLE_IPV6=false
+
+# Container resource limits
+PEER_MEMORY_LIMIT=256m
+NAT_MEMORY_LIMIT=128m

@@ -46,19 +46,15 @@ describe("bridge-chat-message", () => {
         AGENT_PEER,
       ),
     ).toBe(true);
-    expect(
-      isBridgeAgentChatMessage(
-        {
-          messageId: "x",
-          sender: { nodeId: "12D3KooWStranger", ownerId: "envoy:owner:bob", displayName: "Bob" },
-          recipient: { nodeId: "n", ownerId: "envoy:owner:alice" },
-          content: { text: "hi" },
-          metadata: { timestamp: new Date().toISOString() },
-          signature: "sig",
-        },
-        AGENT_PEER,
-      ),
-    ).toBe(false);
+    const stranger: ChatMessage = {
+      messageId: "x",
+      sender: { nodeId: "12D3KooWStranger", ownerId: "envoy:owner:bob", displayName: "Bob" },
+      recipient: { nodeId: "n", ownerId: "envoy:owner:alice" },
+      content: { text: "hi" },
+      metadata: { timestamp: new Date().toISOString() },
+      signature: "sig",
+    };
+    expect(isBridgeAgentChatMessage(stranger, AGENT_PEER)).toBe(false);
   });
 
   it("extracts text from content, payload, or legacy text field", () => {

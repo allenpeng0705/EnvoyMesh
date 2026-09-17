@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { LibraryReadFn } from "../src/lib/library-read-fetch.js";
 import {
   clearLibraryReadBlobCache,
   fetchLibraryContentCached,
@@ -16,13 +17,16 @@ afterEach(() => {
 
 describe("library-read-blob-cache", () => {
   it("caches image bodies and serves fresh hits without a second network call", async () => {
-    const libraryRead = vi.fn(async () => ({
+    const libraryRead = vi.fn<LibraryReadFn>(async () => ({
+      peerOwnerId: "envoy:owner:allen",
+      libp2pPeerId: "12D3",
       status: "ok" as const,
       body: btoa("fake-png"),
       contentType: "image/png",
       contentHash: "abc123hashvalue",
       etag: "abc123hashvalue".slice(0, 16),
       byteLength: 8,
+      latencyMs: 0,
     }));
 
     const first = await fetchLibraryContentCached(libraryRead, {
@@ -48,18 +52,24 @@ describe("library-read-blob-cache", () => {
 
   it("revalidates with If-None-Match after TTL when forced", async () => {
     const libraryRead = vi
-      .fn()
+      .fn<LibraryReadFn>()
       .mockResolvedValueOnce({
+        peerOwnerId: "envoy:owner:allen",
+        libp2pPeerId: "12D3",
         status: "ok" as const,
         body: btoa("v1"),
         contentType: "image/jpeg",
         contentHash: "hash-v1-xxxxxxxxxx",
         etag: "hash-v1-xxxxxxxx",
         byteLength: 2,
+        latencyMs: 0,
       })
       .mockResolvedValueOnce({
+        peerOwnerId: "envoy:owner:allen",
+        libp2pPeerId: "12D3",
         status: "not_modified" as const,
         etag: "hash-v1-xxxxxxxx",
+        latencyMs: 0,
       });
 
     await fetchLibraryContentCached(libraryRead, {
@@ -81,13 +91,16 @@ describe("library-read-blob-cache", () => {
   it("LRU eviction keeps detached blob URLs for still-visible tiles", async () => {
     const urls: string[] = [];
     for (let i = 0; i < 65; i++) {
-      const libraryRead = vi.fn(async () => ({
+      const libraryRead = vi.fn<LibraryReadFn>(async () => ({
+        peerOwnerId: "envoy:owner:allen",
+        libp2pPeerId: "12D3",
         status: "ok" as const,
         body: btoa(`img-${i}`),
         contentType: "image/png",
         contentHash: `hash-${i}-xxxxxxxxxxxxxxxx`,
         etag: `hash-${i}-xxxxxxxx`,
         byteLength: 8,
+        latencyMs: 0,
       }));
       const result = await fetchLibraryContentCached(libraryRead, {
         targetOwnerId: "envoy:owner:allen",

@@ -7,6 +7,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { ChainsView } from "../../src/components/views/ChainsView.js";
 import { ToastProvider } from "../../src/hooks/useToast.js";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
+import type { ChainGetDefaultsResult, NodeConfig, OpenClawStatus } from "@envoymesh/api";
 
 export const chainListActive = vi.fn();
 export const chainListObserved = vi.fn();
@@ -17,11 +19,18 @@ export const chainListRecipes = vi.fn();
 export const chainDeleteRecipe = vi.fn();
 export const chainSaveRecipe = vi.fn();
 
-const chainGetDefaults = vi.fn(async () => ({
-  defaults: { awardMode: "direct", showCostUi: false, iterationMaxRounds: 1, assignmentMode: "skill" },
-}));
+const chainGetDefaults = vi.fn(
+  async (): Promise<ChainGetDefaultsResult> => ({
+    defaults: {
+      awardMode: "direct",
+      showCostUi: false,
+      iterationMaxRounds: 1,
+      assignmentMode: "skill",
+    },
+  }),
+);
 
-const mockNodeService = {
+const mockNodeService = partialNodeService({
   chainListActive,
   chainListObserved,
   chainListReports,
@@ -32,14 +41,35 @@ const mockNodeService = {
   chainSaveRecipe,
   chainGetDefaults,
   chainProbeReachability: vi.fn(async () => ({ rows: [] })),
-  refreshAgentNetworkWorkers: vi.fn(async () => ({})),
+  refreshAgentNetworkWorkers: vi.fn(async () => ({ requested: 0, failed: 0 })),
   getLocalAgentNetworkWorkerCard: vi.fn(async () => undefined),
-  getOpenClawStatus: vi.fn(async () => ({ running: false })),
-  getNodeConfig: vi.fn(async () => ({})),
-  updateNodeConfig: vi.fn(async () => ({})),
+  getOpenClawStatus: vi.fn(
+    async (): Promise<OpenClawStatus> => ({ enabled: false, running: false, url: "" }),
+  ),
+  getNodeConfig: vi.fn(
+    async (): Promise<NodeConfig> => ({
+      profileDir: "",
+      discoveryProfile: "lan-fast",
+      relayEnabled: false,
+      relayServerEnabled: false,
+      configuredRelays: [],
+      advertiseAddrs: [],
+      bootstrapPeers: [],
+      bootstrapPresets: [],
+      modelProviders: { mode: "mock" },
+      chatAssistEnabled: false,
+      anonymousDiscoveryMode: "off",
+      anonymousSensitivityCeiling: "public",
+      trustAnchorPublicKeys: {},
+      autonomousKillSwitch: false,
+      autonomousPolicies: [],
+      contactAiPreferences: [],
+    }),
+  ),
+  updateNodeConfig: vi.fn(async () => undefined),
   isConnected: true,
   on: vi.fn(() => () => {}),
-};
+});
 
 vi.mock("../../src/components/ChainStartDialog.js", () => ({
   ChainStartDialog: (props: {

@@ -69,7 +69,10 @@ describe("ExtAgentInstallGuideCard (Phase 55D.1)", () => {
   })
 
   it("falls back to notInstalledBody when startHint is absent", () => {
-    const { startHint: _drop, ...guide } = SAMPLE_GUIDE
+    // `startHint` is required by `ExtAgentInstallGuide`; an empty hint is the
+    // falsy value the card treats exactly like an absent one
+    // (`installGuide.startHint?.trim() ?? ""`), so the fallback branch still runs.
+    const guide: ExtAgentInstallGuide = { ...SAMPLE_GUIDE, startHint: "" }
     render(
       <ExtAgentInstallGuideCard
         agentId="codex"
@@ -83,7 +86,10 @@ describe("ExtAgentInstallGuideCard (Phase 55D.1)", () => {
   })
 
   it("falls back to unknownBody when startHint is absent", () => {
-    const { startHint: _drop, ...guide } = SAMPLE_GUIDE
+    // `startHint` is required by `ExtAgentInstallGuide`; an empty hint is the
+    // falsy value the card treats exactly like an absent one
+    // (`installGuide.startHint?.trim() ?? ""`), so the fallback branch still runs.
+    const guide: ExtAgentInstallGuide = { ...SAMPLE_GUIDE, startHint: "" }
     render(
       <ExtAgentInstallGuideCard
         agentId="codex"

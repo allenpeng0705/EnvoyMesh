@@ -8,6 +8,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import type { HumanProfile, MorningReportEntry, PeerSearchResult } from "@envoymesh/api";
 import { SearchView } from "../../src/components/views/SearchView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const searchPeers = vi.fn();
 const runCapabilityDiscovery = vi.fn().mockResolvedValue(undefined);
@@ -22,7 +23,7 @@ const stableNodeConfig = {
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     searchPeers,
     runCapabilityDiscovery,
     getMorningReport,
@@ -68,6 +69,7 @@ beforeEach(() => {
     ownerId: "envoy:owner:me",
     displayName: "Me",
     username: "me01",
+    profileVisibility: "public",
     updatedAt: "2026-05-28T12:00:00.000Z",
     signature: "sig",
     discoveryLocation: { countryCode: "US", city: "Boston" },
@@ -142,6 +144,7 @@ describe("E2E Discover geo search", () => {
       ownerId: "envoy:owner:alice",
       displayName: "Boston Alice",
       username: "bostonalice",
+      profileVisibility: "public",
       interests: [],
       bio: "",
       trustLevel: "unknown",

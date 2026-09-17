@@ -117,6 +117,7 @@ describe("isOwnerOnlyRpcMethod", () => {
       "setEnvoyHarnessAutoRunPolicy",
       "listEnvoyHarnessPeers",
       "setEnvoyHarnessProjectPath",
+      "setEnvoyHarnessCollaborationMode",
       "invokeEnvoyHarnessEhui",
       "ensureEnvoyTerminalSession",
       "ensurePiTerminalSession",

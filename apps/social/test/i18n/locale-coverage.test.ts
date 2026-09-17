@@ -315,7 +315,7 @@ describe("Social i18n coverage for Knowledge feature keys", () => {
         if (locText === null) {
           throw new Error(
             `Locale ${locale} is missing the const/parent for ${path}. ` +
-            `Either add the const to ${locale}-${file === "chats" ? (locale === "en" ? "chat" : "chats") : file}.ts ` +
+            `Either add the const to ${locale}-${file}.ts ` +
             `or update this test to skip the key.`
           );
         }

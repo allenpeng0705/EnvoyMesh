@@ -13,6 +13,7 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { PeerSearchResult } from "@envoymesh/api";
+import type { DialabilityInput } from "../../src/lib/discover-dialability.js";
 import { DiscoverPeerCard } from "../../src/components/discover/DiscoverPeerCard.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
@@ -22,7 +23,10 @@ vi.mock("../../src/components/PeerProfileAvatar.js", () => ({
   PeerProfileAvatar: () => null,
 }));
 
-function peer(partial: Partial<PeerSearchResult> = {}): PeerSearchResult {
+// The desktop `PeerSearchResult` carries no addresses, but the dialability rule
+// (`isPeerReachableNow`) accepts them structurally for phone-source hits — see
+// `src/lib/discover-dialability.ts`. The fixture can therefore carry `multiaddrs`.
+function peer(partial: Partial<PeerSearchResult & DialabilityInput> = {}): PeerSearchResult {
   return {
     nodeId: "12D3KooWPeerA",
     ownerId: "envoy:owner:peer-a",

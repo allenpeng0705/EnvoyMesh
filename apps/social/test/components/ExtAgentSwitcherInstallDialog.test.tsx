@@ -20,6 +20,14 @@ const GUIDE: ExtAgentInstallGuide = {
   commonIssues: ["Set OPENAI_API_KEY before running codex."],
 }
 
+/**
+ * The same guide with no `startHint`. `ExtAgentInstallGuideCard` prefers the
+ * probe's actionable `startHint` over its generic body copy, so a guide that
+ * has one can never exercise the `unknown`/`notInstalled` fallbacks — those
+ * need a hint-less guide. See the card's `body = hint || t(...)` branch.
+ */
+const GUIDE_NO_HINT: ExtAgentInstallGuide = { ...GUIDE, startHint: "" }
+
 describe("ExtAgentSwitcherInstallDialog (Phase 55D.1)", () => {
   afterEach(() => {
     cleanup()
@@ -147,7 +155,7 @@ describe("ExtAgentSwitcherInstallDialog (Phase 55D.1)", () => {
       <ExtAgentSwitcherInstallDialog
         agentId="codex"
         agentName="Codex"
-        installGuide={GUIDE}
+        installGuide={GUIDE_NO_HINT}
         installState="unknown"
         onRetry={vi.fn()}
         onClose={vi.fn()}

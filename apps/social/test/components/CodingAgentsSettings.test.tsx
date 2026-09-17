@@ -8,6 +8,7 @@ import {
   cleanup,
 } from "@testing-library/react";
 import { CodingAgentsSettings } from "../../src/components/views/settings/CodingAgentsSettings.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const probeCodingHarness = vi.fn();
 
@@ -16,7 +17,7 @@ vi.mock("../../src/lib/coding-harness-probe.js", () => ({
 }));
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     isConnected: true,
     getEnvoyHarnessStatus: vi.fn(),
     getPiStatus: vi.fn(),

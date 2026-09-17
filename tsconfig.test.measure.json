@@ -1,0 +1,5 @@
+{
+  "//": "TEMPORARY measurement config. Extends tsconfig.test.json unchanged (same compilerOptions, same paths:{}), only widening include to the whole node test tree. Delete after measuring.",
+  "extends": "./tsconfig.test.json",
+  "include": ["apps/node/test/**/*.ts"]
+}

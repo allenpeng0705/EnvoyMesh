@@ -5468,6 +5468,8 @@ class NodeServiceImpl implements NodeService {
       costCapUsd?: number;
       attachments?: import("@envoymesh/api").AgentAttachmentRef[];
       chatId?: string;
+      /** Native Mode — applied via session/set_mode before the prompt. */
+      collaborationMode?: "default" | "plan" | "review";
     },
   ): Promise<{ turnId: string }> {
     await this._refreshEnvoyHarnessHostConfig();
@@ -5533,7 +5535,14 @@ class NodeServiceImpl implements NodeService {
       ...(chat ? { chatId: chat.id } : {}),
     });
 
-    const resultPromise = this._executeEhTurn(turnId, payload.text, askOpts, chat?.id, cwd);
+    const resultPromise = this._executeEhTurn(
+      turnId,
+      payload.text,
+      askOpts,
+      chat?.id,
+      cwd,
+      opts?.collaborationMode,
+    );
     this._ehChatRuntime.registerTurn({
       turnId,
       chatId: chat?.id,
@@ -5592,6 +5601,7 @@ class NodeServiceImpl implements NodeService {
     _askOpts: { providerHint?: string; costCeilingUsd?: number; signal?: AbortSignal },
     chatId?: string,
     cwdOverride?: string,
+    collaborationMode?: "default" | "plan" | "review",
   ): Promise<import("@envoymesh/api").EhTurnCompleteEvent> {
     const turnRecord = () => this._ehChatRuntime.getTurn(turnId);
     try {
@@ -5613,6 +5623,13 @@ class NodeServiceImpl implements NodeService {
         }
         const turn = turnRecord();
         if (turn && host.sessionId) turn.sessionId = host.sessionId;
+      }
+      if (collaborationMode) {
+        try {
+          await host.setCollaborationMode(collaborationMode);
+        } catch {
+          // Older harness builds may lack set_mode — prompt shaping still applies.
+        }
       }
       let streamingText = "";
       const text = await host.prompt(prompt, {
@@ -6621,6 +6638,10 @@ class NodeServiceImpl implements NodeService {
         },
       });
     };
+    const permissionPolicy =
+      parsed.runtime?.permissionPolicy ??
+      stored?.permissionPolicy ??
+      "safe-only";
     const canStream = true;
     const text = await createCodingHarnessBackend(parsed.harness).ask(
       parsed.prompt,
@@ -6629,6 +6650,7 @@ class NodeServiceImpl implements NodeService {
       cwd,
       ...(model ? { model } : {}),
       ...(env ? { env } : {}),
+      permissionPolicy,
       ...(canStream
         ? {
             onDelta: (chunk: string) => {
@@ -6666,6 +6688,9 @@ class NodeServiceImpl implements NodeService {
         : {}),
       ...(typeof parsed.runtime?.apiKey === "string"
         ? { apiKey: parsed.runtime.apiKey }
+        : {}),
+      ...(parsed.runtime?.permissionPolicy
+        ? { permissionPolicy: parsed.runtime.permissionPolicy }
         : {}),
     });
     return {
@@ -6880,6 +6905,44 @@ class NodeServiceImpl implements NodeService {
     // `shouldAskTool` closure does — so we never reset it here.
     this._ehChatRuntime.closeAll();
     return this.getEnvoyHarnessStatus();
+  }
+
+  /**
+   * Native EH Mode — Default / Plan / Review via session/set_mode.
+   * Best-effort when a host is already warm; otherwise applied on next turn
+   * when the UI also passes collaborationMode to startEnvoyHarnessTurn.
+   */
+  async setEnvoyHarnessCollaborationMode(
+    mode: string,
+    chatId?: string,
+  ): Promise<{ ok: true; mode: string }> {
+    const normalized = mode.trim().toLowerCase();
+    if (
+      normalized !== "default" &&
+      normalized !== "plan" &&
+      normalized !== "review"
+    ) {
+      throw new Error(
+        `invalid envoy-harness mode: ${mode} (use default | plan | review)`,
+      );
+    }
+    const kind = normalized as "default" | "plan" | "review";
+    try {
+      if (chatId?.trim()) {
+        const chat = await this._resolveEhChat(chatId);
+        if (chat?.cwd) {
+          const ensured = await this._ensureEhChatHost(chat.id, chat.cwd);
+          await ensured.host.setCollaborationMode(kind);
+          return { ok: true, mode: kind };
+        }
+      }
+      if (this._envoyHarnessPersistentAcpHost?.sessionId) {
+        await this._envoyHarnessPersistentAcpHost.setCollaborationMode(kind);
+      }
+    } catch {
+      // Host may not be warm yet — mode is applied on the next turn.
+    }
+    return { ok: true, mode: kind };
   }
 
   /** The effective Envoy permission policy, for host staleness checks. */

@@ -19,6 +19,7 @@ export 'models/stored_node.dart';
 
 export 'services/candidate_resolver.dart';
 export 'services/client_proxy_transport.dart';
+export 'services/dial_budget.dart';
 export 'services/exceptions.dart';
 export 'services/home_remote_client.dart';
 export 'services/pairing_uri.dart';

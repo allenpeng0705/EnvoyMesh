@@ -18,7 +18,7 @@ describe("NodeStateContext — state logic", () => {
 
     status = "running";
     expect(status).toBe("running");
-    expect(status !== "offline").toBe(true);
+    expect(status).not.toBe("offline");
   });
 
   it("isConnected is derived from nodeStatus and events", () => {

@@ -11,6 +11,7 @@ function status(partial: Partial<EnvoyLocalEmbedStatus>): EnvoyLocalEmbedStatus 
     endpoint: "http://127.0.0.1:18791/v1",
     runtimeInstalled: true,
     operationInProgress: false,
+    serverParams: {},
     ...partial,
   };
 }

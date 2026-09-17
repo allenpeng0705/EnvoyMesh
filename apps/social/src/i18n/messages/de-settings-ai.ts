@@ -1,6 +1,38 @@
 export const deAiSettingsMessages = {
   title: "KI-Assistent-Einstellungen",
   sectionDesc: "Konfigurieren Sie, wie die KI in Ihrem Namen antwortet.",
+  codingAgents: {
+    heading: "Coding-Werkzeuge",
+    intro:
+      "Envoy und Pi sind in EnvoyMesh integriert. Andere Werkzeuge sind CLIs auf diesem Computer — Coding nutzt sie nur. Empfohlene Werkzeuge stehen hier; der vollständige Katalog steht unten.",
+    groupBuiltIn: "In EnvoyMesh · {ready}/{total} bereit",
+    groupExternal: "Von Coding genutzt (empfohlen) · {ready}/{total} bereit",
+    groupCatalogue: "Katalog · {total}",
+    catalogueReady: "{ready} bereit",
+    catalogueHint:
+      "Jede weitere CLI, die Coding steuern kann. Gleiche Bereit-/Nicht-bereit-Prüfung — nicht Teil von EnvoyMesh.",
+    browseCatalogue: "Katalog durchsuchen ({total})",
+    hideCatalogue: "Katalog ausblenden",
+    externalHint:
+      "Wird in der Auswahl für neue Aufgaben angezeigt. Selbst installieren und anmelden — EnvoyMesh führt sie nur aus, wenn Sie eine in Coding auswählen.",
+    onMachine: "Auf diesem Computer · {ready}/{total} bereit",
+    recheck: "Erneut prüfen",
+    recheckHint:
+      "Erneut prüfen, ob jedes Werkzeug im PATH liegt. Startet keine Agenten und installiert keine Pakete.",
+    checking: "Wird geprüft…",
+    ready: "Bereit",
+    notReady: "Nicht bereit",
+    notReadyAria: "Nicht bereit — ansehen, wie das für {agent} behoben wird",
+    resolveBody:
+      "{name} ist auf diesem Heimcomputer noch nicht bereit. Installieren oder reparieren Sie es dort und tippen Sie dann auf „Erneut prüfen“. EnvoyMesh nutzt es nur aus Coding — es konfiguriert das Produkt selbst nicht.",
+    installCmd: "Installationsbefehl (auf diesem Computer ausführen)",
+    firstRunCmd: "Erststart-Befehl (auf diesem Computer ausführen)",
+    copyCmd: "Befehl kopieren",
+    openDocs: "Dokumentation öffnen",
+    builtInConfig: "Envoy- & Pi-Einstellungen",
+    builtInConfigHint:
+      "Die integrierten Coding-Engines konfigurieren. Die externen CLIs oben werden außerhalb von EnvoyMesh installiert und angemeldet.",
+  },
   model: {
     heading: "Modellanbieter",
     sectionDescCloud: "Cloud-API für Chat-Unterstützung und Wissensantworten auf diesem Gerät konfigurieren.",
@@ -427,6 +459,7 @@ export const deAiSettingsMessages = {
       unknownBody:
         "Konnte nicht prüfen, ob {command} installiert ist. Führen Sie den Installationsbefehl aus und klicken Sie auf „Erneut versuchen“.",
       commandLabel: "Installieren",
+      firstRunLabel: "Erststart-Befehl",
       verifyLabel: "Prüfen",
       docsLabel: "Installationsdokumentation öffnen",
       copyCommand: "Kopieren",

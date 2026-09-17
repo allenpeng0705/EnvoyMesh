@@ -2,11 +2,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react"
 import { ExtAgentOfflineBanner } from "../../src/components/views/ExtAgentOfflineBanner.js"
+import { partialNodeService } from "../helpers/node-service-mock.js"
 
 const probeExtAgent = vi.fn()
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({ probeExtAgent }),
+  useNodeService: () => partialNodeService({ probeExtAgent }),
 }))
 
 vi.mock("../../src/context/I18nContext.js", () => ({

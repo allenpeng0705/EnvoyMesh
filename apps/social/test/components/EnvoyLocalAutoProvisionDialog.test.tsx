@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { EnvoyLocalAutoProvisionDialog } from "../../src/components/EnvoyLocalAutoProvisionDialog.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 vi.mock("../../src/context/I18nContext.js", () => ({
   useT: () => (key: string, vars?: Record<string, string>) => {
@@ -22,7 +23,7 @@ const enableEnvoyLocal = vi.fn();
 const declineEnvoyLocalAutoProvision = vi.fn();
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     getEnvoyLocalStatus,
     enableEnvoyLocal,
     declineEnvoyLocalAutoProvision,

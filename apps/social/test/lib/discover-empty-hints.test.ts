@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { HumanProfile, NodeConfig } from "@envoymesh/api";
 import { translate } from "../../src/i18n/translate.js";
 import { en } from "../../src/i18n/messages/en.js";
 import {
@@ -10,12 +11,23 @@ import {
 
 const t = (key: string) => translate(en, key);
 
+/** The hint helpers read only `discoveryProfile`/`enableMdns`, so the fixture
+ *  stays partial; the cast restores the full `NodeConfig` the context declares
+ *  without fabricating the ~19 unrelated config fields. */
+const cfg = (
+  partial: Pick<NodeConfig, "discoveryProfile"> & Partial<Pick<NodeConfig, "enableMdns">>,
+): NodeConfig => partial as NodeConfig;
+
+/** Same for `humanProfile`: only `profileVisibility` steers the hints. */
+const hp = (partial: Pick<HumanProfile, "profileVisibility">): HumanProfile =>
+  partial as HumanProfile;
+
 describe("discover-empty-hints", () => {
   const base = {
     path: "nearby" as const,
     nodeStatus: "running",
-    nodeConfig: { discoveryProfile: "lan-fast" as const, enableMdns: true },
-    humanProfile: { profileVisibility: "private" as const },
+    nodeConfig: cfg({ discoveryProfile: "lan-fast", enableMdns: true }),
+    humanProfile: hp({ profileVisibility: "private" }),
   };
 
   it("nearby hints when node offline", () => {
@@ -27,7 +39,7 @@ describe("discover-empty-hints", () => {
       nearbyEmptyHint(
         {
           ...base,
-          nodeConfig: { discoveryProfile: "lan-fast", enableMdns: false },
+          nodeConfig: cfg({ discoveryProfile: "lan-fast", enableMdns: false }),
         },
         t,
       ),
@@ -40,7 +52,7 @@ describe("discover-empty-hints", () => {
         {
           ...base,
           path: "code",
-          nodeConfig: { discoveryProfile: "contacts-only" },
+          nodeConfig: cfg({ discoveryProfile: "contacts-only" }),
         },
         t,
       ),
@@ -66,7 +78,7 @@ describe("discover-empty-hints", () => {
         {
           ...base,
           path: "wider",
-          nodeConfig: { discoveryProfile: "contacts-only" },
+          nodeConfig: cfg({ discoveryProfile: "contacts-only" }),
         },
         t,
       ),

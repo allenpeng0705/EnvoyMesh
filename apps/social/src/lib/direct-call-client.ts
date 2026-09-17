@@ -974,12 +974,14 @@ export class DirectCallClient implements NodeServiceClient {
     text: string,
     attachments?: import("@envoymesh/api").AgentAttachmentRef[],
     chatId?: string,
+    collaborationMode?: "default" | "plan" | "review",
   ) {
     return this._ns.startEnvoyHarnessTurn(
       text,
       {
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
         ...(chatId ? { chatId } : {}),
+        ...(collaborationMode ? { collaborationMode } : {}),
       },
     );
   }
@@ -990,6 +992,10 @@ export class DirectCallClient implements NodeServiceClient {
 
   async setEnvoyHarnessAutoRunPolicy(policy: string) {
     return this._ns.setEnvoyHarnessAutoRunPolicy(policy);
+  }
+
+  async setEnvoyHarnessCollaborationMode(mode: string, chatId?: string) {
+    return this._ns.setEnvoyHarnessCollaborationMode(mode, chatId);
   }
 
   async getEnvoyHarnessChatHistory(chatId?: string, sinceRevision?: number) {

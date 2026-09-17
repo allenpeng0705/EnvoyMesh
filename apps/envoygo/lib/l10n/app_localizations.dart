@@ -342,6 +342,24 @@ abstract class AppLocalizations {
   /// **'Import session'**
   String get codingImportSession;
 
+  /// No description provided for @codingPermSafe.
+  ///
+  /// In en, this message translates to:
+  /// **'Safe default'**
+  String get codingPermSafe;
+
+  /// No description provided for @codingPermAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask every time'**
+  String get codingPermAsk;
+
+  /// No description provided for @codingPermFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Full access (no ask)'**
+  String get codingPermFull;
+
   /// No description provided for @codingAttachFile.
   ///
   /// In en, this message translates to:

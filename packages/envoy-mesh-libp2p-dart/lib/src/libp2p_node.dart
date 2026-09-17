@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dcid/dcid.dart';
+import 'mesh_framing.dart';
 import 'package:dart_libp2p/dart_libp2p.dart';
 import 'package:dart_libp2p/config/config.dart';
 import 'package:dart_libp2p/config/defaults.dart';
@@ -22,6 +23,14 @@ import 'seed_store.dart';
 
 
 void _log(String message) => developer.log(message, name: 'Libp2pNode');
+
+/// The client-proxy protocol a thin client dials a home peer on.
+///
+/// Mirrors `CLIENT_PROXY_PROTOCOL` in `@envoymesh/network` (`packages/network/src/protocols.ts`).
+/// Named here rather than spelled at each call site because it is the one string a phone and a home
+/// have to agree on for a libp2p dial to reach the home's `coder.*` surface at all — and a typo in a
+/// literal is a dial that opens a stream nobody answers.
+const String kClientProxyProtocol = '/envoymesh/client-proxy/0.1.0';
 
 /// Inbound stream handler for a registered protocol.
 typedef Libp2pStreamHandler = Future<void> Function(
@@ -362,12 +371,84 @@ class Libp2pNode implements Libp2pMeshHost {
     }
   }
 
+  /// Connect to [peerMultiaddr] and leave its addresses in the peerstore.
+  ///
+  /// [start]'s `bootstrapAddrs` are dialled from a background task
+  /// ([_connectBootstrapPeersInBackground]), so a [dial] issued right after [start] races that
+  /// connect: `dial` opens a stream by peer id and reads the address from the peerstore, which is
+  /// still empty. The failure then looks like an unreachable peer. Awaiting this first makes a
+  /// direct dial deterministic, which is what a candidate walk bounded by a per-candidate timeout
+  /// needs — a rung that may or may not have finished connecting is not a rung that can be time-boxed.
+  ///
+  /// The address goes into the peerstore **directly**, not through `BasicHost.connect`'s address
+  /// list: `connect` runs every supplied address through the host's `addrsFactory`, and the default
+  /// factory drops loopback and unspecified addresses (they must not be *advertised*). Dropping them
+  /// from a dial is a different question — a daemon paired over `127.0.0.1` or reached through an SSH
+  /// forward is dialled at loopback and nothing else — so the dial path adds the address itself.
+  ///
+  /// Returns `false` for an unparseable address or a failed connect rather than throwing: skipping
+  /// to the next candidate is the caller's decision, not this method's.
+  Future<bool> connectPeer(
+    String peerMultiaddr, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    if (_host == null || !_started) {
+      throw StateError('Libp2pNode not started');
+    }
+    try {
+      final addr = MultiAddr(peerMultiaddr);
+      final peerIdStr = addr.valueForProtocol('p2p');
+      if (peerIdStr == null) return false;
+      final peerId = PeerId.fromString(peerIdStr);
+      await _host!.peerStore.addrBook
+          .addAddrs(peerId, [addr], const Duration(minutes: 10));
+      await _host!
+          .connect(AddrInfo(peerId, const []), context: Context())
+          .timeout(timeout);
+      final dht = _dht;
+      if (dht != null) {
+        try {
+          await dht.routingTable.tryAddPeer(peerId, queryPeer: true);
+        } catch (_) {
+          // The DHT entry is an optimisation; the connection is what the dial needs.
+        }
+      }
+      return true;
+    } catch (e) {
+      _log('[Libp2pNode] connectPeer FAILED: $peerMultiaddr — $e');
+      return false;
+    }
+  }
+
   /// Dial a peer and open a stream for [protocolId].
   ///
   /// Returns a duplex stream wrapper that can be used like a WebSocket.
   /// [peerMultiaddr] is the target peer's multiaddr, e.g.
   /// - Direct: `/p2p/<peerId>`
   /// - Circuit relay: `/p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>`
+  ///
+  /// ## Why the circuit branch was unreachable, and what it takes to reach it
+  ///
+  /// `MultiAddr.valueForProtocol` answers **`null` for a protocol that carries no value**
+  /// (`dart_libp2p` `core/multiaddr.dart`, "Return null for empty string values"), and
+  /// `/p2p-circuit` is exactly that protocol. Asking for its value therefore never selected this
+  /// branch: a circuit address fell through to the direct branch, which read the *first* `/p2p/`
+  /// component (the relay) as the destination and died in `swarm.dialPeer` with
+  /// `No addresses found for peer: <relay>`. The path is chosen from the protocol list instead
+  /// (`hasProtocol`), which is what the library's own `Swarm._isCircuitAddr` does.
+  ///
+  /// Dialling a circuit in this library is then a two-peer operation, and both peers need a
+  /// peerstore entry before `newStream`:
+  ///
+  ///   * the **relay** needs its own transport address (`/ip4/…/tcp/…/p2p/<relay>`): the circuit
+  ///     transport opens the HOP stream with `host.newStream(relayId, …)`, which resolves the relay
+  ///     from the peerstore — without it the HOP stream cannot connect at all;
+  ///   * the **destination** needs the circuit path as its address, so `newStream(homePeerId)`
+  ///     routes through the relay rather than looking for a direct address that does not exist.
+  ///
+  /// Both go into the peerstore directly, bypassing `BasicHost.connect`'s address factory — it drops
+  /// loopback and unspecified addresses (they must not be *advertised*), and the relay of a
+  /// loopback setup is exactly `127.0.0.1` (the same reason `connectPeer` adds its address itself).
   Future<Libp2pStreamTransport> dial({
     required String peerMultiaddr,
     String protocolId = '/envoymesh/rpc/1.0.0',
@@ -375,10 +456,10 @@ class Libp2pNode implements Libp2pMeshHost {
     if (_host == null) throw StateError('Libp2pNode not started');
 
     final addr = MultiAddr(peerMultiaddr);
-    final circuitAddr = addr.valueForProtocol('p2p-circuit');
 
-    if (circuitAddr != null) {
+    if (addr.hasProtocol('p2p-circuit')) {
       // Circuit relay dial: the multiaddr is like
+      //   /ip4/…/tcp/…/p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
       //   /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
       final relayPeerIdStr = addr.valueForProtocol('p2p');
       if (relayPeerIdStr == null) {
@@ -393,9 +474,19 @@ class Libp2pNode implements Libp2pMeshHost {
       }
       final homePeerId = PeerId.fromString(homePeerIdStr);
 
-      // Connect to the relay peer with the circuit address.
+      final relayBase = _relayTransportAddr(addr);
+      if (relayBase != null) {
+        await _host!.peerStore.addrBook
+            .addAddrs(relayPeerId, [relayBase], const Duration(minutes: 10));
+      }
+      await _host!.peerStore.addrBook
+          .addAddrs(homePeerId, [addr], const Duration(minutes: 10));
+
+      // Connect by the home peer id: its only address is the circuit path, so this is the dial that
+      // runs the relay HOP/CONNECT and leaves a connection keyed by the home peer. The relay's own
+      // connection is made on the way, by the HOP stream.
       await _host!.connect(
-        AddrInfo(relayPeerId, [addr]),
+        AddrInfo(homePeerId, const []),
         context: Context(),
       );
 
@@ -428,6 +519,21 @@ class Libp2pNode implements Libp2pMeshHost {
     final lastP2p = multiaddr.lastIndexOf('/p2p/');
     if (lastP2p < 0) return null;
     return multiaddr.substring(lastP2p + 5);
+  }
+
+  /// The relay's own transport address in a circuit multiaddr: everything before `/p2p-circuit`.
+  ///
+  /// `decapsulate` drops the `/p2p-circuit` component and everything after it, which is exactly the
+  /// relay hop (`/ip4/…/tcp/…/p2p/<relay>`). Returns `null` when nothing dialable is left — a
+  /// short-form circuit address (`/p2p/<relay>/p2p-circuit/p2p/<home>`) names the relay but not how
+  /// to reach it, and putting a transport-less address in the peerstore would only move the failure.
+  MultiAddr? _relayTransportAddr(MultiAddr circuitAddr) {
+    final base = circuitAddr.decapsulate('p2p-circuit');
+    if (base == null) return null;
+    final hasTransport = base.hasProtocol('tcp') ||
+        base.hasProtocol('udp') ||
+        base.hasProtocol('quic-v1');
+    return hasTransport ? base : null;
   }
 
   /// Register an inbound handler for [protocolId] (e.g. chat / message).
@@ -752,6 +858,13 @@ class Libp2pStreamTransport implements WebSocketLike {
 
   Libp2pStreamTransport(this._stream);
 
+  /// **The framing is explicit: one JSON message per line.** The rule and its reasoning live in
+  /// `mesh_framing.dart`, where they are tested without a libp2p stream; this transport only feeds
+  /// the buffer and writes delimited frames.
+  final _rx = MeshFrameBuffer();
+
+  List<String> _takeFrames(Uint8List bytes) => _rx.add(bytes);
+
   /// Underlying libp2p stream (one-shot mesh envelope I/O without WS mode).
   P2PStream get rawStream => _stream;
 
@@ -770,18 +883,24 @@ class Libp2pStreamTransport implements WebSocketLike {
 
     // Send proxy-connect handshake.
     _stream.write(Uint8List.fromList(utf8.encode(
-        jsonEncode({'type': 'proxy-connect', 'token': token}))));
+        frameMessage(jsonEncode({'type': 'proxy-connect', 'token': token})))));
 
-    // Wait for proxy-accept / proxy-reject as the first message.
-    final firstBytes = await _stream.read();
-    if (firstBytes.isEmpty) {
-      // ignore: definite assignment — throw prevents further use
-      _handshakeCompleter!.completeError(
-          Exception('Connection closed during handshake'));
-      throw Exception('Connection closed during handshake');
+    // Wait for proxy-accept / proxy-reject as the first *frame*. A frame may not be the whole of a
+    // read, and a read may carry more than the frame: everything after it is a message that arrived
+    // early, so it is kept rather than dropped.
+    String? firstText;
+    while (firstText == null) {
+      final bytes = await _stream.read();
+      if (bytes.isEmpty) {
+        _handshakeCompleter!.completeError(
+            Exception('Connection closed during handshake'));
+        throw Exception('Connection closed during handshake');
+      }
+      final frames = _takeFrames(bytes);
+      if (frames.isEmpty) continue;
+      firstText = frames.first;
+      _pendingMessages.addAll(frames.skip(1));
     }
-
-    final firstText = utf8.decode(firstBytes.toList());
     Map<String, dynamic>? msg;
     try {
       msg = jsonDecode(firstText) as Map<String, dynamic>;
@@ -850,18 +969,19 @@ class Libp2pStreamTransport implements WebSocketLike {
       while (readyState == wsOpen) {
         final data = await _stream.read();
         if (data.isEmpty) break;
-        final text = utf8.decode(data.toList());
 
-        if (!_messageMode) {
-          // Still in handshake phase — buffer any messages that arrive
-          // (e.g. events before proxy-accept). The handshake response was
-          // already consumed by performHandshake(), so this handles any
-          // race-between-reads.
-          _pendingMessages.add(text);
-          continue;
+        for (final text in _takeFrames(data)) {
+          if (!_messageMode) {
+            // Still in handshake phase — buffer any messages that arrive
+            // (e.g. events before proxy-accept). The handshake response was
+            // already consumed by performHandshake(), so this handles any
+            // race-between-reads.
+            _pendingMessages.add(text);
+            continue;
+          }
+
+          onMessage?.call(WsMessageEvent(text));
         }
-
-        onMessage?.call(WsMessageEvent(text));
       }
     } catch (_) {
       // Read error — stream closed or protocol error.
@@ -876,7 +996,8 @@ class Libp2pStreamTransport implements WebSocketLike {
   @override
   void send(String data) {
     if (readyState == wsOpen) {
-      _stream.write(Uint8List.fromList(utf8.encode(data)));
+      // The delimiter is the contract: the peer reads frames, not reads.
+      _stream.write(Uint8List.fromList(utf8.encode(frameMessage(data))));
     }
   }
 

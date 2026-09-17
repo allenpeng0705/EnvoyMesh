@@ -7,11 +7,12 @@ import { cleanup, fireEvent, screen } from "@testing-library/react"
 
 import { EhComposerDockStack } from "../../src/components/ehui/EhComposerDockStack.js"
 import { renderWithI18n } from "../helpers/render-with-i18n.js"
+import { partialNodeService } from "../helpers/node-service-mock.js"
 
 const ehRespondToPermission = vi.fn()
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     ehRespondToPermission,
     isConnected: true,
     on: () => () => {},

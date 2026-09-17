@@ -6,11 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ChainLiveSteps } from "../../src/components/ChainLiveSteps.js";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const chainGetStepProvenance = vi.fn();
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     chainGetStepProvenance,
     on: () => () => {},
   }),

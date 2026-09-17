@@ -7,7 +7,7 @@ import { collectFleetWorkerGaps } from "../../src/lib/fleet-worker-gaps.js";
 import type { ChainBondHealth } from "../../src/lib/chain-bond-health.js";
 import type { CachedAgentCardSummary } from "@envoymesh/api";
 
-function health(partial: Partial<ChainBondHealth>): ChainBondHealth {
+function health(partial: Partial<ChainBondHealth> = {}): ChainBondHealth {
   return {
     status: "ready",
     cardStatus: "ready",

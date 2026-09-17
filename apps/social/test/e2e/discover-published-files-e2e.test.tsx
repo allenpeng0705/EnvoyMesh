@@ -8,6 +8,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { DiscoverPublishedLibraryPeerResult } from "@envoymesh/api";
 import { LibraryView } from "../../src/components/views/LibraryView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const discoverPublishedLibrary = vi.fn();
 const listAllLocalFiles = vi.fn().mockResolvedValue({ items: [], vaultCount: 0, workspaceCount: 0 });
@@ -16,6 +17,7 @@ const samResults: DiscoverPublishedLibraryPeerResult[] = [
   {
     peerOwnerId: "envoy:owner:sam",
     displayName: "Sam",
+    libp2pPeerId: "12D3KooWSamPublishedFilesPeer1111111111111",
     bondLevel: "direct",
     bondRank: 0,
     latencyMs: 42,
@@ -33,7 +35,7 @@ const samResults: DiscoverPublishedLibraryPeerResult[] = [
 ];
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     discoverPublishedLibrary,
     listAllLocalFiles,
   }),

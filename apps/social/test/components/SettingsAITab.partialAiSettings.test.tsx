@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { SettingsAITab } from "../../src/components/views/SettingsAITab.js";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const refreshNodeConfig = vi.fn().mockResolvedValue(undefined);
 const updateNodeConfig = vi.fn().mockResolvedValue(undefined);
@@ -17,11 +18,15 @@ vi.mock("../../src/hooks/useToast.js", () => ({
 }));
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     updateNodeConfig,
     getOpenClawStatus: vi.fn().mockResolvedValue({ enabled: true, running: false, url: "" }),
     getPiStatus: vi.fn().mockResolvedValue({ enabled: false, state: "disabled" }),
     restartPi: vi.fn(),
+    // SettingsAITab reads Envoy Harness status on mount; `null` is its
+    // "not configured" shape. Kept here so the mock does not throw a caught
+    // TypeError the way the stale stub did.
+    getEnvoyHarnessStatus: vi.fn().mockResolvedValue(null),
     getRagIndexStatus: vi.fn().mockResolvedValue(null),
     reindexRagKnowledge: vi.fn().mockResolvedValue(null),
     getAgentIdentity: vi.fn().mockResolvedValue({ content: "", updatedAt: null }),

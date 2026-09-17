@@ -9,6 +9,7 @@ import {
   pathFromActivitySummary,
   useEhTurnContext,
 } from "../../src/hooks/useEhTurnContext.js";
+import type { EhActivityEvent, EhFilesChangedEvent } from "@envoymesh/api";
 
 describe("pathFromActivitySummary", () => {
   it("extracts path from write/edit activity summaries", () => {
@@ -22,8 +23,8 @@ describe("pathFromActivitySummary", () => {
 
 describe("useEhTurnContext", () => {
   it("tracks touched files from activity and files_changed events", () => {
-    const activityHandlers = new Set<(event: unknown) => void>();
-    const filesHandlers = new Set<(event: unknown) => void>();
+    const activityHandlers = new Set<(event: EhActivityEvent) => void>();
+    const filesHandlers = new Set<(event: EhFilesChangedEvent) => void>();
 
     const { result } = renderHook(() =>
       useEhTurnContext({
@@ -51,7 +52,7 @@ describe("useEhTurnContext", () => {
 
     act(() => {
       for (const handler of filesHandlers) {
-        handler({ files: ["src/b.ts"] });
+        handler({ turnId: "turn-1", files: ["src/b.ts"] });
       }
     });
     expect(result.current.touchedFiles).toEqual(["src/a.ts", "src/b.ts"]);
@@ -63,8 +64,8 @@ describe("useEhTurnContext", () => {
   });
 
   it("ignores activity/files events from other chats (parallel turns)", () => {
-    const activityHandlers = new Set<(event: unknown) => void>();
-    const filesHandlers = new Set<(event: unknown) => void>();
+    const activityHandlers = new Set<(event: EhActivityEvent) => void>();
+    const filesHandlers = new Set<(event: EhFilesChangedEvent) => void>();
 
     const { result } = renderHook(() =>
       useEhTurnContext({
@@ -102,14 +103,14 @@ describe("useEhTurnContext", () => {
         });
       }
       for (const handler of filesHandlers) {
-        handler({ files: ["src/b.ts"], chatId: "chat-b" });
+        handler({ turnId: "turn-1", files: ["src/b.ts"], chatId: "chat-b" });
       }
     });
     expect(result.current.touchedFiles).toEqual(["src/mine.ts"]);
 
     act(() => {
       for (const handler of filesHandlers) {
-        handler({ files: ["src/c.ts"], chatId: "chat-a" });
+        handler({ turnId: "turn-1", files: ["src/c.ts"], chatId: "chat-a" });
       }
     });
     expect(result.current.touchedFiles).toEqual([

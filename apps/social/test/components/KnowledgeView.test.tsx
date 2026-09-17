@@ -5,6 +5,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { KnowledgeView } from "../../src/components/views/KnowledgeView.js";
 import { OPEN_ENVOY_AI_EVENT, takeEnvoyAiDraftHint } from "../../src/lib/open-envoy-ai-nav.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const {
   knowledgeQuery,
@@ -33,7 +34,7 @@ const {
 }));
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     knowledgeQuery,
     listKbPlugins,
     activateKbPlugin,

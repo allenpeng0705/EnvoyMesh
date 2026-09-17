@@ -9,6 +9,7 @@ import type { PendingApprovalSummary } from "@envoymesh/api";
 import { InboxView } from "../../src/components/views/InboxView.js";
 import { ToastProvider } from "../../src/hooks/useToast.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const approvePending = vi.fn();
 const rejectPending = vi.fn();
@@ -31,7 +32,7 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
 }));
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({}),
+  useNodeService: () => partialNodeService({}),
   useShareOffers: () => ({ offers: [], accept: vi.fn(), decline: vi.fn() }),
   useAgentShareProposals: () => ({ proposals: [], dismiss: vi.fn() }),
   usePendingApprovals: () => ({

@@ -62,6 +62,18 @@ export type {
   SocketMethodPort,
 } from "@envoymesh/host-connect";
 
+// The **mesh transport** for the same host contract: a product's host protocol over a direct libp2p
+// stream, or over the shared relay when a home machine has no public address. Re-exported for the
+// same reason as the ports above — a product imports one package to be a host, and this is the second
+// transport for the contract it already implements.
+export {
+  createMeshHostTransport,
+  createProxyCloseRegistry,
+  splitFrames,
+  type FramedDuplex,
+  type MeshHostTransportOptions,
+} from "@envoymesh/host-connect";
+
 // ─── the harness surface ────────────────────────────────────────────────────
 //
 // Re-exported rather than re-invented: `@envoymesh/harness` is 24/24 `reusable`
@@ -95,6 +107,10 @@ export {
   encodePairingToken,
   parseEnvoyPairUri,
   buildEnvoyPairUri,
+  // The opt-in compressed `pairing=` form (`buildEnvoyPairUri(params, { compressed: true })`
+  // is the same code path). Re-exported so a product can mint a QR the Dart client reads
+  // without reaching into `@envoymesh/api/core` for it.
+  buildEnvoyPairUriCompressed,
   type PairingPayload,
   type PairWithHomeNodeParams,
 } from "@envoymesh/api/core";

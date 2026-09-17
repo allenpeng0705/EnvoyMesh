@@ -7,7 +7,17 @@ import {
   type CodingHarnessId,
 } from "@envoymesh/api";
 
-export type HarnessProbeBadge = "ready" | "not-ready" | "checking";
+/**
+ * What a row's badge can say about an agent on this machine.
+ *
+ * **Declared once, here.** Two components used to declare their own narrower version of this union
+ * (`CodingProjectPickerModal` without `not-ready`, `CodingNewSessionSheet` without the lib's exact
+ * membership), which compiled fine in isolation and failed the moment one component's
+ * `Partial<Record<CodingHarnessId, HarnessProbeBadge>>` was handed to the other — a mismatch that says
+ * "these are two different types wearing one name". The superset is the honest one: every value below
+ * is something a probe can report.
+ */
+export type HarnessProbeBadge = "ready" | "not-ready" | "checking" | "install" | "unknown";
 
 export type HarnessProbeResult = {
   badge: HarnessProbeBadge;

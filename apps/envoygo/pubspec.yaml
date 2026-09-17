@@ -95,8 +95,18 @@ dev_dependencies:
 
 # dart_libp2p pulls mdns_dart ^2.0.1 → 2.2.1, which fails on Dart 3.13+
 # (InternetAddress vs InterfaceAddress). 2.2.2 fixes that.
+#
+# dart_libp2p is the family's one patched dependency: 1.0.3's yamux `openStream`
+# waited for an explicit ACK before it would send the multistream-select
+# proposal, which @chainsafe/libp2p-yamux (JS) only emits on its first write —
+# a deadlock that made every Dart → JS stream fail. The fork lives once in
+# EnvoyMesh/vendor/dart_libp2p/ (`PATCHES.md` records the one-hunk change and
+# says it must be re-applied on the next upstream bump). Overrides are honoured
+# only from the pub root, so every root that resolves the SDK repeats this.
 dependency_overrides:
   mdns_dart: 2.2.2
+  dart_libp2p:
+    path: ../../vendor/dart_libp2p
 
 # sqflite_common_ffi (dev) pulls package:sqlite3, whose default build hook
 # downloads prebuilt dylibs from GitHub. That often times out (esp. on

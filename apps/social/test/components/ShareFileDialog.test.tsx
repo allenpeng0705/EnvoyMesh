@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor, act } from "@testing-libra
 import { ShareFileDialog } from "../../src/components/file-share/ShareFileDialog.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import type { BondRecord, LibraryItem } from "@envoymesh/api";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const mockGetBonds = vi.fn();
 const mockListLibraryItems = vi.fn();
@@ -14,12 +15,12 @@ const mockShareFile = vi.fn();
 const mockOn = vi.fn(() => () => {});
 
 // Stable reference to prevent React re-render loops
-const mockNodeService = {
+const mockNodeService = partialNodeService({
   getBonds: mockGetBonds,
   listLibraryItems: mockListLibraryItems,
   shareFile: mockShareFile,
   on: mockOn,
-};
+});
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,
@@ -56,12 +57,11 @@ const sampleItems: LibraryItem[] = [
     documentId: "doc-1",
     title: "My Report",
     relativePath: "documents/report.md",
-    mimeType: "text/markdown",
-    sizeBytes: 1024,
-    indexedAt: "2026-01-01T00:00:00.000Z",
-    tags: [],
-    sensitivity: "friends",
-    chunkCount: 1,
+    extension: "md",
+    byteLength: 1024,
+    contentHash: "hash-doc-1",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    published: false,
   },
 ];
 

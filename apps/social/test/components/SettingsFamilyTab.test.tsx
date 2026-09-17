@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { SettingsFamilyTab } from "../../src/components/views/SettingsFamilyTab.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listFamilyProfiles = vi.fn();
 const createFamilyProfile = vi.fn();
@@ -15,14 +16,14 @@ const wipeFamilyProfile = vi.fn();
 const generateFamilyInviteToken = vi.fn();
 const refreshNodeConfig = vi.fn();
 
-const mockNodeService = {
+const mockNodeService = partialNodeService({
   listFamilyProfiles,
   createFamilyProfile,
   updateFamilyProfile,
   deleteFamilyProfile,
   wipeFamilyProfile,
   generateFamilyInviteToken,
-};
+});
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,

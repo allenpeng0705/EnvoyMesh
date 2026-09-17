@@ -82,7 +82,6 @@ async function createNode() {
     enableRelay: false,
     enableAutoNat: false,
     enableDcutr: false,
-    libp2pPrivateKeyPath: join(profileDir, "libp2p-key"),
   });
   await mesh.start();
   meshes.push(mesh);
@@ -114,7 +113,7 @@ describe("Profile capability discovery wiring", () => {
     ]);
     vi.spyOn(mesh, "provideCapabilityTopic").mockImplementation(async (topic) => {
       advertised.push(topic);
-      return { cid: {} as never };
+      return { cid: {} as never, timedOut: false };
     });
 
     await service.updateHumanProfile({

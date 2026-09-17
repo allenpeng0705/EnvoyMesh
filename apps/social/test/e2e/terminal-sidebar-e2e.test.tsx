@@ -8,6 +8,7 @@ import { cleanup, screen } from "@testing-library/react";
 import type { TerminalSessionSummary } from "@envoymesh/api";
 import { TerminalSidebar } from "../../src/components/terminals/TerminalSidebar.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listTerminalSessions = vi.fn();
 const onSessionsChange = vi.fn();
@@ -18,7 +19,7 @@ let sessions: TerminalSessionSummary[] = [];
 let pendingApprovalCount = 0;
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     listTerminalSessions,
     createTerminalSession: vi.fn(),
     closeTerminalSession: vi.fn(),

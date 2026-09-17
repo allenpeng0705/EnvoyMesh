@@ -3,6 +3,7 @@
  */
 import { useEffect, useState } from "react";
 import type { CodingHarnessId } from "@envoymesh/api";
+import type { HarnessProbeBadge } from "../lib/coding-harness-probe.js";
 import { useT } from "../context/I18nContext.js";
 import type {
   CodingProject,
@@ -34,9 +35,7 @@ export type CodingProjectSettingsModalProps = {
   onOpenCodingDefaults?: () => void;
   /** Coding defaults model hint for empty Envoy/Pi fields. */
   codingDefaultsModelHint?: string;
-  harnessProbe?: Partial<
-    Record<CodingHarnessId, "ready" | "install" | "unknown" | "checking">
-  >;
+  harnessProbe?: Partial<Record<CodingHarnessId, HarnessProbeBadge>>;
 };
 
 function projectToValue(project: CodingProject): CodingAgentModelProviderValue {

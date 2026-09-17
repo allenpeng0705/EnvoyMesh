@@ -137,6 +137,8 @@ class _EnvoyHarnessChatScreenState
 
   Future<void> _patchComposerPrefs(CodingComposerPrefs next) async {
     final prevFast = _composerPrefs.fast;
+    final prevMode = _composerPrefs.agentModeId;
+    final prevPolicy = _composerPrefs.permissionPolicy;
     // Match Social: refuse /fast while a turn is running (cancel first).
     if (_composerCaps.fast && prevFast != next.fast && _busy) {
       if (mounted) {
@@ -149,6 +151,21 @@ class _EnvoyHarnessChatScreenState
     setState(() => _composerPrefs = saved);
     if (_composerCaps.fast && prevFast != saved.fast) {
       await _handleSlashCommand(fastToggleSlash(saved.fast));
+    }
+    if (saved.agentModeId != prevMode && saved.agentModeId != null) {
+      final client = ref.read(nodeServiceProvider);
+      final mode = saved.agentModeId!;
+      if (mode == 'default' || mode == 'plan' || mode == 'review') {
+        try {
+          await client?.setEnvoyHarnessCollaborationMode(
+            mode,
+            chatId: widget.chatId,
+          );
+        } catch (_) {}
+      }
+    }
+    if (saved.permissionPolicy != prevPolicy) {
+      await _changePolicy(saved.permissionPolicy);
     }
   }
 
@@ -234,10 +251,16 @@ class _EnvoyHarnessChatScreenState
     final queue = EhTurnQueue(
       chatId: widget.chatId,
       startTurn: (text, {attachments}) async {
+        final modeId = _composerPrefs.agentModeId;
+        final collaborationMode =
+            modeId == 'plan' || modeId == 'review' || modeId == 'default'
+                ? modeId
+                : null;
         final result = await client.startEnvoyHarnessTurn(
           text,
           chatId: widget.chatId,
           attachments: attachments,
+          collaborationMode: collaborationMode,
         );
         final turnId = result['turnId']?.toString() ?? '';
         if (turnId.isEmpty) {
@@ -587,8 +610,34 @@ class _EnvoyHarnessChatScreenState
     if (client == null) return;
     try {
       final s = await client.getEnvoyHarnessStatus();
-      if (mounted) setState(() => _status = s);
+      if (!mounted) return;
+      final serverPolicy = _normalizeAutoRunPolicy(s['autoRunPolicy']);
+      final serverModel = s['model']?.toString().trim();
+      setState(() {
+        _status = s;
+        if (serverPolicy != null &&
+            serverPolicy != _composerPrefs.permissionPolicy) {
+          _composerPrefs =
+              _composerPrefs.copyWith(permissionPolicy: serverPolicy);
+        }
+        if (serverModel != null &&
+            serverModel.isNotEmpty &&
+            _modelController.text.trim().isEmpty) {
+          _modelController.text = serverModel;
+          if ((_composerPrefs.model ?? '').trim().isEmpty) {
+            _composerPrefs = _composerPrefs.copyWith(model: serverModel);
+          }
+        }
+      });
     } catch (_) {}
+  }
+
+  /// Map EH/server autoRunPolicy onto composer permission values.
+  String? _normalizeAutoRunPolicy(Object? raw) {
+    final v = raw?.toString();
+    if (v == 'never') return 'off';
+    if (v == 'safe-only' || v == 'always-confirm' || v == 'off') return v;
+    return null;
   }
 
   /// Friendly label for the permission policy value.
@@ -611,12 +660,22 @@ class _EnvoyHarnessChatScreenState
     final l10n = AppLocalizations.of(context);
     try {
       final s = await client.setEnvoyHarnessAutoRunPolicy(policy);
-      if (mounted) {
-        setState(() => _status = s);
-        final mode = s['autoRunPolicy']?.toString() ?? policy;
-        final when = _busy ? l10n.ehPermsNextTurn : '';
-        _setSystem('${l10n.ehPermsSet(_policyLabel(l10n, mode))}$when');
-      }
+      if (!mounted) return;
+      final mode = _normalizeAutoRunPolicy(s['autoRunPolicy']) ??
+          _normalizeAutoRunPolicy(policy) ??
+          policy;
+      setState(() {
+        _status = s;
+        _composerPrefs = _composerPrefs.copyWith(permissionPolicy: mode);
+      });
+      unawaited(
+        saveCodingComposerPrefs(
+          _composerPrefsKey,
+          _composerPrefs,
+        ),
+      );
+      final when = _busy ? l10n.ehPermsNextTurn : '';
+      _setSystem('${l10n.ehPermsSet(_policyLabel(l10n, mode))}$when');
     } catch (e) {
       _setSystem(l10n.ehPermsFailed('$e'), error: true);
     }
@@ -1401,7 +1460,11 @@ class _EnvoyHarnessChatScreenState
                   }());
                   return;
                 }
-                unawaited(_changePolicy(value));
+                unawaited(
+                  _patchComposerPrefs(
+                    _composerPrefs.copyWith(permissionPolicy: value),
+                  ),
+                );
               },
               itemBuilder: (context) => [
                 if (widget.chatId != null && widget.chatId!.trim().isNotEmpty)
@@ -1721,7 +1784,15 @@ class _EnvoyHarnessChatScreenState
           if (!widget.readOnlyReview) ...[
             CodingComposerToolbar(
               caps: _composerCaps,
-              prefs: _composerPrefs,
+              prefs: _composerPrefs.copyWith(
+                permissionPolicy: _normalizeAutoRunPolicy(
+                      _status?['autoRunPolicy'],
+                    ) ??
+                    _composerPrefs.permissionPolicy,
+                model: _modelController.text.trim().isNotEmpty
+                    ? _modelController.text.trim()
+                    : _composerPrefs.model,
+              ),
               onPrefsChanged: (p) => unawaited(_patchComposerPrefs(p)),
               onImportSession: () => unawaited(_importEhSession()),
               onAttach: () => unawaited(_pickHomeAttachment()),

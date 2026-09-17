@@ -32,6 +32,15 @@ jobs:
       - name: Build node package
         run: npm run node:build
 
+      # `tsconfig.test.json` is the only project that sees the node test tree
+      # (`apps/node/tsconfig.json` includes `src/**` only). It resolves the
+      # workspace packages through the declarations `node:build` just emitted,
+      # so it must run after the build. Deliberately separate from `tsc -b`,
+      # which owns the product build. (The social counterpart runs in
+      # `ci-social-ui.yml` via `npm run typecheck`.)
+      - name: Typecheck node tests
+        run: npm run typecheck:tests:node
+
       # The behavioural half of the module-boundary work. The static half
       # (rules 1, 2, 3, 4, 5) lives in `ci-module-boundary.yml`, mirroring how
       # `ci-module-size.yml` owns the line-count rule.

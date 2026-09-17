@@ -4,13 +4,14 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { KnowledgePluginsPanel } from "../../src/components/views/KnowledgePluginsPanel.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const { listKbPlugins } = vi.hoisted(() => ({
   listKbPlugins: vi.fn(),
 }));
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     listKbPlugins,
     activateKbPlugin: vi.fn().mockResolvedValue({ ok: true }),
     deactivateKbPlugin: vi.fn().mockResolvedValue({ ok: true }),

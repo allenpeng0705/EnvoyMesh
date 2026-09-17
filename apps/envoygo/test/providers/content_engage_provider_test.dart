@@ -28,6 +28,9 @@ void main() {
       ],
     );
 
+    // Social surfaces: 0=chats, 1=feeds, 2=blog, 3=explore
+    // (see ContentEngageState.visibleTotalCount).
+
     test('shows all when Content is not open', () {
       expect(
         state.visibleTotalCount(viewingContent: false, surfaceIndex: 0),
@@ -38,49 +41,53 @@ void main() {
         2,
       );
       expect(
-        state.visibleBlogCount(viewingContent: false, surfaceIndex: 1),
+        state.visibleBlogCount(viewingContent: false, surfaceIndex: 2),
         1,
       );
     });
 
     test('hides feed engages while Content → Feed is open', () {
       expect(
-        state.visibleTotalCount(viewingContent: true, surfaceIndex: 0),
+        state.visibleTotalCount(viewingContent: true, surfaceIndex: 1),
         1,
       );
       expect(
-        state.visibleFeedCount(viewingContent: true, surfaceIndex: 0),
+        state.visibleFeedCount(viewingContent: true, surfaceIndex: 1),
         0,
       );
       expect(
-        state.visibleBlogCount(viewingContent: true, surfaceIndex: 0),
+        state.visibleBlogCount(viewingContent: true, surfaceIndex: 1),
         1,
       );
     });
 
     test('hides blog engages while Content → Blog is open', () {
       expect(
-        state.visibleTotalCount(viewingContent: true, surfaceIndex: 1),
+        state.visibleTotalCount(viewingContent: true, surfaceIndex: 2),
         2,
       );
       expect(
-        state.visibleFeedCount(viewingContent: true, surfaceIndex: 1),
+        state.visibleFeedCount(viewingContent: true, surfaceIndex: 2),
         2,
       );
       expect(
-        state.visibleBlogCount(viewingContent: true, surfaceIndex: 1),
+        state.visibleBlogCount(viewingContent: true, surfaceIndex: 2),
         0,
       );
     });
 
     test('shows both while Content → Explore is open', () {
       expect(
-        state.visibleTotalCount(viewingContent: true, surfaceIndex: 2),
+        state.visibleTotalCount(viewingContent: true, surfaceIndex: 3),
         3,
       );
       expect(
-        state.visibleFeedCount(viewingContent: true, surfaceIndex: 2),
+        state.visibleFeedCount(viewingContent: true, surfaceIndex: 3),
         2,
+      );
+      expect(
+        state.visibleBlogCount(viewingContent: true, surfaceIndex: 3),
+        1,
       );
     });
   });

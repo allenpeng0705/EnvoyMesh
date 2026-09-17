@@ -10,17 +10,18 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { ChainDetailPanel } from "../../src/components/ChainDetailPanel.js";
 import { ToastProvider } from "../../src/hooks/useToast.js";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const chainGetState = vi.fn();
 const chainCancel = vi.fn();
 const chainReassignSubtask = vi.fn();
 
-const mockNodeService = {
+const mockNodeService = partialNodeService({
   chainGetState,
   chainCancel,
   chainReassignSubtask,
   on: vi.fn(() => () => {}),
-};
+});
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,

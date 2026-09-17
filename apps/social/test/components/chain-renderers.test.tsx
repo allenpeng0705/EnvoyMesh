@@ -39,6 +39,9 @@ function makePart(overrides: Partial<CompositeArtifactPart> = {}): CompositeArti
     workerPeerId: "12D3KooW-w1",
     workerOwnerId: "envoy:owner:w1",
     weight: 1,
+    // Present-but-absent: parts in these fixtures carry no inline artifact;
+    // callers pass one via `artifactsByPart` when they want it rendered.
+    artifact: undefined,
     note: "a note",
     ...overrides,
   };

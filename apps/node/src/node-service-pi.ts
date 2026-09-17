@@ -15,6 +15,7 @@
 import { randomUUID } from "node:crypto"
 import { PiRuntime, discoverPiCli, buildPiSpawnConfig } from "@envoymesh/harness/pi-runtime"
 import { piRequestToProposal, auditPiTool } from "./pi-tool-bridge.js"
+import { shouldAskPiProposal } from "./pi-autorun-policy.js"
 import { resolve } from "node:path"
 import type { LocalTaskStore } from "@envoymesh/local-store"
 import type {
@@ -285,19 +286,37 @@ async function startPiInner(state: PiRuntimeStateMutable, deps: PiRuntimeDeps): 
         void runtime.respondToUiRequest(req.id, false).catch(() => {})
         return
       }
-      log("info", `tool approval requested: "${proposal.title}" (id=${proposal.uiRequestId})`)
-      trackInFlightProposal(state, deps, proposal.uiRequestId, proposal.title, proposal.message, proposal.timeoutMs)
-      void auditPiTool(deps.taskStore, "pi.tool.proposed", {
-        uiRequestId: proposal.uiRequestId,
-        title: proposal.title,
-        message: proposal.message,
-      })
-      if (deps.onProposal) {
-        deps.onProposal(proposal, req)
-      } else {
-        // No host sink — auto-deny so Pi unblocks (matches timeout behavior).
-        void runtime.respondToUiRequest(req.id, false).catch(() => {})
-      }
+      // Honor piSettings.autoRunPolicy (Coding Perms / Settings).
+      void (async () => {
+        const cfg = await deps.loadConfig().catch(() => null)
+        const policy = cfg?.piSettings?.autoRunPolicy ?? "always-confirm"
+        if (!shouldAskPiProposal(proposal.title, proposal.message, policy)) {
+          log(
+            "info",
+            `auto-allow tool under ${policy}: "${proposal.title}" (id=${proposal.uiRequestId})`,
+          )
+          void auditPiTool(deps.taskStore, "pi.tool.executed", {
+            uiRequestId: proposal.uiRequestId,
+            title: proposal.title,
+            message: proposal.message,
+          })
+          void runtime.respondToUiRequest(req.id, true).catch(() => {})
+          return
+        }
+        log("info", `tool approval requested: "${proposal.title}" (id=${proposal.uiRequestId})`)
+        trackInFlightProposal(state, deps, proposal.uiRequestId, proposal.title, proposal.message, proposal.timeoutMs)
+        void auditPiTool(deps.taskStore, "pi.tool.proposed", {
+          uiRequestId: proposal.uiRequestId,
+          title: proposal.title,
+          message: proposal.message,
+        })
+        if (deps.onProposal) {
+          deps.onProposal(proposal, req)
+        } else {
+          // No host sink — auto-deny so Pi unblocks (matches timeout behavior).
+          void runtime.respondToUiRequest(req.id, false).catch(() => {})
+        }
+      })()
     })
     await runtime.start()
     state.runtime = runtime

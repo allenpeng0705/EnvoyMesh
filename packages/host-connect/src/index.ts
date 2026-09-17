@@ -81,3 +81,18 @@ export { rpcErrorCode } from "./rpc-error-code.js";
  * type its composition root without reaching into the server module.
  */
 export type { WsServerOptions } from "./ws-server.js";
+
+// ─── the mesh host transport ────────────────────────────────────────────────
+//
+// A product's host protocol over any duplex — a direct libp2p stream, or the shared relay when a
+// home machine has no public address. Same host contract as `WsServer` (`sessionIdentity`,
+// `dispatch`, an event subscription), so a product's auth and routing rules are written once.
+// The framing is explicit and newline-delimited; see the module for why that was decided rather
+// than inherited.
+export {
+  createMeshHostTransport,
+  createProxyCloseRegistry,
+  splitFrames,
+  type FramedDuplex,
+  type MeshHostTransportOptions,
+} from "./mesh-host-transport.js";

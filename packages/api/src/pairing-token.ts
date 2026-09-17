@@ -9,7 +9,7 @@
  *
  * V1 layout (JSON, then gzip, then base64url):
  *   { v:1, ws:"...", rel:"...", rels:[...], lan:"...", tid:"...", oid:"...",
- *     apid:"...", aname:"...", bpn:[...], app:"...", tok:"..." }
+ *     apid:"...", aname:"...", bpn:[...], bp:[...], app:"...", opk:"...", rpid:"...", tok:"..." }
  *
  * Field abbreviations (keep JSON small):
  *   v    — version (1)
@@ -22,8 +22,23 @@
  *   apid — agentPeerId
  *   aname— agentName
  *   bpn  — bootstrapPresetNames
+ *   bp   — bootstrapPeers (dialable multiaddrs; `n` in `bpn` is for *names*, this is the
+ *          address list itself)
  *   app  — app (which product minted the code)
+ *   opk  — ownerPublicKey
+ *   rpid — relayPeerId
  *   tok  — token
+ *
+ * `opk` / `rpid` are **additive within `v:1`**, not a new version. The legacy query form
+ * already carried both, so omitting them here made the compressed form a lossy substitute
+ * for the same payload; and the Dart reader rejects anything whose `v` is not 1, so
+ * bumping the version to say the same thing would have broken every existing phone.
+ * Readers that predate the keys ignore them, which is exactly why this is safe.
+ *
+ * `bp` follows the same rule, for the same reason: `homeNodePeerId` alone tells a phone
+ * *who* to dial but not *where*, and the multiaddrs are what make a relay-free libp2p
+ * dial possible. Adding a v2 instead would have been rejected by every phone already in
+ * the field.
  */
 
 // From `@envoymesh/protocol`, not `./ws-protocol.js`: the payload contract moved
@@ -46,7 +61,10 @@ interface PairingTokenV1Payload {
   apid?: string;    // agentPeerId
   aname?: string;    // agentName
   bpn?: string[];   // bootstrapPresetNames
+  bp?: string[];    // bootstrapPeers (dialable multiaddrs)
   app?: string;      // app (which product minted the code)
+  opk?: string;      // ownerPublicKey
+  rpid?: string;     // relayPeerId
   tok: string;       // token
 }
 
@@ -56,6 +74,7 @@ interface PairingTokenV1Payload {
  */
 export async function encodePairingToken(payload: PairingPayload): Promise<string> {
   const rels = normalizeRelayWsList(payload.relayWsUrls, payload.relayWsUrl);
+  const bootstrapPeers = normalizeBootstrapPeers(payload.bootstrapPeers);
   const obj: PairingTokenV1Payload = {
     v: 1,
     ws: payload.wsUrl,
@@ -68,7 +87,10 @@ export async function encodePairingToken(payload: PairingPayload): Promise<strin
     apid: payload.agentPeerId,
     aname: payload.agentName,
     bpn: payload.bootstrapPresetNames,
+    ...(bootstrapPeers.length > 0 ? { bp: bootstrapPeers } : {}),
     app: payload.app,
+    opk: payload.ownerPublicKey,
+    rpid: payload.relayPeerId,
   };
 
   const json = new TextEncoder().encode(JSON.stringify(obj));
@@ -118,12 +140,18 @@ export interface DecodedPairingToken {
   relayWsUrls?: string[];
   lanWsUrl?: string;
   homeNodePeerId?: string;
+  /** Dialable libp2p multiaddrs for the home peer — see `bp` in the V1 layout. */
+  bootstrapPeers?: string[];
   ownerId: string;
   agentPeerId?: string;
   agentName?: string;
   bootstrapPresetNames?: string[];
   /** Which app minted the code — see `PairingPayload.app` in the shared contract. */
   app?: string;
+  /** Owner public key PEM — carried since the legacy query form always did. */
+  ownerPublicKey?: string;
+  /** Relay peer id — carried since the legacy query form always did. */
+  relayPeerId?: string;
   token: string;
 }
 
@@ -164,12 +192,21 @@ function parseDecodedObject(obj: Record<string, unknown>): DecodedPairingToken {
     relayWsUrl,
   );
 
+  // `bp` is additive within v1. It is the same normalisation the encoder applied, so a
+  // hand-written or third-party token cannot smuggle in blanks or an unbounded list.
+  const bootstrapPeers = normalizeBootstrapPeers(
+    Array.isArray(obj.bp)
+      ? obj.bp.filter((s): s is string => typeof s === "string")
+      : undefined,
+  );
+
   return {
     wsUrl: ws,
     relayWsUrl,
     ...(relayWsUrls.length > 0 ? { relayWsUrls } : {}),
     lanWsUrl: typeof obj.lan === "string" && obj.lan ? obj.lan.trim() : undefined,
     homeNodePeerId: typeof obj.tid === "string" && obj.tid ? obj.tid.trim() : undefined,
+    ...(bootstrapPeers.length > 0 ? { bootstrapPeers } : {}),
     ownerId: oid,
     agentPeerId: typeof obj.apid === "string" && obj.apid ? obj.apid.trim() : undefined,
     agentName: typeof obj.aname === "string" && obj.aname ? obj.aname.trim() : undefined,
@@ -178,6 +215,10 @@ function parseDecodedObject(obj: Record<string, unknown>): DecodedPairingToken {
         ? obj.bpn.filter((s): s is string => typeof s === "string" && s.length > 0)
         : undefined,
     app: typeof obj.app === "string" && obj.app ? obj.app.trim() : undefined,
+    ownerPublicKey:
+      typeof obj.opk === "string" && obj.opk ? obj.opk.trim() : undefined,
+    relayPeerId:
+      typeof obj.rpid === "string" && obj.rpid ? obj.rpid.trim() : undefined,
     token: tok,
   };
 }
@@ -286,6 +327,34 @@ export function normalizeRelayWsList(
     if (!base || seen.has(base)) continue;
     seen.add(base);
     out.push(base);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
+ * Trim, dedupe and cap the dialable multiaddr list.
+ *
+ * Deliberately *not* `normalizeRelayWsList`: that one strips `?target=…` because a relay
+ * base URL is more useful without its per-dial params, while a libp2p multiaddr's meaning
+ * is entirely in its `/…` segments — truncating at a `?` would leave a string that names
+ * no transport. Same shape (trim, drop blanks, dedupe, cap 8), different cleaning.
+ *
+ * The cap is a QR-size decision, not a protocol one: every address is another ~60–90
+ * bytes in a code the phone has to scan, and eight is already more candidates than a
+ * `candidate_resolver` will try before falling back to the relay.
+ */
+export function normalizeBootstrapPeers(
+  addrs: readonly string[] | undefined,
+): string[] {
+  const max = 8;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of addrs ?? []) {
+    const addr = raw.trim();
+    if (!addr || seen.has(addr)) continue;
+    seen.add(addr);
+    out.push(addr);
     if (out.length >= max) break;
   }
   return out;

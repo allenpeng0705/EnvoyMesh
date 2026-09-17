@@ -2,11 +2,15 @@
 REM
 REM Run Relay Bootstrap Integration Tests
 REM
-REM This script runs integration tests for the relay bootstrap functionality.
-REM It requires a running relay server to connect to.
+REM These tests need a reachable relay; by default they use the EnvoyMesh
+REM community relay (repo-root .env TEST_RELAY_ADDR, falling back to cn-relay).
+REM No local relay is required. Override with TEST_RELAY_ADDR / --relay-addr.
+REM
+REM The test file is gated behind RUN_E2E=1 RUN_WAN_RELAY_TESTS=1; this script
+REM sets both, so it runs the file for real instead of reporting a vacuous pass.
 REM
 REM Usage:
-REM   run-integration-tests.bat                          # Use default local relay
+REM   run-integration-tests.bat                          # Community relay
 REM   run-integration-tests.bat --relay-addr=xxx        # Custom relay
 REM   run-integration-tests.bat --presets=public-libp2p  # Use specific presets
 REM   run-integration-tests.bat --verbose               # Verbose output
@@ -93,18 +97,17 @@ echo   Test File:    %TEST_FILE%
 echo.
 
 if "%RELAY_ADDR%"=="" (
-    echo WARNING: TEST_RELAY_ADDR not set.
-    echo Some tests will be skipped or may fail.
-    echo.
-    echo To run with a relay server:
-    echo   set TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/12D3KooW...
-    echo   run-integration-tests.bat
+    echo TEST_RELAY_ADDR not set - using the built-in community cn-relay.
+    echo Set TEST_RELAY_ADDR to point at a private relay.
     echo.
 )
 
 REM Export for tests
 set "TEST_RELAY_ADDR=%RELAY_ADDR%"
 set "TEST_BOOTSTRAP_PRESETS=%PRESETS%"
+REM Gates: without these vitest excludes/skips the file entirely.
+set "RUN_E2E=1"
+set "RUN_WAN_RELAY_TESTS=1"
 
 REM Change to project root
 cd /d "%PROJECT_ROOT%"
@@ -112,7 +115,7 @@ cd /d "%PROJECT_ROOT%"
 echo Running tests...
 echo.
 
-npm test -- "%TEST_FILE%" %VERBOSE%
+npx vitest run "%TEST_FILE%" %VERBOSE%
 if errorlevel 1 (
     echo.
     echo ========================================

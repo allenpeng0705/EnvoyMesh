@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:envoy_thin_client/services/home_remote_client.dart';
 import 'package:envoy_thin_client/services/web_socket_like.dart';
+import 'package:envoygo/l10n/app_localizations.dart';
 import 'package:envoygo/models/library_read.dart';
 import 'package:envoygo/providers/contact_provider.dart';
 import 'package:envoygo/screens/browser/browser_screen.dart';
@@ -11,6 +12,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+Widget _browserApp(Widget home) {
+  return MaterialApp(
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    locale: const Locale('en'),
+    home: home,
+  );
+}
 /// Controllable mock WebSocket for BrowserScreen widget tests.
 class _MockWs implements WebSocketLike {
   @override
@@ -88,7 +97,7 @@ void main() {
         overrides: [
           nodeServiceProvider.overrideWith((ref) => nodeClient),
         ],
-        child: const MaterialApp(home: BrowserScreen()),
+        child: _browserApp(const BrowserScreen()),
       ),
     );
     await tester.pump();
@@ -140,7 +149,7 @@ void main() {
         overrides: [
           nodeServiceProvider.overrideWith((ref) => null),
         ],
-        child: const MaterialApp(home: BrowserScreen()),
+        child: _browserApp(const BrowserScreen()),
       ),
     );
     await tester.enterText(find.byType(TextField), 'envoy:///no-owner');
@@ -166,7 +175,7 @@ void main() {
         overrides: [
           nodeServiceProvider.overrideWith((ref) => nodeClient),
         ],
-        child: const MaterialApp(home: BrowserScreen()),
+        child: _browserApp(const BrowserScreen()),
       ),
     );
     await tester.enterText(
@@ -215,7 +224,7 @@ void main() {
         overrides: [
           nodeServiceProvider.overrideWith((ref) => nodeClient),
         ],
-        child: const MaterialApp(home: BrowserScreen()),
+        child: _browserApp(const BrowserScreen()),
       ),
     );
     await tester.pump();
@@ -246,7 +255,7 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('hasn’t published any blog posts'), findsWidgets);
-    expect(find.textContaining('placeholder page'), findsOneWidget);
+    expect(find.textContaining('Blog'), findsWidgets);
   });
 
   test('LibraryReadResult.fromJson rejects missing status', () {

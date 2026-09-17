@@ -7,6 +7,7 @@ import { cleanup, screen, waitFor } from "@testing-library/react";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { ChatAudioAttachment } from "../../src/components/ChatAudioAttachment.js";
 import { useNodeService } from "../../src/hooks/useNodeService.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: vi.fn(),
@@ -22,12 +23,14 @@ const mockReadLibraryItemContent = vi.fn();
 const mockReadFamilyAttachment = vi.fn();
 
 function mockNodeService(overrides: Partial<ReturnType<typeof useNodeService>> = {}) {
-  (useNodeService as any).mockReturnValue({
-    readLibraryItemContent: mockReadLibraryItemContent,
-    readFamilyAttachment: mockReadFamilyAttachment,
-    isConnected: true,
-    ...overrides,
-  });
+  (useNodeService as any).mockReturnValue(
+    partialNodeService({
+      readLibraryItemContent: mockReadLibraryItemContent,
+      readFamilyAttachment: mockReadFamilyAttachment,
+      isConnected: true,
+      ...overrides,
+    }),
+  );
 }
 
 describe("ChatAudioAttachment — Phase 37", () => {

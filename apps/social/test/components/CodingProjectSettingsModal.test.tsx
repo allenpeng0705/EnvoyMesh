@@ -7,11 +7,12 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { CodingProjectSettingsModal } from "../../src/components/CodingProjectSettingsModal.js";
 import { CodingNewSessionSheet } from "../../src/components/CodingNewSessionSheet.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 afterEach(() => cleanup());
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     getExtAgentCommandCatalog: vi.fn().mockResolvedValue({ models: [] }),
   }),
 }));

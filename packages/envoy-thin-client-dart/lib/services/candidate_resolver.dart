@@ -13,6 +13,15 @@ import 'package:envoy_thin_client/services/home_remote_client.dart';
 /// Relay must not win just because it was first in the list after a 5G
 /// pairing; sequential dial stops at the first success.
 class CandidateResolver {
+  /// [communityRelayRequiresPeerId] makes the shared community relay a candidate **only** when the
+  /// stored node names the home's peer id — the relay routes by peer id, so a candidate without one
+  /// dials shared infrastructure with nothing to route to. The default keeps EnvoyGo's token-only
+  /// fallback (see [_buildCommunityRelayCandidates]); a product whose daemon is reachable through the
+  /// relay only as a peer sets it, so it never advertises a rung that cannot dial.
+  const CandidateResolver({this.communityRelayRequiresPeerId = false});
+
+  final bool communityRelayRequiresPeerId;
+
   /// Resolve bootstrap preset names to full libp2p multiaddr strings.
   ///
   /// Maps preset names like "public-libp2p-am6" to their full multiaddr
@@ -81,12 +90,22 @@ class CandidateResolver {
     ];
   }
 
-  /// Cap expensive libp2p candidates (prefer cn-relay / community when present).
+  /// Cap expensive libp2p candidates (prefer a direct address, then cn-relay / community when
+  /// present).
+  ///
+  /// A direct address outranks the circuit hops because it is one hop instead of two and needs no
+  /// relay to be up; before this, capping on cellular (1 candidate) would spend the only P2P slot on
+  /// a circuit through a relay while a direct address the payload had just handed us went unused.
   List<HomeRemoteCandidate> _limitLibp2p(
     List<HomeRemoteCandidate> all, {
     required int max,
   }) {
     if (all.length <= max) return all;
+    final direct =
+        all.where((c) => c.name.startsWith('p2p-direct')).toList();
+    if (direct.isNotEmpty) {
+      return direct.take(max).toList();
+    }
     final preferred = all.where((c) => c.name.contains('cn-relay')).toList();
     if (preferred.isNotEmpty) {
       return preferred.take(max).toList();
@@ -160,11 +179,11 @@ class CandidateResolver {
       addBase(peer);
     }
 
-    final String? homePeerId = node.homePeerId.trim();
+    final homePeerId = node.homePeerId.trim();
     for (var i = 0; i < bases.length; i++) {
       final relayBase = bases[i];
       var relayUrl = relayBase;
-      if (homePeerId != null && homePeerId.isNotEmpty) {
+      if (homePeerId.isNotEmpty) {
         relayUrl = '$relayBase?target=$homePeerId';
         if (sessionToken != null) {
           relayUrl += '&token=$sessionToken';
@@ -198,33 +217,38 @@ class CandidateResolver {
   static const _communityRelayLibp2pMultiaddr =
       '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo';
 
-  /// Build libp2p circuit relay candidates.
+  /// Build libp2p candidates: a **direct** dial to the home when the payload carried the home's own
+  /// addresses, and a **circuit-relay** hop for every relay that can reach it.
   ///
-  /// Uses the community relay's libp2p address to dial the home node
-  /// via circuit relay v2. This works when the relay WebSocket is down
-  /// but the libp2p circuit relay is still operational.
+  /// `node.bootstrapPeers` is documented by the pairing contract
+  /// (`PairWithHomeNodeParams.bootstrapPeers`) as *the home node's dialable libp2p multiaddrs*, but
+  /// the same list has always carried the home's relay/bootstrap peers too (EnvoyGo's relay hints).
+  /// Three shapes are told apart by structure: a plain address ending in `/p2p/<home>` is a **direct**
+  /// dial; a `/p2p-circuit/p2p/<home>` route is a **relay** route and is dialled as advertised but
+  /// named by its first hop; any other address is a relay the home is dialled *through*.
   ///
-  /// The circuit address format is:
-  ///   /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
-  /// Build libp2p circuit relay candidates from all bootstrap relays.
+  /// Before this, a home address was fed to the circuit builder and produced
+  /// `/p2p/<home>/p2p-circuit/p2p/<home>`: the home used as its own relay. That is a dial which
+  /// cannot work, and it made the field the contract documents for direct dialling useless.
   ///
-  /// Tries circuit relay via each bootstrap relay (cn-relay, am6, am7, etc.)
-  /// so mobile can fall back to any relay that works.
+  /// Uses [node.homePeerId] as the circuit relay destination. If unavailable, no candidate can be
+  /// built at all: both a direct dial and a circuit address are addressed to a peer id.
   List<HomeRemoteCandidate> _buildLibp2pCandidates(
       StoredNode node, String? sessionToken) {
     final result = <HomeRemoteCandidate>[];
 
-    // Use node.homePeerId as the circuit relay destination. This is the
-    // home node's libp2p peer ID — required for building /p2p-circuit/p2p/<home>
-    // addresses. If unavailable, we cannot build circuit relay candidates.
-    print(
-        '[_buildLibp2pCandidates] ENTERING — _communityHomePeerId=$_communityHomePeerId, node.homePeerId=${node.homePeerId}, node.bootstrapPeers=${node.bootstrapPeers}');
-    final String? homePeerId = node.homePeerId.trim();
-    if (homePeerId == null || homePeerId.isEmpty) {
-      print(
-          '[_buildLibp2pCandidates] node.homePeerId is null/empty, cannot build circuit relay candidates');
+    final homePeerId = node.homePeerId.trim();
+    if (homePeerId.isEmpty) {
       return result;
     }
+
+    final directAddrs = <String>[];
+
+    // Circuit routes the payload already carries whole, keyed by their first-hop relay's peer id.
+    // A `/p2p-circuit/` address that terminates at the home is **not** a direct dial: the route is
+    // the relay hop, so it is dialled as advertised but named by its relay below. Keeping it out of
+    // `directAddrs` is what stops the label `p2p-direct` from being shown for a two-hop route.
+    final advertisedCircuits = <String, String>{};
 
     // Build circuit relay candidates for ALL bootstrap relays (not just cn-relay).
     // Each candidate tries a different relay hop.
@@ -234,31 +258,64 @@ class CandidateResolver {
     };
 
     // Add all bootstrap relays from the stored node (synced from home node via QR).
-    // node.bootstrapPeers may contain either:
-    // 1. Full libp2p multiaddrs (e.g., /dnsaddr/am6.bootstrap.libp2p.io/p2p/...)
+    // node.bootstrapPeers may contain:
+    // 1. Full libp2p multiaddrs — the home's own (direct dial), a relay's (circuit hop) or an
+    //    already-built circuit route to the home (relay route)
     // 2. Preset names (e.g., "public-libp2p-am6") — resolve to multiaddrs
-    print(
-        '[_buildLibp2pCandidates] node.bootstrapPeers: ${node.bootstrapPeers}');
+    // WebSocket entries are dialled by [_buildRelayWsCandidates], not here.
     for (final peer in node.bootstrapPeers) {
       if (peer.startsWith('/')) {
-        // Full multiaddr — use directly
-        print(
-            '[_buildLibp2pCandidates] full multiaddr: $peer');
+        if (_isCircuit(peer)) {
+          // The relay is the first hop; a circuit that ends anywhere but the home cannot reach it,
+          // so it builds no rung.
+          final relayPeerId = _circuitRelayPeer(peer);
+          if (relayPeerId != null && _addressedPeer(peer) == homePeerId) {
+            advertisedCircuits.putIfAbsent(relayPeerId, () => peer);
+          }
+          continue;
+        }
+        if (_addressNamesHome(peer, homePeerId)) {
+          if (!directAddrs.contains(peer)) directAddrs.add(peer);
+          continue;
+        }
         if (!relayMultiaddrs.containsValue(peer)) {
           final name = _extractRelayName(peer);
           relayMultiaddrs[name] = peer;
         }
-      } else {
-        // Preset name — resolve to multiaddrs
-        final resolved = resolveBootstrapPresets([peer]);
-        print(
-            '[_buildLibp2pCandidates] preset "$peer" resolved to: $resolved');
-        for (final addr in resolved) {
+      } else if (!peer.contains(':') && peer.isNotEmpty) {
+        for (final addr in resolveBootstrapPresets([peer])) {
           if (!relayMultiaddrs.containsValue(addr)) {
             relayMultiaddrs[peer] = addr;
           }
         }
       }
+    }
+
+    // The direct addresses first: one hop instead of two, and no relay has to be up.
+    for (var i = 0; i < directAddrs.length; i++) {
+      result.add(HomeRemoteCandidate(
+        name: i == 0 ? 'p2p-direct' : 'p2p-direct-$i',
+        url: directAddrs[i],
+        homePeerId: homePeerId,
+        sessionToken: sessionToken,
+        libp2pRelayAddr: directAddrs[i],
+      ));
+    }
+
+    // Routes the payload handed us whole come before routes we build: the advertised circuit names
+    // the exact relay transport, while our own hop names only the relay's peer id. Both are relay
+    // rungs and are labelled as such.
+    final advertisedNames = <String>{};
+    for (final addr in advertisedCircuits.values) {
+      final relayName = _extractRelayName(_circuitRelayPrefix(addr));
+      advertisedNames.add(relayName);
+      result.add(HomeRemoteCandidate(
+        name: 'p2p-$relayName',
+        url: addr,
+        homePeerId: homePeerId,
+        sessionToken: sessionToken,
+        libp2pRelayAddr: addr,
+      ));
     }
 
     for (final entry in relayMultiaddrs.entries) {
@@ -273,12 +330,16 @@ class CandidateResolver {
       final relayPeerId = relayMultiaddr.substring(p2pIndex + 5);
       if (relayPeerId.isEmpty) continue;
 
+      // The payload already carries a whole circuit route through this relay (or one with the same
+      // name): dial that one instead of adding a second rung for the same hop.
+      if (advertisedCircuits.containsKey(relayPeerId) ||
+          advertisedNames.contains(relayName)) {
+        continue;
+      }
+
       // Build the circuit relay address: /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
       final circuitAddr =
           '/p2p/$relayPeerId/p2p-circuit/p2p/$homePeerId';
-
-      print(
-          '[_buildLibp2pCandidates] adding relay candidate: name=$relayName, addr=$circuitAddr');
 
       result.add(HomeRemoteCandidate(
         name: 'p2p-$relayName',
@@ -290,6 +351,47 @@ class CandidateResolver {
     }
 
     return result;
+  }
+
+  /// Whether [multiaddr] is a plain address that names [homePeerId] directly.
+  ///
+  /// Only the final `/p2p/` component counts. A `/p2p-circuit/` address therefore never names the
+  /// home *directly*: its destination is the home, but its route is the relay at the first hop, and
+  /// [_buildLibp2pCandidates] labels it as one. Comparing the id is what keeps a relay hop and a home
+  /// address from being confused for one another — they are the same shape. The earlier version
+  /// returned true for *any* address containing `/p2p-circuit/`, which is how a desktop-advertised
+  /// `/ip4/…/p2p/<relay>/p2p-circuit/p2p/<home>` was shown to the user as `p2p-direct`.
+  bool _addressNamesHome(String multiaddr, String homePeerId) {
+    final addressed = _addressedPeer(multiaddr);
+    return addressed != null && addressed == homePeerId;
+  }
+
+  /// Whether [multiaddr] is a `/p2p-circuit/` route rather than a plain address.
+  bool _isCircuit(String multiaddr) => multiaddr.contains('/p2p-circuit/');
+
+  /// The peer a multiaddr ultimately addresses: the final `/p2p/` component, or null. For
+  /// `/ip4/…/p2p/<relay>/p2p-circuit/p2p/<home>` this is `<home>`; for `/ip4/…/p2p/<peer>` it is
+  /// `<peer>`.
+  String? _addressedPeer(String multiaddr) {
+    final p2pIndex = multiaddr.lastIndexOf('/p2p/');
+    return p2pIndex < 0 ? null : multiaddr.substring(p2pIndex + 5);
+  }
+
+  /// The first-hop relay of a circuit route: the `/p2p/` component immediately before
+  /// `/p2p-circuit/`, or null. Deliberately not the final `/p2p/` component, which is the
+  /// destination (the home).
+  String? _circuitRelayPeer(String multiaddr) {
+    final circuitIndex = multiaddr.indexOf('/p2p-circuit/');
+    if (circuitIndex < 0) return null;
+    final p2pIndex = multiaddr.lastIndexOf('/p2p/', circuitIndex);
+    return p2pIndex < 0 ? null : multiaddr.substring(p2pIndex + 5, circuitIndex);
+  }
+
+  /// The relay's own address inside a circuit route: everything before `/p2p-circuit/`. Used to name
+  /// the route, never to dial it.
+  String _circuitRelayPrefix(String multiaddr) {
+    final circuitIndex = multiaddr.indexOf('/p2p-circuit/');
+    return circuitIndex < 0 ? multiaddr : multiaddr.substring(0, circuitIndex);
   }
 
   /// Extract a readable name from a libp2p multiaddr.
@@ -354,6 +456,13 @@ class CandidateResolver {
   List<HomeRemoteCandidate> _buildCommunityRelayCandidates(
       String? sessionToken) {
     final result = <HomeRemoteCandidate>[];
+    // A product whose daemon is reachable through the community relay only as a peer: with no peer
+    // id there is nothing for the relay to route to, so the token-only fallback below would be a
+    // candidate that cannot dial. Omitted rather than offered (see the constructor).
+    if (communityRelayRequiresPeerId &&
+        (_communityHomePeerId == null || _communityHomePeerId!.isEmpty)) {
+      return result;
+    }
     // Port 15432 is plain HTTP WebSocket, not TLS. Using wss:// causes
     // "WRONG_VERSION_NUMBER" TLS handshake errors.
     final wsUrl = 'ws://$_communityRelayHost:$_communityRelayWsPort/ws';

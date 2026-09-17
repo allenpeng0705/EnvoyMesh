@@ -1,0 +1,213 @@
+# Network topology for holepunch testing - COMPLETELY ISOLATED FROM EXTERNAL NETWORKS:
+# - public_net: Simulates the "internet" - relay and STUN servers (10.10.0.0/16)
+# - nat_a_net: Private network behind NAT-A gateway (192.168.1.0/24) 
+# - nat_b_net: Private network behind NAT-B gateway (192.168.2.0/24)
+# - control_net: Separate network for test orchestration only (172.20.0.0/16)
+#
+# CRITICAL: Peers are isolated from public_net to enforce NAT traversal!
+# - Peers ONLY have access to their private networks + control_net
+# - Control API uses control_net, libp2p traffic uses private networks
+# - Internal STUN server: 10.10.2.10:3478 (NOT stun.google.com)
+
+networks:
+  public_net:
+    driver: bridge
+    name: holepunch_public
+    ipam:
+      config:
+        - subnet: 10.10.0.0/16
+          gateway: 10.10.0.1
+
+  nat_a_net:
+    driver: bridge  
+    name: holepunch_nat_a
+    # Not internal - allows routing through NAT gateway to public_net
+    # NAT behavior is enforced by iptables rules in nat-gateway-a
+    ipam:
+      config:
+        - subnet: 192.168.1.0/24
+          gateway: 192.168.1.1
+
+  nat_b_net:
+    driver: bridge
+    name: holepunch_nat_b
+    # Not internal - allows routing through NAT gateway to public_net
+    # NAT behavior is enforced by iptables rules in nat-gateway-b
+    ipam:
+      config:
+        - subnet: 192.168.2.0/24
+          gateway: 192.168.2.1
+
+  control_net:
+    driver: bridge
+    name: holepunch_control
+    internal: false  # Allows host access for test orchestration
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+          gateway: 172.25.0.1
+
+services:
+  # NAT Gateway A - MINIMAL TEST (single network only)
+  nat-gateway-a:
+    build:
+      context: ../containers/nat-gateway
+      args:
+        NAT_TYPE: ${NAT_A_TYPE:-cone}
+    container_name: nat-gateway-a
+    networks:
+      public_net:
+        ipv4_address: 10.10.1.10
+      nat_a_net:
+        ipv4_address: 192.168.1.10
+    environment:
+      - NAT_TYPE=${NAT_A_TYPE:-cone}
+      - INTERNAL_SUBNET=192.168.1.0/24
+      - EXTERNAL_INTERFACE=eth0
+      - INTERNAL_INTERFACE=eth1
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    privileged: true
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.route_localnet=1
+    depends_on:
+      - stun-server
+      - relay-server
+
+  # NAT Gateway B - Full NAT functionality
+  nat-gateway-b:
+    build:
+      context: ../containers/nat-gateway
+      args:
+        NAT_TYPE: ${NAT_B_TYPE:-cone}
+    container_name: nat-gateway-b
+    networks:
+      public_net:
+        ipv4_address: 10.10.1.20
+      nat_b_net:
+        ipv4_address: 192.168.2.10
+    environment:
+      - NAT_TYPE=${NAT_B_TYPE:-cone}
+      - INTERNAL_SUBNET=192.168.2.0/24
+      - EXTERNAL_INTERFACE=eth0
+      - INTERNAL_INTERFACE=eth1
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    privileged: true
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.route_localnet=1
+    depends_on:
+      - nat-gateway-a
+      - stun-server
+      - relay-server
+
+  # STUN Server for internal address discovery (isolated)
+  stun-server:
+    image: coturn/coturn:latest
+    container_name: stun-server
+    networks:
+      public_net:
+        ipv4_address: 10.10.2.10
+    # No external ports - completely isolated
+    command: |
+      turnserver
+      --listening-port=3478
+      --fingerprint
+      --lt-cred-mech
+      --realm=holepunch.test
+      --stun-only
+
+  # Circuit Relay Server (Public)
+  relay-server:
+    build:
+      context: ../../../../../  # agentic/ directory to include dart-udx
+      dockerfile: dart-libp2p/test/integration/holepunch_network/containers/dart-peer/Dockerfile
+    container_name: relay-server
+    ports:
+      - "8083:8080"  # Control API port mapping
+    networks:
+      public_net:
+        ipv4_address: 10.10.3.10
+      control_net:
+        ipv4_address: 172.25.0.12
+    environment:
+      - PEER_ROLE=relay
+      - PEER_NAME=relay-server
+      - LISTEN_ADDRS=/ip4/0.0.0.0/tcp/4001
+      - ENABLE_RELAY=true
+      - ENABLE_HOLEPUNCH=true
+      - STUN_SERVERS=10.10.2.10:3478
+      - CONTROL_BIND_IP=172.25.0.12  # Bind control API to control network
+    volumes:
+      - ../../../../../dart-libp2p/test/integration/holepunch_network/containers/dart-peer/config:/app/config
+
+  # Peer A (Behind NAT-A)
+  peer-a:
+    build:
+      context: ../../../../../  # agentic/ directory to include dart-udx
+      dockerfile: dart-libp2p/test/integration/holepunch_network/containers/dart-peer/Dockerfile
+    container_name: peer-a
+    ports:
+      - "8081:8080"  # Control API port mapping
+    networks:
+      nat_a_net:
+        ipv4_address: 192.168.1.100
+      control_net:  # Control API only - NO direct access to public_net
+        ipv4_address: 172.25.0.10
+    cap_add:
+      - NET_ADMIN  # Needed for route manipulation
+    environment:
+      - PEER_ROLE=peer
+      - PEER_NAME=peer-a
+      - LISTEN_ADDRS=/ip4/192.168.1.100/tcp/4001  # Bind ONLY to private network
+      - ENABLE_HOLEPUNCH=true
+      - RELAY_SERVERS=/ip4/10.10.3.10/tcp/4001/p2p/12D3KooWGH8ASSPLyWZVkJSGiNb5e9tLWjZAK9wavy77SNwAJB1C
+      - ENABLE_AUTORELAY=true
+      - STUN_SERVERS=10.10.2.10:3478
+      - NAT_GATEWAY=192.168.1.10
+      - CONTROL_BIND_IP=172.25.0.10  # Bind control API to control network
+      - PUBLIC_NET_SUBNET=10.10.0.0/16  # Route to public network through NAT gateway
+    depends_on:
+      - nat-gateway-a
+      - relay-server
+      - stun-server
+    volumes:
+      - ../../../../../dart-libp2p/test/integration/holepunch_network/containers/dart-peer/config:/app/config
+
+  # Peer B (Behind NAT-B)
+  peer-b:
+    build:
+      context: ../../../../../  # agentic/ directory to include dart-udx
+      dockerfile: dart-libp2p/test/integration/holepunch_network/containers/dart-peer/Dockerfile
+    container_name: peer-b
+    ports:
+      - "8082:8080"  # Control API port mapping  
+    networks:
+      nat_b_net:
+        ipv4_address: 192.168.2.100
+      control_net:  # Control API only - NO direct access to public_net
+        ipv4_address: 172.25.0.11
+    cap_add:
+      - NET_ADMIN  # Needed for route manipulation
+    environment:
+      - PEER_ROLE=peer
+      - PEER_NAME=peer-b
+      - LISTEN_ADDRS=/ip4/192.168.2.100/tcp/4001  # Bind ONLY to private network
+      - ENABLE_HOLEPUNCH=true
+      - RELAY_SERVERS=/ip4/10.10.3.10/tcp/4001/p2p/12D3KooWGH8ASSPLyWZVkJSGiNb5e9tLWjZAK9wavy77SNwAJB1C
+      - ENABLE_AUTORELAY=true
+      - STUN_SERVERS=10.10.2.10:3478
+      - NAT_GATEWAY=192.168.2.10
+      - CONTROL_BIND_IP=172.25.0.11  # Bind control API to control network
+      - PUBLIC_NET_SUBNET=10.10.0.0/16  # Route to public network through NAT gateway
+    depends_on:
+      - nat-gateway-b
+      - relay-server
+      - stun-server
+      - peer-a
+    volumes:
+      - ../../../../../dart-libp2p/test/integration/holepunch_network/containers/dart-peer/config:/app/config

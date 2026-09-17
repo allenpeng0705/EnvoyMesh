@@ -22,8 +22,14 @@ dependencies:
 # Dart 3.13+. Dart honours `dependency_overrides` only from the root package,
 # so every pub root that resolves envoy_mesh_libp2p must repeat this
 # (see packages/envoy-mesh-libp2p-dart/pubspec.yaml and apps/envoygo/pubspec.yaml).
+#
+# `dart_libp2p` itself is the family's one patched dependency (the yamux ACK
+# deadlock; see EnvoyMesh/vendor/dart_libp2p/PATCHES.md). The fixture compiles
+# the same SDK the apps ship, so it points at the same vendored fork.
 dependency_overrides:
   mdns_dart: 2.2.2
+  dart_libp2p:
+    path: ../../vendor/dart_libp2p
 
 dev_dependencies:
   test: ^1.25.0

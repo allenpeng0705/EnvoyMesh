@@ -495,8 +495,11 @@ export interface EnvoyMeshOptions {
   /**
    * Pre-loaded libp2p Ed25519 private key. Required in environments where file
    * I/O is unavailable (browsers, Capacitor WebView). The caller is
-   * responsible for loading or generating the key — see
-   * `apps/node/src/libp2p-key-loader.ts` for a file-backed implementation.
+   * responsible for loading or generating the key — and for persisting it, because
+   * this package reads no key file, by design (it has no filesystem dependency).
+   * See `apps/node/src/libp2p-key-loader.ts` for the family's file-backed
+   * implementation. When omitted, libp2p generates an ephemeral identity and the
+   * peer id changes on every process start.
    */
   libp2pPrivateKey?: import("@libp2p/interface").PrivateKey;
   enableP2pDebug?: boolean;
@@ -511,11 +514,6 @@ export interface EnvoyMeshOptions {
    */
   enableRelayDebugSummary?: boolean;
   onP2pDebug?: (event: P2pDebugEvent) => void;
-  /**
-   * Path to a protobuf-serialized libp2p Ed25519 private key. If the file is missing, it is created on first {@link EnvoyMesh.start}.
-   * When omitted, libp2p generates a new ephemeral identity each process start (Peer ID changes every restart).
-   */
-  libp2pPrivateKeyPath?: string;
   /**
    * libp2p connection-manager cap. Defaults to {@link DEFAULT_CLIENT_MAX_CONNECTIONS} for client
    * nodes; relay-server nodes stay uncapped unless set explicitly.
@@ -1064,7 +1062,12 @@ export class EnvoyMesh {
     const relayEnabled =
       this.options.enableRelay ||
       this.options.enableRelayServer;
-    if (relayEnabled && !this.relayEverReserved) {
+    // `hasHeldRelayReservation()`, not the raw `relayEverReserved` flag: a
+    // reservation created by the configured `<relay>/p2p-circuit` listen
+    // address never flips the flag (see the helper). Reporting "NEVER
+    // reserved" here while `getRelayReservationStatus()` says `reserved`
+    // was the observed bug.
+    if (relayEnabled && !this.hasHeldRelayReservation()) {
       console.warn(
         `[p2p] stop(): node NEVER reserved a relay slot during this run. ` +
         `Other peers cannot dial this node inbound via /p2p-circuit/. ` +
@@ -1760,6 +1763,38 @@ export class EnvoyMesh {
   /** Open libp2p remote peer ids from the connection manager (direct + relay). */
   getConnectedPeerIds(): string[] {
     return this.getConnectionStats().connectedPeerIds;
+  }
+
+  /**
+   * "Did this node ever hold a relay reservation?" — the sticky
+   * `relayEverReserved` flag **or** a slot that is live in libp2p's
+   * circuit-relay-v2 reservation store right now.
+   *
+   * Why the second source is required: libp2p dispatches
+   * `relay:created-reservation` on the transport's private `ReservationStore`
+   * (`@libp2p/circuit-relay-v2/dist/src/transport/reservation-store.js`), **not**
+   * on the libp2p node event emitter, and the transport does not re-dispatch it.
+   * `installRelayLogging()` subscribes on the node, so a reservation created by
+   * the configured `<relay>/p2p-circuit` listen address (`configuredRelayAddrs`
+   * in `start()`) never flips the flag — verified against cn-relay: the store
+   * reports a reservation (`reservationCount=1`), `hasLiveRelayReservation()`
+   * is `true`, yet `relayEverReserved` stays `false`. It is not a
+   * "listener attached too late" race: the listener is installed before
+   * `node.start()`; it is simply on an emitter that never sees the event.
+   *
+   * Rejected alternative: subscribe the internal `ReservationStore` directly
+   * (mirroring {@link getClientHasReservationFn}). That fixes only *future*
+   * events and couples this module to the store's version-specific event
+   * `detail` shape; deriving the report from the same store query the
+   * {@link getRelayReservationStatus} getter uses cannot be missed by an event
+   * rename and cannot contradict the getter.
+   */
+  private hasHeldRelayReservation(): boolean {
+    if (this.relayEverReserved) return true;
+    // Store-only check (no open-connection cross-check): the question is "did a
+    // slot land", not "is it usable this instant". Same query the status getter
+    // uses, so the two views can no longer disagree.
+    return this.listLivePreferredRelayPeerIds().length > 0;
   }
 
   /**
@@ -4753,7 +4788,11 @@ export class EnvoyMesh {
     const relayPeerCount = connectionStats.circuitPeerIds.length;
     lines.push(`peers=${connectedPeerCount}`);
     lines.push(`relay_peers=${relayPeerCount}`);
-    if (!this.relayEverReserved && (this.options.enableRelay || this.options.enableRelayServer)) {
+    // Same store-backed check as stop(): the flag alone is false for a
+    // reservation that landed via the configured `<relay>/p2p-circuit` listen
+    // address, which would print this warning (and `relay=PENDING`) on a node
+    // that is in fact reserved.
+    if ((this.options.enableRelay || this.options.enableRelayServer) && !this.hasHeldRelayReservation()) {
       lines.push(
         "→ Discover may not work: no relay reservation yet. " +
         "If this persists past 30s, the configured relay is unreachable from this network.",
@@ -5744,3 +5783,9 @@ export {
   type OutboundDeliverMesh,
   type OutboundExpectReplyMesh,
 } from "./mesh-ports.js";
+
+export {
+  meshStreamAsDuplex,
+  type MeshFramedDuplex,
+  type P2PStreamLike,
+} from "./mesh-stream-duplex.js";

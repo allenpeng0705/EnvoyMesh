@@ -3,6 +3,8 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
 import { KnowledgeBaseSettings } from "../../src/components/views/SettingsAITab.js";
 import { DEFAULT_AI_KNOWLEDGE_BASE } from "@envoymesh/api";
+import type { RagIndexStatus } from "@envoymesh/api";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listEnvoyLocalInstalledEmbedModels = vi.fn();
 const setEnvoyLocalEmbedActiveModel = vi.fn();
@@ -10,18 +12,31 @@ const enableEnvoyLocalEmbed = vi.fn();
 const getEnvoyLocalEmbedStatus = vi.fn();
 const getEnvoyLocalStatus = vi.fn();
 
+/** Complete idle status: `RagIndexStatus` requires the counters the old mock omitted. */
+const idleRagStatus: RagIndexStatus = {
+  isIndexing: false,
+  progress: {
+    phase: "idle",
+    processed: 0,
+    total: 0,
+    indexed: 0,
+    skipped: 0,
+    removed: 0,
+    updatedAt: new Date().toISOString(),
+  },
+  trackedDocuments: 0,
+};
+
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     listEnvoyLocalInstalledEmbedModels,
     setEnvoyLocalEmbedActiveModel,
     enableEnvoyLocalEmbed,
     getEnvoyLocalEmbedStatus,
     getEnvoyLocalStatus,
-    getRagIndexStatus: vi.fn(async () => ({
-      progress: { phase: "idle", processed: 0, total: 0, updatedAt: new Date().toISOString() },
-    })),
+    getRagIndexStatus: vi.fn(async () => idleRagStatus),
     on: vi.fn(() => () => undefined),
-    reindexRagKnowledge: vi.fn(async () => undefined),
+    reindexRagKnowledge: vi.fn(async () => idleRagStatus),
     listKbPlugins: vi.fn(async () => []),
   }),
   useModelProviderUiScope: () => "full",

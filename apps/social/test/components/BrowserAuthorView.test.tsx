@@ -9,6 +9,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { BondRecord } from "@envoymesh/api";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { BrowserAuthorView } from "../../src/components/views/BrowserAuthorView.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const publishWebContentEntry = vi.fn();
 const readLibraryItemContent = vi.fn();
@@ -61,7 +62,7 @@ const humanProfile = {
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     publishWebContentEntry,
     readLibraryItemContent,
     removeProfileGalleryPhoto,

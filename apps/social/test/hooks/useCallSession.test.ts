@@ -7,23 +7,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useCallSession } from "../../src/hooks/useCallSession.js";
-import type { CallEvent, NodeService } from "@envoymesh/api";
+import type { CallEvent } from "@envoymesh/api";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
-function createMockNodeService(): NodeService & {
-  emitCallEvent: (event: CallEvent) => void;
-} {
+function createMockNodeService() {
   let callHandler: ((event: CallEvent) => void) | null = null;
 
-  const service = {
+  const service = partialNodeService({
     getActiveCall: () => null,
     onCallEvent(handler: (event: CallEvent) => void) {
       callHandler = handler;
       return () => {
         callHandler = null;
       };
-    },
-    emitCallEvent(event: CallEvent) {
-      callHandler?.(event);
     },
     sendCallInvite: vi.fn(async () => "call-123"),
     sendCallReinvite: vi.fn(async () => true),
@@ -32,11 +28,18 @@ function createMockNodeService(): NodeService & {
     endCall: vi.fn(async () => true),
     setCallMuted: vi.fn(async () => true),
     sendIceCandidate: vi.fn(async () => true),
-    getNodeConfig: vi.fn(async () => ({ iceServers: [] })),
     warmContactConnection: vi.fn(async () => ({ connected: true, direct: true })),
-  } as unknown as NodeService & { emitCallEvent: (event: CallEvent) => void };
+  });
 
-  return service;
+  return {
+    ...service,
+    // Kept outside the wrapper: the hook only reads `iceServers`, and the real
+    // `NodeConfig` has a dozen required fields the test never asserts on.
+    getNodeConfig: vi.fn(async () => ({ iceServers: [] })),
+    emitCallEvent(event: CallEvent) {
+      callHandler?.(event);
+    },
+  };
 }
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({

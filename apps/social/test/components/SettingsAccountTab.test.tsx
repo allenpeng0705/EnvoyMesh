@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { SettingsAccountTab } from "../../src/components/views/SettingsAccountTab.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const updateHumanProfile = vi.fn();
 const advertiseTopic = vi.fn();
@@ -27,12 +28,10 @@ let nodeConfig: Record<string, unknown> = {
   knowledgeSyndicationMaxSensitivity: undefined,
 };
 
-const mockNodeService = {
+const mockNodeService = partialNodeService({
   updateHumanProfile,
   advertiseTopic,
   getProfile,
-  refreshNodeConfig,
-  refreshHumanProfile,
   updateNodeConfig,
   clearAllUserData,
   getCircuitReservationStatus: vi.fn().mockResolvedValue({
@@ -41,7 +40,7 @@ const mockNodeService = {
     everReserved: false,
     relayPeerIds: [],
   }),
-};
+});
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,

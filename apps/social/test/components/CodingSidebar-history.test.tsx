@@ -12,6 +12,7 @@ import {
   loadCodingArchivedKeys,
 } from "../../src/lib/coding-archive.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listEnvoyHarnessChats = vi.fn();
 const createEnvoyHarnessChat = vi.fn();
@@ -19,7 +20,7 @@ const removeEnvoyHarnessChat = vi.fn();
 const listHomeFsEntries = vi.fn();
 const on = vi.fn(() => () => {});
 
-const nodeServiceMock = {
+const nodeServiceMock = partialNodeService({
   listEnvoyHarnessChats,
   createEnvoyHarnessChat,
   removeEnvoyHarnessChat,
@@ -34,7 +35,7 @@ const nodeServiceMock = {
   }),
   isConnected: true,
   on,
-};
+});
 
 let mockNodeConfig: Partial<NodeConfig> = {
   callerIsOwnerProfile: true,

@@ -129,6 +129,28 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
         _modelController.text = prefs.model!.trim();
       }
     });
+    unawaited(_syncPolicyFromNode());
+  }
+
+  /// Match Social: composer Perms follow `piSettings.autoRunPolicy` on the node.
+  Future<void> _syncPolicyFromNode() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final cfg = await client.getNodeConfig();
+      final raw = (cfg['piSettings'] as Map?)?['autoRunPolicy']?.toString();
+      if (raw != 'safe-only' &&
+          raw != 'always-confirm' &&
+          raw != 'off') {
+        return;
+      }
+      if (!mounted || _prefs.permissionPolicy == raw) return;
+      final saved = await saveCodingComposerPrefs(
+        _prefsKey,
+        _prefs.copyWith(permissionPolicy: raw),
+      );
+      if (mounted) setState(() => _prefs = saved);
+    } catch (_) {}
   }
 
   Future<void> _persistTranscript([
@@ -276,9 +298,21 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
   }
 
   Future<void> _patchPrefs(CodingComposerPrefs next) async {
+    final prevPolicy = _prefs.permissionPolicy;
     final saved = await saveCodingComposerPrefs(_prefsKey, next);
     if (!mounted) return;
     setState(() => _prefs = saved);
+    if (saved.permissionPolicy == prevPolicy) return;
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final cfg = await client.getNodeConfig();
+      final pi = Map<String, dynamic>.from(
+        (cfg['piSettings'] as Map?)?.cast<String, dynamic>() ?? const {},
+      );
+      pi['autoRunPolicy'] = saved.permissionPolicy;
+      await client.updateNodeConfig({'piSettings': pi});
+    } catch (_) {}
   }
 
   void _scrollToEnd() {

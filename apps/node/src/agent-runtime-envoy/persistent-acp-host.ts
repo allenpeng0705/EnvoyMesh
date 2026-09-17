@@ -204,6 +204,18 @@ export class EnvoyHarnessPersistentAcpHost {
     await this.#client.cancel(this.#sessionId);
   }
 
+  /**
+   * Native Mode control — Default / Plan / Review (session/set_mode).
+   */
+  async setCollaborationMode(
+    mode: "default" | "plan" | "review",
+  ): Promise<string> {
+    if (this.#client === undefined || this.#sessionId === undefined) {
+      throw new Error("EnvoyHarnessPersistentAcpHost: call start() first");
+    }
+    return this.#client.setCollaborationMode(this.#sessionId, mode);
+  }
+
   close(): void {
     this.#client?.close();
     this.#disposeServer?.();

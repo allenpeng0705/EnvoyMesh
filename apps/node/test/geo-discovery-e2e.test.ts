@@ -90,7 +90,6 @@ async function createGeoNode(bootstrapPeers: string[] = []) {
     enableRelay: false,
     enableAutoNat: false,
     enableDcutr: false,
-    libp2pPrivateKeyPath: join(profileDir, "libp2p-key"),
   });
   await mesh.start();
   meshes.push(mesh);
@@ -125,7 +124,7 @@ describe("Geo discovery two-node E2E", () => {
     const advertisedTopics: string[] = [];
     vi.spyOn(advertiser.mesh, "provideCapabilityTopic").mockImplementation(async (topic) => {
       advertisedTopics.push(topic);
-      return { cid: {} as never };
+      return { cid: {} as never, timedOut: false };
     });
     // The discovery advertise cycle skips provideCapabilityTopic when
     // connectedPeers.length < 2 (avoids 30s timeouts against an empty

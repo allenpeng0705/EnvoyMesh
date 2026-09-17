@@ -5,6 +5,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const mocks = vi.hoisted(() => {
   const chainPreviewGoal = vi.fn();
@@ -28,7 +29,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => mocks.nodeService,
+  useNodeService: () => partialNodeService(mocks.nodeService),
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({

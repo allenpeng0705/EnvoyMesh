@@ -8,6 +8,7 @@ import { SettingsAppTab } from "../../src/components/views/SettingsAppTab.js";
 import { ThemeProvider } from "../../src/context/ThemeContext.js";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
 import { ToastProvider } from "../../src/hooks/useToast.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 // SettingsAppTab calls useTheme() and useI18n(), so we wrap it in
 // the providers those hooks expect.
@@ -38,7 +39,7 @@ const mergeAuthorizedDevices = vi.fn();
 const pruneRevokedDevices = vi.fn();
 const refreshNodeConfig = vi.fn();
 
-const mockNodeService = {
+const mockNodeService = partialNodeService({
   listAgentActivity,
   listAuditEvents,
   listTaskJournalEntries,
@@ -49,8 +50,7 @@ const mockNodeService = {
   revokeAuthorizedDevice,
   mergeAuthorizedDevices,
   pruneRevokedDevices,
-  refreshNodeConfig,
-};
+});
 
 vi.mock("@tauri-apps/plugin-updater", () => ({
   check: vi.fn(async () => null),

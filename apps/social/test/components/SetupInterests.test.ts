@@ -51,6 +51,14 @@ describe("Setup interests gating", () => {
 });
 
 describe("Setup location detection", () => {
+  // Mirrors the SetupView derivation: only an "auto" choice with a resolved
+  // location yields a discovery location.
+  const resolveDiscoveryLocation = (
+    locationChoice: "auto" | "skip",
+    resolvedLocation: { countryCode: string; geohash?: string } | undefined,
+  ) =>
+    locationChoice === "auto" && resolvedLocation ? resolvedLocation : undefined;
+
   it("derives a geohash from coordinates at nearby precision", () => {
     const gh = encodeGeohash(42.36, -71.06, NEARBY_GEOHASH_PRECISION);
     expect(gh.length).toBeGreaterThanOrEqual(4);
@@ -67,18 +75,13 @@ describe("Setup location detection", () => {
 
   it("skips location when precision is hidden", () => {
     // Mirrors the SetupView gating: locationChoice === "skip" → no discoveryLocation.
-    const locationChoice = "skip";
-    const resolvedLocation = { countryCode: "US" };
-    const discoveryLocation =
-      locationChoice === "auto" && resolvedLocation ? resolvedLocation : undefined;
+    const discoveryLocation = resolveDiscoveryLocation("skip", { countryCode: "US" });
     expect(discoveryLocation).toBeUndefined();
   });
 
   it("includes location when choice is auto", () => {
-    const locationChoice = "auto";
     const resolvedLocation = { countryCode: "US", geohash: "abc12" };
-    const discoveryLocation =
-      locationChoice === "auto" && resolvedLocation ? resolvedLocation : undefined;
+    const discoveryLocation = resolveDiscoveryLocation("auto", resolvedLocation);
     expect(discoveryLocation).toEqual({ countryCode: "US", geohash: "abc12" });
   });
 });

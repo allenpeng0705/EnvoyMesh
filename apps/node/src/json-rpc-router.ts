@@ -193,6 +193,7 @@ export const CODING_GATED_RPC = new Set<string>([
   "getEnvoyHarnessStatus",
   "setEnvoyHarnessProjectPath",
   "setEnvoyHarnessAutoRunPolicy",
+  "setEnvoyHarnessCollaborationMode",
   "listEnvoyHarnessPeers",
   "invokeEnvoyHarnessEhui",
   "cancelEnvoyHarnessTurn",
@@ -1591,6 +1592,11 @@ export async function routeRpcMethod(
             }
           : {}),
         ...(typeof params.chatId === "string" ? { chatId: params.chatId } : {}),
+        ...(params.collaborationMode === "default" ||
+        params.collaborationMode === "plan" ||
+        params.collaborationMode === "review"
+          ? { collaborationMode: params.collaborationMode }
+          : {}),
       });
     case "getEnvoyHarnessTurnStatus":
       return ns.getEnvoyHarnessTurnStatus(
@@ -1599,6 +1605,11 @@ export async function routeRpcMethod(
     case "setEnvoyHarnessAutoRunPolicy":
       return ns.setEnvoyHarnessAutoRunPolicy(
         String(params.policy ?? ""),
+      );
+    case "setEnvoyHarnessCollaborationMode":
+      return ns.setEnvoyHarnessCollaborationMode(
+        String(params.mode ?? ""),
+        typeof params.chatId === "string" ? params.chatId : undefined,
       );
     case "getEnvoyHarnessChatHistory":
       return ns.getEnvoyHarnessChatHistory(

@@ -18,6 +18,7 @@ describe("enrichWebContentMediaFromUrl", () => {
         "![photo](envoy://envoy:owner:alice/feeds/media/x/0.jpg)",
         "",
       ].join("\n"),
+      latencyMs: 0,
     }));
     const enriched = await enrichWebContentMediaFromUrl(
       libraryRead,
@@ -43,6 +44,7 @@ describe("enrichWebContentMediaFromUrl", () => {
       libp2pPeerId: "12D3",
       status: "error" as const,
       error: "timed out",
+      latencyMs: 0,
     }));
     const enriched = await enrichWebContentMediaFromUrl(
       libraryRead,
@@ -57,6 +59,7 @@ describe("enrichWebContentMediaFromUrl", () => {
       libp2pPeerId: "12D3",
       status: "ok" as const,
       body: "# Title\n\n",
+      latencyMs: 0,
     }));
     const enriched = await enrichWebContentMediaFromUrl(
       libraryRead,
@@ -71,6 +74,7 @@ describe("enrichWebContentMediaFromUrl", () => {
       libp2pPeerId: "12D3",
       status: "ok" as const,
       body: `![p](envoy://envoy:owner:alice/${params.path.replace(/\.md$/, "")}/0.jpg)`,
+      latencyMs: 0,
     }));
     const map = await enrichWebContentMediaPool(libraryRead, [
       "envoy://envoy:owner:alice/blog/posts/a.md",

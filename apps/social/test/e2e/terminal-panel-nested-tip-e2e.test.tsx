@@ -9,6 +9,7 @@ import type { TerminalSessionSummary } from "@envoymesh/api";
 import { TERMINAL_NESTED_MULTIPLEXER_TIP_KEY } from "../../src/lib/storage.js";
 import { TerminalPanel } from "../../src/components/terminals/TerminalPanel.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 type TransportCallbacks = {
   onData?: (data: Uint8Array) => void;
@@ -80,7 +81,7 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
 }));
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     terminalAttach: vi.fn().mockResolvedValue({
       sessionId: "sess-tip",
       token: "tok",

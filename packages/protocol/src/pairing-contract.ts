@@ -111,5 +111,22 @@ export interface PairWithHomeNodeParams {
    */
   relayWsUrls?: string[];
   homeNodePeerId?: string;
+  /**
+   * Bridge agent display name (optional) — same meaning as
+   * {@link PairingPayload.agentName}.
+   */
   agentName?: string;
+  /**
+   * The home node's dialable libp2p multiaddrs (optional) — same meaning as
+   * {@link PairingPayload.bootstrapPeers}. Carried on the URI as a comma-joined
+   * `bootstrapPeers` query value and inside the compact token as the `bp` key.
+   *
+   * This is what lets a paired phone dial the home peer directly over libp2p
+   * instead of only over the relay's WebSocket. `bootstrapPeers` was already
+   * declared on {@link PairingPayload} and read by the Dart parser, but the URI
+   * builder never wrote it — so a QR could not carry it. The name is reused
+   * rather than invented because the contract already names this concept here;
+   * a second synonym would be a second truth.
+   */
+  bootstrapPeers?: string[];
 }

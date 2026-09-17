@@ -9,6 +9,7 @@ import { CodingView } from "../../src/components/views/CodingView.js";
 import { saveCodingProjects } from "../../src/lib/coding-projects.js";
 import { clearCodingReviewReadonly } from "../../src/lib/open-coding-nav.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listEnvoyHarnessChats = vi.fn();
 const createEnvoyHarnessChat = vi.fn();
@@ -43,7 +44,7 @@ let mockTerminalSessions: Array<{
 }> = [];
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     listEnvoyHarnessChats,
     createEnvoyHarnessChat,
     createCodingReviewInvite,

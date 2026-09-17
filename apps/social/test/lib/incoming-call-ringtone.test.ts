@@ -36,7 +36,7 @@ describe("incoming-call-ringtone", () => {
       close = vi.fn().mockResolvedValue(undefined);
     }
 
-    (globalThis as unknown as { AudioContext: typeof MockAudioContext }).AudioContext =
+    (globalThis as unknown as { AudioContext: typeof AudioContext }).AudioContext =
       MockAudioContext as unknown as typeof AudioContext;
   });
 

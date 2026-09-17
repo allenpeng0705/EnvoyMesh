@@ -5,7 +5,7 @@ import { render } from "@testing-library/react";
 import { I18nTestProvider } from "../src/context/I18nContext.js";
 import { ThemeProvider } from "../src/context/ThemeContext.js";
 import { NodeStateProvider } from "../src/context/NodeStateContext.js";
-import { NodeServiceProvider } from "../src/hooks/useNodeService.js";
+import { NodeServiceProvider, type NodeServiceClient } from "../src/hooks/useNodeService.js";
 import { App } from "../src/App.js";
 
 beforeAll(() => {
@@ -28,7 +28,7 @@ beforeAll(() => {
  * `renders` test; the proxy keeps the test from cascading into "X is not a
  * function" TypeErrors every time the App grows a new client call.
  */
-const fakeClient = () => {
+const fakeClient = (): NodeServiceClient => {
   const base: Record<string, unknown> = {
     isConnected: true,
     reconnectAttempts: 0,
@@ -73,7 +73,11 @@ const fakeClient = () => {
       // TypeErrors when the App/hooks grow new client calls.
       return vi.fn().mockResolvedValue(undefined);
     },
-  });
+    // The Proxy fabricates the full client surface at runtime. TypeScript cannot
+    // see that through an index-signature target, so the intersection names both
+    // halves of what the Proxy actually is: the fabricated `NodeServiceClient`
+    // surface plus the free-form keys of its `Record` target.
+  }) as NodeServiceClient & Record<string, unknown>;
 };
 
 describe("diag", () => {

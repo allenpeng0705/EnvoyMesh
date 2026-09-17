@@ -5,6 +5,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 import { AuthorAiDraftField } from "../../src/components/AuthorAiDraftField.js";
 
 const draftAuthorContent = vi.fn();
@@ -13,7 +14,7 @@ let mockNodeConfig: { modelProviders: { mode: string } } = {
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({ draftAuthorContent }),
+  useNodeService: () => partialNodeService({ draftAuthorContent }),
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({

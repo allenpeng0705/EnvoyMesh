@@ -7,15 +7,34 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { ChatTeamJobEntry } from "../../src/components/ChatTeamJobEntry.js";
 import { ToastProvider } from "../../src/hooks/useToast.js";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
-import type { CachedAgentCardSummary } from "@envoymesh/api";
+import type {
+  AgentNetworkDiagnosticsSnapshot,
+  AgentNetworkDiagnosticsWorker,
+  CachedAgentCardSummary,
+  ChainWorkerReachability,
+  OpenClawStatus,
+} from "@envoymesh/api";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
-const chainProbeReachability = vi.fn(async () => ({ rows: [] }));
-const agentNetworkDiagnosticsSnapshot = vi.fn(async () => ({ workers: [] }));
+const chainProbeReachability = vi.fn(async () => ({
+  rows: [] as ChainWorkerReachability[],
+}));
+const agentNetworkDiagnosticsSnapshot = vi.fn(
+  async (): Promise<AgentNetworkDiagnosticsSnapshot> => ({
+    at: "",
+    joinEnabled: false,
+    localFeatures: [],
+    workers: [] as AgentNetworkDiagnosticsWorker[],
+    warnings: [],
+  }),
+);
 const getLocalAgentNetworkWorkerCard = vi.fn(async () => undefined);
-const getOpenClawStatus = vi.fn(async () => ({ running: false }));
-const refreshAgentNetworkWorkers = vi.fn(async () => ({}));
+const getOpenClawStatus = vi.fn(
+  async (): Promise<OpenClawStatus> => ({ enabled: false, running: false, url: "" }),
+);
+const refreshAgentNetworkWorkers = vi.fn(async () => ({ requested: 0, failed: 0 }));
 
-const mockNodeService = {
+const mockNodeService = partialNodeService({
   chainProbeReachability,
   agentNetworkDiagnosticsSnapshot,
   getLocalAgentNetworkWorkerCard,
@@ -23,7 +42,7 @@ const mockNodeService = {
   refreshAgentNetworkWorkers,
   isConnected: true,
   on: vi.fn(() => () => {}),
-};
+});
 
 const readyCard = {
   ownerId: "envoy:owner:bob",
@@ -100,8 +119,14 @@ describe("ChatTeamJobEntry", () => {
     ];
     mockCards = [];
     mockJoin = false;
-    getOpenClawStatus.mockResolvedValue({ running: false });
-    agentNetworkDiagnosticsSnapshot.mockResolvedValue({ workers: [] });
+    getOpenClawStatus.mockResolvedValue({ enabled: false, running: false, url: "" });
+    agentNetworkDiagnosticsSnapshot.mockResolvedValue({
+      at: "",
+      joinEnabled: false,
+      localFeatures: [],
+      workers: [],
+      warnings: [],
+    });
     chainProbeReachability.mockResolvedValue({ rows: [] });
   });
 
@@ -121,16 +146,22 @@ describe("ChatTeamJobEntry", () => {
   it("blocks when local Join is off even if peers look ready", async () => {
     mockJoin = false;
     mockCards = [readyCard];
-    getOpenClawStatus.mockResolvedValue({ running: true });
+    getOpenClawStatus.mockResolvedValue({ enabled: true, running: true, url: "" });
     chainProbeReachability.mockResolvedValue({
       rows: [{ ownerId: "envoy:owner:bob", online: true, sameLan: true, viaRelay: false }],
     });
     agentNetworkDiagnosticsSnapshot.mockResolvedValue({
+      at: "",
+      joinEnabled: false,
+      localFeatures: [],
+      warnings: [],
       workers: [
         {
           peerId: "envoy_agent_bob",
           ownerId: "envoy:owner:bob",
+          membershipOk: true,
           leaseReady: true,
+          runtimeReady: true,
           exclusionReasons: [],
         },
       ],
@@ -145,16 +176,22 @@ describe("ChatTeamJobEntry", () => {
   it("opens goal prompt when single scoped peer is eligible", async () => {
     mockJoin = true;
     mockCards = [readyCard];
-    getOpenClawStatus.mockResolvedValue({ running: true });
+    getOpenClawStatus.mockResolvedValue({ enabled: true, running: true, url: "" });
     chainProbeReachability.mockResolvedValue({
       rows: [{ ownerId: "envoy:owner:bob", online: true, sameLan: true, viaRelay: false }],
     });
     agentNetworkDiagnosticsSnapshot.mockResolvedValue({
+      at: "",
+      joinEnabled: false,
+      localFeatures: [],
+      warnings: [],
       workers: [
         {
           peerId: "envoy_agent_bob",
           ownerId: "envoy:owner:bob",
+          membershipOk: true,
           leaseReady: true,
+          runtimeReady: true,
           exclusionReasons: [],
         },
       ],
@@ -193,7 +230,7 @@ describe("ChatTeamJobEntry", () => {
       },
     ];
     mockCards = [readyCard, readyCardCarol];
-    getOpenClawStatus.mockResolvedValue({ running: true });
+    getOpenClawStatus.mockResolvedValue({ enabled: true, running: true, url: "" });
     chainProbeReachability.mockResolvedValue({
       rows: [
         { ownerId: "envoy:owner:bob", online: true, sameLan: true, viaRelay: false },
@@ -201,17 +238,25 @@ describe("ChatTeamJobEntry", () => {
       ],
     });
     agentNetworkDiagnosticsSnapshot.mockResolvedValue({
+      at: "",
+      joinEnabled: false,
+      localFeatures: [],
+      warnings: [],
       workers: [
         {
           peerId: "envoy_agent_bob",
           ownerId: "envoy:owner:bob",
+          membershipOk: true,
           leaseReady: true,
+          runtimeReady: true,
           exclusionReasons: [],
         },
         {
           peerId: "envoy_agent_carol",
           ownerId: "envoy:owner:carol",
+          membershipOk: true,
           leaseReady: true,
+          runtimeReady: true,
           exclusionReasons: [],
         },
       ],

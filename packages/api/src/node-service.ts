@@ -2390,6 +2390,12 @@ export interface NodeService extends CoreNodeService {
     policy: string,
   ): Promise<import("./pi-agent.js").EnvoyHarnessStatus>;
 
+  /** Native EH Mode — Default / Plan / Review (`session/set_mode`). */
+  setEnvoyHarnessCollaborationMode(
+    mode: string,
+    chatId?: string,
+  ): Promise<{ ok: true; mode: string }>;
+
   /** Load persisted chat transcript for a task (defaults to active chat). */
   getEnvoyHarnessChatHistory(
     chatId?: string,

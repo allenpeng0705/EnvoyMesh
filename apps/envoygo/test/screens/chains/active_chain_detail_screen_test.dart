@@ -280,7 +280,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('no_candidate'), findsOneWidget);
+      expect(find.text('Could not reassign this step'), findsOneWidget);
       expect(find.text('Step reassigned'), findsNothing);
 
       await teardown(tester, handle);

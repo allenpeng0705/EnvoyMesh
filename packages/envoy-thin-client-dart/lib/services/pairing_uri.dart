@@ -105,8 +105,19 @@ PairingData? _decodePairingToken(String token) {
   // Which app minted the code (`app`). A phone app belongs to one product, so it must
   // refuse another product's code — see `pairingAppMismatch` below.
   final app = obj['app'] as String?;
+  // Owner identity + relay peer id. The legacy query form already carried these; the
+  // compressed token omitted them, so a `pairing=` code minted from the same payload
+  // would have reached the phone *without* the owner key it needs for shared-identity
+  // pairing. Optional and additive: a v1 token written before these keys existed simply
+  // leaves them null.
+  final ownerPublicKey = obj['opk'] as String?;
+  final relayPeerId = obj['rpid'] as String?;
   final bpnRaw = obj['bpn'];
   final relsRaw = obj['rels'];
+  // Dialable libp2p multiaddrs for the home peer (`bp`). Read verbatim: a multiaddr's
+  // whole meaning is in its `/…` segments, so unlike the relay list below there are no
+  // `?target=` params to strip — only blank/duplicate entries to drop.
+  final bpRaw = obj['bp'];
 
   List<String>? bootstrapPresetNames;
   if (bpnRaw is List) {
@@ -132,7 +143,16 @@ PairingData? _decodePairingToken(String token) {
     relayWsUrls = extras.isEmpty ? null : extras;
   }
 
-  final bootstrapPeers = relayWsUrls;
+  // `bp` used to be absent, and this field was aliased to `relayWsUrls` — which is a
+  // *fallback relay* list, not a dialable-address list, so a phone that trusted
+  // `bootstrapPeers` was handed relay WebSocket URLs where libp2p multiaddrs belong.
+  // Reading the real key (and merging all legitimate spellings, the same rule the relay
+  // list uses: the compact `bp` and the full `bootstrapPeers` both mean this list) is
+  // the fix.
+  final bootstrapPeers = _mergeMultiaddrLists(
+    _parseMultiaddrList(bpRaw),
+    _parseMultiaddrList(obj['bootstrapPeers']),
+  );
 
   return PairingData(
     token: tok,
@@ -143,6 +163,8 @@ PairingData? _decodePairingToken(String token) {
     homeNodePeerId: homeNodePeerId?.isNotEmpty == true ? homeNodePeerId : null,
     agentPeerId: agentPeerId?.isNotEmpty == true ? agentPeerId : null,
     agentName: agentName?.isNotEmpty == true ? agentName : null,
+    relayPeerId: relayPeerId?.isNotEmpty == true ? relayPeerId : null,
+    ownerPublicKey: ownerPublicKey?.isNotEmpty == true ? ownerPublicKey : null,
     bootstrapPeers: bootstrapPeers,
     bootstrapPresetNames: bootstrapPresetNames,
     relayWsUrls: relayWsUrls,
@@ -188,9 +210,27 @@ PairingData? _parseLegacyPairingUri(
   if (token == null || token.isEmpty) return null;
   if (wsUrl == null || wsUrl.isEmpty) return null;
 
-  final relayWsUrl =
-      _nullableTrim(parsed.queryParameters['relayWsUrl']) ?? wsUrl;
-  final rels = _parseCsv(parsed.queryParameters['rels']);
+  final relayWsUrlParam = _nullableTrim(parsed.queryParameters['relayWsUrl']);
+  final relayWsUrl = relayWsUrlParam ?? wsUrl;
+
+  // The two spellings of the *list* are both real, minted by different producers:
+  //
+  //   * `relayWsUrls` (plural, comma-joined) is what the `envoy://pair` builder writes.
+  //     It is the name the shared contract documents for the URI
+  //     (`pairing-contract.ts`: "Carried on the URI as a comma-joined `relayWsUrls`
+  //     query value"), and the name the compact codec uses as its object keys.
+  //   * `rels` is what the `envoy://invite` builder writes (`envoy-invite-uri.ts`) and
+  //     what this parser historically read. Both URIs reach this one function.
+  //
+  // Reading only one of them is Defect 1: a roster minted by the desktop pair QR was
+  // silently dropped on the phone. Accepting both on read — and only the pair name on
+  // write, because that is the documented pair field — keeps both producers working.
+  // The singular `relayWsUrl` is untouched: it is the primary relay, not a list.
+  final relayWsUrls = _mergeRelayLists(
+    _parseCsv(parsed.queryParameters['relayWsUrls']),
+    _parseCsv(parsed.queryParameters['rels']),
+    exclude: relayWsUrlParam,
+  );
 
   return PairingData(
     token: token,
@@ -207,7 +247,7 @@ PairingData? _parseLegacyPairingUri(
         _parseBootstrapPeers(parsed.queryParameters['bootstrapPeers']),
     bootstrapPresetNames: _parseBootstrapPresetNames(
         parsed.queryParameters['bootstrapPresetNames']),
-    relayWsUrls: rels,
+    relayWsUrls: relayWsUrls,
     app: _nullableTrim(parsed.queryParameters['app']),
     inviteId: _nullableTrim(parsed.queryParameters['inviteId']),
     profileId: _nullableTrim(parsed.queryParameters['profileId']),
@@ -222,10 +262,11 @@ String? _nullableTrim(String? raw) {
 }
 
 List<String>? _parseBootstrapPeers(String? raw) {
-  if (raw == null || raw.isEmpty) return null;
-  final trimmed = raw.trim();
-  if (trimmed.isEmpty) return null;
-  return _parseCsv(raw);
+  // The legacy URI spelling and the compact `bp` key are the same list, so they share
+  // one trim/dedupe/cap helper. Deduping here is also the honest reading of the contract:
+  // a comma-joined query value can repeat an address, and a repeated address is still
+  // one address to dial.
+  return _parseMultiaddrList(_parseCsv(raw));
 }
 
 List<String>? _parseCsv(String? raw) {
@@ -238,6 +279,54 @@ List<String>? _parseCsv(String? raw) {
       .where((s) => s.isNotEmpty)
       .toList();
   return parts.isEmpty ? null : parts;
+}
+
+/// One dynamic JSON value as a trimmed, deduped, capped multiaddr list.
+///
+/// Capped for the same reason the relay list is: this came off a QR code, and a list
+/// longer than anyone dials is only a bigger thing to scan. Deduped because the two
+/// spellings below are a union, and a producer that writes both must not appear twice.
+List<String>? _parseMultiaddrList(dynamic raw) {
+  if (raw is! List) return null;
+  final seen = <String>{};
+  final out = <String>[];
+  for (final entry in raw.whereType<String>()) {
+    final addr = entry.trim();
+    if (addr.isEmpty || !seen.add(addr)) continue;
+    out.add(addr);
+    if (out.length >= 8) break;
+  }
+  return out.isEmpty ? null : out;
+}
+
+/// Union of the multiaddr spellings, in wire order, without duplicates.
+List<String>? _mergeMultiaddrLists(List<String>? first, List<String>? second) {
+  final seen = <String>{};
+  final merged = <String>[];
+  for (final entry in <String>[...?first, ...?second]) {
+    if (!seen.add(entry)) continue;
+    merged.add(entry);
+  }
+  return merged.isEmpty ? null : merged;
+}
+
+/// Union of the two list-valued relay params, in wire order, without duplicates.
+///
+/// See the call site for why both `relayWsUrls` and `rels` are read. A URI may legally
+/// carry either or both; the roster is their union. [exclude] is the primary relay the
+/// URI also names singularly, so the primary never appears twice in the fallback list.
+List<String>? _mergeRelayLists(
+  List<String>? first,
+  List<String>? second, {
+  String? exclude,
+}) {
+  final seen = <String>{if (exclude != null && exclude.isNotEmpty) exclude};
+  final merged = <String>[];
+  for (final entry in <String>[...?first, ...?second]) {
+    if (!seen.add(entry)) continue;
+    merged.add(entry);
+  }
+  return merged.isEmpty ? null : merged;
 }
 
 List<String>? _parseBootstrapPresetNames(String? raw) {

@@ -128,6 +128,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingImportSession => '导入会话';
 
   @override
+  String get codingPermSafe => '安全默认';
+
+  @override
+  String get codingPermAsk => '每次询问';
+
+  @override
+  String get codingPermFull => '完全访问（不问）';
+
+  @override
   String get codingAttachFile => '附加文件';
 
   @override

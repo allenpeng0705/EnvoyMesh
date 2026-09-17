@@ -15,6 +15,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 // vi.mock factories are hoisted by Vitest. Define the spies + classes
 // in vi.hoisted() so the test body can read them AFTER hoisting is done.
@@ -83,7 +84,7 @@ vi.mock("../../src/components/terminals/TerminalAgentBar.js", () => ({
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     terminalAttach: vi.fn().mockResolvedValue({
       sessionId: "sess-1",
       token: "tok",

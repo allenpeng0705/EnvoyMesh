@@ -13,6 +13,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { MorningReportEntry } from "@envoymesh/api";
 import { PeerResultCard, FriendSuggestionsPanel } from "../../src/components/discover/DiscoverCards.js";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const mockGetPeerProfile = vi.fn();
 const mockRequestPeerProfile = vi.fn();
@@ -20,7 +21,7 @@ const mockOn = vi.fn(() => () => {});
 const mockOpenBrowserAt = vi.fn();
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     getPeerProfile: mockGetPeerProfile,
     requestPeerProfile: mockRequestPeerProfile,
     on: mockOn,

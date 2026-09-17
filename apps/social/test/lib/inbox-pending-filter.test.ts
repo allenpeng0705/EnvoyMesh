@@ -5,10 +5,16 @@ import {
   isStrangerInboxCandidate,
 } from "../../src/lib/inbox-pending-filter.js";
 
-function msg(overrides: Partial<ChatMessage> & {
+// `sender`/`recipient` are replaced with fully-partial shapes: the fixture
+// deliberately supplies only the identity fields each case cares about, and
+// `Partial<ChatMessage>` alone would leave `sender.nodeId`/`recipient.nodeId`
+// required through the intersection.
+type MsgOverrides = Omit<Partial<ChatMessage>, "sender" | "recipient"> & {
   sender?: Partial<ChatMessage["sender"]>;
-  recipient?: Partial<NonNullable<ChatMessage["recipient"]>>;
-}): ChatMessage {
+  recipient?: Partial<ChatMessage["recipient"]>;
+};
+
+function msg(overrides: MsgOverrides): ChatMessage {
   return {
     messageId: overrides.messageId ?? "m1",
     sender: {
@@ -17,13 +23,16 @@ function msg(overrides: Partial<ChatMessage> & {
       displayName: "Alice",
       ...overrides.sender,
     },
-    recipient: overrides.recipient
+    // The fixture intentionally omits `recipient` for inbound-stranger cases;
+    // the filter reads it through `?.`, so casting only this field keeps the
+    // exact runtime object while satisfying the declared `ChatMessage` shape.
+    recipient: (overrides.recipient
       ? {
           nodeId: "12D3KooOther",
           ownerId: "envoy:owner:bob",
           ...overrides.recipient,
         }
-      : undefined,
+      : undefined) as ChatMessage["recipient"],
     content: overrides.content ?? { text: "hi" },
     metadata: overrides.metadata ?? { timestamp: new Date().toISOString() },
     signature: "",

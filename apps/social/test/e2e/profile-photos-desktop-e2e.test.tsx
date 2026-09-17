@@ -27,6 +27,7 @@ import type { BondRecord, HumanProfile } from "@envoymesh/api";
 import { ProfileView } from "../../src/components/views/ProfileView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { MINIMAL_PNG_BASE64, minimalPngFile } from "../fixtures/profile-photo-fixtures.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 function renderProfileView() {
   return renderWithI18n(<ProfileView />);
@@ -46,7 +47,7 @@ const bonds: BondRecord[] = [
 ];
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     setPublicProfileThumbnail,
     upsertProfileGalleryPhoto,
     updateProfileGalleryPhotoVisibility,
@@ -97,6 +98,7 @@ beforeEach(() => {
     ownerId: "envoy:owner:me",
     displayName: "Me",
     username: "me01",
+    profileVisibility: "private",
     updatedAt: "2026-05-28T12:00:00.000Z",
     signature: "sig",
     galleryPhotos: [],
@@ -108,7 +110,6 @@ beforeEach(() => {
         vaultRelativePath: "profile/thumbnail.png",
         mimeType: "image/png",
         contentSha256: "abc",
-        sizeBytes: 68,
       },
     };
   });
@@ -121,7 +122,6 @@ beforeEach(() => {
           vaultRelativePath: "profile/gallery/g1.png",
           mimeType: "image/png",
           contentSha256: "def",
-          sizeBytes: 68,
           visibility: params.visibility,
           label: params.label,
         },

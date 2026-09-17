@@ -1,6 +1,38 @@
 export const itAiSettingsMessages = {
   title: "Impostazioni assistente IA",
   sectionDesc: "Configura come l'IA risponde per tuo conto.",
+  codingAgents: {
+    heading: "Strumenti di coding",
+    intro:
+      "Envoy e Pi sono integrati in EnvoyMesh. Gli altri strumenti sono CLI su questo computer — Coding le usa e basta. Gli strumenti in evidenza sono elencati qui; il catalogo completo è sotto.",
+    groupBuiltIn: "In EnvoyMesh · {ready}/{total} pronti",
+    groupExternal: "Usati da Coding (in evidenza) · {ready}/{total} pronti",
+    groupCatalogue: "Catalogo · {total}",
+    catalogueReady: "{ready} pronti",
+    catalogueHint:
+      "Ogni altra CLI che Coding può pilotare. Stessa verifica Pronto / Non pronto — non fa parte di EnvoyMesh.",
+    browseCatalogue: "Sfoglia il catalogo ({total})",
+    hideCatalogue: "Nascondi catalogo",
+    externalHint:
+      "Mostrato nel selettore di nuova attività. Installa e accedi da solo — EnvoyMesh le esegue solo quando ne scegli una in Coding.",
+    onMachine: "Su questo computer · {ready}/{total} pronti",
+    recheck: "Controlla di nuovo",
+    recheckHint:
+      "Ricontrolla se ogni strumento è nel PATH. Non avvia agenti né installa pacchetti.",
+    checking: "Verifica…",
+    ready: "Pronto",
+    notReady: "Non pronto",
+    notReadyAria: "Non pronto — vedi come risolvere per {agent}",
+    resolveBody:
+      "{name} non è ancora pronto su questo computer di casa. Installalo o riparalo lì, poi tocca Controlla di nuovo. EnvoyMesh lo usa solo da Coding — non configura il prodotto stesso.",
+    installCmd: "Comando di installazione (esegui su questo computer)",
+    firstRunCmd: "Comando di primo avvio (esegui su questo computer)",
+    copyCmd: "Copia comando",
+    openDocs: "Apri documentazione",
+    builtInConfig: "Impostazioni Envoy e Pi",
+    builtInConfigHint:
+      "Configura i motori di coding integrati. Le CLI esterne sopra si installano e accedono fuori da EnvoyMesh.",
+  },
   model: {
     heading: "Provider del modello",
     sectionDescCloud: "Configura un'API cloud per assistenza chat e risposte di conoscenza su questo dispositivo.",
@@ -428,6 +460,7 @@ export const itAiSettingsMessages = {
       unknownBody:
         "Impossibile verificare se {command} è installato. Esegui il comando di installazione per sicurezza, poi fai clic su Riprova.",
       commandLabel: "Installa",
+      firstRunLabel: "Comando di primo avvio",
       verifyLabel: "Verifica",
       docsLabel: "Apri documentazione di installazione",
       copyCommand: "Copia",

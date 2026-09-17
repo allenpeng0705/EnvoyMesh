@@ -2,7 +2,10 @@
  * Shape Coding prompts from sticky toolbar prefs (Ask / Plan / Fast / Think).
  */
 
-import type { CodingComposerCapabilities } from "./coding-composer-capabilities.js";
+import {
+  workingModeFromAgentMode,
+  type CodingComposerCapabilities,
+} from "./coding-composer-capabilities.js";
 import type { CodingComposerPrefs } from "./coding-composer-state.js";
 
 const ASK_PREFIX =
@@ -10,6 +13,9 @@ const ASK_PREFIX =
 
 const PLAN_PREFIX =
   "[Mode: Plan] Produce a concrete plan only. Do not modify files or run mutating tools yet.";
+
+const REVIEW_PREFIX =
+  "[Mode: Review] Review and discuss only. Do not edit files or run mutating tools.";
 
 /**
  * Apply sticky mode / plan-slash / thinking hints to the user prompt.
@@ -23,11 +29,21 @@ export function shapeCodingComposerPrompt(
   const body = userText.trim();
   const parts: string[] = [];
 
-  if (caps.workingMode && prefs.mode === "ask") {
+  const fromAgent = workingModeFromAgentMode(caps, prefs.agentModeId);
+  const mode = fromAgent ?? prefs.mode;
+
+  if (caps.agentModes.length > 0 && prefs.agentModeId === "review") {
+    parts.push(REVIEW_PREFIX);
+  } else if (
+    (caps.workingMode || caps.agentModes.length > 0) &&
+    mode === "ask"
+  ) {
     parts.push(ASK_PREFIX);
-  } else if (caps.workingMode && prefs.mode === "plan") {
+  } else if (
+    (caps.workingMode || caps.agentModes.length > 0) &&
+    mode === "plan"
+  ) {
     if (caps.planSlash) {
-      // Lead with /plan so CLI agents enter plan mode.
       return body ? `/plan ${body}` : "/plan";
     }
     parts.push(PLAN_PREFIX);
@@ -35,7 +51,6 @@ export function shapeCodingComposerPrompt(
 
   if (caps.thinking && prefs.thinking !== "off") {
     if (caps.planSlash || caps.fast) {
-      // Claude Code: /effort; Codex: mention reasoning in prefix.
       if (prefs.thinking === "low") {
         parts.push("[Thinking: low effort]");
       } else if (prefs.thinking === "medium") {

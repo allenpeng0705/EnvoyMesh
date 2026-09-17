@@ -72,6 +72,33 @@ void main() {
     expect(loaded.first.defaultHarness, 'pi');
   });
 
+  test('resolveCodingPrefill prefers registered project over stale last cwd',
+      () async {
+    await addCodingProject('/Users/me/aiNote');
+    await saveCodingLastUsedPrefill(
+      const CodingTaskPrefill(
+        harness: 'pi',
+        cwd: '/Users/me/EnvoyMesh',
+      ),
+    );
+    final prefill = await resolveCodingPrefill();
+    expect(prefill.cwd, '/Users/me/aiNote');
+  });
+
+  test('resolveCodingPrefill keeps last cwd when it is still registered',
+      () async {
+    await addCodingProject('/Users/me/EnvoyMesh');
+    await addCodingProject('/Users/me/aiNote');
+    await saveCodingLastUsedPrefill(
+      const CodingTaskPrefill(
+        harness: 'pi',
+        cwd: '/Users/me/EnvoyMesh',
+      ),
+    );
+    final prefill = await resolveCodingPrefill();
+    expect(prefill.cwd, '/Users/me/EnvoyMesh');
+  });
+
   test('removeCodingProject dismisses path from seeding', () async {
     await addCodingProject('/tmp/demo');
     await removeCodingProject('/tmp/demo/');

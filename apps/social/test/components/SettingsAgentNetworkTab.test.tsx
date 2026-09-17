@@ -14,6 +14,7 @@ import {
 } from "../../src/components/views/settings/agent-network-sections.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import type { FleetManifest, FleetManifestRecord } from "@envoymesh/api";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const createFleetManifest = vi.fn();
 const importFleetManifest = vi.fn();
@@ -33,7 +34,7 @@ const refreshNodeConfig = vi.fn();
 
 let nodeConfig: Record<string, unknown> = { modelProviders: { mode: "mock", modelName: "test-model" } };
 
-const mockNodeService = {
+const mockNodeService = partialNodeService({
   createFleetManifest,
   importFleetManifest,
   listFleetManifests,
@@ -49,7 +50,7 @@ const mockNodeService = {
   ensureFleetWorkersJoinAndLease,
   requestAgentCard,
   on: vi.fn(() => () => {}),
-};
+});
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,

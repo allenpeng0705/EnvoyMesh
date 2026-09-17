@@ -1,16 +1,39 @@
 import { join } from "path";
 import { mkdirSync, rmSync } from "fs";
 import { EnvoyMesh } from "@envoymesh/network";
-import { type PeerId } from "@libp2p/interface-peer-id";
 import { type Multiaddr } from "@multiformats/multiaddr";
+import { resolveBootstrapPresetPeers } from "../../src/args.js";
 
 export interface TestNodeOptions {
   /** Listen address for the node */
   listen?: string[];
   /** Bootstrap peer multiaddrs */
   bootstrapPeers?: string[];
-  /** Bootstrap presets (e.g., ["public-libp2p"]) */
+  /**
+   * Relay bases to reserve a circuit slot on (e.g. the EnvoyMesh community
+   * relays). Without this, `enableRelay` only listens on a bare
+   * `/p2p-circuit`, which hands reservation to AutoRelay — AutoRelay does not
+   * reserve on the community relay, so the node stays unreserved and
+   * unreachable inbound. See `buildConfiguredRelayCircuitListenAddrs` in
+   * `packages/network/src/index.ts`.
+   */
+  configuredRelayAddrs?: string[];
+  /**
+   * Bootstrap preset ids (e.g. `["public-libp2p"]`). `EnvoyMeshOptions` has no
+   * preset option — presets are a node-product concept — so
+   * {@link createTestNode} expands them with the product's own
+   * {@link resolveBootstrapPresetPeers} (`apps/node/src/args.ts`) before
+   * constructing the mesh, exactly as the CLI does. Resolved peers are merged
+   * into {@link TestNodeOptions.bootstrapPeers} and exposed on
+   * {@link TestNode.bootstrapPeers}. Unknown ids throw (as they do in the CLI).
+   */
   bootstrapPresets?: string[];
+  /**
+   * Custom preset table (the in-memory form of `--bootstrap-presets-file`).
+   * Lets a test point a preset at a controlled peer without touching the
+   * shipped public tables.
+   */
+  bootstrapPresetRegistry?: Map<string, string[]>;
   /** Enable relay server functionality */
   enableRelayServer?: boolean;
   /** Enable relay client functionality */
@@ -43,10 +66,12 @@ export class TestNode {
   private mesh: EnvoyMesh;
   private _started: boolean = false;
   private _profileDir: string;
+  private _bootstrapPeers: string[];
 
-  constructor(mesh: EnvoyMesh, profileDir: string) {
+  constructor(mesh: EnvoyMesh, profileDir: string, bootstrapPeers: string[] = []) {
     this.mesh = mesh;
     this._profileDir = profileDir;
+    this._bootstrapPeers = [...bootstrapPeers];
   }
 
   get peerId(): string {
@@ -59,6 +84,15 @@ export class TestNode {
 
   get multiaddrs(): string[] {
     return this.mesh.multiaddrs;
+  }
+
+  /**
+   * Concrete bootstrap multiaddrs this node was constructed with — after
+   * `bootstrapPresets` were expanded through the product path. Assert on this
+   * to catch "the preset was accepted but never wired to EnvoyMesh".
+   */
+  get bootstrapPeers(): string[] {
+    return [...this._bootstrapPeers];
   }
 
   get started(): boolean {
@@ -78,26 +112,38 @@ export class TestNode {
   }
 
   /**
-   * Get peer IDs of relay-connected peers
+   * Peer IDs of peers connected *via* the circuit relay (a `/p2p-circuit`
+   * remote address), NOT the relay server itself: a node bootstrapped or
+   * reserved directly on a relay has a plain transport connection to it.
+   * Prefer {@link getConnectedPeerIds} unless you specifically need circuits.
    */
   getConnectedRelayPeerIds(): string[] {
     return this.mesh.getConnectedRelayPeerIds();
+  }
+
+  /** Peer IDs with any open connection (direct or `/p2p-circuit`). */
+  getConnectedPeerIds(): string[] {
+    return this.mesh.getConnectedPeerIds();
+  }
+
+  /** True when this client currently holds a usable circuit-relay reservation. */
+  hasLiveRelayReservation(): boolean {
+    return this.mesh.hasLiveRelayReservation();
   }
 
   /**
    * Check if connected to a specific peer by peer ID
    */
   isConnectedTo(peerIdB58: string): boolean {
-    const relayPeers = this.getConnectedRelayPeerIds();
-    return relayPeers.includes(peerIdB58);
+    return this.getConnectedPeerIds().includes(peerIdB58);
   }
 
   /**
    * Check if connected to a relay with given multiaddr substring
    */
   isConnectedToRelay(relayAddr: string): boolean {
-    const relayPeers = this.getConnectedRelayPeerIds();
-    return relayPeers.some((p) => relayAddr.includes(p) || p.includes(relayAddr.split("/p2p/")[1] || ""));
+    const peerId = relayAddr.includes("/p2p/") ? relayAddr.split("/p2p/")[1] : relayAddr;
+    return this.getConnectedPeerIds().some((p) => p === peerId || p.includes(peerId));
   }
 
   /**
@@ -114,7 +160,7 @@ export class TestNode {
     const relayConnections = this.getConnectedRelayPeerIds();
 
     return {
-      connectedPeers: relayConnections,
+      connectedPeers: this.getConnectedPeerIds(),
       discoveredPeers: [],
       relayConnections,
       dhtProviders: 0,
@@ -138,6 +184,8 @@ export async function createTestNode(options: TestNodeOptions = {}): Promise<Tes
     listen = ["/ip4/0.0.0.0/tcp/0"],
     bootstrapPeers = [],
     bootstrapPresets = [],
+    bootstrapPresetRegistry = new Map<string, string[]>(),
+    configuredRelayAddrs = [],
     enableRelayServer = false,
     enableRelay = true,
     enableDht = true,
@@ -150,28 +198,42 @@ export async function createTestNode(options: TestNodeOptions = {}): Promise<Tes
   // Ensure profile directory exists
   mkdirSync(profileDir, { recursive: true });
 
+  // Expand presets through the product's own table before handing anything to
+  // EnvoyMesh. Passing the raw ids through (or dropping them) means the node
+  // bootstraps nothing while the test still looks green.
+  const resolvedBootstrapPeers = [
+    ...new Set([
+      ...bootstrapPeers,
+      ...resolveBootstrapPresetPeers(bootstrapPresets, bootstrapPresetRegistry),
+    ]),
+  ];
+
   // Create the EnvoyMesh instance
   const mesh = new EnvoyMesh({
     listen,
-    bootstrapPeers,
-    bootstrapPresets,
+    bootstrapPeers: resolvedBootstrapPeers,
+    configuredRelayAddrs,
     enableRelayServer,
     enableRelay,
     enableDht,
     dhtClientMode,
     enableAutoNat,
     enableDcutr,
-    libp2pPrivateKeyPath: join(profileDir, "libp2p-key"),
   });
 
-  const node = new TestNode(mesh, profileDir);
+  const node = new TestNode(mesh, profileDir, resolvedBootstrapPeers);
   await node.start();
 
   return node;
 }
 
 /**
- * Wait for connection to a specific peer (by peer ID substring or multiaddr)
+ * Wait for an open connection to a specific peer (by peer ID or multiaddr).
+ *
+ * Polls *all* open connections ({@link TestNode.getConnectedPeerIds}) — a
+ * `/p2p-circuit` filter would never match the relay server itself, only peers
+ * reached through it, so `waitForPeerConnected(node, relayAddr)` would time
+ * out even on a healthy, fully-reserved relay link.
  */
 export async function waitForPeerConnected(
   node: TestNode,
@@ -184,8 +246,8 @@ export async function waitForPeerConnected(
     : peerIdOrAddr;
 
   while (Date.now() < deadline) {
-    const relayPeers = node.getConnectedRelayPeerIds();
-    if (relayPeers.some((p) => p.includes(peerIdPart) || peerIdPart.includes(p))) {
+    const peers = node.getConnectedPeerIds();
+    if (peers.some((p) => p.includes(peerIdPart) || peerIdPart.includes(p))) {
       return;
     }
     await sleep(500);
@@ -194,12 +256,13 @@ export async function waitForPeerConnected(
   const stats = node.getStats();
   throw new Error(
     `Timed out waiting for peer: ${peerIdOrAddr}. ` +
-    `Relay peers: ${stats.relayConnections.join(", ") || "none"}`
+    `Connected peers: ${stats.connectedPeers.join(", ") || "none"}. ` +
+    `Circuit peers: ${stats.relayConnections.join(", ") || "none"}`
   );
 }
 
 /**
- * Wait for connection to any bootstrap peer (relay peers)
+ * Wait for an open connection to any bootstrap peer.
  */
 export async function waitForBootstrapConnection(
   node: TestNode,
@@ -208,8 +271,7 @@ export async function waitForBootstrapConnection(
   const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
-    const relayPeers = node.getConnectedRelayPeerIds();
-    if (relayPeers.length > 0) {
+    if (node.getConnectedPeerIds().length > 0) {
       return;
     }
     await sleep(1000);
@@ -219,23 +281,27 @@ export async function waitForBootstrapConnection(
 }
 
 /**
- * Wait for relay connection
+ * Wait for a usable circuit-relay reservation (inbound reachability).
+ *
+ * A relay server connection alone is not enough: without a live reservation
+ * the node cannot be dialled through the relay, so this is the right gate
+ * before asserting WAN reachability. Mirrors
+ * `discovery-relay-robustness-e2e.test.ts`.
  */
 export async function waitForRelayConnection(
   node: TestNode,
-  timeout: number = 15000
+  timeout: number = 60000
 ): Promise<void> {
   const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
-    const relayPeers = node.getConnectedRelayPeerIds();
-    if (relayPeers.length > 0) {
+    if (node.hasLiveRelayReservation()) {
       return;
     }
     await sleep(500);
   }
 
-  throw new Error("Timed out waiting for relay connection");
+  throw new Error("Timed out waiting for relay reservation");
 }
 
 /**

@@ -22,7 +22,10 @@ import { ModalPortal } from "./ModalPortal.js";
 
 export type { CodingHarnessId };
 
-export type HarnessProbeBadge = "ready" | "not-ready" | "checking" | "install" | "unknown";
+// Declared in the lib and re-exported: this file uses the type as well as lending it to its own
+// consumers, and a second declaration is exactly what drifted from the lib's.
+import type { HarnessProbeBadge } from "../lib/coding-harness-probe.js";
+export type { HarnessProbeBadge };
 
 export type CodingNewSessionConfirm = {
   harness: CodingHarnessId;

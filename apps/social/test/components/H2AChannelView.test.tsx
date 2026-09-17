@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { H2AChannelView } from "../../src/components/views/H2AChannelView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listAgentActivity = vi.fn().mockResolvedValue([]);
 const listPendingApprovals = vi.fn().mockResolvedValue([]);
@@ -36,7 +37,7 @@ const saveWebSearchEnabled = vi.fn();
 const on = vi.fn(() => () => {});
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     listAgentActivity,
     listPendingApprovals,
     listChatHistory,

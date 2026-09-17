@@ -493,7 +493,12 @@ export interface SocketMethodContext<TCaller = unknown> {
   send(event: string, data: unknown): void;
   /** Reply with a result. */
   ok(result: unknown): void;
-  /** Reply with a product-level failure (carried as `{ ok: false, error }`). */
+  /**
+   * Reply that a product-level check refused the method. Sends a JSON-RPC error
+   * response — `{ id, error: { code: "UNAUTHORIZED", message } }` — via the same
+   * `sendError` frame the access gate uses (see `ws-server.ts` `sendResponse`).
+   * There is no `ok` field on the wire.
+   */
   fail(message: string): void;
 }
 

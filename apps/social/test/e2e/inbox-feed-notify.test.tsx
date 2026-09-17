@@ -9,6 +9,7 @@ import type { FeedNotification } from "@envoymesh/api";
 import { InboxView } from "../../src/components/views/InboxView.js";
 import { ToastProvider } from "../../src/hooks/useToast.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const openBrowserAt = vi.fn();
 const dismissFeed = vi.fn(async () => undefined);
@@ -54,7 +55,7 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
 }));
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({}),
+  useNodeService: () => partialNodeService({}),
   useShareOffers: () => ({ offers: [] }),
   useAgentShareProposals: () => ({ proposals: [], dismiss: vi.fn() }),
   usePendingApprovals: () => ({ items: [], approve: vi.fn(), reject: vi.fn() }),

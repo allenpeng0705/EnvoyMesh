@@ -2,13 +2,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
 import { ExtAgentSwitcher } from "../../src/components/ExtAgentSwitcher.js"
+import { partialNodeService } from "../helpers/node-service-mock.js"
 
 const updateNodeConfig = vi.fn()
 const getBridgeStatus = vi.fn()
 const probeExtAgent = vi.fn()
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     updateNodeConfig,
     getBridgeStatus,
     probeExtAgent,

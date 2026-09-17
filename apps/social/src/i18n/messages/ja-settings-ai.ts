@@ -1,6 +1,38 @@
 export const jaAiSettingsMessages = {
   title: "AI アシスタント設定",
   sectionDesc: "AI があなたに代わって応答する方法を設定します。",
+  codingAgents: {
+    heading: "コーディングツール",
+    intro:
+      "Envoy と Pi は EnvoyMesh に内蔵されています。その他のツールはこのコンピューター上の CLI で、Coding はそれらを呼び出すだけです。注目のツールはここに、完全なカタログは下にあります。",
+    groupBuiltIn: "EnvoyMesh 内 · {ready}/{total} 準備完了",
+    groupExternal: "Coding で使用（注目）· {ready}/{total} 準備完了",
+    groupCatalogue: "カタログ · {total}",
+    catalogueReady: "{ready} 件準備完了",
+    catalogueHint:
+      "Coding が操作できるその他の CLI です。同じ「準備完了 / 未準備」チェックで、EnvoyMesh の一部ではありません。",
+    browseCatalogue: "カタログを見る（{total}）",
+    hideCatalogue: "カタログを隠す",
+    externalHint:
+      "新しいタスクの選択画面に表示されます。インストールとサインインはご自身で — EnvoyMesh は Coding で選んだときにのみ実行します。",
+    onMachine: "このコンピューター · {ready}/{total} 準備完了",
+    recheck: "再確認",
+    recheckHint:
+      "各ツールが PATH にあるか再確認します。エージェントの起動やパッケージのインストールは行いません。",
+    checking: "確認中…",
+    ready: "準備完了",
+    notReady: "未準備",
+    notReadyAria: "未準備 — {agent} の解決方法を見る",
+    resolveBody:
+      "{name} はこの家のコンピューターではまだ準備できていません。そちらでインストールまたは修復してから「再確認」をタップしてください。EnvoyMesh は Coding から使うだけで、製品自体の設定は行いません。",
+    installCmd: "インストールコマンド（このコンピューターで実行）",
+    firstRunCmd: "初回実行コマンド（このコンピューターで実行）",
+    copyCmd: "コマンドをコピー",
+    openDocs: "ドキュメントを開く",
+    builtInConfig: "Envoy と Pi の設定",
+    builtInConfigHint:
+      "内蔵のコーディングエンジンを設定します。上の外部 CLI は EnvoyMesh の外でインストールとサインインを行います。",
+  },
   model: {
     heading: "モデルプロバイダー",
     sectionDescCloud: "このデバイスでチャット支援と知識回答用のクラウド API を設定します。",
@@ -214,6 +246,7 @@ export const jaAiSettingsMessages = {
       unknownBody:
         "{command} がインストールされているか確認できませんでした。インストールコマンドを実行してから「再試行」をクリックしてください。",
       commandLabel: "インストール",
+      firstRunLabel: "初回実行コマンド",
       verifyLabel: "確認",
       docsLabel: "インストール手順を開く",
       copyCommand: "コピー",

@@ -9,6 +9,7 @@ import type { BondRecord, LibraryItem } from "@envoymesh/api";
 import { LibraryView } from "../../src/components/views/LibraryView.js";
 import { ShareFileDialog } from "../../src/components/file-share/ShareFileDialog.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listAllLocalFiles = vi.fn();
 const listLibraryItems = vi.fn();
@@ -40,6 +41,7 @@ const alexBond: BondRecord = {
   peerOwnerId: "envoy:owner:alex",
   level: "direct",
   displayName: "Alex",
+  createdAt: "2026-05-01T00:00:00.000Z",
 };
 
 function unifiedList(items: LibraryItem[] = [sampleItem]) {
@@ -62,7 +64,7 @@ function unifiedList(items: LibraryItem[] = [sampleItem]) {
 }
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     listAllLocalFiles,
     listLibraryItems,
     getBonds,

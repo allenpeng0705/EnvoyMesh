@@ -7,6 +7,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { AIChatPanel } from "../../src/components/views/AIChatPanel.js";
 import { setEnvoyAiInflight } from "../../src/lib/envoy-ai-inflight.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const runOwnerAgentTurn = vi.fn();
 const listChatHistory = vi.fn();
@@ -54,7 +55,7 @@ const getOpenClawStatus = vi.fn().mockResolvedValue({
   url: "http://127.0.0.1:18789",
 });
 
-const mockNodeService = {
+const mockNodeService = partialNodeService({
   runOwnerAgentTurn,
   listChatHistory,
   deleteChatMessage,
@@ -70,7 +71,7 @@ const mockNodeService = {
   getEnvoyAiCommandCatalog,
   getOpenClawStatus,
   on,
-};
+});
 
 let storedHistory: Array<Record<string, unknown>> = [];
 
@@ -327,7 +328,7 @@ describe("AIChatPanel", () => {
     await waitFor(() => {
       expect(approvePendingApproval).toHaveBeenCalledWith("appr-1");
     });
-    expect(await screen.findByText(/Approved/i, { timeout: 3000 })).toBeDefined();
+    expect(await screen.findByText(/Approved/i, {}, { timeout: 3000 })).toBeDefined();
   });
 
   it("updates job stage chip when agent:activity arrives for tracked job", async () => {

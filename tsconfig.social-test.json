@@ -1,0 +1,16 @@
+{
+  "//": "The social half of the test typecheck: `apps/social/tsconfig.json` includes only `src/**`, so `apps/social/test/**` is in no program and a stale fixture there can only fail at runtime. Kept separate from `tsconfig.test.json` (the node half) because the two need different `lib`: social tests render the DOM, while the node tests pull in `apps/node/src` whose `fetch(..., { body: Buffer })` call sites do not typecheck against the DOM `BodyInit` (and never should — that is a node-only program). Split by program, not by accident.",
+  "//ambient": "`apps/social/src/**/*.d.ts` is included because those ambient declarations (`emoji-picker-element`, `capacitor-geolocation`, `xterm-css`, `vite-env`) are part of social's own program but are not imported by any test file, so without them `src` reports phantom errors.",
+  "//paths": "`paths: {}` resolves workspace packages through their built declarations, matching `tsconfig.test.json` — see that file for why the base config's `src` mappings produce phantom source/declaration clashes.",
+  "//typed-mocks": "Stale `vi.mock` stubs are now checked by `apps/social/test/helpers/node-service-mock.ts`: every mock site wrapping `useNodeService` passes its stub through `partialNodeService(...)`, which rejects a member name the client no longer has (and signature drift) while still allowing omissions. String-path `vi.mock(path, factory)` types the factory as `ModuleMockFactoryWithHelper<unknown>` — `(importOriginal) => Partial<unknown>` — so without the wrapper those stubs are invisible to the compiler. It does NOT catch a member a component calls but the stub omits; that stays runtime-only.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {},
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+    "resolveJsonModule": true
+  },
+  "include": ["apps/social/src/**/*.d.ts", "apps/social/test/**/*.ts", "apps/social/test/**/*.tsx"]
+}

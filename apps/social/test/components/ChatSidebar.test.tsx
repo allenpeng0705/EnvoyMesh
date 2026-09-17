@@ -12,6 +12,7 @@ import {
 } from "@envoymesh/api";
 import { ChatSidebar } from "../../src/components/views/ChatSidebar.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const revokeBond = vi.fn();
 const updateNodeConfig = vi.fn();
@@ -33,7 +34,7 @@ let mockNodeConfig: Partial<NodeConfig> = { contactAiPreferences: [] };
 let mockPendingMessages: ChatMessage[] = [];
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     revokeBond,
     updateNodeConfig,
     listChatRooms,

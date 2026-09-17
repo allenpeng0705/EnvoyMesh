@@ -58,6 +58,11 @@ export type ExtAgentAskOpts = {
   model?: string;
   /** Extra env merged for this spawn only (API keys / base URLs). */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Permission policy for catalog ACP hosts:
+   * `safe-only` | `always-confirm` | `off` (Full access).
+   */
+  permissionPolicy?: "safe-only" | "always-confirm" | "off" | "never";
 };
 
 export interface ExtAgentBackend {

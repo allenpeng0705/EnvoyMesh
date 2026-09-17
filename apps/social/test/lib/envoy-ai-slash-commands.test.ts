@@ -33,8 +33,8 @@ describe("envoy-ai-slash-commands", () => {
       type: "expand",
       prompt: expect.stringContaining("Office LAN"),
     });
-    expect(parseEnvoyAiSlashCommand("/team")?.type === "expand" &&
-      parseEnvoyAiSlashCommand("/team")!.prompt).toContain("Manage workers");
+    const team = parseEnvoyAiSlashCommand("/team");
+    expect(team?.type === "expand" && team.prompt).toContain("Manage workers");
     expect(parseEnvoyAiSlashCommand("/family")).toMatchObject({ type: "expand" });
     expect(parseEnvoyAiSlashCommand("/extagent")).toMatchObject({ type: "expand" });
     expect(parseEnvoyAiSlashCommand("/envoyai")).toMatchObject({ type: "expand" });

@@ -1,6 +1,38 @@
 export const koAiSettingsMessages = {
   title: "AI 어시스턴트 설정",
   sectionDesc: "AI가 대신 응답하는 방식을 구성합니다.",
+  codingAgents: {
+    heading: "코딩 도구",
+    intro:
+      "Envoy와 Pi는 EnvoyMesh에 내장되어 있습니다. 다른 도구는 이 컴퓨터의 CLI이며 Coding은 이를 호출할 뿐입니다. 추천 도구는 여기에, 전체 카탈로그는 아래에 있습니다.",
+    groupBuiltIn: "EnvoyMesh 내장 · {ready}/{total} 준비됨",
+    groupExternal: "Coding에서 사용(추천) · {ready}/{total} 준비됨",
+    groupCatalogue: "카탈로그 · {total}",
+    catalogueReady: "{ready}개 준비됨",
+    catalogueHint:
+      "Coding이 구동할 수 있는 다른 모든 CLI입니다. 동일한 준비됨 / 준비 안 됨 확인 — EnvoyMesh의 일부가 아닙니다.",
+    browseCatalogue: "카탈로그 보기({total})",
+    hideCatalogue: "카탈로그 숨기기",
+    externalHint:
+      "새 작업 선택기에 표시됩니다. 설치와 로그인은 직접 하세요 — EnvoyMesh는 Coding에서 선택할 때만 실행합니다.",
+    onMachine: "이 컴퓨터 · {ready}/{total} 준비됨",
+    recheck: "다시 확인",
+    recheckHint:
+      "각 도구가 PATH에 있는지 다시 확인합니다. 에이전트를 시작하거나 패키지를 설치하지 않습니다.",
+    checking: "확인 중…",
+    ready: "준비됨",
+    notReady: "준비 안 됨",
+    notReadyAria: "준비 안 됨 — {agent} 해결 방법 보기",
+    resolveBody:
+      "{name}이(가) 이 홈 컴퓨터에서 아직 준비되지 않았습니다. 그곳에서 설치하거나 수정한 뒤 '다시 확인'을 누르세요. EnvoyMesh는 Coding에서만 사용하며 제품 자체를 구성하지 않습니다.",
+    installCmd: "설치 명령(이 컴퓨터에서 실행)",
+    firstRunCmd: "첫 실행 명령(이 컴퓨터에서 실행)",
+    copyCmd: "명령 복사",
+    openDocs: "문서 열기",
+    builtInConfig: "Envoy 및 Pi 설정",
+    builtInConfigHint:
+      "내장 코딩 엔진을 구성합니다. 위의 외부 CLI는 EnvoyMesh 밖에서 설치하고 로그인합니다.",
+  },
   model: {
     heading: "모델 제공자",
     sectionDescCloud: "이 기기에서 채팅 지원 및 지식 답변용 클라우드 API를 구성합니다.",
@@ -212,6 +244,7 @@ export const koAiSettingsMessages = {
       unknownBody:
         "{command} 설치 여부를 확인할 수 없습니다. 설치 명령을 실행한 뒤 「다시 시도」를 클릭하세요.",
       commandLabel: "설치",
+      firstRunLabel: "첫 실행 명령",
       verifyLabel: "확인",
       docsLabel: "설치 문서 열기",
       copyCommand: "복사",

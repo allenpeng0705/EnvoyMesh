@@ -263,13 +263,27 @@ mixin HarnessRpcs on HomeRpcSession {
     String text, {
     String? chatId,
     List<Map<String, String>>? attachments,
+    String? collaborationMode,
   }) async {
     return await homeClient.call('startEnvoyHarnessTurn', {
           'text': text,
           if (chatId != null) 'chatId': chatId,
           if (attachments != null && attachments.isNotEmpty)
             'attachments': attachments,
+          if (collaborationMode != null && collaborationMode.isNotEmpty)
+            'collaborationMode': collaborationMode,
         }, const Duration(seconds: 120))
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> setEnvoyHarnessCollaborationMode(
+    String mode, {
+    String? chatId,
+  }) async {
+    return await homeClient.call('setEnvoyHarnessCollaborationMode', {
+          'mode': mode,
+          if (chatId != null) 'chatId': chatId,
+        })
         as Map<String, dynamic>;
   }
 

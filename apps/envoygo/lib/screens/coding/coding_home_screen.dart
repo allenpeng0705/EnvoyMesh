@@ -93,7 +93,10 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
         ref.read(chatProvider.notifier).syncTerminals(),
       ]);
       final term = ref.read(terminalProvider);
+      final eh = _ehThreads(ref.read(chatProvider));
       final cwds = <String>{
+        for (final t in eh)
+          if ((t.description ?? '').trim().isNotEmpty) t.description!.trim(),
         for (final s in _piSessions(term))
           if ((s.cwd ?? '').trim().isNotEmpty) s.cwd!.trim(),
         for (final s in ext)
@@ -572,6 +575,210 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
     );
   }
 
+  Widget _ehTile(AppLocalizations l10n, ChatThread thread) {
+    final archiveId = _ehArchiveId(thread);
+    return Dismissible(
+      key: Key(thread.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        color: Colors.red,
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      confirmDismiss: (_) async {
+        await _removeEh(thread);
+        return false;
+      },
+      child: ListTile(
+        contentPadding: const EdgeInsets.only(left: 28, right: 8),
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: Text(
+            'EH',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        title: Text(thread.displayName),
+        subtitle: Text(thread.lastMessageText ?? l10n.codingStatusIdle),
+        trailing: _archiveMenu(
+          l10n: l10n,
+          kind: 'eh',
+          id: archiveId,
+          onRemove: () => _removeEh(thread),
+        ),
+        onTap: () => _openEh(thread),
+        onLongPress: () => unawaited(_toggleArchive('eh', archiveId)),
+      ),
+    );
+  }
+
+  Widget _piTile(AppLocalizations l10n, TerminalSession session) {
+    return Dismissible(
+      key: Key('pi-${session.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        color: Colors.red,
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      confirmDismiss: (_) async {
+        await _removePi(session);
+        return false;
+      },
+      child: ListTile(
+        contentPadding: const EdgeInsets.only(left: 28, right: 8),
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: Text(
+            'π',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        title: Text(session.name),
+        subtitle: Text(
+          [
+            if (session.cwd != null && session.cwd!.isNotEmpty) session.cwd!,
+            l10n.codingPiConsoleHint,
+          ].join(' · '),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: _archiveMenu(
+          l10n: l10n,
+          kind: 'pi',
+          id: session.id,
+          onRemove: () => _removePi(session),
+        ),
+        onTap: () => _openPi(session),
+        onLongPress: () => unawaited(_toggleArchive('pi', session.id)),
+      ),
+    );
+  }
+
+  Widget _extTile(AppLocalizations l10n, CodingExtSession session) {
+    final choice = codingHarnessFromWireId(session.harness);
+    final label = choice != null
+        ? codingHarnessDisplayName(choice)
+        : session.title;
+    return Dismissible(
+      key: Key('ext-${session.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        color: Colors.red,
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      confirmDismiss: (_) async {
+        await _removeExt(session);
+        return false;
+      },
+      child: ListTile(
+        contentPadding: const EdgeInsets.only(left: 28, right: 8),
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+          child: Text(
+            _extBadge(session.harness),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onTertiaryContainer,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+          ),
+        ),
+        title: Text(
+          session.title.trim().isNotEmpty ? session.title : label,
+        ),
+        subtitle: Text(
+          [
+            if (session.cwd.isNotEmpty) session.cwd,
+            label,
+          ].join(' · '),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: _archiveMenu(
+          l10n: l10n,
+          kind: 'ext',
+          id: session.id,
+          onRemove: () => _removeExt(session),
+        ),
+        onTap: () => _openExt(session),
+        onLongPress: () => unawaited(_toggleArchive('ext', session.id)),
+      ),
+    );
+  }
+
+  List<Widget> _projectGroupChildren({
+    required AppLocalizations l10n,
+    required CodingProject project,
+    required List<ChatThread> ehThreads,
+    required List<TerminalSession> piSessions,
+    required List<CodingExtSession> extSessions,
+  }) {
+    final path = normalizeCodingProjectPath(project.path);
+    final eh = ehThreads
+        .where(
+          (t) => normalizeCodingProjectPath(t.description ?? '') == path,
+        )
+        .toList();
+    final pi = piSessions
+        .where((s) => normalizeCodingProjectPath(s.cwd ?? '') == path)
+        .toList();
+    final ext = extSessions
+        .where((s) => normalizeCodingProjectPath(s.cwd) == path)
+        .toList();
+    return [
+      ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+          child: Icon(
+            Icons.folder_outlined,
+            color: Theme.of(context).colorScheme.onSecondaryContainer,
+          ),
+        ),
+        title: Text(project.label),
+        subtitle: Text(
+          project.path,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'new') {
+              unawaited(_openNewTask(initialCwd: project.path));
+            } else if (value == 'remove') {
+              unawaited(_removeProject(project));
+            }
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'new',
+              child: Text(l10n.codingNewTaskTitle),
+            ),
+            PopupMenuItem(
+              value: 'remove',
+              child: Text(l10n.codingRemoveFromCoding),
+            ),
+          ],
+        ),
+        onTap: () => unawaited(_openNewTask(initialCwd: project.path)),
+      ),
+      ...eh.map((t) => _ehTile(l10n, t)),
+      ...pi.map((s) => _piTile(l10n, s)),
+      ...ext.map((s) => _extTile(l10n, s)),
+    ];
+  }
+
   Widget _emptyHome(AppLocalizations l10n) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -640,6 +847,30 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
         extSessions.isNotEmpty;
     final hasProjects = _projects.isNotEmpty;
     final showEmptyHome = !hasTasks && !hasProjects;
+    final knownPaths = {
+      for (final p in _projects) normalizeCodingProjectPath(p.path),
+    };
+    final orphanEh = ehThreads
+        .where(
+          (t) => !knownPaths.contains(
+            normalizeCodingProjectPath(t.description ?? ''),
+          ),
+        )
+        .toList();
+    final orphanPi = piSessions
+        .where(
+          (s) => !knownPaths.contains(
+            normalizeCodingProjectPath(s.cwd ?? ''),
+          ),
+        )
+        .toList();
+    final orphanExt = extSessions
+        .where(
+          (s) => !knownPaths.contains(normalizeCodingProjectPath(s.cwd)),
+        )
+        .toList();
+    final hasOrphans =
+        orphanEh.isNotEmpty || orphanPi.isNotEmpty || orphanExt.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -746,228 +977,20 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
                                 onTap: () => unawaited(_openAddProject()),
                               )
                             else
-                              ..._projects.map((project) {
-                                return ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .secondaryContainer,
-                                    child: Icon(
-                                      Icons.folder_outlined,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSecondaryContainer,
-                                    ),
-                                  ),
-                                  title: Text(project.label),
-                                  subtitle: Text(
-                                    project.path,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  trailing: PopupMenuButton<String>(
-                                    onSelected: (value) {
-                                      if (value == 'new') {
-                                        unawaited(
-                                          _openNewTask(
-                                            initialCwd: project.path,
-                                          ),
-                                        );
-                                      } else if (value == 'remove') {
-                                        unawaited(_removeProject(project));
-                                      }
-                                    },
-                                    itemBuilder: (_) => [
-                                      PopupMenuItem(
-                                        value: 'new',
-                                        child: Text(l10n.codingNewTaskTitle),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'remove',
-                                        child: Text(
-                                          l10n.codingRemoveFromCoding,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  onTap: () => unawaited(
-                                    _openNewTask(initialCwd: project.path),
-                                  ),
-                                );
-                              }),
-                            if (hasTasks) ...[
+                              for (final project in _projects)
+                                ..._projectGroupChildren(
+                                  l10n: l10n,
+                                  project: project,
+                                  ehThreads: ehThreads,
+                                  piSessions: piSessions,
+                                  extSessions: extSessions,
+                                ),
+                            // Orphan tasks whose cwd is not a registered project.
+                            if (hasOrphans) ...[
                               _sectionHeader(l10n.codingSectionTasks),
-                              ...ehThreads.map((thread) {
-                              final archiveId = _ehArchiveId(thread);
-                              return Dismissible(
-                                key: Key(thread.id),
-                                direction: DismissDirection.endToStart,
-                                background: Container(
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.only(right: 20),
-                                  color: Colors.red,
-                                  child: const Icon(
-                                    Icons.delete,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                confirmDismiss: (_) async {
-                                  await _removeEh(thread);
-                                  return false;
-                                },
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .primaryContainer,
-                                    child: Text(
-                                      'EH',
-                                      style: TextStyle(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onPrimaryContainer,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                  title: Text(thread.displayName),
-                                  subtitle: Text(
-                                    thread.lastMessageText ??
-                                        l10n.codingStatusIdle,
-                                  ),
-                                  trailing: _archiveMenu(
-                                    l10n: l10n,
-                                    kind: 'eh',
-                                    id: archiveId,
-                                    onRemove: () => _removeEh(thread),
-                                  ),
-                                  onTap: () => _openEh(thread),
-                                  onLongPress: () =>
-                                      unawaited(_toggleArchive('eh', archiveId)),
-                                ),
-                              );
-                            }),
-                            ...piSessions.map((session) {
-                              return Dismissible(
-                                key: Key('pi-${session.id}'),
-                                direction: DismissDirection.endToStart,
-                                background: Container(
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.only(right: 20),
-                                  color: Colors.red,
-                                  child: const Icon(
-                                    Icons.delete,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                confirmDismiss: (_) async {
-                                  await _removePi(session);
-                                  return false;
-                                },
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .primaryContainer,
-                                    child: Text(
-                                      'π',
-                                      style: TextStyle(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onPrimaryContainer,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                  title: Text(session.name),
-                                  subtitle: Text(
-                                    [
-                                      if (session.cwd != null &&
-                                          session.cwd!.isNotEmpty)
-                                        session.cwd!,
-                                      l10n.codingPiConsoleHint,
-                                    ].join(' · '),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  trailing: _archiveMenu(
-                                    l10n: l10n,
-                                    kind: 'pi',
-                                    id: session.id,
-                                    onRemove: () => _removePi(session),
-                                  ),
-                                  onTap: () => _openPi(session),
-                                  onLongPress: () => unawaited(
-                                    _toggleArchive('pi', session.id),
-                                  ),
-                                ),
-                              );
-                            }),
-                            ...extSessions.map((session) {
-                              final choice =
-                                  codingHarnessFromWireId(session.harness);
-                              final label = choice != null
-                                  ? codingHarnessDisplayName(choice)
-                                  : session.title;
-                              return Dismissible(
-                                key: Key('ext-${session.id}'),
-                                direction: DismissDirection.endToStart,
-                                background: Container(
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.only(right: 20),
-                                  color: Colors.red,
-                                  child: const Icon(
-                                    Icons.delete,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                confirmDismiss: (_) async {
-                                  await _removeExt(session);
-                                  return false;
-                                },
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .tertiaryContainer,
-                                    child: Text(
-                                      _extBadge(session.harness),
-                                      style: TextStyle(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onTertiaryContainer,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    session.title.trim().isNotEmpty
-                                        ? session.title
-                                        : label,
-                                  ),
-                                  subtitle: Text(
-                                    [
-                                      if (session.cwd.isNotEmpty) session.cwd,
-                                      label,
-                                    ].join(' · '),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  trailing: _archiveMenu(
-                                    l10n: l10n,
-                                    kind: 'ext',
-                                    id: session.id,
-                                    onRemove: () => _removeExt(session),
-                                  ),
-                                  onTap: () => _openExt(session),
-                                  onLongPress: () => unawaited(
-                                    _toggleArchive('ext', session.id),
-                                  ),
-                                ),
-                              );
-                            }),
+                              ...orphanEh.map((t) => _ehTile(l10n, t)),
+                              ...orphanPi.map((s) => _piTile(l10n, s)),
+                              ...orphanExt.map((s) => _extTile(l10n, s)),
                             ],
                             if (!hasTasks)
                               Padding(

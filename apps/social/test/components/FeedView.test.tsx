@@ -6,15 +6,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { FeedView } from "../../src/components/views/FeedView.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listFeedTimeline = vi.fn();
 const publishWebContentEntry = vi.fn();
 const deleteWebContentEntry = vi.fn();
 const libraryRead = vi.fn();
-const on = vi.fn(() => () => undefined);
+// Mirrors the production `on(event, handler)` subscription: it takes an event
+// name + handler and returns an unsubscribe function.
+const on = vi.fn(
+  (_event: string, _handler: (data: unknown) => void): (() => void) => () => undefined,
+);
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     listFeedTimeline,
     publishWebContentEntry,
     deleteWebContentEntry,

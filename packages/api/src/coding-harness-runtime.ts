@@ -18,6 +18,8 @@ export type CodingHarnessRuntimeFields = {
   endpoint?: string;
   /** Only accepted on set; never returned to the browser after store. */
   apiKey?: string;
+  /** Permission policy for catalog ACP / Mesh-gated agents. */
+  permissionPolicy?: "safe-only" | "always-confirm" | "off";
 };
 
 export type AskCodingHarnessParams = {
@@ -100,6 +102,16 @@ export function parseAskCodingHarnessParams(
     p.runtime && typeof p.runtime === "object"
       ? (p.runtime as Record<string, unknown>)
       : undefined;
+  // **Narrowed once, into a local.** Inline in the object literal below, the value widened back to
+  // `string` and stopped being assignable to `CodingHarnessRuntimeFields` — which is the compiler
+  // refusing to let an unchecked string become a permission policy, and it was right to.
+  const policyRaw = runtimeRaw?.permissionPolicy;
+  const permissionPolicy: CodingHarnessRuntimeFields["permissionPolicy"] =
+    policyRaw === "safe-only" ||
+    policyRaw === "always-confirm" ||
+    policyRaw === "off"
+      ? policyRaw
+      : undefined;
   const runtime = runtimeRaw
     ? {
         ...(typeof runtimeRaw.model === "string" && runtimeRaw.model.trim()
@@ -116,6 +128,7 @@ export function parseAskCodingHarnessParams(
         runtimeRaw.endpoint.trim()
           ? { endpoint: runtimeRaw.endpoint.trim() }
           : {}),
+        ...(permissionPolicy ? { permissionPolicy } : {}),
       }
     : undefined;
 
@@ -147,6 +160,16 @@ export function parseSetCodingHarnessRuntimeParams(
     p.runtime && typeof p.runtime === "object"
       ? (p.runtime as Record<string, unknown>)
       : undefined;
+  // **Narrowed once, into a local.** Inline in the object literal below, the value widened back to
+  // `string` and stopped being assignable to `CodingHarnessRuntimeFields` — which is the compiler
+  // refusing to let an unchecked string become a permission policy, and it was right to.
+  const policyRaw = runtimeRaw?.permissionPolicy;
+  const permissionPolicy: CodingHarnessRuntimeFields["permissionPolicy"] =
+    policyRaw === "safe-only" ||
+    policyRaw === "always-confirm" ||
+    policyRaw === "off"
+      ? policyRaw
+      : undefined;
   const runtime = runtimeRaw
     ? {
         ...(typeof runtimeRaw.model === "string" && runtimeRaw.model.trim()
@@ -166,6 +189,7 @@ export function parseSetCodingHarnessRuntimeParams(
         ...(typeof runtimeRaw.apiKey === "string" && runtimeRaw.apiKey.trim()
           ? { apiKey: runtimeRaw.apiKey.trim() }
           : {}),
+        ...(permissionPolicy ? { permissionPolicy } : {}),
       }
     : undefined;
 

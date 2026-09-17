@@ -10,18 +10,27 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
+import type {
+  CircuitReservationStatus,
+  ContentEngagementSummary,
+  EnsureDefaultWebSiteResult,
+} from "@envoymesh/api";
 
 const libraryRead = vi.fn();
-const ensureDefaultWebSite = vi.fn(async () => ({
-  created: [] as string[],
-  urls: {
-    profile: "envoy://envoy:owner:self/",
-    blog: "envoy://envoy:owner:self/blog/",
-    photowall: "envoy://envoy:owner:self/photos/wall/",
-  },
-}));
+const ensureDefaultWebSite = vi.fn(
+  async (): Promise<EnsureDefaultWebSiteResult> => ({
+    created: [],
+    urls: {
+      profile: "envoy://envoy:owner:self/",
+      blog: "envoy://envoy:owner:self/blog/",
+      photowall: "envoy://envoy:owner:self/photos/wall/",
+      feeds: "envoy://envoy:owner:self/feeds/",
+    },
+  }),
+);
 const showToast = vi.fn();
-const sendHello = vi.fn(async () => undefined);
+const sendHello = vi.fn(async (_ownerId: string) => undefined);
 
 let libraryReadMock: (params?: { path?: string }) => Promise<unknown> = async () => ({
   status: "not_found",
@@ -49,12 +58,13 @@ beforeEach(() => {
       profile: "envoy://envoy:owner:self/",
       blog: "envoy://envoy:owner:self/blog/",
       photowall: "envoy://envoy:owner:self/photos/wall/",
+      feeds: "envoy://envoy:owner:self/feeds/",
     },
   }));
 });
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     libraryRead,
     publishWebContentEntry: vi.fn(),
     ensureDefaultWebSite,
@@ -65,23 +75,27 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     runCapabilityDiscovery: vi.fn(async () => undefined),
     // Discover soft-gates on a live circuit hop (useCircuitReservationStatus +
     // waitForDiscoverReady); report reserved so People sampling runs.
-    getCircuitReservationStatus: vi.fn(async () => ({
-      state: "reserved",
-      live: true,
-      everReserved: true,
-      relayPeerIds: ["12D3KooWRelay"],
-      checkedAt: new Date().toISOString(),
-    })),
+    getCircuitReservationStatus: vi.fn(
+      async (): Promise<CircuitReservationStatus> => ({
+        state: "reserved",
+        live: true,
+        everReserved: true,
+        relayPeerIds: ["12D3KooWRelay"],
+        checkedAt: new Date().toISOString(),
+      }),
+    ),
     listAgentCards: vi.fn(async () => []),
-    getPeerProfile: vi.fn(async () => null),
-    getContentEngagement: vi.fn(async () => ({
-      url: "",
-      starCount: 0,
-      commentCount: 0,
-      starredByMe: false,
-      stars: [],
-      comments: [],
-    })),
+    getPeerProfile: vi.fn(async () => undefined),
+    getContentEngagement: vi.fn(
+      async (): Promise<ContentEngagementSummary> => ({
+        url: "",
+        starCount: 0,
+        commentCount: 0,
+        starredByMe: false,
+        starOwnerIds: [],
+        comments: [],
+      }),
+    ),
     on: vi.fn(() => () => undefined),
     isConnected: true,
   }),

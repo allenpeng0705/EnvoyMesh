@@ -10,6 +10,7 @@ import { cleanup, fireEvent, screen, waitFor, act } from "@testing-library/react
 import type { EnvoyHarnessStatus } from "@envoymesh/api"
 import { EnvoyHarnessPanel } from "../../src/components/views/EnvoyHarnessPanel.js"
 import { renderWithI18n } from "../helpers/render-with-i18n.js"
+import { partialNodeService } from "../helpers/node-service-mock.js"
 
 const getEnvoyHarnessStatus = vi.fn()
 const startEnvoyHarnessTurn = vi.fn()
@@ -69,22 +70,28 @@ vi.mock("@envoymesh/envoy-harness-ehui", () => {
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
-    getEnvoyHarnessStatus,
-    startEnvoyHarnessTurn,
-    getEnvoyHarnessTurnStatus,
-    cancelEnvoyHarnessTurn,
-    setEnvoyHarnessAutoRunPolicy,
-    getEnvoyHarnessChatHistory,
-    openEnvoyHarnessChat,
-    resetEnvoyHarnessChat,
-    resumeEnvoyHarnessSession,
-    listEnvoyHarnessChats,
-    ehRespondToPermission,
-    listEnvoyHarnessPeers,
-    setEnvoyHarnessProjectPath,
-    invokeEnvoyHarnessEhui,
-    getEnvoyHarnessCommandCatalog,
-    isConnected: true,
+    ...partialNodeService({
+      getEnvoyHarnessStatus,
+      startEnvoyHarnessTurn,
+      getEnvoyHarnessTurnStatus,
+      cancelEnvoyHarnessTurn,
+      setEnvoyHarnessAutoRunPolicy,
+      getEnvoyHarnessChatHistory,
+      openEnvoyHarnessChat,
+      resetEnvoyHarnessChat,
+      resumeEnvoyHarnessSession,
+      listEnvoyHarnessChats,
+      ehRespondToPermission,
+      listEnvoyHarnessPeers,
+      setEnvoyHarnessProjectPath,
+      invokeEnvoyHarnessEhui,
+      getEnvoyHarnessCommandCatalog,
+      isConnected: true,
+    }),
+    // `on` deliberately stays outside `partialNodeService`: NodeServiceClient.on
+    // is generic (`<K extends keyof NodeServiceEvents>(event: K, handler: (data: NodeServiceEvents[K]) => void)`),
+    // and a dispatcher that stores `unknown`-taking handlers cannot be assigned
+    // to that signature without a cast. The returned object is otherwise identical.
     on: (event: string, handler: (payload: unknown) => void) => {
       if (!eventHandlers.has(event)) eventHandlers.set(event, new Set())
       eventHandlers.get(event)!.add(handler)
@@ -249,7 +256,12 @@ describe("EnvoyHarnessPanel", () => {
     })
     fireEvent.submit(input.closest("form")!)
     await waitFor(() =>
-      expect(startEnvoyHarnessTurn).toHaveBeenCalledWith("refactor this", []),
+      expect(startEnvoyHarnessTurn).toHaveBeenCalledWith(
+        "refactor this",
+        [],
+        undefined,
+        undefined,
+      ),
     )
     expect(await screen.findByText("refactored the module")).toBeDefined()
   })

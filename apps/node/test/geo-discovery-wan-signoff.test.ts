@@ -228,7 +228,6 @@ async function createRelayGeoNode() {
     enableRelay: true,
     enableAutoNat: false,
     enableDcutr: false,
-    libp2pPrivateKeyPath: join(profileDir, "libp2p-key"),
   });
   await mesh.start();
   meshes.push(mesh);

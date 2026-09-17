@@ -7,17 +7,41 @@ import { act, renderHook, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { useEhTurnQueue, assistantTurnId } from "../../src/hooks/useEhTurnQueue.js"
-import type { EhTurnCompleteEvent, EhTurnTokenEvent } from "@envoymesh/api"
+import type {
+  EhPromptBusyEvent,
+  EhTurnCompleteEvent,
+  EhTurnTokenEvent,
+} from "@envoymesh/api"
+
+/** Typed bus for the eh:* events the hook subscribes to, so each `on`/`emit`
+ *  is checked against the real event payload rather than `unknown`. */
+type EhTestEventMap = {
+  "eh:turn_complete": EhTurnCompleteEvent
+  "eh:turn_token": EhTurnTokenEvent
+  "eh:prompt_busy": EhPromptBusyEvent
+}
 
 function createEventBus() {
-  const handlers = new Map<string, Set<(payload: unknown) => void>>()
+  const handlers = new Map<keyof EhTestEventMap, Set<(payload: unknown) => void>>()
   return {
-    on(event: string, handler: (payload: unknown) => void) {
-      if (!handlers.has(event)) handlers.set(event, new Set())
-      handlers.get(event)!.add(handler)
-      return () => handlers.get(event)?.delete(handler)
+    on<K extends keyof EhTestEventMap>(
+      event: K,
+      handler: (payload: EhTestEventMap[K]) => void,
+    ) {
+      // The bus is heterogeneous, so it stores erased handlers and re-narrows
+      // the payload to this subscriber's event type on dispatch.
+      const wrapped = (payload: unknown) => handler(payload as EhTestEventMap[K])
+      let set = handlers.get(event)
+      if (set === undefined) {
+        set = new Set()
+        handlers.set(event, set)
+      }
+      set.add(wrapped)
+      return () => {
+        set.delete(wrapped)
+      }
     },
-    emit(event: string, payload: unknown) {
+    emit<K extends keyof EhTestEventMap>(event: K, payload: EhTestEventMap[K]) {
       for (const handler of handlers.get(event) ?? []) {
         handler(payload)
       }

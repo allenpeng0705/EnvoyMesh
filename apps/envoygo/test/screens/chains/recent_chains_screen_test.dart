@@ -19,6 +19,7 @@ import 'dart:convert';
 
 import 'package:envoy_thin_client/services/home_remote_client.dart';
 import 'package:envoy_thin_client/services/web_socket_like.dart';
+import 'package:envoygo/l10n/app_localizations.dart';
 import 'package:envoygo/providers/node_provider.dart';
 import 'package:envoygo/screens/chains/recent_chains_screen.dart';
 import 'package:envoygo/storage/local_database.dart';
@@ -161,7 +162,12 @@ Future<ScreenHandle> mountScreen(WidgetTester tester) async {
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: handle.container,
-      child: const MaterialApp(home: RecentChainsScreen()),
+      child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('en'),
+        home: const RecentChainsScreen(),
+      ),
     ),
   );
   // The screen's post-frame callback fires `_refresh`, which issues
@@ -251,8 +257,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.textContaining('3 workers · 4 subtasks'), findsOneWidget);
-      expect(find.textContaining('1 workers · 1 subtasks'), findsOneWidget);
+      expect(find.textContaining('3 Workers · 4 Subtasks'), findsOneWidget);
+      expect(find.textContaining('1 Workers · 1 Subtasks'), findsOneWidget);
       // Pinned star is shown on the first row.
       expect(find.byIcon(Icons.star), findsOneWidget);
       await teardown(tester, handle);

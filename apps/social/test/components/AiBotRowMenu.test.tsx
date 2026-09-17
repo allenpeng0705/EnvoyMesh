@@ -13,8 +13,6 @@ const bot: AiBotDefinition = {
   name: "Helper",
   enabled: true,
   systemPrompt: "Be helpful",
-  createdAt: "2026-07-01T00:00:00.000Z",
-  updatedAt: "2026-07-01T00:00:00.000Z",
 };
 
 afterEach(() => {

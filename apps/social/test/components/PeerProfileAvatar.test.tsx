@@ -5,13 +5,14 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { PeerProfileAvatar } from "../../src/components/PeerProfileAvatar.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const mockGetPeerProfile = vi.fn();
 const mockRequestPeerProfile = vi.fn();
 const mockOn = vi.fn(() => () => {});
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     getPeerProfile: mockGetPeerProfile,
     requestPeerProfile: mockRequestPeerProfile,
     on: mockOn,

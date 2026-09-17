@@ -514,6 +514,7 @@ export interface NodeServiceClient {
     text: string,
     attachments?: import("@envoymesh/api").AgentAttachmentRef[],
     chatId?: string,
+    collaborationMode?: "default" | "plan" | "review",
   ): Promise<{ turnId: string }>;
   getEnvoyHarnessTurnStatus(
     chatId?: string,
@@ -521,6 +522,10 @@ export interface NodeServiceClient {
   setEnvoyHarnessAutoRunPolicy(
     policy: string,
   ): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+  setEnvoyHarnessCollaborationMode(
+    mode: string,
+    chatId?: string,
+  ): Promise<{ ok: true; mode: string }>;
   getEnvoyHarnessChatHistory(
     chatId?: string,
     sinceRevision?: number,
@@ -2018,6 +2023,7 @@ function createWsNodeServiceClient(
       text: string,
       attachments?: import("@envoymesh/api").AgentAttachmentRef[],
       chatId?: string,
+      collaborationMode?: "default" | "plan" | "review",
     ) {
       return wsClient.rpc(
         "startEnvoyHarnessTurn",
@@ -2025,6 +2031,7 @@ function createWsNodeServiceClient(
           text,
           ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {}),
           ...(chatId ? { chatId } : {}),
+          ...(collaborationMode ? { collaborationMode } : {}),
         },
         { timeoutMs: 30_000 },
       ) as Promise<{ turnId: string }>;
@@ -2042,6 +2049,16 @@ function createWsNodeServiceClient(
         { policy },
         { timeoutMs: 30_000 },
       ) as Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+    },
+    async setEnvoyHarnessCollaborationMode(mode: string, chatId?: string) {
+      return wsClient.rpc(
+        "setEnvoyHarnessCollaborationMode",
+        {
+          mode,
+          ...(chatId ? { chatId } : {}),
+        },
+        { timeoutMs: 15_000 },
+      ) as Promise<{ ok: true; mode: string }>;
     },
     async getEnvoyHarnessChatHistory(chatId?: string, sinceRevision?: number) {
       return wsClient.rpc(

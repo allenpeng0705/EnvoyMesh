@@ -1,7 +1,8 @@
 /**
  * Minimal ACP stdio session for catalog CLIs (JSON-RPC + Content-Length).
  *
- * Not a full ACP host: permissions auto-select the first allow-like option;
+ * Permissions honor `permissionPolicy` (default safe-only). Without a Mesh
+ * dock, tools that would require a prompt are cancelled — never silent Full.
  * fs/read and fs/write are allowed only under the task cwd.
  */
 
@@ -9,6 +10,11 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
+import {
+  denyOptionId,
+  shouldAutoAllowCatalogPermission,
+  type CatalogPermissionPolicy,
+} from "./catalog-acp-policy.js";
 import { InstallMissingError } from "./daemon-supervisor.js";
 import {
   augmentPathForExtAgentBins,
@@ -24,6 +30,8 @@ export type CatalogAcpSessionOpts = {
   timeoutMs?: number;
   installHint?: string;
   onDelta?: (chunk: string) => void;
+  /** Default `safe-only` — never silent Full access. */
+  permissionPolicy?: CatalogPermissionPolicy;
 };
 
 function encodeRpc(msg: unknown): Buffer {
@@ -182,10 +190,19 @@ export async function runCatalogAcpPrompt(
       let result: unknown = {};
       try {
         if (method === "session/request_permission") {
-          const optionId = allowOptionId(params.options);
-          result = optionId
-            ? { outcome: { outcome: "selected", optionId } }
-            : { outcome: { outcome: "cancelled" } };
+          const policy = opts.permissionPolicy ?? "safe-only";
+          const allow = shouldAutoAllowCatalogPermission(policy, params);
+          if (allow) {
+            const optionId = allowOptionId(params.options);
+            result = optionId
+              ? { outcome: { outcome: "selected", optionId } }
+              : { outcome: { outcome: "cancelled" } };
+          } else {
+            const optionId = denyOptionId(params.options);
+            result = optionId
+              ? { outcome: { outcome: "selected", optionId } }
+              : { outcome: { outcome: "cancelled" } };
+          }
         } else if (method === "fs/read_text_file") {
           const path = String(params.path ?? "");
           const abs = pathInsideCwd(cwd, path);
@@ -335,4 +352,5 @@ export const _test = {
   encodeRpc,
   pathInsideCwd,
   allowOptionId,
+  denyOptionId,
 };

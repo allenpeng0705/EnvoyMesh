@@ -131,12 +131,17 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
 
   Map<String, dynamic> get _runtimePayload {
     final model = (_prefs.model ?? _session?.model)?.trim();
+    final policy = _caps.permissionAskDisabledReason != null &&
+            _prefs.permissionPolicy == 'always-confirm'
+        ? 'safe-only'
+        : _prefs.permissionPolicy;
     return {
       if (model != null && model.isNotEmpty) 'model': model,
       if ((_session?.providerKind ?? '').trim().isNotEmpty)
         'providerKind': _session!.providerKind!.trim(),
       if ((_session?.endpoint ?? '').trim().isNotEmpty)
         'endpoint': _session!.endpoint!.trim(),
+      'permissionPolicy': policy,
     };
   }
 
@@ -160,7 +165,14 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
   }
 
   Future<void> _loadLocalState() async {
-    final prefs = await loadCodingComposerPrefs(_prefsKey);
+    var prefs = await loadCodingComposerPrefs(_prefsKey);
+    if (_caps.permissionAskDisabledReason != null &&
+        prefs.permissionPolicy == 'always-confirm') {
+      prefs = await saveCodingComposerPrefs(
+        _prefsKey,
+        prefs.copyWith(permissionPolicy: 'safe-only'),
+      );
+    }
     final seed = await loadCodingTranscript(
       kind: 'ext',
       id: widget.sessionId,

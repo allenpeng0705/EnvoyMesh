@@ -22,7 +22,7 @@ export type CodingAddProjectConfirm = {
   apiKey: string;
 };
 
-type HarnessProbeBadge = "ready" | "install" | "unknown" | "checking";
+import type { HarnessProbeBadge } from "../lib/coding-harness-probe.js";
 
 export interface CodingProjectPickerModalProps {
   open: boolean;

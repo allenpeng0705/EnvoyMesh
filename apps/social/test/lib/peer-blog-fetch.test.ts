@@ -28,6 +28,7 @@ describe("peer-blog-fetch", () => {
       libp2pPeerId: "12D3",
       status: "ok" as const,
       body: `# ${params.path}\n\nBody for ${params.path}\n`,
+      latencyMs: 0,
     }));
 
     const enriched = await enrichPeerBlogSummaries(libraryRead, page);

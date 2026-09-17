@@ -9,6 +9,7 @@ import type { ShareOffer } from "@envoymesh/api";
 import { InboxView } from "../../src/components/views/InboxView.js";
 import { ToastProvider } from "../../src/hooks/useToast.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const acceptShare = vi.fn();
 const declineShare = vi.fn();
@@ -52,7 +53,7 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
 }));
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     shareFile,
   }),
   useShareOffers: () => ({

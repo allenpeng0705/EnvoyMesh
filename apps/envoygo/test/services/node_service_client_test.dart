@@ -423,7 +423,9 @@ void main() {
       expect(sent['params'].containsKey('iceServers'), isFalse,
           reason: 'iceServers must be omitted from the wire when not given — '
               'the home injects its 3-server STUN default (Phase 42 §5.1).');
-      expect(sent['params'], {'targetOwnerId': 'envoy:owner:bob', 'sdpOffer': 'v=0\r\n'});
+      expect(sent['params']['targetOwnerId'], 'envoy:owner:bob');
+      expect(sent['params']['sdpOffer'], 'v=0\r\n');
+      expect(sent['params']['callType'], 'audio');
 
       mock.simulateMessage({'id': sent['id'], 'result': 'call-id'});
       expect(await callFuture, 'call-id');

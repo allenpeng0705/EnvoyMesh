@@ -54,6 +54,9 @@ String chainRpcErrorLabel(AppLocalizations l10n, String? code) {
       return l10n.chainsStatusCancelled;
     case 'policy_disabled':
       return l10n.chainsReassignUnavailable;
+    case 'no_candidate':
+    case 'no_candidates':
+      return l10n.chainsReassignFailed;
     case 'validation_failed':
       return l10n.commonError;
     default:

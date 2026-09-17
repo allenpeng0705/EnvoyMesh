@@ -5,9 +5,10 @@ import { ENVOY_HARNESS_THREAD_KEY, envoyHarnessThreadKey } from "@envoymesh/api"
 import { ChatView } from "../../src/components/views/ChatView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { OPEN_CODING_EVENT } from "../../src/lib/open-coding-nav.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     isConnected: true,
     listChatRooms: vi.fn().mockResolvedValue([]),
     listFamilyRooms: vi.fn().mockResolvedValue({ rooms: [] }),

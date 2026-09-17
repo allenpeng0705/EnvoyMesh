@@ -35,7 +35,6 @@ describe("peer reachability label", () => {
       peerReachabilityLabel(t, {
         connected: false,
         direct: false,
-        lastSeenMs: 0,
       }),
     ).toBe("contactChat.reachabilityOffline");
   });
@@ -45,7 +44,6 @@ describe("peer reachability label", () => {
       peerReachabilityLabel(t, {
         connected: true,
         direct: true,
-        lastSeenMs: 0,
       }),
     ).toBe("contactChat.reachabilityOnlineDirect");
   });
@@ -55,7 +53,6 @@ describe("peer reachability label", () => {
       peerReachabilityLabel(t, {
         connected: true,
         direct: false,
-        lastSeenMs: 0,
       }),
     ).toBe("contactChat.reachabilityOnlineRelay");
   });

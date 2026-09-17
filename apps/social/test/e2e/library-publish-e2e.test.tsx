@@ -8,6 +8,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import type { LibraryItem } from "@envoymesh/api";
 import { LibraryView } from "../../src/components/views/LibraryView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listAllLocalFiles = vi.fn();
 const getBonds = vi.fn();
@@ -58,7 +59,7 @@ function unifiedList(items: LibraryItem[] = [privateItem]) {
 }
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     listAllLocalFiles,
     getBonds,
     setLibraryItemPublished,

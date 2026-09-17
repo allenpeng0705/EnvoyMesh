@@ -1,0 +1,30 @@
+{
+  "peer_settings": {
+    "connection_timeout": "30s",
+    "dial_timeout": "10s", 
+    "keep_alive_interval": "30s",
+    "max_connections": 100,
+    "max_streams_per_connection": 32
+  },
+  "holepunch": {
+    "enabled": true,
+    "max_retries": 3,
+    "timeout": "60s",
+    "dial_timeout": "5s"
+  },
+  "relay": {
+    "enabled": false,
+    "hop_timeout": "30s",
+    "circuit_timeout": "2m"
+  },
+  "discovery": {
+    "stun_servers": [
+      "10.10.2.10:3478"
+    ],
+    "bootstrap_peers": []
+  },
+  "logging": {
+    "level": "INFO",
+    "enable_metrics": true
+  }
+}

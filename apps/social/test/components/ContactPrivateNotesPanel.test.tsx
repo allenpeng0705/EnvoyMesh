@@ -2,11 +2,12 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ContactPrivateNotesPanel } from "../../src/components/ContactPrivateNotesPanel.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const sendSyncStateUpdate = vi.fn().mockResolvedValue({ ok: true, recipients: 0 });
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     sendSyncStateUpdate,
     on: vi.fn(() => () => {}),
   }),

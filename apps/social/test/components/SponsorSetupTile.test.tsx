@@ -2,12 +2,13 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const getSetupSponsorFriendStatus = vi.fn();
 const runSetupSponsorFriend = vi.fn();
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     getSetupSponsorFriendStatus,
     runSetupSponsorFriend,
     applyWanJoinInvite: vi.fn(),

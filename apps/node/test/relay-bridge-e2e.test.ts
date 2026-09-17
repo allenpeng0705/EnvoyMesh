@@ -22,6 +22,17 @@ import {
   createLocalTrustStore,
 } from "@envoymesh/local-store";
 import { byteStream } from "@libp2p/utils";
+
+/**
+ * One JSON message per line — the **client's half of the framing contract**.
+ *
+ * The protocol delimits every message with `\n` (`@envoymesh/host-connect`'s mesh transport; the Dart
+ * client frames the same way in `mesh_framing.dart`). This client used to write bare JSON and rely on
+ * one write being one read, which is exactly the assumption that was removed: two frames coalesced
+ * into one message, and a split frame delivered half a request.
+ */
+const encodeFrame = (payload: unknown): Uint8Array =>
+  new TextEncoder().encode(`${JSON.stringify(payload)}\n`);
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EnvoyMesh, CLIENT_PROXY_PROTOCOL } from "@envoymesh/network";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
@@ -130,7 +141,7 @@ describe("Relay bridge E2E (real libp2p)", () => {
 
     // Relay sends handshake
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token })),
+      encodeFrame({ type: "proxy-connect", token }),
     );
 
     // Relay reads response
@@ -157,9 +168,7 @@ describe("Relay bridge E2E (real libp2p)", () => {
 
     // Send wrong token
     await streamIo.write(
-      new TextEncoder().encode(
-        JSON.stringify({ type: "proxy-connect", token: "wrong-token" }),
-      ),
+      encodeFrame({ type: "proxy-connect", token: "wrong-token" }),
     );
 
     const respBytes = await streamIo.read();
@@ -209,14 +218,14 @@ describe("Relay bridge E2E (real libp2p)", () => {
 
     // Handshake with the review token — accepted so pairThinClient can run.
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token: "apple-review-secret" })),
+      encodeFrame({ type: "proxy-connect", token: "apple-review-secret" }),
     );
     const acceptBytes = await streamIo.read();
     expect(JSON.parse(new TextDecoder().decode(acceptBytes!.subarray())).type).toBe("proxy-accept");
 
     // Owner-level RPC must be denied for the review token.
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ id: "1", method: "getNodeConfig", params: {} })),
+      encodeFrame({ id: "1", method: "getNodeConfig", params: {} }),
     );
     const denied = JSON.parse(new TextDecoder().decode((await streamIo.read())!.subarray()));
     expect(denied.id).toBe("1");
@@ -224,13 +233,11 @@ describe("Relay bridge E2E (real libp2p)", () => {
 
     // pairThinClient must still work and bind a family member, never the owner.
     await streamIo.write(
-      new TextEncoder().encode(
-        JSON.stringify({
+      encodeFrame({
           id: "2",
           method: "pairThinClient",
           params: { pairingToken: "apple-review-secret", deviceName: "Reviewer", platform: "flutter" },
         }),
-      ),
     );
     const paired = JSON.parse(new TextDecoder().decode((await streamIo.read())!.subarray()));
     expect(paired.id).toBe("2");
@@ -255,14 +262,14 @@ describe("Relay bridge E2E (real libp2p)", () => {
     const streamIo = byteStream(stream);
 
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token })),
+      encodeFrame({ type: "proxy-connect", token }),
     );
     const acceptBytes = await streamIo.read();
     expect(JSON.parse(new TextDecoder().decode(acceptBytes!.subarray())).type).toBe("proxy-accept");
 
     // --- RPC request ---
     const rpc = JSON.stringify({ id: "1", method: "getNodeConfig", params: {} });
-    await streamIo.write(new TextEncoder().encode(rpc));
+    await streamIo.write(new TextEncoder().encode(`${rpc}\n`));
 
     const rpcRespBytes = await streamIo.read();
     expect(rpcRespBytes).not.toBeNull();
@@ -290,13 +297,13 @@ describe("Relay bridge E2E (real libp2p)", () => {
 
     // Handshake
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token })),
+      encodeFrame({ type: "proxy-connect", token }),
     );
     await streamIo.read(); // consume proxy-accept
 
     // RPC
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ id: "2", method: "getNodeStatus", params: {} })),
+      encodeFrame({ id: "2", method: "getNodeStatus", params: {} }),
     );
 
     const respBytes = await streamIo.read();
@@ -323,7 +330,7 @@ describe("Relay bridge E2E (real libp2p)", () => {
 
     // Handshake
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token })),
+      encodeFrame({ type: "proxy-connect", token }),
     );
     await streamIo.read(); // consume proxy-accept
 
@@ -331,7 +338,7 @@ describe("Relay bridge E2E (real libp2p)", () => {
     const methods = ["getNodeConfig", "getNodeStatus", "getConnectionStatus", "getBridgeStatus", "getBonds"];
     for (let i = 0; i < methods.length; i++) {
       await streamIo.write(
-        new TextEncoder().encode(JSON.stringify({ id: String(i), method: methods[i], params: {} })),
+        encodeFrame({ id: String(i), method: methods[i], params: {} }),
       );
       const respBytes = await streamIo.read();
       expect(respBytes).not.toBeNull();
@@ -358,13 +365,13 @@ describe("Relay bridge E2E (real libp2p)", () => {
 
     // Handshake
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token })),
+      encodeFrame({ type: "proxy-connect", token }),
     );
     await streamIo.read(); // proxy-accept
 
     // Unknown method → error response
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ id: "99", method: "nonexistent_method", params: {} })),
+      encodeFrame({ id: "99", method: "nonexistent_method", params: {} }),
     );
     const errRespBytes = await streamIo.read();
     const errResp = JSON.parse(new TextDecoder().decode(errRespBytes!.subarray()));
@@ -374,7 +381,7 @@ describe("Relay bridge E2E (real libp2p)", () => {
 
     // Stream is still usable — send a valid RPC
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ id: "100", method: "getNodeStatus", params: {} })),
+      encodeFrame({ id: "100", method: "getNodeStatus", params: {} }),
     );
     const okRespBytes = await streamIo.read();
     const okResp = JSON.parse(new TextDecoder().decode(okRespBytes!.subarray()));
@@ -414,7 +421,7 @@ describe("Relay bridge E2E (real libp2p)", () => {
     const streamIo = byteStream(stream);
 
     // Send garbage
-    await streamIo.write(new TextEncoder().encode("not-json"));
+    await streamIo.write(new TextEncoder().encode("not-json\n"));
 
     // The handler will try to JSON.parse, which throws → finally closes stream.
     // Wait a bit for the home node to process.
@@ -446,7 +453,7 @@ describe("Relay bridge E2E (real libp2p)", () => {
     for (const stream of streams) {
       const io = byteStream(stream);
       await io.write(
-        new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token })),
+        encodeFrame({ type: "proxy-connect", token }),
       );
       const resp = await io.read();
       expect(JSON.parse(new TextDecoder().decode(resp!.subarray())).type).toBe("proxy-accept");
@@ -456,7 +463,7 @@ describe("Relay bridge E2E (real libp2p)", () => {
     for (let i = 0; i < streams.length; i++) {
       const io = byteStream(streams[i]);
       await io.write(
-        new TextEncoder().encode(JSON.stringify({ id: String(i), method: "getNodeStatus", params: {} })),
+        encodeFrame({ id: String(i), method: "getNodeStatus", params: {} }),
       );
       const resp = await io.read();
       expect(JSON.parse(new TextDecoder().decode(resp!.subarray())).result).toBeDefined();
@@ -499,14 +506,14 @@ describe("Relay bridge E2E (real libp2p)", () => {
     // Full handshake + RPC to verify everything works
     const streamIo = byteStream(stream);
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token })),
+      encodeFrame({ type: "proxy-connect", token }),
     );
     const acceptBytes = await streamIo.read();
     expect(JSON.parse(new TextDecoder().decode(acceptBytes!.subarray())).type).toBe("proxy-accept");
 
     // RPC round-trip
     await streamIo.write(
-      new TextEncoder().encode(JSON.stringify({ id: "bare", method: "getNodeStatus", params: {} })),
+      encodeFrame({ id: "bare", method: "getNodeStatus", params: {} }),
     );
     const rpcRespBytes = await streamIo.read();
     const rpcResp = JSON.parse(new TextDecoder().decode(rpcRespBytes!.subarray()));

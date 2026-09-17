@@ -10,10 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ChainDefaultsPanel } from "../../src/components/views/settings/ChainDefaultsPanel.js";
 import { I18nTestProvider } from "../../src/context/I18nContext.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const chainGetDefaults = vi.fn();
 const chainSetDefaults = vi.fn();
-const mockNodeService = { chainGetDefaults, chainSetDefaults };
+const mockNodeService = partialNodeService({ chainGetDefaults, chainSetDefaults });
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,

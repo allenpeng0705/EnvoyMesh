@@ -6,11 +6,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { CodingProjectPickerModal } from "../../src/components/CodingProjectPickerModal.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 afterEach(() => cleanup());
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     getExtAgentCommandCatalog: vi.fn().mockResolvedValue({ models: [] }),
   }),
 }));
@@ -96,7 +97,12 @@ describe("CodingProjectPickerModal", () => {
     ) as HTMLSelectElement;
     const codex = [...select.options].find((o) => o.value === "codex");
     const opencode = [...select.options].find((o) => o.value === "opencode");
-    expect(codex?.textContent).toMatch(/Install/i);
-    expect(opencode?.textContent).toMatch(/Ready/i);
+    // The probe's raw `install` badge is deliberately collapsed to `not-ready`
+    // for display (`harnessProbeLabelKey`, pinned by
+    // test/lib/coding-harness-probe.test.ts), so the option speaks the picker's
+    // Ready / Not ready vocabulary rather than the probe's internal badge.
+    // Anchored on `· ` so `/Ready/` cannot also match "Not ready".
+    expect(codex?.textContent).toMatch(/· Not ready$/);
+    expect(opencode?.textContent).toMatch(/· Ready$/);
   });
 });

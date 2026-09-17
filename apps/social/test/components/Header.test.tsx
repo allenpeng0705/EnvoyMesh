@@ -8,9 +8,10 @@ import { Header } from "../../src/components/Header.js";
 import { ThemeProvider } from "../../src/context/ThemeContext.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import type { ViewName } from "../../src/App.js";
+import { partialNodeService } from "../helpers/node-service-mock.js";
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
+  useNodeService: () => partialNodeService({
     readLibraryItemContent: vi.fn().mockRejectedValue(new Error("no photo")),
   }),
 }));

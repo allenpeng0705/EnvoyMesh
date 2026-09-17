@@ -226,7 +226,15 @@ describe("socket methods run after the gate and before the dispatcher", () => {
 
     expect(handle).toHaveBeenCalledTimes(1);
     expect(dispatch).not.toHaveBeenCalled();
-    expect(ws.responses()[0]).toEqual({ id: "7", error: undefined, result: { ok: false, error: "proxy refused" } });
+    // The host's `fail` port sends a **typed error frame**, not a
+    // `{ ok: false, error }` result. The contract changed with the owner-gate
+    // move into the product's `handle` (see `ws-server.ts` `fail:`, and the
+    // matching `packages/host-connect/test/access-gate.test.ts` case); this
+    // app-level wiring test was the one place still asserting the old shape.
+    expect(ws.responses()[0]).toEqual({
+      id: "7",
+      error: { code: "UNAUTHORIZED", message: "proxy refused" },
+    });
   });
 
   it("refuses a client from the network with no token, before any handler", async () => {
