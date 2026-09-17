@@ -27,6 +27,7 @@ import {
   CORE_EVENT_DISPOSITIONS,
   HOST_WS_BIND_HOST,
   type HostNodeService,
+  type WsServerOptions,
 } from "@envoymesh/host-connect";
 import { WsServer } from "@envoymesh/host-connect";
 import { SOCIAL_WS_BIND_HOST } from "@envoymesh/node-core";
@@ -173,11 +174,15 @@ describe("the ports replace what the transport used to do inline", () => {
       getConnectionStatus: () => ({ peerId: "", multiaddrs: [] }),
       noteClientActivity: () => undefined,
     };
-    expect(() =>
-      server.start(node, {
-        // @ts-expect-error — deliberately omitting the required port.
-        dispatch: async () => null,
-      }),
-    ).toThrow(/sessionIdentity/);
+    // `sessionIdentity` is required by the type, so the runtime guard is only
+    // reachable from a caller that constructs options outside the contract —
+    // exactly the JS caller it defends. The `Partial` states what is missing;
+    // the assertion is erased at runtime.
+    const withoutIdentity: Partial<WsServerOptions<unknown>> = {
+      dispatch: async () => null,
+    };
+    expect(() => server.start(node, withoutIdentity as WsServerOptions<unknown>)).toThrow(
+      /sessionIdentity/,
+    );
   });
 });

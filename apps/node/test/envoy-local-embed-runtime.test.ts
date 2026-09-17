@@ -21,10 +21,12 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 import { spawn } from "node:child_process";
-import { ENVOY_LOCAL_LLAMA_CPP_TAG } from "../src/envoy-local-manifest.js";
+import {
+  ENVOY_LOCAL_LLAMA_CPP_TAG,
+  ENVOY_LOCAL_MIN_MODEL_BYTES,
+} from "../src/envoy-local-manifest.js";
 import { engineRootFor } from "../src/engine-root.js";
 import {
-  ENVOY_LOCAL_MIN_MODEL_BYTES,
   currentProcessStartedAt,
   engineLockPath,
   processStartedAt,

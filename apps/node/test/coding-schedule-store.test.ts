@@ -128,7 +128,6 @@ describe("CodingScheduleStore", () => {
         cron: "* * * * *",
         prompt: "x",
         cwd: "/ok",
-        // @ts-expect-error intentional invalid
         harness: "nope",
       }),
     ).rejects.toThrow("coding_schedule_harness_invalid")

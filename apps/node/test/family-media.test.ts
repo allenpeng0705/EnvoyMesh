@@ -471,7 +471,7 @@ describe("EM-F1 via NodeServiceImpl", () => {
       svc.sendFamilyMessage({
         toProfileId: momId,
         text: "",
-        attachments: [{ id: uploaded.id }],
+        attachments: [uploaded],
       }),
     )
     expect(sent.threadKey).toBe(familyThreadKey(dadId, momId))
@@ -516,7 +516,7 @@ describe("EM-F1 via NodeServiceImpl", () => {
     const sent = await runWithRpcCaller(ownerCaller(), () =>
       svc.sendFamilyMessage({
         toProfileId: dadId,
-        attachments: [{ id: uploaded.id }],
+        attachments: [uploaded],
       }),
     )
     const dadHistory = await runWithRpcCaller(memberCaller(dadId), () =>
@@ -545,7 +545,7 @@ describe("EM-F1 via NodeServiceImpl", () => {
         svc.sendFamilyMessage({
           toProfileId: OWNER_FAMILY_PROFILE_ID,
           text: "look",
-          attachments: [{ id: uploaded.id }],
+          attachments: [uploaded],
         }),
       ),
     ).rejects.toThrow(/not-found/)
@@ -594,7 +594,7 @@ describe("EM-F1 via NodeServiceImpl", () => {
     const sent = await runWithRpcCaller(memberCaller(dadId), () =>
       svc.sendFamilyRoomMessage({
         roomId,
-        attachments: [{ id: uploaded.id }],
+        attachments: [uploaded],
       }),
     )
     expect(sent.threadKey).toBe(`room:${roomId}`)

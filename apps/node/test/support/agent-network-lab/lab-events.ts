@@ -1,7 +1,7 @@
 /**
  * Phase 60F — journal/event predicates for the Agent Network lab (no sleeps).
  */
-import type { ChainJournalEvent } from "../../src/chain-active-journal.js";
+import type { ChainJournalEvent } from "../../../src/chain-active-journal.js";
 
 export type LabEventPredicate = (event: ChainJournalEvent) => boolean;
 

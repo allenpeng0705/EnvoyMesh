@@ -26,7 +26,7 @@ import {
   rebalanceChain,
   type ChainOrchestratorHandlerDeps,
 } from "../src/chain-orchestrator.js";
-import { type ChainSubtask, type ChainSubtaskBid, type EnvoyEnvelope, type TaskChainReportPayload } from "@envoymesh/protocol";
+import { ChainMandateSignedSchema, type ChainSubtask, type ChainSubtaskBid, type EnvoyEnvelope, type TaskChainReportPayload } from "@envoymesh/protocol";
 import { generateKeyPairSync } from "node:crypto";
 
 let keyPair: { privateKey: string; publicKey: string };
@@ -42,7 +42,9 @@ beforeAll(() => {
 const NOW = new Date("2026-06-18T00:00:00.000Z");
 
 function makeMandate(overrides: { maxChainCostUsd?: number; costCeilingUsd?: number } = {}) {
-  return {
+  // Schema-built so the Zod-defaulted fields are present in the `ChainMandate`
+  // output type rather than omitted by this hand-written literal.
+  return ChainMandateSignedSchema.parse({
     version: "0.1" as const,
     chainMandateId: "chainmandate_40d",
     chainId: "chain_40d",
@@ -56,7 +58,7 @@ function makeMandate(overrides: { maxChainCostUsd?: number; costCeilingUsd?: num
     deadlineAt: "2026-06-18T01:00:00.000Z",
     createdAt: "2026-06-18T00:00:00.000Z",
     signature: "stub",
-  };
+  });
 }
 
 function makeDeps(

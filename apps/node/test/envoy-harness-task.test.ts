@@ -46,7 +46,7 @@ describe("envoy-harness-task", () => {
     const created = await store.create({
       cwd: "/projects/app",
       startedAt: new Date().toISOString(),
-      permissionMode: "task-write",
+      permissionMode: "workspace-write",
     });
     const key = normalizeEhTaskCwd("/projects/app");
     const resolved = await resolveEhSessionIdForCwd({
@@ -63,13 +63,13 @@ describe("envoy-harness-task", () => {
     const older = await store.create({
       cwd: "/projects/other",
       startedAt: new Date().toISOString(),
-      permissionMode: "task-write",
+      permissionMode: "workspace-write",
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     const newer = await store.create({
       cwd: "/projects/other",
       startedAt: new Date().toISOString(),
-      permissionMode: "task-write",
+      permissionMode: "workspace-write",
     });
 
     const resolved = await resolveEhSessionIdForCwd({
@@ -87,7 +87,7 @@ describe("envoy-harness-task", () => {
     const created = await store.create({
       cwd: "/tmp",
       startedAt: new Date().toISOString(),
-      permissionMode: "task-write",
+      permissionMode: "workspace-write",
     });
     await created.appendMessage("user", [{ type: "text", text: "Hi" }]);
     await created.appendMessage("assistant", [{ type: "text", text: "Hello!" }]);
@@ -111,7 +111,7 @@ describe("envoy-harness-task", () => {
     const created = await store.create({
       cwd: "/tmp",
       startedAt: new Date().toISOString(),
-      permissionMode: "task-write",
+      permissionMode: "workspace-write",
     });
     created.appendMessage("user", [{ type: "text", text: "first" }]);
     created.appendMessage("assistant", [{ type: "text", text: "working" }]);

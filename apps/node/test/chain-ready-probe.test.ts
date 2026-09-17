@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
 import { signUnsignedEnvelope } from "@envoymesh/identity";
 import {
+  ChainMandateSignedSchema,
   createTaskChainReadyRequestPayload,
   createUnsignedEnvelope,
 } from "@envoymesh/protocol";
@@ -36,7 +37,9 @@ beforeAll(() => {
 const NOW = new Date("2026-06-18T00:00:00.000Z");
 
 function mandate() {
-  return {
+  // Schema-built so Zod `.default(...)` fields land in the `ChainMandate`
+  // output type instead of being omitted by this hand-written literal.
+  return ChainMandateSignedSchema.parse({
     version: "0.1" as const,
     chainMandateId: "chainmandate_test-1",
     chainId: "chain_test-1",
@@ -50,7 +53,7 @@ function mandate() {
     deadlineAt: "2026-06-18T01:00:00.000Z",
     createdAt: NOW.toISOString(),
     signature: "stub",
-  };
+  });
 }
 
 describe("localAgentNetworkEngineReady", () => {

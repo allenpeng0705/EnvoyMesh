@@ -137,14 +137,28 @@ Roots found and updated:
 |---|---|---|
 | `EnvoyMesh/apps/envoygo` | `envoy_mesh_libp2p` (path) | yes |
 | `EnvoyCoder/apps/mobile` | `envoy_mesh_libp2p` (path) | yes |
-| `EnvoyMesh/packages/envoy-mesh-libp2p-dart` | direct dependency | no — see note |
+| `EnvoyMesh/packages/envoy-reuse-fixture` | direct dependency | yes |
+| `EnvoyMesh/packages/envoy-mesh-libp2p-dart` | direct dependency | **yes** (reversed — see below) |
 
-`EnvoyMesh/packages/envoy-mesh-libp2p-dart` also lists `dart_libp2p` directly and is itself a pub
-root for `dart analyze`/`dart test` (an override there would change its own checks and its tracked
-`pubspec.lock`), but it is **always consumed as a path dependency** by both apps above, so the root
-override is what actually reaches production. Its pubspec documents the same reasoning for
-`mdns_dart` (`pubspec.yaml:18-26`). If it is ever checked out and built standalone, add the override
-at that point.
+### Why `envoy-mesh-libp2p-dart` carries one too (a reversed decision)
 
-The `pointycastle`/`mdns_dart` overrides already present in those roots stay; the fork entry is
+It first did **not**, following the rule its pubspec records for `mdns_dart`: overrides are honoured
+only from the root, so an override inside a package cannot reach that package's consumers, and adding
+one moves its tracked `pubspec.lock`. That reasoning is sound for *consumers*, and it is still why
+`mdns_dart` is not overridden there.
+
+It was reversed for this fork because the two cases are not the same shape. `mdns_dart`'s override
+affects only whoever runs tests in that package. This one decides **which muxer the package's own
+tests exercise** — and this package is where the Dart libp2p behaviour actually lives, so it is the
+one place where validating the fork matters most. A wrapper that validates against a muxer other
+than the one it ships with is testing something nobody runs.
+
+Cost, accepted knowingly and recorded rather than discovered later: its tracked `pubspec.lock` now
+records `dart_libp2p` as `path: ../../vendor/dart_libp2p`. Pub does not consult a dependency's lock
+file when resolving a consumer's graph, so the apps above are unaffected — only this package's lock
+moves. Verified after the override landed: `dart pub get` succeeds, the lock shows
+`source: path`, `dart analyze` is clean, and `dart test` is **21/21 against the fork** (previously
+21/21 against unforked 1.0.3, so the patch does not change this package's behaviour either).
+
+The `pointycastle`/`mdns_dart` overrides already present in the app roots stay; the fork entry is
 additive, next to the comment block that explains why overrides live at the root.

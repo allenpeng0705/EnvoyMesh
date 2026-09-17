@@ -77,7 +77,7 @@ function createRelayBridge(
   homeMultiaddr: string,
   token: string,
   port: number,
-): { wsUrl: string; stop: () => Promise<void> } {
+): Promise<{ wsUrl: string; stop: () => Promise<void> }> {
   const httpServer = createServer();
   const wss = new WebSocketServer({ noServer: true });
 
@@ -225,7 +225,7 @@ function createRelayBridge(
     });
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise<{ wsUrl: string; stop: () => Promise<void> }>((resolve, reject) => {
     httpServer.listen(port, "127.0.0.1", () => {
       const addr = httpServer.address() as AddressInfo;
       const wsUrl = `ws://127.0.0.1:${addr.port}/ws`;

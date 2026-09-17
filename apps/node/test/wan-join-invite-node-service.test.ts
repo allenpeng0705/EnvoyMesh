@@ -163,6 +163,7 @@ describe("NodeServiceImpl WAN join invite", () => {
       bootstrapPresets: ["cn-relay"],
       configuredRelays: [
         {
+          relayId: "12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo",
           addr: "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo",
           enabled: true,
         },

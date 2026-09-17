@@ -3,15 +3,16 @@ name: ci-node-hermetic
 on:
   pull_request:
     paths:
-      - "apps/node/src/**"
-      - "apps/node/test/**"
-      - "packages/api/**"
-      - "packages/protocol/**"
-      - "packages/node-core/**"
-      # The size lint in this job now scans these two, so a change there must
-      # re-run it.
-      - "packages/host-connect/**"
-      - "packages/harness/**"
+      # The size lint in this job scans every workspace-owned `src` tree — all
+      # four app surfaces plus all packages — so a change anywhere under `apps/`
+      # or `packages/` must re-run it. This used to enumerate `apps/node/src/**`
+      # and a hand-copied subset of five packages, and that subset had already
+      # missed `reuse-host`, which the lint scanned. Adding the app trees to the
+      # scan list would have widened the same gap to `apps/{cli,relay,social}`:
+      # a change there would not have re-run the lint that reads them. Globs that
+      # cannot drift from the scan list are the fix; enumerate only to exclude.
+      - "apps/**"
+      - "packages/**"
       - "scripts/**"
       - ".github/workflows/ci-node-hermetic.yml"
   workflow_dispatch:
@@ -36,7 +37,10 @@ jobs:
         run: node scripts/check-peer-deps.mjs
 
       - name: Module-size lint (Codex LOC rule)
-        run: node scripts/check-module-size.mjs apps/node/src packages/host-connect/src packages/harness/src packages/api/src packages/reuse-host/src packages/node-core/src
+        # Same list, verbatim, as `ci-module-size.yml` (which owns the rule and
+        # documents why each tree is in or out, and the reason for every allowlist
+        # entry added when the package trees joined). Keep the two in step.
+        run: node scripts/check-module-size.mjs apps/node/src apps/cli/src apps/relay/src apps/social/src packages/host-connect/src packages/harness/src packages/api/src packages/reuse-host/src packages/node-core/src packages/agent-adapter/src packages/bonds/src packages/identity/src packages/ipfs-helia/src packages/kb-obsidian/src packages/local-store/src packages/mobile-identity/src packages/models/src packages/network/src packages/openclaw-runtime/src packages/protocol/src packages/rag/src packages/vault/src
 
       # The hermetic lane: deterministic, no-network unit tests
       # covering the envoy-harness integration surface. The full

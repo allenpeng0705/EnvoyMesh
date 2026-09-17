@@ -27,6 +27,7 @@ function sampleState() {
     costCeilingUsd: 3,
     maxWorkers: 3,
     allowDepth3: false,
+    allowDepth4: false,
     maxSensitivity: "public" as const,
     deadlineAt: new Date(Date.now() + 3600_000).toISOString(),
     createdAt: new Date().toISOString(),

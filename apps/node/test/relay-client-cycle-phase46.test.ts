@@ -72,7 +72,7 @@ describe("Phase 46A client cycle wiring", () => {
       },
       bootstrapPeers: [t1, t2],
       inboundGuard: {
-        inspect: (input) => ({ action: "allow" as const, envelope: input as never }),
+        inspect: (input: unknown) => ({ action: "allow" as const, envelope: input as never }),
       },
       discoverySeedStore: { upsertMany: vi.fn(async () => undefined) },
     } as unknown as RelayClientCycleDeps;

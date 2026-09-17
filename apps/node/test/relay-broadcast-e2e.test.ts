@@ -29,6 +29,7 @@ import {
   createUnsignedEnvelope,
   parseBroadcastRequestPayload,
   parseBroadcastResponsePayload,
+  type Capability,
 } from "@envoymesh/protocol";
 import { afterEach, describe, expect, it, beforeEach } from "vitest";
 import { EnvoyMesh, setAllowLoopbackDialHints } from "@envoymesh/network";
@@ -346,7 +347,7 @@ async function startMeshWithRelay(): Promise<EnvoyMesh> {
   return mesh;
 }
 
-function testProfile(name: string, capabilities: string[] = ["mesh.listen", "mesh.discovery", "task.execute"]): NodeProfile {
+function testProfile(name: string, capabilities: Capability[] = ["mesh.listen", "mesh.discovery", "task.execute"]): NodeProfile {
   const owner = generateOwnerIdentity();
   const device = generateDeviceIdentity();
 
@@ -362,7 +363,7 @@ function testProfile(name: string, capabilities: string[] = ["mesh.listen", "mes
   };
 }
 
-async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 2000): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 2000): Promise<void> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {

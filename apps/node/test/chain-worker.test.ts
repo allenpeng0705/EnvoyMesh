@@ -27,6 +27,7 @@ import {
   type ChainWorkerSendDeps,
 } from "../src/chain-worker.js";
 import {
+  ChainMandateSignedSchema,
   ChainSubtaskAwardSchema,
   ChainSubtaskBidSchema,
   ChainSubtaskPartialSchema,
@@ -123,7 +124,7 @@ function subtask(overrides: Partial<{ deadlineAt: string; costCeilingUsd: number
 function proposePayload(s: ChainSubtask) {
   return {
     subtask: s,
-    chainMandate: {
+    chainMandate: ChainMandateSignedSchema.parse({
       version: "0.1" as const,
       chainMandateId: s.chainMandateId,
       chainId: s.chainId,
@@ -137,7 +138,7 @@ function proposePayload(s: ChainSubtask) {
       deadlineAt: s.deadlineAt!,
       createdAt: NOW.toISOString(),
       signature: "stub",
-    },
+    }),
   };
 }
 

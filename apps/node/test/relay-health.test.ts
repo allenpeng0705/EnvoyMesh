@@ -267,6 +267,7 @@ function rosterEntry(): RelayRosterEntry {
     capabilities: ["mesh.discovery"],
     advertisements: [{ capability: "mesh.discovery", visibility: "public" }],
     relayHints: [],
+    firstSeenAt: now,
     lastSeenAt: now,
     expiresAt: now + 60_000,
     reservationFreshUntil: now + 60_000,

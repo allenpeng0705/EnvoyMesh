@@ -31,6 +31,26 @@ dependencies:
   envoy_thin_client:
     path: ../envoy-thin-client-dart
 
+dependency_overrides:
+  # The vendored fork. Upstream 1.0.3's yamux `openStream` waits for an ACK that
+  # `@chainsafe/libp2p-yamux` only emits on its first write, so the wait is
+  # circular and no Dart→JS libp2p stream can open at all. The patch is one hunk;
+  # see `../../vendor/dart_libp2p/PATCHES.md` for the semantics, the rejected
+  # alternatives and the re-apply-on-bump rule.
+  #
+  # This deliberately breaks the rule stated above for `mdns_dart`. That rule is
+  # about *consumers*: an override here cannot reach them, because overrides are
+  # honoured only from the root package. This one is about this package's **own
+  # tests** — a wrapper that validates against a different muxer than the one it
+  # ships with is testing something nobody runs. `mdns_dart` is still not
+  # overridden here, for the reason above; the app roots handle it.
+  #
+  # Accepted cost: the tracked `pubspec.lock` now records `dart_libp2p` as a path
+  # dependency. Pub does not consult a dependency's lock file when resolving its
+  # own graph, so consumers are unaffected — only this package's lock moves.
+  dart_libp2p:
+    path: ../../vendor/dart_libp2p
+
 dev_dependencies:
   lints: ^4.0.0
   test: ^1.25.0

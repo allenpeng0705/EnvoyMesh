@@ -8,7 +8,7 @@
  * - stranger (no trust record) allowed at public sensitivity (Phase 44B)
  */
 
-import { createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore } from "@envoymesh/local-store";
+import { createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore, type NodeProfile } from "@envoymesh/local-store";
 import { createUnsignedEnvelope, type EnvoyEnvelope } from "@envoymesh/protocol";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,11 +21,13 @@ let taskStore: ReturnType<typeof createLocalTaskStore>;
 let trustStore: ReturnType<typeof createLocalTrustStore>;
 let peerDirectoryStore: ReturnType<typeof createLocalPeerDirectoryStore>;
 
-function makeTestProfile() {
+// Typed return so a stale fixture is a compile error here, not a runtime surprise.
+function makeTestProfile(): NodeProfile {
   return {
     owner: {
       ownerId: "envoy:owner:test123",
       publicKeyPem: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      privateKeyPem: "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----",
     },
     device: {
       deviceId: "envoy:device:test456",
@@ -34,10 +36,13 @@ function makeTestProfile() {
     },
     deviceCertificate: {
       version: "0.1",
+      certificateId: "envoy:cert:test456",
+      ownerId: "envoy:owner:test123",
       deviceId: "envoy:device:test456",
-      ownerPublicKey: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      devicePublicKeyPem: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      deviceProfile: "primary",
       capabilities: [],
-      createdAt: new Date().toISOString(),
+      issuedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86400000).toISOString(),
       signature: "sig",
     },

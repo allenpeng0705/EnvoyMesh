@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 
 import type { NodeProfile } from "@envoymesh/local-store";
 import {
+  ChainMandateSignedSchema,
   ChainSubtaskAwardSchema,
   ChainSubtaskPartialSchema,
   TaskChainPartialPayloadSchema,
@@ -39,7 +40,10 @@ import { mergeChainDefaults } from "../src/chain-defaults.js";
 const NOW = new Date("2026-07-23T00:00:00.000Z");
 
 function mandate(overrides: { maxChainCostUsd?: number; deadlineAt?: string } = {}) {
-  return {
+  // Built through the schema so Zod `.default(...)` fields (`rebalancePolicy`,
+  // `maxAutoRebalances`, `autoRebalanceIncrementUsd`, `allowDepth4`) land in the
+  // output type instead of drifting out of this fixture.
+  return ChainMandateSignedSchema.parse({
     version: "0.1" as const,
     chainMandateId: "chainmandate_iter-1",
     chainId: "chain_iter-1",
@@ -53,7 +57,7 @@ function mandate(overrides: { maxChainCostUsd?: number; deadlineAt?: string } = 
     deadlineAt: overrides.deadlineAt ?? "2099-01-01T00:00:00.000Z",
     createdAt: NOW.toISOString(),
     signature: "stub",
-  };
+  });
 }
 
 function makeProfile(): NodeProfile {

@@ -102,7 +102,7 @@ describe("envoy-harness-chats", () => {
     const session = await store.create({
       cwd: "/projects/app",
       startedAt: new Date().toISOString(),
-      permissionMode: "task-write",
+      permissionMode: "workspace-write",
     });
     await session.appendMessage("user", [{ type: "text", text: "hi" }]);
     await session.appendMessage("assistant", [

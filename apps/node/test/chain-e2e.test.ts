@@ -52,6 +52,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateKeyPairSync } from "node:crypto";
 import {
+  ChainMandateSignedSchema,
   ChainSubtaskBidSchema,
   ChainSubtaskPartialSchema,
   TaskChainPartialPayloadSchema,
@@ -225,7 +226,7 @@ describe("chain-e2e", () => {
 
     try {
       const orchDeps = buildOrchestratorDeps(orch, workers);
-      const state = createChainState({
+      const state = createChainState(ChainMandateSignedSchema.parse({
         version: "0.1",
         chainMandateId: "chainmandate_e2e-1",
         chainId: "chain_e2e-1",
@@ -239,7 +240,7 @@ describe("chain-e2e", () => {
         deadlineAt: "2026-06-18T01:00:00.000Z",
         createdAt: NOW,
         signature: "stub",
-      });
+      }));
 
       // Step 1 — plan: goal is short enough for the keyword fallback.
       const plan = await planChain(orchDeps, state, "summarize the Q3 report");
@@ -390,7 +391,7 @@ describe("chain-e2e", () => {
 
     try {
       const orchDeps = buildOrchestratorDeps(orch, workers);
-      const state = createChainState({
+      const state = createChainState(ChainMandateSignedSchema.parse({
         version: "0.1",
         chainMandateId: "chainmandate_e2e-2",
         chainId: "chain_e2e-2",
@@ -404,7 +405,7 @@ describe("chain-e2e", () => {
         deadlineAt: "2026-06-18T01:00:00.000Z",
         createdAt: NOW,
         signature: "stub",
-      });
+      }));
 
       // Plan a chain (we don't use planChain; instead we inject 3 subtasks).
       for (let i = 0; i < 3; i++) {
@@ -613,7 +614,7 @@ describe("chain-e2e", () => {
       proposeEnvelope,
       {
         subtask,
-        chainMandate: {
+        chainMandate: ChainMandateSignedSchema.parse({
           version: "0.1",
           chainMandateId: subtask.chainMandateId,
           chainId: subtask.chainId,
@@ -627,7 +628,7 @@ describe("chain-e2e", () => {
           deadlineAt: subtask.deadlineAt!,
           createdAt: NOW,
           signature: "stub",
-        },
+        }),
       },
     );
     expect(r.ok).toBe(true);

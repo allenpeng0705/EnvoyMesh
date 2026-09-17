@@ -3,6 +3,7 @@ import {
   createHumanProfileStore,
   createLocalTaskStore,
   createLocalTrustStore,
+  type NodeProfile,
 } from "@envoymesh/local-store";
 import { generateAgentIdentity, generateOwnerIdentity, createAgentCredential } from "@envoymesh/identity";
 import {
@@ -28,11 +29,13 @@ const OWNER_ID = "envoy:owner:alice";
 const PEER_OWNER_ID = "envoy:owner:bob";
 const REMOTE_PEER = "envoy_peer_remote";
 
-function makeTestProfile() {
+// Typed return so a stale fixture is a compile error here, not a runtime surprise.
+function makeTestProfile(): NodeProfile {
   return {
     owner: {
       ownerId: OWNER_ID,
       publicKeyPem: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      privateKeyPem: "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----",
     },
     device: {
       deviceId: "envoy:device:desktop",
@@ -41,11 +44,13 @@ function makeTestProfile() {
     },
     deviceCertificate: {
       version: "0.1",
+      certificateId: "envoy:cert:desktop",
+      ownerId: OWNER_ID,
       deviceId: "envoy:device:desktop",
-      ownerPublicKey: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      devicePublicKeyPem: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
       deviceProfile: "primary",
       capabilities: ["message.send", "task.execute"],
-      createdAt: new Date().toISOString(),
+      issuedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86400000).toISOString(),
       signature: "sig",
     },

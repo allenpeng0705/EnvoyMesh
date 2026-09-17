@@ -1770,7 +1770,12 @@ class NodeServiceImpl implements NodeService {
     { threadKey: string; pending: Set<string> }
   >();
   private _chatRoomSyncFlushTimer: ReturnType<typeof setInterval> | null = null;
-  /** Periodic prune of unbounded per-peer Maps to prevent memory leaks over multi-week runs. */
+  /**
+   * Periodic prune of unbounded per-peer Maps to prevent memory leaks over
+   * multi-week runs. Unref'd housekeeping: armed by `_startMemoryPruneTimer`,
+   * cleared by the public `stopMemoryPruneTimer`, which both `stopNode` and
+   * the tests call.
+   */
   private _memoryPruneTimer: ReturnType<typeof setInterval> | null = null;
   /** Phase 68-C6 — Coding heartbeat ticker (~60s). */
   private _codingHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -2470,45 +2475,11 @@ class NodeServiceImpl implements NodeService {
     // Periodic prune of per-peer Maps that grow unbounded over multi-week
     // runs.  Each map tracks the last activity timestamp for a given peer;
     // entries older than 2× their cooldown period are dead weight.
-    this._memoryPruneTimer = setInterval(() => {
-      try {
-        const now = Date.now();
-        const profileCutoff = now - NodeServiceImpl._PROFILE_REQUEST_COOLDOWN_MS * 120; // ~30 days
-        const probeCutoff = now - NodeServiceImpl._NEARBY_PROFILE_PROBE_COOLDOWN_MS * 120;
-        const mergeCutoff = now - 2 * 60 * 60 * 1000; // 2 hours (dial-hint throttle)
-        const nonEnvoyCutoff = now - NON_ENVOY_PEER_SUPPRESS_COOLDOWN_MS * 2; // 10 minutes
-        const bondWarmCutoff = now - BOND_WARM_PER_CONTACT_COOLDOWN_MS * 2;
-        let pruned = 0;
-        for (const [k, v] of this._profileRequestLastAt) if (v < profileCutoff) { this._profileRequestLastAt.delete(k); pruned++; }
-        for (const [k, v] of this._nearbyProfileProbeLastAt) if (v < probeCutoff) { this._nearbyProfileProbeLastAt.delete(k); pruned++; }
-        for (const [k, v] of this._nonEnvoyPeerLastFailedAt) if (v < nonEnvoyCutoff) { this._nonEnvoyPeerLastFailedAt.delete(k); this._nonEnvoyPeerFailCount.delete(k); pruned++; }
-        for (const [k, v] of this._inboundListenAddrMergeByPeer) if (v < mergeCutoff) { this._inboundListenAddrMergeByPeer.delete(k); pruned++; }
-        for (const [k, v] of this._lastBondWarmAt) {
-          if (v < bondWarmCutoff) {
-            this._lastBondWarmAt.delete(k);
-            pruned++;
-          }
-        }
-        pruned += pruneOutboundPeerFreshness(undefined, now);
-        pruned += pruneOwnerWarmCoordinator(undefined, now);
-        const mesh = this._mesh;
-        if (mesh && typeof mesh.pruneNoReservationBackoffMaps === "function") {
-          pruned += mesh.pruneNoReservationBackoffMaps(now);
-        }
-        // Cap _lastLibp2pTransportByOwner at 1000 entries (oldest evicted).
-        if (this._lastLibp2pTransportByOwner.size > 1000) {
-          const entries = [...this._lastLibp2pTransportByOwner.entries()];
-          this._lastLibp2pTransportByOwner.clear();
-          for (const entry of entries.slice(-1000)) this._lastLibp2pTransportByOwner.set(entry[0], entry[1]);
-          pruned += entries.length - 1000;
-        }
-        if (pruned > 0) {
-          console.log(`[node-service] Pruned ${pruned} stale per-peer cache entries`);
-        }
-      } catch (err) {
-        console.error("[node-service] memory prune error:", err);
-      }
-    }, 60 * 60 * 1000); // 1 hour
+    //
+    // Armed through `_startMemoryPruneTimer` (and re-armed by `startNode`), so
+    // the guard there is what keeps a stop/start cycle from compounding an
+    // interval per start. `stopMemoryPruneTimer` is the matching teardown.
+    this._startMemoryPruneTimer();
 
     // Phase 68-C6/C7 — Coding heartbeats + schedules (~60s shared ticker).
     if (hasProfileDir(profileDir)) {
@@ -13705,6 +13676,9 @@ class NodeServiceImpl implements NodeService {
   async startNode(): Promise<void> {
     // Persist AN engine choice into sync caches before mesh comes up / handlers run.
     await this.hydrateAgentNetworkWorkerEngineFromDisk();
+    // A preceding `stopNode` cleared the prune interval; re-arm it so a
+    // stop/start cycle keeps pruning. Guarded, so this cannot double-arm.
+    this._startMemoryPruneTimer();
     if (this._deferredExternalMeshStart && this._nodeStatus !== "running") {
       await this._deferredExternalMeshStart();
       if (!this._mesh && !this._externalMesh) {
@@ -13956,9 +13930,82 @@ class NodeServiceImpl implements NodeService {
     void this._syncLanDiscoverySweep("start-node");
   }
 
+  /**
+   * Arm the hourly memory-prune interval. Idempotent: the service arms it in
+   * the constructor and re-arms it in {@link startNode}, so a `stopNode` →
+   * `startNode` cycle on the same instance ends up with exactly one interval
+   * rather than a new one compounding per start.
+   *
+   * `unref()` matters: pruning is housekeeping, so it must never be the reason
+   * a daemon or a test process stays alive. Before this lifecycle existed the
+   * interval was ref'd, and a bare kernel therefore held Node's event loop
+   * open on its own.
+   */
+  private _startMemoryPruneTimer(): void {
+    if (this._memoryPruneTimer) return;
+    this._memoryPruneTimer = setInterval(() => {
+      try {
+        const now = Date.now();
+        const profileCutoff = now - NodeServiceImpl._PROFILE_REQUEST_COOLDOWN_MS * 120; // ~30 days
+        const probeCutoff = now - NodeServiceImpl._NEARBY_PROFILE_PROBE_COOLDOWN_MS * 120;
+        const mergeCutoff = now - 2 * 60 * 60 * 1000; // 2 hours (dial-hint throttle)
+        const nonEnvoyCutoff = now - NON_ENVOY_PEER_SUPPRESS_COOLDOWN_MS * 2; // 10 minutes
+        const bondWarmCutoff = now - BOND_WARM_PER_CONTACT_COOLDOWN_MS * 2;
+        let pruned = 0;
+        for (const [k, v] of this._profileRequestLastAt) if (v < profileCutoff) { this._profileRequestLastAt.delete(k); pruned++; }
+        for (const [k, v] of this._nearbyProfileProbeLastAt) if (v < probeCutoff) { this._nearbyProfileProbeLastAt.delete(k); pruned++; }
+        for (const [k, v] of this._nonEnvoyPeerLastFailedAt) if (v < nonEnvoyCutoff) { this._nonEnvoyPeerLastFailedAt.delete(k); this._nonEnvoyPeerFailCount.delete(k); pruned++; }
+        for (const [k, v] of this._inboundListenAddrMergeByPeer) if (v < mergeCutoff) { this._inboundListenAddrMergeByPeer.delete(k); pruned++; }
+        for (const [k, v] of this._lastBondWarmAt) {
+          if (v < bondWarmCutoff) {
+            this._lastBondWarmAt.delete(k);
+            pruned++;
+          }
+        }
+        pruned += pruneOutboundPeerFreshness(undefined, now);
+        pruned += pruneOwnerWarmCoordinator(undefined, now);
+        const mesh = this._mesh;
+        if (mesh && typeof mesh.pruneNoReservationBackoffMaps === "function") {
+          pruned += mesh.pruneNoReservationBackoffMaps(now);
+        }
+        // Cap _lastLibp2pTransportByOwner at 1000 entries (oldest evicted).
+        if (this._lastLibp2pTransportByOwner.size > 1000) {
+          const entries = [...this._lastLibp2pTransportByOwner.entries()];
+          this._lastLibp2pTransportByOwner.clear();
+          for (const entry of entries.slice(-1000)) this._lastLibp2pTransportByOwner.set(entry[0], entry[1]);
+          pruned += entries.length - 1000;
+        }
+        if (pruned > 0) {
+          console.log(`[node-service] Pruned ${pruned} stale per-peer cache entries`);
+        }
+      } catch (err) {
+        console.error("[node-service] memory prune error:", err);
+      }
+    }, 60 * 60 * 1000); // 1 hour
+    this._memoryPruneTimer.unref?.();
+  }
+
+  /**
+   * Stop the memory-prune interval and release the handle.
+   *
+   * Public because the tests that construct a bare kernel must be able to
+   * release it — a `svc.stopMemoryPruneTimer?.()` that resolves to nothing is
+   * a silent no-op — and it is the timer half of {@link stopNode}'s teardown,
+   * so the daemon and the tests share one implementation. Idempotent on
+   * purpose: `stopNode` may run more than once, and tests may call it in a
+   * `finally` after a stop path already did.
+   */
+  stopMemoryPruneTimer(): void {
+    if (this._memoryPruneTimer) {
+      clearInterval(this._memoryPruneTimer);
+      this._memoryPruneTimer = null;
+    }
+  }
+
   async stopNode(): Promise<void> {
     this.stopVaultRagWatcher();
     this._stopLanDiscoverySweep();
+    this.stopMemoryPruneTimer();
     this._stopRelayRosterFeed?.();
     this._stopRelayRosterFeed = undefined;
     this._bondAgentNetworkRefresh?.cancel();

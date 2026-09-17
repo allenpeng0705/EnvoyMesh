@@ -33,6 +33,13 @@ vi.mock("node-pty", () => ({
 import { TerminalManager } from "../src/terminal-manager.js";
 import { TerminalWsServer } from "../src/terminal-ws-server.js";
 
+/**
+ * `page.evaluate` callbacks run in the browser page, but this program compiles
+ * with `lib: ["ES2022"]` and has no DOM. Declare the two globals this test
+ * injects on `window` instead of pulling DOM types into every node test.
+ */
+declare const window: { __termOut: string[]; __termWs: WebSocket };
+
 async function pickFreePort(): Promise<number> {
   return await new Promise((resolve, reject) => {
     const server = createServer();
@@ -116,7 +123,7 @@ describe("Playwright browser terminal WebSocket E2E", () => {
       await page.goto("about:blank");
 
       await page.evaluate((url) => {
-        (window as unknown as { __termOut: string[] }).__termOut = [];
+        window.__termOut = [];
         const ws = new WebSocket(url);
         ws.binaryType = "arraybuffer";
         ws.onopen = () => {
@@ -130,15 +137,15 @@ describe("Playwright browser terminal WebSocket E2E", () => {
         ws.onmessage = (event) => {
           const buf = new Uint8Array(event.data as ArrayBuffer);
           if (buf[1] === 1) {
-            (window as unknown as { __termOut: string[] }).__termOut.push(
+            window.__termOut.push(
               new TextDecoder().decode(buf.slice(2)),
             );
           }
         };
-        (window as unknown as { __termWs: WebSocket }).__termWs = ws;
+        window.__termWs = ws;
       }, attachUrl);
 
-      await page.waitForFunction(() => (window as unknown as { __termWs?: WebSocket }).__termWs?.readyState === 1, {
+      await page.waitForFunction(() => window.__termWs.readyState === 1, {
         timeout: 5000,
       });
 
@@ -147,14 +154,14 @@ describe("Playwright browser terminal WebSocket E2E", () => {
 
       await page.waitForFunction(
         () =>
-          (window as unknown as { __termOut?: string[] }).__termOut?.some((line) =>
+          window.__termOut.some((line) =>
             line.includes("browser-e2e ok"),
           ) === true,
         { timeout: 5000 },
       );
 
       const lines = await page.evaluate(
-        () => (window as unknown as { __termOut: string[] }).__termOut.join(""),
+        () => window.__termOut.join(""),
       );
       expect(lines).toContain("browser-e2e ok");
     } finally {

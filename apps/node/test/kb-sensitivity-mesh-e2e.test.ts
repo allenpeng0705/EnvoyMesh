@@ -33,7 +33,7 @@ import {
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import { EnvoyMesh } from "@envoymesh/network";
-import { buildVaultIndex } from "@envoymesh/vault";
+import { buildVaultIndex, type VaultSearchResult } from "@envoymesh/vault";
 import { mkdtemp, mkdir, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,7 +43,6 @@ import {
   resolveDocumentSensitivityById,
   filterVaultResultsBySensitivity,
   type KnowledgeAccessLevel,
-  type VaultSearchResult,
 } from "../src/ai-context.js";
 
 // ---------------------------------------------------------------------------
@@ -208,10 +207,11 @@ describe("kb-sensitivity-mesh E2E", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(`expected a knowledge response: ${result.reason}`);
     // Stranger should get a response — Phase 44B allows public knowledge.query
     expect(result.responsePayload).toBeDefined();
     // Sensitivity in response should be "public" (capped by policy)
-    expect(result.responsePayload?.sensitivity).toBe("public");
+    expect(result.responsePayload.sensitivity).toBe("public");
   });
 
   // -----------------------------------------------------------------------
@@ -352,8 +352,15 @@ describe("kb-sensitivity-mesh E2E", () => {
           contentHash: "abc",
           updatedAt: new Date().toISOString(),
         },
-        snippet: "Public API guide content",
-        matchScore: 0.9,
+        chunk: {
+          chunkId: "chunk-public",
+          documentId: publicDocId,
+          relativePath: publicPath,
+          index: 0,
+          text: "Public API guide content",
+        },
+        score: 0.9,
+        matches: [],
       },
       {
         document: {
@@ -365,8 +372,15 @@ describe("kb-sensitivity-mesh E2E", () => {
           contentHash: "def",
           updatedAt: new Date().toISOString(),
         },
-        snippet: "Internal project plan",
-        matchScore: 0.8,
+        chunk: {
+          chunkId: "chunk-friends",
+          documentId: friendsDocId,
+          relativePath: friendsPath,
+          index: 0,
+          text: "Internal project plan",
+        },
+        score: 0.8,
+        matches: [],
       },
       {
         document: {
@@ -378,8 +392,15 @@ describe("kb-sensitivity-mesh E2E", () => {
           contentHash: "ghi",
           updatedAt: new Date().toISOString(),
         },
-        snippet: "Personal journal entry",
-        matchScore: 0.7,
+        chunk: {
+          chunkId: "chunk-private",
+          documentId: privateDocId,
+          relativePath: privatePath,
+          index: 0,
+          text: "Personal journal entry",
+        },
+        score: 0.7,
+        matches: [],
       },
     ];
 

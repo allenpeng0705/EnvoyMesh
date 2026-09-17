@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mockPty = {
   cols: 80,
   rows: 24,
-  onData: vi.fn(() => ({ dispose: vi.fn() })),
+  onData: vi.fn((_cb: (data: string) => void) => ({ dispose: vi.fn() })),
   onExit: vi.fn(),
   write: vi.fn(),
   resize: vi.fn(),

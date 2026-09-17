@@ -257,8 +257,7 @@ describe("EnvoyMesh reservation status (unit via prototype stubs)", () => {
     ];
     (mesh as unknown as { relayEverReserved: boolean }).relayEverReserved = true;
     (mesh as unknown as { getClientHasReservationFn: () => ((id: unknown) => boolean) | undefined })
-      .getClientHasReservationFn = () => (pid: { toString(): string }) =>
-        pid.toString() === opportunistic;
+      .getClientHasReservationFn = () => (pid: unknown) => String(pid) === opportunistic;
     (mesh as unknown as { getConnectedPeerIds: () => string[] }).getConnectedPeerIds = () => [
       opportunistic,
       configured,
@@ -269,8 +268,7 @@ describe("EnvoyMesh reservation status (unit via prototype stubs)", () => {
     expect(mesh.getRelayReservationStatus().liveRelayPeerIds).toEqual([]);
 
     (mesh as unknown as { getClientHasReservationFn: () => ((id: unknown) => boolean) | undefined })
-      .getClientHasReservationFn = () => (pid: { toString(): string }) =>
-        pid.toString() === configured;
+      .getClientHasReservationFn = () => (pid: unknown) => String(pid) === configured;
     (mesh as unknown as { lastReservedRelayPeerIds: string[] }).lastReservedRelayPeerIds = [
       configured,
     ];
@@ -314,7 +312,7 @@ describe("EnvoyMesh reservation status (unit via prototype stubs)", () => {
     (mesh as unknown as { preferredRelayPeerIds: string[] }).preferredRelayPeerIds = [a, b];
     (mesh as unknown as { lastReservedRelayPeerIds: string[] }).lastReservedRelayPeerIds = [a];
     (mesh as unknown as { getClientHasReservationFn: () => ((id: unknown) => boolean) | undefined })
-      .getClientHasReservationFn = () => (pid: { toString(): string }) => pid.toString() === a;
+      .getClientHasReservationFn = () => (pid: unknown) => String(pid) === a;
     (mesh as unknown as { getConnectedPeerIds: () => string[] }).getConnectedPeerIds = () => [a];
 
     expect(mesh.listLivePreferredRelayPeerIds()).toEqual([a]);

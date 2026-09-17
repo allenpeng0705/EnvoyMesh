@@ -4,6 +4,8 @@
 
 import { describe, expect, it } from "vitest";
 
+import { ChainMandateSignedSchema } from "@envoymesh/protocol";
+
 import {
   MIN_REP_FOR_SENSITIVITY,
   MIN_VERDICTS_FOR_PRIVATE,
@@ -13,9 +15,24 @@ import {
   requiresReputationApproval,
 } from "../src/chain-sensitivity-gate.js";
 
-const mandate = {
-  maxSensitivity: "private" as const,
-};
+// A full `ChainMandate`: `requiresChainAwardApproval` reads only `maxSensitivity`,
+// but the parameter is the whole mandate type, so the fixture has to be one. Built
+// through the schema so the Zod-defaulted fields come along instead of being omitted.
+const mandate = ChainMandateSignedSchema.parse({
+  version: "0.1",
+  chainMandateId: "chainmandate_sensitivity-1",
+  chainId: "chain_sensitivity-1",
+  issuerOwnerId: "envoy:owner:orchestrator",
+  orchestratorOwnerId: "envoy:owner:orchestrator",
+  maxChainCostUsd: 10,
+  costCeilingUsd: 3,
+  maxWorkers: 3,
+  allowDepth3: false,
+  maxSensitivity: "private",
+  deadlineAt: "2099-01-01T00:00:00.000Z",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  signature: "stub",
+});
 
 describe("chain-sensitivity-gate", () => {
   it("bondMaxSensitivity maps bond levels to data tiers", () => {

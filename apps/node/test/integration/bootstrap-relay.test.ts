@@ -281,6 +281,17 @@ describe.skipIf(!RUN_WAN_RELAY_TESTS)("Relay Bootstrap Integration Tests", () =>
     it("should work with public-only mode (no private relay)", async () => {
       const presets = TEST_CONFIG.bootstrapPresets;
 
+      // Public-only still has to resolve its presets: the node must see concrete
+      // multiaddrs, never the product-level preset id. Same expansion the
+      // public-bootstrap test above asserts, done before the node exists so a
+      // resolution regression fails without waiting on the WAN.
+      const resolvedPeers = resolveBootstrapPresetPeers(presets);
+      const resolvedPeerIds = resolvedPeers
+        .map((addr) => addr.split("/p2p/")[1])
+        .filter((id): id is string => Boolean(id));
+      expect(resolvedPeers.length).toBeGreaterThan(0);
+      expect(resolvedPeerIds.length).toBe(resolvedPeers.length);
+
       // Don't specify any relay, only public presets
       const node = await createTestNode({
         bootstrapPresets: presets,
@@ -289,15 +300,27 @@ describe.skipIf(!RUN_WAN_RELAY_TESTS)("Relay Bootstrap Integration Tests", () =>
       });
       testNodes.push(node);
 
-      // May or may not connect depending on public network state
-      await waitForBootstrapConnection(node, 60000).catch(() => {
-        console.warn("[Test] Public bootstrap connection timed out");
-      });
+      // Public-only means exactly the resolved preset set reaches EnvoyMesh —
+      // not `[]` (the original defect: `createTestNode` accepted
+      // `bootstrapPresets` and dropped them, so the node bootstrapped nothing
+      // while the old `Array.isArray(...)` assertion still passed), and not the
+      // raw preset id. This is the assertion that can fail.
+      expect(node.bootstrapPeers).toEqual(resolvedPeers);
 
-      const peerIds = node.getConnectedRelayPeerIds();
-      // Just verify it doesn't crash - may have 0 peers if public network is sparse
-      expect(Array.isArray(peerIds)).toBe(true);
-    }, 120000);
+      // The dial is deliberately best-effort and NOT asserted. A public-only
+      // node has no configured relay reservation, and measured from this network
+      // against the community relay the bootstrap probe logs REACHABLE while the
+      // node holds 0 sessions (the relay is a contact point here, not a wired
+      // relay); the libp2p public bootstrap is sparse and its DNS does not
+      // resolve everywhere. A hard "a preset peer connected" assertion would
+      // therefore go red for environmental reasons, so the regression this test
+      // guards is the wiring above and the dial only logs. The sibling
+      // public-bootstrap test keeps the hard connect assertion because that is
+      // the test that owns the public-network claim.
+      await waitForBootstrapConnection(node, 10_000).catch(() => {
+        console.warn("[Test] public-only dial: no session within 10s (best-effort)");
+      });
+    }, 120_000);
   });
 
   describe("Relay Server Functionality", () => {

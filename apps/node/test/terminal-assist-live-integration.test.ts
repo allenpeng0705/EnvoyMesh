@@ -1,4 +1,4 @@
-import { mkdtemp, readFileSync } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { readFileSync as readFileSyncSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

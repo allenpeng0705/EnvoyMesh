@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { createPluginRegistry } from "../src/kb-plugin-registry.js";
 import type {
   KnowledgeBasePlugin,
+  KbPluginActivateResult,
   KbPluginMetadataMap,
 } from "@envoymesh/api";
 
@@ -30,7 +31,7 @@ function createTestPlugin(opts: {
   displayName?: string;
   description?: string;
   enrichResult?: KbPluginMetadataMap;
-  activateResult?: { ok: boolean; reason?: string };
+  activateResult?: KbPluginActivateResult;
   shouldThrowOnActivate?: boolean;
   shouldThrowOnEnrich?: boolean;
 }): KnowledgeBasePlugin {

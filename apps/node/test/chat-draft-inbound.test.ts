@@ -1,4 +1,4 @@
-import { createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore, createChatDraftStore } from "@envoymesh/local-store";
+import { createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore, createChatDraftStore, type NodeProfile } from "@envoymesh/local-store";
 import { createUnsignedEnvelope, type EnvoyEnvelope } from "@envoymesh/protocol";
 import { buildVaultIndex, type VaultIndex } from "@envoymesh/vault";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
@@ -14,11 +14,15 @@ let trustStore: ReturnType<typeof createLocalTrustStore>;
 let peerDirectoryStore: ReturnType<typeof createLocalPeerDirectoryStore>;
 let draftStore: ReturnType<typeof createChatDraftStore>;
 
-function makeTestProfile() {
+// Typed return so fixture drift is a compile error at the definition. Only
+// `owner.ownerId` is consumed by `generateChatDraft`; the certificate is completed
+// to the protocol shape because `NodeProfile` requires it, not because a test reads it.
+function makeTestProfile(): NodeProfile {
   return {
     owner: {
       ownerId: "envoy:owner:test123",
       publicKeyPem: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      privateKeyPem: "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----",
     },
     device: {
       deviceId: "envoy:device:test456",
@@ -27,10 +31,13 @@ function makeTestProfile() {
     },
     deviceCertificate: {
       version: "0.1",
+      certificateId: "envoy:cert:test456",
+      ownerId: "envoy:owner:test123",
       deviceId: "envoy:device:test456",
-      ownerPublicKey: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      devicePublicKeyPem: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      deviceProfile: "primary",
       capabilities: [],
-      createdAt: new Date().toISOString(),
+      issuedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86400000).toISOString(),
       signature: "sig",
     },

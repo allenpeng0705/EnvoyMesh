@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdir, mkdtemp, readFile, rm, stat, exists } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { formatMcpResultsAsNote, type ExternalKnowledgeSnippet } from "@envoymesh/rag";

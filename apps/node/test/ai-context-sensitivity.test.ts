@@ -9,12 +9,12 @@
  */
 
 import { describe, expect, it } from "vitest";
+import type { VaultSearchResult } from "@envoymesh/vault";
 import {
   inferDocumentSensitivity,
   resolveDocumentSensitivityById,
   filterVaultResultsBySensitivity,
   type KnowledgeAccessLevel,
-  type VaultSearchResult,
 } from "../src/ai-context.js";
 
 // ---------------------------------------------------------------------------

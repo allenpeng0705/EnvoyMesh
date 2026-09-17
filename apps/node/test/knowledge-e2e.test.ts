@@ -156,11 +156,12 @@ describe("E2E knowledge query between bonded peers", () => {
         expect(result.ok).toBe(true);
 
         // Send knowledge.response back to Alice
+        const refusalReason = result.ok ? result.responsePayload.refusalReason : undefined;
         const refused = !result.ok || (result.responsePayload?.refused ?? false);
         const responsePayload = createKnowledgeResponsePayload({
           inReplyTo: envelope.messageId,
           answer: refused
-            ? `Sorry: ${result.responsePayload?.refusalReason ?? "error"}`
+            ? `Sorry: ${refusalReason ?? "error"}`
             : (result.ok ? (result.responsePayload?.answer ?? "No answer") : "Error"),
           sensitivity: "public",
           refused,
@@ -238,7 +239,7 @@ describe("E2E knowledge query between bonded peers", () => {
     // Alice sends knowledge.query to Bob
     const queryPayload = createKnowledgeQueryPayload({
       query: "What is EnvoyMesh?",
-      maxSensitivity: "public",
+      requestedSensitivity: "public",
     });
 
     aliceQueryMessageId = `kq-${Date.now()}`;

@@ -54,7 +54,14 @@ StoredNode _testNode() => StoredNode(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  SharedPreferences.setMockInitialValues({});
+
+  // `SharedPreferences`' mock store is process-global, and one test below
+  // (`CodingHomeScreen lists Tier B Ext Agent rows…`) seeds it with a Coding
+  // ext session. That value otherwise leaks into every later test that expects
+  // the empty store, so `shows empty state and FAB…` fails as soon as
+  // `--test-randomize-ordering-seed` orders the Tier B test first. Reset before
+  // each test; `setMockInitialValues` also drops the cached instance.
+  setUp(() => SharedPreferences.setMockInitialValues({}));
 
   group('HomeScreen tabs', () {
     testWidgets('owner nav labels are Social Coding Knowledge Terminal Me', (

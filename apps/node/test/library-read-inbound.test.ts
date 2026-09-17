@@ -1,4 +1,4 @@
-import { createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore } from "@envoymesh/local-store";
+import { createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore, type NodeProfile } from "@envoymesh/local-store";
 import { createUnsignedEnvelope, type EnvoyEnvelope } from "@envoymesh/protocol";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,11 +16,13 @@ let peerDirectoryStore: ReturnType<typeof createLocalPeerDirectoryStore>;
 const OWNER_SELF = "envoy:owner:self0001";
 const OWNER_CONTACT = "envoy:owner:contact01";
 
-function makeTestProfile() {
+// Typed return so a stale fixture is a compile error here, not a runtime surprise.
+function makeTestProfile(): NodeProfile {
   return {
     owner: {
       ownerId: OWNER_SELF,
       publicKeyPem: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      privateKeyPem: "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----",
     },
     device: {
       deviceId: "envoy:device:self0001",
@@ -29,10 +31,13 @@ function makeTestProfile() {
     },
     deviceCertificate: {
       version: "0.1",
+      certificateId: "envoy:cert:self0001",
+      ownerId: OWNER_SELF,
       deviceId: "envoy:device:self0001",
-      ownerPublicKey: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      devicePublicKeyPem: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+      deviceProfile: "primary",
       capabilities: [],
-      createdAt: new Date().toISOString(),
+      issuedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86400000).toISOString(),
       signature: "sig",
     },
@@ -362,7 +367,7 @@ describe("handleInboundLibraryRead", () => {
   it("emits audit events for served reads", async () => {
     await writePublishedFile("audit.md", "# Hello", "public");
     await call("peer-stranger", req("audit.md"));
-    const events = await taskStore.readAuditEvents({ limit: 100 });
+    const events = await taskStore.readAuditEvents();
     const types = events.map((e) => e.type);
     expect(types).toContain("message.verified");
     expect(types).toContain("library.read.served");
@@ -530,7 +535,7 @@ describe("handleInboundLibraryRead", () => {
   it("emits deny audit for stranger on bonded content", async () => {
     await writePublishedFile("deny-audit.md", "secret", "bonded");
     await call("peer-stranger", req("deny-audit.md"));
-    const events = await taskStore.readAuditEvents({ limit: 100 });
+    const events = await taskStore.readAuditEvents();
     const deny = events.find(
       (e) => e.type === "policy.decided" && e.outcome === "deny" && e.intent === "library.read",
     );

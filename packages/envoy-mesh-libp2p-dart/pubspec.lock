@@ -220,10 +220,9 @@ packages:
   dart_libp2p:
     dependency: "direct main"
     description:
-      name: dart_libp2p
-      sha256: "99ae1a2607540161cbbd0ca0f619bee4cfa3734645409703dd2a2fd024842d41"
-      url: "https://pub.dev"
-    source: hosted
+      path: "../../vendor/dart_libp2p"
+      relative: true
+    source: path
     version: "1.0.3"
   dart_libp2p_kad_dht:
     dependency: "direct main"

@@ -15,8 +15,68 @@ jobs:
           node-version: 22
 
       - name: Module-size lint (Codex LOC rule)
-        # `packages/node-core/src` joined the list when the shared home/marker module
+        # The scan list is every workspace-owned TypeScript `src` tree: the
+        # app surfaces (`apps/node`, `apps/cli`, `apps/relay`, `apps/social`)
+        # plus all workspace packages. Both this workflow and
+        # `ci-node-hermetic.yml` carry the *same* list verbatim — keep them in
+        # step, because a tree scanned by only one of the two is a tree half the
+        # PRs never check. The previous six-tree list was the blind spot this
+        # closes: `packages/network/src/index.ts` (5,791 lines) was the repo's
+        # largest module and no gate looked at it.
+        #
+        # The app surfaces joined last, and they are the same class of gap:
+        # `apps/relay/src/index.ts` (2,406 lines) is over the hard cap and no
+        # gate had ever read it, `apps/social/src` carries the 1,825-line
+        # `lib/direct-call-client.ts` plus sixteen >800-line i18n tables, and
+        # `apps/cli/src/index.ts` (618) is over target. They were scoped out when
+        # this expansion was described as the "package surface"; that scoping is
+        # exactly what left them unread.
+        #
+        # Deliberately NOT scanned, each with its reason:
+        # - `packages/openclaw/src` — a gitignored checkout of upstream OpenClaw
+        #   (`.gitignore:43`), not a workspace member and not tracked in git;
+        #   scanning it would add 8,748 third-party files to the count.
+        # - `apps/tauri` — the shell is Rust (`src-tauri/src/*.rs`); its only TS
+        #   lives in gitignored staged bundles (`resources/{node,openclaw,pi,
+        #   envoy-harness}`, `.gitignore:10-22`) and `target/`.
+        # - `apps/envoygo`, `packages/*-dart`, `packages/envoy-reuse-fixture` —
+        #   Dart/Flutter trees, not TypeScript.
+        # - `**/test/**` — the rule is a *module* rule, so the checker is passed
+        #   `src` trees only (`apps/node/test`'s largest file is 1,800 lines).
+        # - `apps/social/vite.config.ts` (290), `apps/node/scripts/*.ts` (71),
+        #   the repo-root `*.config.ts` (34-250) — build/config glue, all under
+        #   the 500 target and not module surfaces.
+        # - `scripts/*.ts` (largest 501) and `outputs/*.ts` (largest 39) — repo
+        #   tooling and one-off generator scratch, not a product surface.
+        # - `OpenClawExtension/src` (largest 445) — a separate extension package
+        #   outside the pnpm workspace globs, under the cap.
+        # - `release/**` — a gitignored built artifact (`.gitignore`).
+        #
+        # `packages/node-core/src` joined when the shared home/marker module
         # landed there: it is a core package now carrying modules that a product
         # depends on, so it should not grow unbounded unnoticed. Its only current
-        # finding is a warning (`home-fs.ts`, 509 lines) — pre-existing, not gated.
-        run: node scripts/check-module-size.mjs apps/node/src packages/host-connect/src packages/harness/src packages/api/src packages/reuse-host/src packages/node-core/src
+        # finding is a warning (`envoymesh-home.ts`, 532 lines) — pre-existing,
+        # not gated.
+        #
+        # Allowlist entries added for the newly-scanned trees. The family
+        # checker's allowlist is a bare JSON array of paths and cannot carry a
+        # reason (the reason-carrying `{note, entries}` form belongs to EnvoyDev's
+        # adapter), so each new entry's reason is recorded here, next to the
+        # invocation that consumes it. They are recorded technical debt, not
+        # endorsements — splitting each is outstanding:
+        # - `packages/network/src/index.ts` — the libp2p mesh itself (node
+        #   construction, transport/relay wiring, discovery, capability gossip and
+        #   the public `EnvoyMesh` surface). Splitting means a reviewed refactor of
+        #   the package's public API, not a mechanical file move.
+        # - `packages/protocol/src/index.ts` — the wire contract every package and
+        #   app agrees on; dividing it by surface (presence / chain / chat /
+        #   knowledge) is the follow-up.
+        # - `packages/protocol/src/agent-network.ts` — the agent-network schema
+        #   family; separating its schema groups is the follow-up.
+        # - `packages/local-store/src/index.ts` — every on-disk store in one
+        #   module; extracting the per-store units (cost, shop, chat-log,
+        #   device-auth) is the follow-up.
+        # - `packages/models/src/index.ts` — the model catalogue plus selection
+        #   and tool definitions; separating catalogue data from selection logic
+        #   is the follow-up.
+        run: node scripts/check-module-size.mjs apps/node/src apps/cli/src apps/relay/src apps/social/src packages/host-connect/src packages/harness/src packages/api/src packages/reuse-host/src packages/node-core/src packages/agent-adapter/src packages/bonds/src packages/identity/src packages/ipfs-helia/src packages/kb-obsidian/src packages/local-store/src packages/mobile-identity/src packages/models/src packages/network/src packages/openclaw-runtime/src packages/protocol/src packages/rag/src packages/vault/src

@@ -258,6 +258,7 @@ describe("E2E quietWan — DHT-off relay-roster discovery", () => {
       15_000,
       "clientA to appear in relay.lookup results",
     );
+    if (!response) throw new Error("relay.lookup never returned clientA");
 
     const discovered = response.peers.find((p) => p.peerId === clientA.mesh.peerId);
     expect(discovered, "clientA should be discoverable via relay roster with DHT off").toBeTruthy();

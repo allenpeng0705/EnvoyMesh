@@ -21,7 +21,7 @@ import {
   type SessionTokenRecordLike,
   type SocialSessionHost,
 } from "../src/social-ws-policy.js";
-import type { HostSession, SessionIdentityResolver } from "@envoymesh/host-connect";
+import type { SessionIdentityResolver } from "@envoymesh/host-connect";
 
 const OWNER_SCOPE = "owner";
 
@@ -145,7 +145,7 @@ describe("H2 — the product's resolver preserves the behaviour it inherited", (
       lookupSessionToken: async () => ({ ownerId: "envoy:owner:abc", profileId: "mom" }),
       touchFamilyProfileLastSeen: touch,
     });
-    const session = (await resolver.resolveSession("t")) as HostSession<unknown>;
+    const session = (await resolver.resolveSession("t"))!;
     // A throwing presence hook must not escape into the RPC path.
     expect(() => resolver.noteSessionActivity?.(session)).not.toThrow();
     expect(touch).toHaveBeenCalledWith("mom");

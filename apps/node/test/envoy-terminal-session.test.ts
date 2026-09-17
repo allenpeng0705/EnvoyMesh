@@ -9,10 +9,13 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import type { TerminalSessionSummary } from "@envoymesh/api/core";
+
 import {
   ensureEnvoyTerminalSession,
   envoySessionTitle,
   resolveEnvoyHarnessTuiBin,
+  type EnvoyTerminalSessionDeps,
 } from "../src/envoy-terminal-session.js";
 
 let dir: string;
@@ -30,7 +33,7 @@ afterAll(async () => {
 function fakeManager() {
   const created: Array<Record<string, unknown>> = [];
   const sessions: Array<Record<string, unknown>> = [];
-  const findSessionByCwd = vi.fn(() => undefined);
+  const findSessionByCwd = vi.fn((): TerminalSessionSummary | undefined => undefined);
   const listSessionsByRole = vi.fn(() => []);
   const closeTerminalSession = vi.fn(async () => undefined);
   const createTerminalSession = vi.fn(async (params: {
@@ -70,8 +73,8 @@ function fakeManager() {
   };
 }
 
-const deps = {
-  loadConfig: async () => ({ piEnabled: true, modelProviders: {} }),
+const deps: EnvoyTerminalSessionDeps = {
+  loadConfig: async () => ({ piEnabled: true, modelProviders: { mode: "mock" } }),
   saveProjectPath: vi.fn(async () => undefined),
   resolveRuntimeConfig: async () => ({
     provider: "deepseek",
@@ -116,7 +119,10 @@ describe("ensureEnvoyTerminalSession", () => {
       sessionId: "envoy-existing",
       title: "Envoy · x",
       cwd: dir,
+      shell: "/bin/bash",
       state: "running",
+      createdAt: "2026-08-23T00:00:00.000Z",
+      lastActivityAt: "2026-08-23T00:00:00.000Z",
     });
     const result = await ensureEnvoyTerminalSession(manager, deps, {
       projectPath: dir,
