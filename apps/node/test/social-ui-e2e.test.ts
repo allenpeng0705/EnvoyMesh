@@ -14,6 +14,11 @@ import { readFile, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+// The page script injects this dispatcher, and `inject` runs inside
+// `page.evaluate` in the browser origin. Declared here (instead of pulling DOM
+// lib into every node test) so the evaluate callback typechecks.
+declare const window: { __dispatch: (json: string) => void };
+
 const WEB_PORT = 5401;
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 const DIST = join(ROOT, "apps", "social", "src", "dist");
@@ -197,7 +202,7 @@ async function mockWs(page: any) {
 }
 
 async function inject(page: any, ev: Record<string, unknown>) {
-  await page.evaluate((e) => {
+  await page.evaluate((e: Record<string, unknown>) => {
     window.__dispatch(JSON.stringify(e));
   }, ev);
 }
@@ -286,7 +291,7 @@ describe("chat", () => {
       const aliceRow = p.locator(".thread-row--contact", { hasText: /Alice/ }).first();
       if ((await aliceRow.count()) > 0) await aliceRow.click({ timeout: 3_000 });
     } catch (e) {
-      console.log("[test] alice click skipped:", e.message);
+      console.log("[test] alice click skipped:", e instanceof Error ? e.message : String(e));
     }
     await sleep(300);
     await inject(p, { event: "chat:message", data: chatMessage({ messageId: "m1", text: "Hello!" }) });

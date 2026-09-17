@@ -39,7 +39,7 @@ afterEach(async () => {
   await cleanupPhase13Harness();
 });
 
-describe.sequential.skipIf(!isPhase18LiveModelConfigured())(
+describe.skipIf(!isPhase18LiveModelConfigured()).sequential(
   `E2E plan+assign live LLM three-home (${phase18MinimaxSkipMessage()})`,
   () => {
     const liveAi = getPhase18ModelProviders();

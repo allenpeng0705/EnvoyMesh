@@ -23,7 +23,9 @@ function makeDeps(overrides?: Partial<BroadcastCapabilityDiscoveryDeps>): Broadc
     signEnvelope: vi.fn().mockImplementation((u: any) => ({ ...u, signature: "sig" })),
     profile: {
       owner: { ownerId: "envoy:owner:local" },
-      device: { peerId: "local-peer", publicKeyPem: "pk", privateKeyPem: "sk" },
+      // `deviceId` is required by the deps type though the module reads only
+      // `peerId`/key material.
+      device: { deviceId: "local-device", peerId: "local-peer", publicKeyPem: "pk", privateKeyPem: "sk" },
     },
     ...overrides,
   };

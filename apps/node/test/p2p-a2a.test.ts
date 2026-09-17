@@ -23,6 +23,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parseNodeArgs } from "../src/args.js";
 import { buildOutboundCliEnvelopes } from "../src/cli-actions.js";
 import { createTaskDispatcher } from "../src/task-dispatcher.js";
 
@@ -66,6 +67,9 @@ describe("A2A lifecycle over EnvoyMesh", () => {
 
     const outbounds = buildOutboundCliEnvelopes(
       {
+        // Complete `NodeArgs` from the parser; the old literal was frozen at an
+        // older field set.
+        ...parseNodeArgs([]),
         profileDir: "./data/test",
         listen: [],
         enableMdns: false,

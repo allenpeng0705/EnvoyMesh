@@ -6,7 +6,7 @@ import {
   createLocalPeerDirectoryStore,
   type NodeProfile,
 } from "@envoymesh/local-store";
-import { createUnsignedEnvelope } from "@envoymesh/protocol";
+import { createUnsignedEnvelope, type EnvoyIntent } from "@envoymesh/protocol";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,7 +38,7 @@ function testProfile(): NodeProfile {
   };
 }
 
-function signedEnvelope(profile: NodeProfile, intent: string, payload: unknown) {
+function signedEnvelope(profile: NodeProfile, intent: EnvoyIntent, payload: unknown) {
   return {
     ...createUnsignedEnvelope({
       senderPeerId: "peer-feedback-sender",

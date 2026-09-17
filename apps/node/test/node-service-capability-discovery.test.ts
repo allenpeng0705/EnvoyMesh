@@ -10,7 +10,11 @@ import {
 } from "../src/node-service-capability-discovery.js";
 
 const mocks = vi.hoisted(() => ({
-  runCapabilityDiscoveryCycle: vi.fn(async () => undefined),
+  // Typed with the shape the runtime passes, so `mock.calls[0][0]` is not the
+  // empty tuple a parameterless `vi.fn()` produces.
+  runCapabilityDiscoveryCycle: vi.fn(
+    async (_input: { options?: { source?: string; runFind?: boolean } }) => undefined,
+  ),
   buildAutoCapabilityTopics: vi.fn(() => ["topic-1", "topic-2"]),
 }));
 

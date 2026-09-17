@@ -95,7 +95,7 @@ describe("§5 product state layout — a real service", () => {
 
     // Product: a family profile is the social product's own state.
     const created = await svc.createFamilyProfile({ name: "Layout Probe" });
-    expect(created.ok ?? true).toBeTruthy();
+    expect(created.profile.name).toBe("Layout Probe");
     const familyPath = join(productDir, "family-profiles.json");
     expect(existsSync(familyPath), `family-profiles.json belongs in ${productDir}`).toBe(true);
     expect(

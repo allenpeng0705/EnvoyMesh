@@ -16,8 +16,10 @@ import {
   createTaskHarnessSubmitResponsePayload,
   createUnsignedEnvelope,
   type EnvoyEnvelope,
+  type EnvoyIntent,
+  type SignedAgentResult,
 } from "@envoymesh/protocol";
-import type { ExecuteInput, SignedAgentResult } from "@envoymesh/agent-adapter";
+import type { ExecuteInput } from "@envoymesh/agent-adapter";
 import type { ChainTransportResolver } from "../src/chain-production.js";
 import { sendExpectReplyWithRetry } from "../src/chat-outbound-deliver.js";
 import { createLibp2pRemoteSubmitterTransport } from "../src/harness-submit-transport.js";
@@ -77,7 +79,7 @@ function signedResult(correlationId: string): SignedAgentResult {
 
 function replyEnvelope(input: {
   payload?: unknown;
-  intent?: string;
+  intent?: EnvoyIntent;
   correlationId?: string;
   signed?: boolean;
   sender?: { peerId: string; publicKey: string; privateKey: string };
@@ -143,7 +145,7 @@ const baseInput = {
  * internally, so tests cannot know it up front).
  */
 function mockReply(
-  overrides: Omit<NonNullable<Parameters<typeof replyEnvelope>[0]>, "correlationId"> = {},
+  overrides: NonNullable<Parameters<typeof replyEnvelope>[0]> = {},
 ): void {
   vi.mocked(sendExpectReplyWithRetry).mockImplementation(async (args) =>
     replyEnvelope({

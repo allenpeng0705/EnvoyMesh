@@ -50,7 +50,13 @@ const identity: SessionIdentityResolver = {
   localScopeKey: "local",
   resolveSession: async (token) =>
     token === "pair-token"
-      ? { scopeKey: "scope", ownerId: "account-1", isOwnerScope: false, caller: undefined }
+      ? {
+          scopeKey: "scope",
+          ownerId: "account-1",
+          isOwnerScope: false,
+          caller: undefined,
+          deviceId: "pad_phone_1",
+        }
       : null,
 };
 
@@ -90,6 +96,37 @@ describe("@envoymesh/reuse-host", () => {
     expect(reply["error"]).toBeUndefined();
     expect(reply["result"]).toEqual({ ownerId: "account-1" });
     socket.close();
+  }, 15_000);
+
+  it("disconnectClientsForDevice closes the authenticated WebSocket", async () => {
+    const port = await freePort();
+    const host = createReuseHost({ port, sessionIdentity: identity, dispatch: dispatcher });
+    hosts.push(host);
+    await host.serve();
+
+    const { WebSocket } = await import("ws");
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws?token=pair-token`);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve());
+      socket.once("error", reject);
+    });
+    // One RPC so the transport has authenticated and parked the session.
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("no reply")), 5_000);
+      socket.once("message", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      socket.send(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "whoami", params: {} }));
+    });
+
+    const closed = new Promise<{ code: number }>((resolve) => {
+      socket.once("close", (code) => resolve({ code }));
+    });
+    expect(host.disconnectClientsForDevice("pad_phone_1")).toBe(1);
+    expect(host.disconnectClientsForDevice("nobody")).toBe(0);
+    const { code } = await closed;
+    expect(code).toBe(4001);
   }, 15_000);
 
   it("builds a QR payload that round-trips, and rejects a foreign one", () => {

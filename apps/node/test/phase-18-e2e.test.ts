@@ -28,7 +28,7 @@ afterEach(async () => {
   await Promise.all(nodes.splice(0).map((n) => cleanupPhase13Node(n)));
 });
 
-describe.sequential.skipIf(!isPhase18LiveModelConfigured())(
+describe.skipIf(!isPhase18LiveModelConfigured()).sequential(
   `E2E Phase 18 owner agent exit criteria (${phase18MinimaxSkipMessage()})`,
   () => {
     const modelProviders = getPhase18ModelProviders();

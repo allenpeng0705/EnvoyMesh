@@ -611,7 +611,10 @@ describe("ToolDefinition interface", () => {
       },
       sensitivityCeiling: "trusted",
       requiresApproval: true,
-      intent: "custom.intent",
+      // `intent` selects the mesh send in `executeMeshTool`'s switch
+      // (`tool-registry.ts:3015`) and is typed as the closed `EnvoyIntent`
+      // union; an unknown value is executable only as "Unhandled mesh intent".
+      intent: "chat.message",
       isMeshTool: true,
     };
 
@@ -622,7 +625,7 @@ describe("ToolDefinition interface", () => {
     expect(retrieved).toBeDefined();
     expect(retrieved?.sensitivityCeiling).toBe("trusted");
     expect(retrieved?.requiresApproval).toBe(true);
-    expect(retrieved?.intent).toBe("custom.intent");
+    expect(retrieved?.intent).toBe("chat.message");
     expect(retrieved?.isMeshTool).toBe(true);
     expect(retrieved?.paramSchema.properties).toHaveProperty("param1");
   });

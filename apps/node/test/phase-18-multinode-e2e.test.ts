@@ -102,7 +102,7 @@ async function runCapabilityJobToCompletion(
   }, timeoutMs);
 }
 
-describe.sequential.skipIf(!isPhase18LiveModelConfigured())(
+describe.skipIf(!isPhase18LiveModelConfigured()).sequential(
   `E2E Phase 18 multi-node owner agent (${phase18MinimaxSkipMessage()})`,
   () => {
     const modelProviders = getPhase18ModelProviders();

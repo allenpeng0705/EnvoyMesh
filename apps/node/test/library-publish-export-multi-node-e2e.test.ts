@@ -17,6 +17,7 @@ import {
   createLocalPeerDirectoryStore,
   createLocalTaskStore,
   createLocalTrustStore,
+  type CapabilityManifest,
   type NodeProfile,
 } from "@envoymesh/local-store";
 import {
@@ -46,6 +47,31 @@ vi.mock("../src/kubo-ipfs-engine.js", () => ({
 
 const meshes: EnvoyMesh[] = [];
 const profileDirs: string[] = [];
+
+/**
+ * The capability manifest the test node advertises. It has to be a complete,
+ * current-shape `CapabilityManifest`: as soon as one is supplied the handler
+ * takes the manifest-aware branch (`discovery-inbound.ts:672`), so every field
+ * it reads must be real rather than `undefined`.
+ *
+ * The values reproduce exactly what the old partial
+ * `{ version, capabilities, topics }` fixture produced by accident:
+ * `visibility` is not `"contacts-only"` (the public gate does not fire) and
+ * `sensitivityAllowed` treats a missing ceiling as `"public"`
+ * (`capability-manifest-store.ts:144`). `topics` was never a manifest field —
+ * the per-request `requestedPublishTopics` is.
+ */
+const EMPTY_CAPABILITY_MANIFEST: CapabilityManifest = {
+  version: "0.1",
+  id: "e2e-empty-manifest",
+  versionTag: "0.5.0",
+  visibility: "public-preview",
+  sensitivityCeiling: "public",
+  keywords: [],
+  capabilities: [],
+  approvedAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -159,7 +185,7 @@ function wireDiscoveryHandler(node: TestNode): void {
       correlationId: envelope.correlationId,
       taskStore: node.taskStore,
       trustStore: node.trustStore,
-      capabilityManifest: { version: "0.1", capabilities: [], topics: [] },
+      capabilityManifest: EMPTY_CAPABILITY_MANIFEST,
       anonymousDiscoveryMode: "off",
       vaultDir: node.vaultDir,
       profileDir: node.profileDir,

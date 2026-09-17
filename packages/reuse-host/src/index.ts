@@ -256,6 +256,14 @@ export interface ReuseHost {
   serve(nodeService?: HostNodeService): Promise<void>;
   /** The pairing URI for the running host, using the given token and identity. */
   pairingUri(token: string, identity: { ownerPublicKey: string; ownerId: string }): string;
+  /**
+   * Close every authenticated WebSocket whose session carries this `deviceId`.
+   *
+   * Revocation's other half: refusing the next token is not enough if a phone already holds an open
+   * socket. Returns how many sockets were closed (0 when none match or the host has not served yet).
+   * Delegates to `WsServer.disconnectClientsForDevice`.
+   */
+  disconnectClientsForDevice(deviceId: string): number;
   /** Stop serving, if started. */
   stop(): void;
 }
@@ -315,6 +323,10 @@ export function createReuseHost(options: ReuseHostOptions): ReuseHost {
         ownerPublicKey: identity.ownerPublicKey,
         ownerId: identity.ownerId,
       });
+    },
+    disconnectClientsForDevice(deviceId: string): number {
+      if (!started) return 0;
+      return server.disconnectClientsForDevice(deviceId);
     },
     stop() {
       if (!started) return;

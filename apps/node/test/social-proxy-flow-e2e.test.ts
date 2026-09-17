@@ -54,11 +54,15 @@ describe.sequential("E2E social proxy flow (two-node libp2p)", () => {
       modelProviders: { mode: "mock" },
     });
 
-    let bobAgentChat: import("@envoymesh/protocol").EnvoyEnvelope | null = null;
+    // A holder object, not a bare `let`: TypeScript keeps a closure-assigned
+    // `let` narrowed to its `null` initializer at the outer scope, which made
+    // the `else` arm `never`. A property read is re-widened by the intervening
+    // function calls.
+    const agentChat: { envelope: import("@envoymesh/protocol").EnvoyEnvelope | null } = { envelope: null };
     bob.mesh.onMessage(async ({ envelope }) => {
       if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "chat.message" && envelope.senderRole === "agent") {
-        bobAgentChat = envelope;
+        agentChat.envelope = envelope;
       }
     });
 
@@ -111,18 +115,19 @@ describe.sequential("E2E social proxy flow (two-node libp2p)", () => {
     await alice.service.advanceSocialProxySession(sessionId);
 
     await waitForPhase13(async () => {
-      if (bobAgentChat !== null) return true;
+      if (agentChat.envelope !== null) return true;
       const history = await bob.service.listChatHistory(alice.profile.owner.ownerId);
       return history.some((m) => m.sender.actorRole === "agent");
     }, 10_000);
 
-    if (!bobAgentChat) {
+    if (!agentChat.envelope) {
       const history = await bob.service.listChatHistory(alice.profile.owner.ownerId);
       const agentLine = history.find((m) => m.sender.actorRole === "agent");
-      expect(agentLine?.text).toContain("on behalf of my owner");
+      // `ChatMessage.content.text`, not a top-level `text` (`node-service.ts:421`).
+      expect(agentLine?.content.text).toContain("on behalf of my owner");
     } else {
-      expect(verifyAgentEnvelope(bobAgentChat!)).toBe(true);
-      const chatPayload = parseChatMessagePayload(bobAgentChat!.payload);
+      expect(verifyAgentEnvelope(agentChat.envelope)).toBe(true);
+      const chatPayload = parseChatMessagePayload(agentChat.envelope.payload);
       expect(chatPayload.senderOwnerId).toBe(alice.profile.owner.ownerId);
     }
 

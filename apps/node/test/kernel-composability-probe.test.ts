@@ -294,8 +294,10 @@ describe("kernel composability probe (§6.2)", () => {
         `    served without social inputs : ${served.length}`,
         `    require a human profile      : ${needsProfile.length}`,
         ...needsProfile.map((c) => {
+          // `c` came from `outcomes`, so the row always exists; the guard only
+          // satisfies the compiler.
           const o = outcomes.find((x) => x.call === c);
-          return `        - ${c}: ${"message" in o ? o.message : ""}`;
+          return `        - ${c}: ${o !== undefined && "message" in o ? o.message : ""}`;
         }),
         `    precondition-not-met         : ${precondition.length}`,
         `    timed out (no network)       : ${timedOut.length}${

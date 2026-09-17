@@ -59,6 +59,11 @@ describe("E2E call signaling — full flow", () => {
       peerOwnerId: caller.profile.owner.ownerId,
       callType: "audio",
     });
+    // `CallEvent` is a discriminated union; `sdpOffer` lives on the
+    // `call:incoming` arm, so discriminate before reading it.
+    if (incoming.type !== "call:incoming") {
+      throw new Error(`expected call:incoming, got ${incoming.type}`);
+    }
     expect(incoming.sdpOffer).toBeTruthy();
     expect(incoming.sdpOffer!.length).toBeGreaterThan(0);
 
@@ -102,6 +107,9 @@ describe("E2E call signaling — full flow", () => {
       type: "call:answered",
       callId,
     });
+    if (answered.type !== "call:answered") {
+      throw new Error(`expected call:answered, got ${answered.type}`);
+    }
     expect(answered.sdpAnswer).toBeTruthy();
     expect(answered.sdpAnswer!.length).toBeGreaterThan(0);
 

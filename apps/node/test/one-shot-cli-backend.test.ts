@@ -37,7 +37,9 @@ class TestOneShotBackend extends OneShotCliBackend {
   private readonly buildExtra: string[];
   private readonly parserFn: ((stdout: string, stderr: string, exitCode: number) => string) | undefined;
 
-  constructor(opts: TestBackendOptions = {}) {
+  // `command` is required by `OneShotCliBackendOptions`; every call site passes
+  // it, so there is no valid empty default.
+  constructor(opts: TestBackendOptions) {
     super(opts);
     this.buildExtra = opts.buildExtra ?? [];
     if (opts.parser) this.parserFn = opts.parser;

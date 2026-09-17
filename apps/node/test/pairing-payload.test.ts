@@ -86,6 +86,11 @@ describe("NodeServiceImpl getPairingPayload", () => {
     expect(p.agentPeerId).toBeUndefined();
     expect(p.agentPubKey).toBeUndefined();
     expect(typeof p.token).toBe("string");
+    // `token` is optional on the payload type; the guard narrows it for the
+    // compiler without changing the assertion above.
+    if (typeof p.token !== "string") {
+      throw new Error("pairing payload is missing its session token");
+    }
     expect(p.token.length).toBeGreaterThan(8);
   });
 

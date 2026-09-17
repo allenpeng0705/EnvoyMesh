@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { handleInboundSyncStateIntent } from "../src/sync-state-inbound.js";
 import { createSyncStatePayload, createUnsignedEnvelope } from "@envoymesh/protocol";
-import { generateOwnerIdentity, generateDeviceIdentity, createDeviceCertificate } from "@envoymesh/identity";
+import { generateOwnerIdentity, generateDeviceIdentity, createDeviceCertificate, signUnsignedEnvelope } from "@envoymesh/identity";
 import type { NodeProfile } from "@envoymesh/local-store";
 
 function testProfile(): NodeProfile {
@@ -22,16 +22,19 @@ function testProfile(): NodeProfile {
 describe("sync-state-inbound", () => {
   it("accepts same-owner sync.state", () => {
     const profile = testProfile();
-    const envelope = createUnsignedEnvelope({
-      intent: "sync.state",
-      senderPeerId: "peer-a",
-      senderPublicKey: profile.device.publicKeyPem,
-      payload: createSyncStatePayload({
-        scope: "assistant-draft:v1",
-        updateBase64: "AQID",
-        senderOwnerId: profile.owner.ownerId,
+    const envelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        intent: "sync.state",
+        senderPeerId: "peer-a",
+        senderPublicKey: profile.device.publicKeyPem,
+        payload: createSyncStatePayload({
+          scope: "assistant-draft:v1",
+          updateBase64: "AQID",
+          senderOwnerId: profile.owner.ownerId,
+        }),
       }),
-    });
+      profile.device.privateKeyPem,
+    );
     const result = handleInboundSyncStateIntent({ envelope, profile });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -41,16 +44,19 @@ describe("sync-state-inbound", () => {
 
   it("rejects foreign owner", () => {
     const profile = testProfile();
-    const envelope = createUnsignedEnvelope({
-      intent: "sync.state",
-      senderPeerId: "peer-a",
-      senderPublicKey: profile.device.publicKeyPem,
-      payload: createSyncStatePayload({
-        scope: "assistant-draft:v1",
-        updateBase64: "AQID",
-        senderOwnerId: "envoy:owner:other",
+    const envelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        intent: "sync.state",
+        senderPeerId: "peer-a",
+        senderPublicKey: profile.device.publicKeyPem,
+        payload: createSyncStatePayload({
+          scope: "assistant-draft:v1",
+          updateBase64: "AQID",
+          senderOwnerId: "envoy:owner:other",
+        }),
       }),
-    });
+      profile.device.privateKeyPem,
+    );
     expect(handleInboundSyncStateIntent({ envelope, profile }).ok).toBe(false);
   });
 });

@@ -60,7 +60,10 @@ function makeHostNodeService(): HostNodeService & { activityCount: number } {
     on: () => undefined,
     onCallEvent: () => () => undefined,
     getNodeStatus: () => "running",
-    getConnectionStatus: () => ({ connected: true, clients: 1 }),
+    // `HostConnectionStatus` is `{ peerId, multiaddrs }` — the same shape the
+    // other host fakes use. The old `{ connected, clients }` predates the
+    // narrowed host contract and left both fields `undefined` at runtime.
+    getConnectionStatus: () => ({ peerId: "peer-1", multiaddrs: [] }),
     noteClientActivity: () => {
       activityCount++;
     },

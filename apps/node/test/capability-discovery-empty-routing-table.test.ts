@@ -14,11 +14,18 @@ import { describe, expect, it, vi } from "vitest";
 import { runCapabilityDiscoveryCycle } from "../src/capability-discovery.js";
 
 function makeMockMesh(opts: { routingTableSize: number; provideResult: () => Promise<unknown> }) {
+  // The fake is still the minimal shape `runCapabilityDiscoveryCycle` reads;
+  // the spy is returned alongside it so assertions do not have to reach a
+  // property through the `never`-typed fake.
+  const provideCapabilityTopic = vi.fn(opts.provideResult);
   return {
-    getRoutingTableSize: () => opts.routingTableSize,
-    provideCapabilityTopic: vi.fn(opts.provideResult),
-    findCapabilityTopicProviders: vi.fn(async () => []),
-  } as never;
+    mesh: {
+      getRoutingTableSize: () => opts.routingTableSize,
+      provideCapabilityTopic,
+      findCapabilityTopicProviders: vi.fn(async () => []),
+    } as never,
+    provideCapabilityTopic,
+  };
 }
 
 function makeStores() {
@@ -36,7 +43,7 @@ function makeStores() {
 
 describe("runCapabilityDiscoveryCycle — empty routing table early-exit (B1)", () => {
   it("skips the DHT provide loop when routing table is empty (0 peers)", async () => {
-    const mesh = makeMockMesh({
+    const { mesh, provideCapabilityTopic } = makeMockMesh({
       routingTableSize: 0,
       provideResult: async () => ({ timedOut: true }),
     });
@@ -53,7 +60,7 @@ describe("runCapabilityDiscoveryCycle — empty routing table early-exit (B1)", 
     });
 
     // The provide loop must NOT have run — no provideCapabilityTopic calls.
-    expect((mesh.provideCapabilityTopic as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+    expect(provideCapabilityTopic.mock.calls.length).toBe(0);
     // An audit event records the skip so operators can see it wasn't a silent no-op.
     expect(auditEvents.length).toBe(1);
     const evt = auditEvents[0] as { summary: string; protocol: string };
@@ -62,7 +69,7 @@ describe("runCapabilityDiscoveryCycle — empty routing table early-exit (B1)", 
   });
 
   it("runs the DHT provide loop when routing table has peers", async () => {
-    const mesh = makeMockMesh({
+    const { mesh, provideCapabilityTopic } = makeMockMesh({
       routingTableSize: 12,
       provideResult: async () => ({ timedOut: false }),
     });
@@ -79,13 +86,13 @@ describe("runCapabilityDiscoveryCycle — empty routing table early-exit (B1)", 
     });
 
     // Provide ran for each topic.
-    expect((mesh.provideCapabilityTopic as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
+    expect(provideCapabilityTopic.mock.calls.length).toBe(2);
   });
 
   it("runs the provide loop when routing table size is unknown (-1)", async () => {
     // -1 = DHT enabled but introspection failed. Don't skip — let the provide
     // attempt and its own timeout handle it. Skipping only on a definitive 0.
-    const mesh = makeMockMesh({
+    const { mesh, provideCapabilityTopic } = makeMockMesh({
       routingTableSize: -1,
       provideResult: async () => ({ timedOut: false }),
     });
@@ -101,11 +108,11 @@ describe("runCapabilityDiscoveryCycle — empty routing table early-exit (B1)", 
       options: { source: "periodic", runFind: false },
     });
 
-    expect((mesh.provideCapabilityTopic as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+    expect(provideCapabilityTopic.mock.calls.length).toBe(1);
   });
 
   it("still early-exits when DHT is disabled (existing guard, unchanged)", async () => {
-    const mesh = makeMockMesh({
+    const { mesh, provideCapabilityTopic } = makeMockMesh({
       routingTableSize: 0,
       provideResult: async () => ({ timedOut: false }),
     });
@@ -121,7 +128,7 @@ describe("runCapabilityDiscoveryCycle — empty routing table early-exit (B1)", 
       options: { source: "periodic", runFind: false },
     });
 
-    expect((mesh.provideCapabilityTopic as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+    expect(provideCapabilityTopic.mock.calls.length).toBe(0);
     // No skip audit either — the enableDht guard returns before the routing-table check.
     expect(auditEvents.length).toBe(0);
   });

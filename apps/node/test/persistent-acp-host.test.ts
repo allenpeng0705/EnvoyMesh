@@ -76,13 +76,13 @@ function createMockAgent(opts: {
     getSession() {
       return { metadata: { cwd: opts.cwd }, messages };
     },
-    async run(prompt: string | ReadonlyArray<{ type: string }>) {
+    async run(prompt: string | ReadonlyArray<{ type: string; text?: string }>) {
       const text =
         typeof prompt === "string"
           ? prompt
           : prompt
               .filter((b) => b.type === "text" && "text" in b)
-              .map((b) => String((b as { text: string }).text))
+              .map((b) => String(b.text))
               .join("\n");
       append("user", text);
       if (opts.park) {

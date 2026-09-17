@@ -1,5 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import { wireClientProxyPushEvents } from "../src/client-proxy-push.js";
+import type { RpcCallerContext } from "../src/rpc-caller-context.js";
+
+/**
+ * A complete thin-client caller. The transport reads `profileId`,
+ * `ownerId` and `isOwnerProfile`; `source` is the transport the session
+ * arrived on (every caller here is a `session`, not a loopback client).
+ */
+function caller(profileId: string, isOwnerProfile: boolean): RpcCallerContext {
+  return {
+    ownerId: "envoy:owner:test",
+    profileId,
+    isOwnerProfile,
+    source: "session",
+  };
+}
 
 describe("wireClientProxyPushEvents", () => {
   it("forwards home:config-updated with stamped caller profile", async () => {
@@ -23,7 +38,7 @@ describe("wireClientProxyPushEvents", () => {
 
     const unwire = wireClientProxyPushEvents(
       nodeService,
-      { profileId: "mom", isOwnerProfile: false },
+      caller("mom", false),
       (event, data) => {
         emitted.push({ event, data });
       },
@@ -56,7 +71,7 @@ describe("wireClientProxyPushEvents", () => {
 
     const run = async (profileId: string, isOwnerProfile: boolean) => {
       emitted.length = 0;
-      wireClientProxyPushEvents(nodeService, { profileId, isOwnerProfile }, (event, data) => {
+      wireClientProxyPushEvents(nodeService, caller(profileId, isOwnerProfile), (event, data) => {
         emitted.push({ event, data });
       })();
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -84,7 +99,7 @@ describe("wireClientProxyPushEvents", () => {
       }),
     } as unknown as import("../src/node-service-impl.js").NodeServiceImpl;
 
-    wireClientProxyPushEvents(nodeService, { profileId: "mom", isOwnerProfile: false }, (event, data) => {
+    wireClientProxyPushEvents(nodeService, caller("mom", false), (event, data) => {
       emitted.push({ event, data });
     })();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -109,7 +124,7 @@ describe("wireClientProxyPushEvents", () => {
 
     wireClientProxyPushEvents(
       makeService(),
-      { profileId: "owner", isOwnerProfile: true },
+      caller("owner", true),
       (event) => {
         ownerEmitted.push(event);
       },
@@ -117,7 +132,7 @@ describe("wireClientProxyPushEvents", () => {
 
     wireClientProxyPushEvents(
       makeService(),
-      { profileId: "mom", isOwnerProfile: false },
+      caller("mom", false),
       (event) => {
         familyEmitted.push(event);
       },

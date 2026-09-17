@@ -2,15 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { request as httpRequest } from "node:http";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { startPairingKioskServer, type PairingKioskServerHandle } from "../src/pairing-kiosk-server.js";
+import { startPairingKioskServer, type PairingKioskMintInviteInput, type PairingKioskMintInviteResult, type PairingKioskServerHandle } from "../src/pairing-kiosk-server.js";
 
 const ADMIN_TOKEN = "0123456789abcdef0123456789abcdef";
-
-interface MintResult {
-  uri: string;
-  expiresAt: string;
-  inviteId: string;
-}
 
 let handle: PairingKioskServerHandle | null = null;
 
@@ -163,7 +157,7 @@ describe("startPairingKioskServer — runtime", () => {
     handle = await startPairingKioskServer({
       port: 0,
       kioskAdminToken: ADMIN_TOKEN,
-      mintInvite: async (input): Promise<MintResult> => ({
+      mintInvite: async (input): Promise<PairingKioskMintInviteResult> => ({
         uri: `envoy://invite?token=minted-${input.expiresInHours ?? 1}`,
         expiresAt: "2099-01-01T00:00:00.000Z",
         inviteId: "inv-1",
@@ -223,7 +217,7 @@ describe("startPairingKioskServer — runtime", () => {
 
   it("mints an invite on POST /pair with valid token", async () => {
     // Use a swap helper so we don't depend on the global `handle` lifecycle.
-    const mintSpy = vi.fn(async (): Promise<MintResult> => ({
+    const mintSpy = vi.fn(async (): Promise<PairingKioskMintInviteResult> => ({
       uri: "envoy://invite?token=minted",
       expiresAt: "2099-01-01T00:00:00.000Z",
       inviteId: "inv-1",
@@ -250,7 +244,7 @@ describe("startPairingKioskServer — runtime", () => {
   });
 
   it("handles two concurrent /pair requests with distinct invite IDs", async () => {
-    const mintSpy = vi.fn(async (): Promise<MintResult> => ({
+    const mintSpy = vi.fn(async (): Promise<PairingKioskMintInviteResult> => ({
       uri: "envoy://invite?token=minted",
       expiresAt: "2099-01-01T00:00:00.000Z",
       inviteId: randomUUID(),
@@ -286,9 +280,9 @@ describe("startPairingKioskServer — runtime", () => {
     // A malicious kiosk operator that posts `{"expiresInHours": "abc"}`
     // must NOT be able to plant an "Invalid Date" invite. The kiosk should
     // fall back to the default and the response should still be 200.
-    const mintSpy = vi.fn(async (params: { expiresInHours: number; note?: string }): Promise<MintResult> => ({
+    const mintSpy = vi.fn(async (params: PairingKioskMintInviteInput): Promise<PairingKioskMintInviteResult> => ({
       uri: "envoy://invite?token=minted",
-      expiresAt: new Date(Date.now() + params.expiresInHours * 3_600_000).toISOString(),
+      expiresAt: new Date(Date.now() + (params.expiresInHours ?? 1) * 3_600_000).toISOString(),
       inviteId: "inv-1",
     }));
     const local = await startPairingKioskServer({
@@ -312,7 +306,7 @@ describe("startPairingKioskServer — runtime", () => {
   });
 
   it("clamps expiresInHours to [1, 24]", async () => {
-    const mintSpy = vi.fn(async (): Promise<MintResult> => ({
+    const mintSpy = vi.fn(async (): Promise<PairingKioskMintInviteResult> => ({
       uri: "envoy://invite?token=minted",
       expiresAt: "2099-01-01T00:00:00.000Z",
       inviteId: "inv-1",

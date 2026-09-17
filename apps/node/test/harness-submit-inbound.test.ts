@@ -180,7 +180,7 @@ describe("handleInboundHarnessSubmitRequest", () => {
   it("rejects non-request intents without executing", async () => {
     let executed = false;
     const envelope = requestEnvelope();
-    const wrong = { ...envelope, intent: "task.harness.submit.response" };
+    const wrong: EnvoyEnvelope = { ...envelope, intent: "task.harness.submit.response" };
     const result = await handleInboundHarnessSubmitRequest({
       envelope: wrong,
       agentPeerId: WORKER_ID,

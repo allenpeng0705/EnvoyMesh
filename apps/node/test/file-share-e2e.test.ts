@@ -12,7 +12,7 @@ import {
   createLocalTaskStore,
   createLocalTrustStore,
 } from "@envoymesh/local-store";
-import { voucherJsonBytesFromObject } from "@envoymesh/network";
+import { voucherJsonBytesFromObject, type InboundDataTransfer, type MeshDataTransferHandler } from "@envoymesh/network";
 import {
   createUnsignedDataTransferVoucher,
   type DataTransferVoucher,
@@ -68,14 +68,13 @@ describe("inbound data transfer + savePath remapping", () => {
       { mode: 0o600 },
     );
 
-    type Handler = (x: {
-      remotePeerId: string;
-      voucher: Uint8Array;
-      chunks: Uint8Array[];
-    }) => Promise<void>;
-    const handlers: Handler[] = [];
+    // The handler takes the mesh's own `InboundDataTransfer`: `voucher` is the
+    // parsed object (unknown here) and `voucherUtf8` carries the framed bytes.
+    // The old local type declared `voucher: Uint8Array`, which the call below
+    // (correctly) does not pass.
+    const handlers: MeshDataTransferHandler[] = [];
     const fakeMesh = {
-      onDataTransfer(h: Handler) {
+      onDataTransfer(h: MeshDataTransferHandler) {
         handlers.push(h);
         return () => {};
       },
@@ -123,7 +122,7 @@ describe("inbound data transfer + savePath remapping", () => {
       voucher: signed,
       voucherUtf8,
       chunks: [new Uint8Array(body)],
-    });
+    } satisfies InboundDataTransfer);
 
     const out = await readFile(join(vaultDir, targetRel), "utf8");
     expect(out).toBe("hello-fs-b-e2e");
@@ -246,14 +245,9 @@ describe("inbound data transfer + savePath remapping", () => {
       devicePublicKeyPem: aliceDevice.publicKeyPem,
     });
 
-    type Handler = (x: {
-      remotePeerId: string;
-      voucher: DataTransferVoucher;
-      chunks: Uint8Array[];
-    }) => Promise<void>;
-    const handlers: Handler[] = [];
+    const handlers: MeshDataTransferHandler[] = [];
     const fakeMesh = {
-      onDataTransfer(h: Handler) {
+      onDataTransfer(h: MeshDataTransferHandler) {
         handlers.push(h);
         return () => {};
       },
@@ -285,8 +279,10 @@ describe("inbound data transfer + savePath remapping", () => {
     await handlers[0]!({
       remotePeerId: REMOTE,
       voucher: signed,
+      // Required by `InboundDataTransfer`; the receiver parses `voucher`.
+      voucherUtf8: voucherJsonBytesFromObject(signed),
       chunks: [new Uint8Array(body)],
-    });
+    } satisfies InboundDataTransfer);
 
     const out = await readFile(join(vaultDir, "imports/fixed.txt"), "utf8");
     expect(out).toBe("chat-inbound-bond-fix");

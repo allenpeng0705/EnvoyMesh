@@ -54,7 +54,7 @@ describe("Pairing token lifecycle", () => {
         );
       },
       async listTokens() {
-        return db.query("SELECT * FROM session_tokens") as Record<string, unknown>[];
+        return db.query("SELECT * FROM session_tokens");
       },
     };
 
@@ -128,7 +128,7 @@ describe("HomeRemote transport candidate building", () => {
     const basePath = `${parsed.protocol}//${parsed.host}${parsed.pathname}`.replace(/\/+$/, "");
     const wsBase = /\/ws$/i.test(basePath) ? basePath : `${basePath}/ws`;
 
-    const tunnelUrl = `${wsBase}?target=${encodeURIComponent(homeNodePeerId)}&token=${encodeURIComponent(record?.token ?? "")}`;
+    const tunnelUrl = `${wsBase}?target=${encodeURIComponent(homeNodePeerId)}&token=${encodeURIComponent(String(record?.token ?? ""))}`;
 
     expect(tunnelUrl).toBe(
       "ws://relay.example.com:15432/ws?target=12D3KooWTestHomeNodePeerId123&token=valid-session-token",

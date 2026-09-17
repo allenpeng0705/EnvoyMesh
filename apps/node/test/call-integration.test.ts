@@ -126,8 +126,10 @@ describe("Phase 42G.1 — two-CallManager integration", () => {
 
     // In production the home sends a call.reject envelope; the
     // caller's CallManager dispatches hangupCall when it sees the
-    // call has ended. We simulate that.
-    callerCm.hangupCall("call-1", "rejected");
+    // call has ended. We simulate that. `hangupCall`'s reason is the
+    // `call.hangup` wire union (`normal | error | no_answer`); a reject is a
+    // separate intent, so the local end is "normal".
+    callerCm.hangupCall("call-1", "normal");
 
     expect(callerCm.getActiveCall()).toBeNull();
     expect(calleeCm.getActiveCall()).toBeNull();

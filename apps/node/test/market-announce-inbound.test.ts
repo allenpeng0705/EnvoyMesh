@@ -4,7 +4,7 @@ import {
   createLocalTrustStore,
   createMarketCacheStore,
 } from "@envoymesh/local-store";
-import { createMarketAnnouncePayload, createUnsignedEnvelope } from "@envoymesh/protocol";
+import { createMarketAnnouncePayload, createUnsignedEnvelope, type MarketCard } from "@envoymesh/protocol";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,21 +21,25 @@ afterEach(async () => {
   await rm(profileDir, { recursive: true, force: true });
 });
 
-function card(overrides: Partial<ReturnType<typeof baseCard>> = {}) {
+// Typed against the wire schema, not a snapshot of one instance: the earlier
+// `Partial<ReturnType<typeof baseCard>>` pinned `status` to the literal
+// "active", so the `sold`/`withdrawn` cases were type errors even though
+// `MarketListingStatusSchema` declares all four values.
+function card(overrides: Partial<MarketCard> = {}): MarketCard {
   return { ...baseCard(), ...overrides };
 }
 
-function baseCard() {
+function baseCard(): MarketCard {
   return {
     listingId: "listing_calc",
     sellerOwnerId: "envoy:owner:seller",
     shopDisplayName: "Campus",
     title: "Calculus textbook",
     description: "Clean notes",
-    category: "books" as const,
+    category: "books",
     tags: ["math"],
-    status: "active" as const,
-    visibility: "public" as const,
+    status: "active",
+    visibility: "public",
     price: { amount: "68.00", currency: "CNY" },
     searchTokens: ["calculus", "textbook", "books", "math"],
     updatedAt: "2026-08-31T12:00:00.000Z",

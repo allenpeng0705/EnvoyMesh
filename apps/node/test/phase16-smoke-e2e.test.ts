@@ -124,7 +124,7 @@ describe.sequential("E2E Phase 16 combined smoke", () => {
     await waitForPhase13(async () => {
       const job = await alice.service.getCapabilityProviderJob(capJob.jobId);
       if (job?.stage === "completed") return true;
-      if (job?.stage === "failed") throw new Error(`capability job failed: ${job.failureReason}`);
+      if (job?.stage === "failed") throw new Error(`capability job failed: ${job.error}`);
       await alice.service.runCapabilityProviderWorker();
       return false;
     }, 30_000);

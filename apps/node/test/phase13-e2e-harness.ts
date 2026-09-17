@@ -28,7 +28,7 @@ import {
   parseKnowledgeQueryPayload,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
-import { ApprovalQueue, isA2ATaskIntent } from "@envoymesh/api";
+import { ApprovalQueue, isA2ATaskIntent, type NodeService } from "@envoymesh/api";
 import { EnvoyMesh, setAllowLoopbackDialHints } from "@envoymesh/network";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { buildVaultIndex } from "@envoymesh/vault";
@@ -45,6 +45,35 @@ import { NodeServiceImpl } from "../src/node-service-impl.js";
 
 export const phase13Meshes: EnvoyMesh[] = [];
 export const phase13ProfileDirs: string[] = [];
+
+/**
+ * The `NodeServiceImpl` fields this harness drives directly.
+ *
+ * Why the cast is two-step: `node.service as NodeServiceImpl & {...}` does not
+ * compile. `_chainStore`/`_mesh`/`_inboundGuard` are `private` on
+ * `NodeServiceImpl`, and TypeScript reduces an intersection to `never` when a
+ * property "exists in multiple constituents and is private in some" — after
+ * which every access is a TS2339 on `never`. Casting through the public
+ * `NodeService` interface the class implements first, then widening with the
+ * internal fields, keeps the assertion legal without `as unknown as`
+ * (forbidden) and without making the product's private fields public.
+ */
+interface NodeServiceImplInternals {
+  _chainStore?: {
+    persistNow?: () => Promise<void>;
+    close?: () => void;
+    listIds?: () => string[];
+  };
+  _stopChainTracking?: (chainId: string) => void;
+  _externalMesh?: EnvoyMesh;
+  _mesh?: EnvoyMesh;
+  _inboundGuard?: ReturnType<typeof createInboundMessageGuard>;
+  _wireMeshEvents?: () => void;
+}
+
+function nodeServiceInternals(service: NodeServiceImpl): NodeService & NodeServiceImplInternals {
+  return service as NodeService as NodeService & NodeServiceImplInternals;
+}
 
 export interface Phase13TestNode {
   profileDir: string;
@@ -344,16 +373,14 @@ export async function restartPhase13NodeService(
   node: Phase13TestNode,
   opts?: { chainId?: string },
 ): Promise<void> {
-  const oldService = node.service as NodeServiceImpl & {
-    _chainStore?: { persistNow?: () => Promise<void>; close?: () => void; listIds?: () => string[] };
-    _stopChainTracking?: (chainId: string) => void;
-  };
-  const chainIds = oldService._chainStore?.listIds?.() ?? [];
+  const oldService = node.service;
+  const oldInternals = nodeServiceInternals(oldService);
+  const chainIds = oldInternals._chainStore?.listIds?.() ?? [];
   for (const chainId of chainIds) {
-    oldService._stopChainTracking?.(chainId);
+    oldInternals._stopChainTracking?.(chainId);
   }
-  await oldService._chainStore?.persistNow?.().catch(() => undefined);
-  oldService._chainStore?.close?.();
+  await oldInternals._chainStore?.persistNow?.().catch(() => undefined);
+  oldInternals._chainStore?.close?.();
 
   const newService = new NodeServiceImpl(
     node.mesh,
@@ -370,16 +397,13 @@ export async function restartPhase13NodeService(
   wireNodeServiceInboundHandlers(node);
 
   // Detach mesh refs on the swapped-out service (libp2p stays up on node.mesh).
-  const swapped = oldService as NodeServiceImpl & { _externalMesh?: EnvoyMesh; _mesh?: EnvoyMesh };
+  const swapped = nodeServiceInternals(oldService);
   swapped._externalMesh = undefined;
   swapped._mesh = undefined;
 
   await waitForPhase13(async () => {
-    const internal = newService as unknown as {
-      _chainStore?: { listIds: () => string[] };
-    };
     try {
-      internal._chainStore?.listIds();
+      nodeServiceInternals(newService)._chainStore?.listIds?.();
       return true;
     } catch {
       return false;
@@ -448,12 +472,9 @@ export function wireNodeServiceInboundHandlers(
   if (opts?.approvalQueue) {
     node.service.bindApprovalQueue(opts.approvalQueue);
   }
-  const internal = node.service as NodeServiceImpl & {
-    _inboundGuard?: ReturnType<typeof createInboundMessageGuard>;
-    _wireMeshEvents?: () => void;
-  };
+  const internal = nodeServiceInternals(node.service);
   internal._inboundGuard = createInboundMessageGuard();
-  internal._wireMeshEvents();
+  internal._wireMeshEvents?.();
 }
 
 export async function deliverHumanChat(
@@ -593,7 +614,7 @@ export async function cleanupPhase13Node(node: Phase13TestNode): Promise<void> {
   // Stop bond-warm / profile-refresh timers before libp2p teardown. bindExternalMesh
   // and constructor both attach the mesh; stopNode clears _mesh but not _externalMesh.
   await node.service.stopNode().catch(() => {});
-  const svc = node.service as NodeServiceImpl & { _externalMesh?: EnvoyMesh; _mesh?: EnvoyMesh };
+  const svc = nodeServiceInternals(node.service);
   svc._externalMesh = undefined;
   svc._mesh = undefined;
   await node.mesh.stop().catch(() => {});
@@ -847,7 +868,11 @@ export async function wireInboundKnowledgeQueryReply(
       modelProviders,
     });
     if (!replyWithEnvelope) return;
-    const refused = !result.ok || (result.responsePayload?.refused ?? false);
+    // Hoist the success arm so the discriminated union narrows: reading
+    // `result.responsePayload` behind a derived boolean is a TS2339 on the
+    // `{ ok: false }` arm.
+    const responsePayload = result.ok ? result.responsePayload : undefined;
+    const refused = !result.ok || (responsePayload?.refused ?? false);
     const unsignedResponse = createUnsignedEnvelope({
       senderPeerId: derivePeerId(publisher.profile.device.publicKeyPem),
       senderPublicKey: publisher.profile.device.publicKeyPem,
@@ -858,8 +883,8 @@ export async function wireInboundKnowledgeQueryReply(
       payload: createKnowledgeResponsePayload({
         inReplyTo: envelope.messageId,
         answer: refused
-          ? `Sorry: ${result.responsePayload?.refusalReason ?? "error"}`
-          : (result.ok ? (result.responsePayload?.answer ?? "No answer") : "Error"),
+          ? `Sorry: ${responsePayload?.refusalReason ?? "error"}`
+          : (responsePayload?.answer ?? "No answer"),
         sensitivity: "public",
         refused,
       }),
@@ -1006,7 +1031,17 @@ export function chatAssistApprovalConfig(ownerId: string, peerOwnerId: string) {
     autonomousPolicies: [
       { domain: "social" as const, maxSensitivity: "friends" as const, autoAnswer: true, autoSendChat: true },
     ],
-    contactAiPreferences: [{ peerOwnerId, aiAccessLevel: "full" as const }],
+    // `knowledgeAccess` is read by the assist path with a `?? "public"`
+    // fallback (`inbound-chat-assist.ts:194`) and `priority` has no runtime
+    // reader, so the documented defaults reproduce the old partial fixture.
+    contactAiPreferences: [
+      {
+        peerOwnerId,
+        aiAccessLevel: "full" as const,
+        knowledgeAccess: "public" as const,
+        priority: "high" as const,
+      },
+    ],
     modelProviders: { mode: "mock" as const },
     aiSettings: {
       status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" as const },

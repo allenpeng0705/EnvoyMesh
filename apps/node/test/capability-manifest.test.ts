@@ -199,6 +199,9 @@ describe("handleInboundDiscoveryIntent with capability manifest", () => {
     });
 
     expect(result.ok).toBe(false);
+    // `reason` is declared on the failure arm; `expect(...).toBe(false)` does
+    // not narrow a discriminated union, so discriminate explicitly.
+    if (result.ok) throw new Error("expected discovery to be denied");
     expect(result.reason).toContain("contacts-only");
   });
 
@@ -274,6 +277,9 @@ describe("handleInboundDiscoveryIntent with capability manifest", () => {
     });
 
     expect(result.ok).toBe(false);
+    // `reason` is declared on the failure arm; `expect(...).toBe(false)` does
+    // not narrow a discriminated union, so discriminate explicitly.
+    if (result.ok) throw new Error("expected discovery to be denied");
     expect(result.reason).toContain("sensitivity");
   });
 
@@ -306,6 +312,9 @@ describe("handleInboundDiscoveryIntent with capability manifest", () => {
     });
 
     expect(result.ok).toBe(false);
+    // `reason` is declared on the failure arm; `expect(...).toBe(false)` does
+    // not narrow a discriminated union, so discriminate explicitly.
+    if (result.ok) throw new Error("expected discovery to be denied");
     expect(result.reason).toContain("blocked");
   });
 
@@ -336,6 +345,9 @@ describe("handleInboundDiscoveryIntent with capability manifest", () => {
     });
 
     expect(result.ok).toBe(false);
+    // `reason` is declared on the failure arm; `expect(...).toBe(false)` does
+    // not narrow a discriminated union, so discriminate explicitly.
+    if (result.ok) throw new Error("expected discovery to be denied");
     expect(result.reason).toContain("public");
   });
 
