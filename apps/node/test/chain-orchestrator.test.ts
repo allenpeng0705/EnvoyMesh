@@ -128,6 +128,13 @@ function mandate(
     allowDepth3: overrides.allowDepth3 ?? false,
     allowDepth4: overrides.allowDepth4 ?? false,
     maxSensitivity: "public" as const,
+    // Zod `.default(...)` fields are required in the *output* type `ChainMandate`
+    // even though they are optional on input. Spell them out at their schema
+    // defaults so this fixture matches the type instead of relying on the
+    // runtime's `?? default` fallbacks.
+    rebalancePolicy: "manual" as const,
+    maxAutoRebalances: 2,
+    autoRebalanceIncrementUsd: 5,
     deadlineAt: "2026-06-18T01:00:00.000Z",
     createdAt: NOW.toISOString(),
     signature: "stub",
