@@ -145,10 +145,36 @@ class AppLocalizationsJa extends AppLocalizations {
   String get codingAttachFile => 'Attach file';
 
   @override
-  String get codingSchedulesTitle => 'Schedules';
+  String get codingSchedulesTitle => 'スケジュール';
 
   @override
-  String get codingScheduleCreate => 'New schedule';
+  String get codingSchedulerActionFailed => '操作できませんでした。もう一度お試しください。';
+
+  @override
+  String get codingSchedulerListFailed => 'スケジュールを読み込めませんでした。もう一度お試しください。';
+
+  @override
+  String get codingSchedulerNew => '新しいタスクを始める';
+
+  @override
+  String get codingSchedulerEmpty =>
+      'まだ予定はありません。タスクのメニューから予約するか、新しいタスクを始めてください。';
+
+  @override
+  String get codingSchedulerKindNew => '新しいタスクを始める';
+
+  @override
+  String get codingSchedulerKindContinue => 'このタスクを続ける';
+
+  @override
+  String get codingSchedulerDesc =>
+      '決めた時刻にプロンプトを送ります。今のタスクを続けるか、新しいタスクを始めます。チーム作業ではありません。';
+
+  @override
+  String get codingSchedulerTitle => 'スケジュール';
+
+  @override
+  String get codingScheduleCreate => '新しいタスクを始める';
 
   @override
   String get codingScheduleRunNow => 'Run now';
@@ -317,19 +343,19 @@ class AppLocalizationsJa extends AppLocalizations {
   String get codingReviewOnlyBanner => 'レビューのみ — タイムラインと変更を表示。ツールと取り消しは無効です。';
 
   @override
-  String get codingHeartbeatAdd => 'Add heartbeat…';
+  String get codingHeartbeatAdd => 'このタスクを予約…';
 
   @override
-  String get codingHeartbeatAddTitle => 'Add heartbeat';
+  String get codingHeartbeatAddTitle => 'このタスクを予約';
 
   @override
   String codingHeartbeatAddDesc(String title) {
-    return 'On a schedule, send a prompt to “$title”. This wakes the existing task — it does not create a new one.';
+    return '決めた時刻に「$title」へプロンプトを送ります。今のタスクを続けます。新しいタスクは作りません。';
   }
 
   @override
   String codingHeartbeatDefaultName(String title) {
-    return 'Heartbeat · $title';
+    return '予約 · $title';
   }
 
   @override
@@ -364,17 +390,16 @@ class AppLocalizationsJa extends AppLocalizations {
   String get codingHeartbeatEnabled => 'Enable now';
 
   @override
-  String get codingHeartbeatSave => 'Save heartbeat';
+  String get codingHeartbeatSave => '保存';
 
   @override
   String get codingHeartbeatSaving => 'Saving…';
 
   @override
-  String get codingHeartbeatSaved => 'Heartbeat saved.';
+  String get codingHeartbeatSaved => '保存しました。';
 
   @override
-  String get codingHeartbeatSaveFailed =>
-      'Couldn’t save the heartbeat. Try again.';
+  String get codingHeartbeatSaveFailed => '保存できませんでした。もう一度お試しください。';
 
   @override
   String get codingHeartbeatInvalidCron => 'Enter a valid 5-field cron (UTC).';

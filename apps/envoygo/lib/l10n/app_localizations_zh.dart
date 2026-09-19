@@ -143,7 +143,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingSchedulesTitle => '定时任务';
 
   @override
-  String get codingScheduleCreate => '新建定时任务';
+  String get codingSchedulerActionFailed => '这个操作失败了，请重试。';
+
+  @override
+  String get codingSchedulerListFailed => '无法加载定时任务，请重试。';
+
+  @override
+  String get codingSchedulerNew => '开始新任务';
+
+  @override
+  String get codingSchedulerEmpty => '还没有定时任务。可从任务菜单安排，或开始一个新任务。';
+
+  @override
+  String get codingSchedulerKindNew => '开始新任务';
+
+  @override
+  String get codingSchedulerKindContinue => '继续这个任务';
+
+  @override
+  String get codingSchedulerDesc => '按计划发送提示。可以继续已有任务，也可以开始一个新任务。不是团队任务。';
+
+  @override
+  String get codingSchedulerTitle => '定时任务';
+
+  @override
+  String get codingScheduleCreate => '开始新任务';
 
   @override
   String get codingScheduleRunNow => '立即运行';
@@ -307,19 +331,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingReviewOnlyBanner => '只读审阅 — 可查看时间线与变更；工具与还原已禁用。';
 
   @override
-  String get codingHeartbeatAdd => '添加心跳…';
+  String get codingHeartbeatAdd => '定时这个任务…';
 
   @override
-  String get codingHeartbeatAddTitle => '添加心跳';
+  String get codingHeartbeatAddTitle => '定时这个任务';
 
   @override
   String codingHeartbeatAddDesc(String title) {
-    return '按计划向“$title”发送提示。这会唤醒已有任务 — 不会新建。';
+    return '按计划向“$title”发送提示。这会继续已有任务，不会新建。';
   }
 
   @override
   String codingHeartbeatDefaultName(String title) {
-    return '心跳 · $title';
+    return '定时 · $title';
   }
 
   @override
@@ -353,16 +377,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingHeartbeatEnabled => '立即启用';
 
   @override
-  String get codingHeartbeatSave => '保存心跳';
+  String get codingHeartbeatSave => '保存';
 
   @override
   String get codingHeartbeatSaving => '保存中…';
 
   @override
-  String get codingHeartbeatSaved => '心跳已保存。';
+  String get codingHeartbeatSaved => '已保存。';
 
   @override
-  String get codingHeartbeatSaveFailed => '无法保存心跳，请重试。';
+  String get codingHeartbeatSaveFailed => '无法保存，请重试。';
 
   @override
   String get codingHeartbeatInvalidCron => '请输入有效的 5 段 cron（UTC）。';

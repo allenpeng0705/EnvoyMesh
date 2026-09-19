@@ -100,9 +100,8 @@ import { CodingSidebarMenu } from "../CodingSidebarMenu.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { CodingInviteReviewModal } from "../CodingInviteReviewModal.js";
 import { CodingHeartbeatModal } from "../CodingHeartbeatModal.js";
-import { CodingHeartbeatsPanel } from "../CodingHeartbeatsPanel.js";
 import { CodingScheduleModal } from "../CodingScheduleModal.js";
-import { CodingSchedulesPanel } from "../CodingSchedulesPanel.js";
+import { CodingSchedulerPanel } from "../CodingSchedulerPanel.js";
 import { EhChatRowMenu } from "../EhChatRowMenu.js";
 import { ExtAgentSwitcherInstallDialog } from "../ExtAgentSwitcherInstallDialog.js";
 import { useToastOptional } from "../../hooks/useToast.js";
@@ -231,8 +230,7 @@ export function CodingSidebar({
   } | null>(null);
   const [heartbeatBusy, setHeartbeatBusy] = useState(false);
   const [heartbeatError, setHeartbeatError] = useState<string | null>(null);
-  const [heartbeatsPanelOpen, setHeartbeatsPanelOpen] = useState(false);
-  const [schedulesPanelOpen, setSchedulesPanelOpen] = useState(false);
+  const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleBusy, setScheduleBusy] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
@@ -807,7 +805,7 @@ export function CodingSidebar({
           addProject: t("codingView.addProjectCta", "Add project"),
           openSettings: t("codingView.settingsFooter", "Coding defaults"),
           invitePeer: t("codingView.inviteReview", "Invite peer to review"),
-          newSchedule: t("codingView.scheduleNew", "New schedule"),
+          newSchedule: t("codingView.schedulerTitle", "Scheduler"),
         },
       }),
     [
@@ -1166,8 +1164,7 @@ export function CodingSidebar({
         openNewTask();
         return;
       case "new-schedule":
-        setScheduleError(null);
-        setScheduleModalOpen(true);
+        setSchedulerOpen(true);
         return;
       case "add-project":
         openAddProject();
@@ -1765,18 +1762,10 @@ export function CodingSidebar({
         <button
           type="button"
           className="coding-sidebar-settings"
-          onClick={() => setHeartbeatsPanelOpen(true)}
-          data-testid="coding-heartbeats"
+          onClick={() => setSchedulerOpen(true)}
+          data-testid="coding-scheduler"
         >
-          {t("codingView.heartbeatListTitle", "Heartbeats")}
-        </button>
-        <button
-          type="button"
-          className="coding-sidebar-settings"
-          onClick={() => setSchedulesPanelOpen(true)}
-          data-testid="coding-schedules"
-        >
-          {t("codingView.scheduleListTitle", "Schedules")}
+          {t("codingView.schedulerTitle", "Scheduler")}
         </button>
         <>
           <div
@@ -1796,15 +1785,11 @@ export function CodingSidebar({
         </>
       </div>
 
-      {heartbeatsPanelOpen ? (
-        <CodingHeartbeatsPanel onClose={() => setHeartbeatsPanelOpen(false)} />
-      ) : null}
-
-      {schedulesPanelOpen ? (
-        <CodingSchedulesPanel
-          onClose={() => setSchedulesPanelOpen(false)}
-          onNewSchedule={() => {
-            setSchedulesPanelOpen(false);
+      {schedulerOpen ? (
+        <CodingSchedulerPanel
+          onClose={() => setSchedulerOpen(false)}
+          onNewTask={() => {
+            setSchedulerOpen(false);
             setScheduleError(null);
             setScheduleModalOpen(true);
           }}

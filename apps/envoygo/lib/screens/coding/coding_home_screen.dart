@@ -18,9 +18,8 @@ import '../../widgets/connection_indicator.dart';
 import '../../widgets/pair_required_panel.dart';
 import '../chat/envoy_harness_chat_screen.dart';
 import 'coding_add_project_sheet.dart';
-import 'coding_heartbeat_ui.dart';
 import 'coding_new_task_sheet.dart';
-import 'coding_schedules_ui.dart';
+import 'coding_scheduler_ui.dart';
 import 'ext_agent_coding_screen.dart';
 import 'pi_coding_chat_screen.dart';
 
@@ -906,14 +905,9 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
               ],
             ),
             IconButton(
-              tooltip: l10n.codingSchedulesTitle,
+              tooltip: l10n.codingSchedulerTitle,
               icon: const Icon(Icons.schedule),
-              onPressed: () => unawaited(showCodingSchedulesSheet(context)),
-            ),
-            IconButton(
-              tooltip: l10n.codingHeartbeatListTitle,
-              icon: const Icon(Icons.favorite_border),
-              onPressed: () => unawaited(showCodingHeartbeatsSheet(context)),
+              onPressed: () => unawaited(showCodingSchedulerSheet(context)),
             ),
           ],
           if (_refreshing)

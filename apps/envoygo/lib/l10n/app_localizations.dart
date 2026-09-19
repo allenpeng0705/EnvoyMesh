@@ -369,13 +369,61 @@ abstract class AppLocalizations {
   /// No description provided for @codingSchedulesTitle.
   ///
   /// In en, this message translates to:
-  /// **'Schedules'**
+  /// **'Scheduler'**
   String get codingSchedulesTitle;
+
+  /// No description provided for @codingSchedulerActionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'That didn’t work. Try again.'**
+  String get codingSchedulerActionFailed;
+
+  /// No description provided for @codingSchedulerListFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t load the scheduler. Try again.'**
+  String get codingSchedulerListFailed;
+
+  /// No description provided for @codingSchedulerNew.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a new task'**
+  String get codingSchedulerNew;
+
+  /// No description provided for @codingSchedulerEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing scheduled yet. Schedule a task from its menu, or start a new one.'**
+  String get codingSchedulerEmpty;
+
+  /// No description provided for @codingSchedulerKindNew.
+  ///
+  /// In en, this message translates to:
+  /// **'Starts a new task'**
+  String get codingSchedulerKindNew;
+
+  /// No description provided for @codingSchedulerKindContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continues this task'**
+  String get codingSchedulerKindContinue;
+
+  /// No description provided for @codingSchedulerDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Run a prompt on a schedule. Continue a task you already have, or start a new one. Not Team jobs.'**
+  String get codingSchedulerDesc;
+
+  /// No description provided for @codingSchedulerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduler'**
+  String get codingSchedulerTitle;
 
   /// No description provided for @codingScheduleCreate.
   ///
   /// In en, this message translates to:
-  /// **'New schedule'**
+  /// **'Start a new task'**
   String get codingScheduleCreate;
 
   /// No description provided for @codingScheduleRunNow.
@@ -657,25 +705,25 @@ abstract class AppLocalizations {
   /// No description provided for @codingHeartbeatAdd.
   ///
   /// In en, this message translates to:
-  /// **'Add heartbeat…'**
+  /// **'Schedule this task…'**
   String get codingHeartbeatAdd;
 
   /// No description provided for @codingHeartbeatAddTitle.
   ///
   /// In en, this message translates to:
-  /// **'Add heartbeat'**
+  /// **'Schedule this task'**
   String get codingHeartbeatAddTitle;
 
   /// No description provided for @codingHeartbeatAddDesc.
   ///
   /// In en, this message translates to:
-  /// **'On a schedule, send a prompt to “{title}”. This wakes the existing task — it does not create a new one.'**
+  /// **'On a schedule, send a prompt to “{title}”. This continues the task you already have.'**
   String codingHeartbeatAddDesc(String title);
 
   /// No description provided for @codingHeartbeatDefaultName.
   ///
   /// In en, this message translates to:
-  /// **'Heartbeat · {title}'**
+  /// **'Scheduled · {title}'**
   String codingHeartbeatDefaultName(String title);
 
   /// No description provided for @codingHeartbeatDefaultPrompt.
@@ -741,7 +789,7 @@ abstract class AppLocalizations {
   /// No description provided for @codingHeartbeatSave.
   ///
   /// In en, this message translates to:
-  /// **'Save heartbeat'**
+  /// **'Save'**
   String get codingHeartbeatSave;
 
   /// No description provided for @codingHeartbeatSaving.
@@ -753,13 +801,13 @@ abstract class AppLocalizations {
   /// No description provided for @codingHeartbeatSaved.
   ///
   /// In en, this message translates to:
-  /// **'Heartbeat saved.'**
+  /// **'Saved.'**
   String get codingHeartbeatSaved;
 
   /// No description provided for @codingHeartbeatSaveFailed.
   ///
   /// In en, this message translates to:
-  /// **'Couldn’t save the heartbeat. Try again.'**
+  /// **'Couldn’t save. Try again.'**
   String get codingHeartbeatSaveFailed;
 
   /// No description provided for @codingHeartbeatInvalidCron.

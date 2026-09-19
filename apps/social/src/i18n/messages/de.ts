@@ -144,6 +144,37 @@ export const de = mergeMessages(
     extAgentPlaceholder: "Nachricht an {name}…",
     thinking: "Arbeitet…",
     openInstallGuide: "Installationshilfe",
+    heartbeatAdd: "Diese Aufgabe planen…",
+    heartbeatAddTitle: "Diese Aufgabe planen",
+    heartbeatAddDesc:
+      "Nach Zeitplan eine Aufforderung an „{title}“ senden. Die vorhandene Aufgabe wird fortgesetzt.",
+    heartbeatDefaultName: "Geplant · {title}",
+    heartbeatSave: "Speichern",
+    heartbeatSaved: "Gespeichert.",
+    heartbeatSaveFailed: "Speichern fehlgeschlagen. Bitte erneut versuchen.",
+    scheduleAddTitle: "Neue Aufgabe starten",
+    scheduleAddDesc:
+      "Nach Zeitplan eine neue Coding-Aufgabe anlegen und die Aufforderung einmal ausführen.",
+    scheduleNew: "Neue Aufgabe starten",
+    schedulerTitle: "Zeitplan",
+    schedulerDesc:
+      "Eine Aufforderung nach Zeitplan senden. Eine vorhandene Aufgabe fortsetzen oder eine neue starten. Keine Team-Aufgaben.",
+    schedulerKindContinue: "Setzt diese Aufgabe fort",
+    schedulerKindNew: "Startet eine neue Aufgabe",
+    schedulerEmpty:
+      "Noch nichts geplant. Planen Sie eine Aufgabe über ihr Menü, oder starten Sie eine neue.",
+    schedulerNew: "Neue Aufgabe starten",
+    schedulerListFailed:
+      "Zeitplan konnte nicht geladen werden. Bitte erneut versuchen.",
+    schedulerActionFailed: "Das hat nicht funktioniert. Bitte erneut versuchen.",
+    schedulerLoading: "Wird geladen…",
+    schedulerOn: "An",
+    schedulerOff: "Pausiert",
+    schedulerRuns: "{n} Läufe",
+    schedulerPause: "Pause",
+    schedulerResume: "Fortsetzen",
+    schedulerRunNow: "Jetzt ausführen",
+    schedulerDelete: "Löschen",
   },
   header: {
     starting: "Startet…",

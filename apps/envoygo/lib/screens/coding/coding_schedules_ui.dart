@@ -96,10 +96,7 @@ class _CodingSchedulesSheetState extends ConsumerState<_CodingSchedulesSheet> {
   }
 
   Future<void> _openCreate() async {
-    final created = await showDialog<bool>(
-      context: context,
-      builder: (_) => const _CodingScheduleCreateDialog(),
-    );
+    final created = await showCodingScheduleCreateDialog(context);
     if (created == true && mounted) await _reload();
   }
 
@@ -292,6 +289,14 @@ class _CodingSchedulesSheetState extends ConsumerState<_CodingSchedulesSheet> {
       ),
     );
   }
+}
+
+/// Create dialog for a schedule that starts a new task each time it fires.
+Future<bool?> showCodingScheduleCreateDialog(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    builder: (_) => const _CodingScheduleCreateDialog(),
+  );
 }
 
 class _CodingScheduleCreateDialog extends ConsumerStatefulWidget {

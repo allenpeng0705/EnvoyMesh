@@ -145,10 +145,38 @@ class AppLocalizationsDe extends AppLocalizations {
   String get codingAttachFile => 'Attach file';
 
   @override
-  String get codingSchedulesTitle => 'Schedules';
+  String get codingSchedulesTitle => 'Zeitplan';
 
   @override
-  String get codingScheduleCreate => 'New schedule';
+  String get codingSchedulerActionFailed =>
+      'Das hat nicht funktioniert. Bitte erneut versuchen.';
+
+  @override
+  String get codingSchedulerListFailed =>
+      'Zeitplan konnte nicht geladen werden. Bitte erneut versuchen.';
+
+  @override
+  String get codingSchedulerNew => 'Neue Aufgabe starten';
+
+  @override
+  String get codingSchedulerEmpty =>
+      'Noch nichts geplant. Planen Sie eine Aufgabe über ihr Menü, oder starten Sie eine neue.';
+
+  @override
+  String get codingSchedulerKindNew => 'Startet eine neue Aufgabe';
+
+  @override
+  String get codingSchedulerKindContinue => 'Setzt diese Aufgabe fort';
+
+  @override
+  String get codingSchedulerDesc =>
+      'Eine Aufforderung nach Zeitplan senden. Eine vorhandene Aufgabe fortsetzen oder eine neue starten. Keine Team-Aufgaben.';
+
+  @override
+  String get codingSchedulerTitle => 'Zeitplan';
+
+  @override
+  String get codingScheduleCreate => 'Neue Aufgabe starten';
 
   @override
   String get codingScheduleRunNow => 'Run now';
@@ -321,19 +349,19 @@ class AppLocalizationsDe extends AppLocalizations {
       'Nur Prüfung — Timeline und Änderungen; Tools und Rückgängig sind deaktiviert.';
 
   @override
-  String get codingHeartbeatAdd => 'Add heartbeat…';
+  String get codingHeartbeatAdd => 'Diese Aufgabe planen…';
 
   @override
-  String get codingHeartbeatAddTitle => 'Add heartbeat';
+  String get codingHeartbeatAddTitle => 'Diese Aufgabe planen';
 
   @override
   String codingHeartbeatAddDesc(String title) {
-    return 'On a schedule, send a prompt to “$title”. This wakes the existing task — it does not create a new one.';
+    return 'Nach Zeitplan eine Aufforderung an „$title“ senden. Die vorhandene Aufgabe wird fortgesetzt.';
   }
 
   @override
   String codingHeartbeatDefaultName(String title) {
-    return 'Heartbeat · $title';
+    return 'Geplant · $title';
   }
 
   @override
@@ -368,17 +396,17 @@ class AppLocalizationsDe extends AppLocalizations {
   String get codingHeartbeatEnabled => 'Enable now';
 
   @override
-  String get codingHeartbeatSave => 'Save heartbeat';
+  String get codingHeartbeatSave => 'Speichern';
 
   @override
   String get codingHeartbeatSaving => 'Saving…';
 
   @override
-  String get codingHeartbeatSaved => 'Heartbeat saved.';
+  String get codingHeartbeatSaved => 'Gespeichert.';
 
   @override
   String get codingHeartbeatSaveFailed =>
-      'Couldn’t save the heartbeat. Try again.';
+      'Speichern fehlgeschlagen. Bitte erneut versuchen.';
 
   @override
   String get codingHeartbeatInvalidCron => 'Enter a valid 5-field cron (UTC).';

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EnvoyMesh Network</title>
-  <meta name="description" content="Decentralized P2P mesh for autonomous AI agents — Envoy Market P2P shop, Envoy Harness coding agent, Team jobs across bonded agents, local-first knowledge with self-healing RAG, and EnvoyGo mobile access. Cryptographic identity and security by design.">
+  <meta name="description" content="Decentralized P2P mesh for autonomous AI agents — Coding Tab with 14 first-class coding agents (Envoy Harness, Claude Code, Codex, OpenCode, Cursor, …), Envoy Market P2P shop, Team jobs across bonded agents, local-first knowledge with self-healing RAG, EnvoyGo mobile access, and EnvoyDev — the dedicated control plane for coding agents. Cryptographic identity and security by design.">
 
   <style>
     * {
@@ -1128,6 +1128,42 @@
       font-weight: 700;
     }
 
+    /* EnvoyDev sibling card inside the Harness section */
+    .envoydev-card {
+      margin-top: 40px;
+      padding: 28px 32px;
+      border-radius: 16px;
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(6, 182, 212, 0.08) 100%);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 24px;
+      align-items: center;
+    }
+
+    .envoydev-card h3 {
+      font-size: 1.35rem;
+      margin-bottom: 8px;
+    }
+
+    .envoydev-card p {
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin: 0;
+    }
+
+    @media (max-width: 768px) {
+      .envoydev-card {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Coding Tab section — slightly different badge color than Harness */
+    .coding-tab-section .harness-badge {
+      background-color: rgba(34, 211, 238, 0.15);
+      color: #22d3ee;
+    }
+
     /* Family Network highlight section */
     .family-network {
       padding: 80px 0;
@@ -1904,6 +1940,7 @@
             <li><a href="#family">Family Network</a></li>
             <li><a href="#agents">Agent Network</a></li>
             <li><a href="#harness">Envoy Harness</a></li>
+            <li><a href="#coding-tab">Coding Tab</a></li>
             <li><a href="#market">Envoy Market</a></li>
           </ul>
         </li>
@@ -1935,6 +1972,7 @@
     <a href="#family">Family Network</a>
     <a href="#agents">Agent Network</a>
     <a href="#harness">Envoy Harness</a>
+    <a href="#coding-tab">Coding Tab</a>
     <a href="#market">Envoy Market</a>
     <a href="#architecture">Architecture</a>
     <a href="#security">Security</a>
@@ -1951,7 +1989,7 @@
     <div class="container hero-content">
       <img src="logo-180.png" alt="EnvoyMesh Logo" class="hero-logo">
       <h1>Decentralized P2P Agentic Mesh</h1>
-      <p>A distributed social network, agent network, and knowledge sharing system. Chat peer-to-peer, run Envoy Harness for coding tasks, run AI agents locally with OpenClaw, connect external agents, delegate Team jobs across bonded contacts, and turn your home computer into a private family network — accessible from anywhere via EnvoyGo.</p>
+      <p>A distributed social network, agent network, and knowledge sharing system. Chat peer-to-peer, run the <strong>Coding Tab</strong> with 14 first-class coding agents (Envoy Harness, Claude Code, Codex, OpenCode, Cursor, …), run AI agents locally with OpenClaw, connect external agents, delegate Team jobs across bonded contacts, and turn your home computer into a private family network — accessible from anywhere via EnvoyGo.</p>
       <div class="nav-actions" style="justify-content: center;">
         <a href="#downloads" class="btn btn-primary">Download</a>
         <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-secondary">View on GitHub</a>
@@ -2609,6 +2647,42 @@
         </div>
         <div class="family-shot">
           <img src="screens/desktop/english/envoy_harness.png" alt="Envoy Harness coding agent in Social" loading="lazy">
+        </div>
+      </div>
+
+      <!-- EnvoyDev — sibling product card -->
+      <div class="envoydev-card">
+        <div>
+          <span class="harness-badge" style="background-color: rgba(99, 102, 241, 0.15); color: #818cf8;">Sister product · EnvoyMesh apps group</span>
+          <h3>EnvoyDev — also available</h3>
+          <p>The dedicated control plane for coding agents. A separate desktop app that drives Envoy Harness, Claude Code, Codex, OpenCode, Cursor, Pi, and more from one window — with a project rail, a task tree, and an inline approval card. Shares the mesh and pairing with EnvoyMesh; keeps its own project and task state.</p>
+        </div>
+        <div style="text-align: center;">
+          <a href="https://github.com/allenpeng0705/EnvoyCoder" target="_blank" rel="noopener" class="btn btn-secondary">EnvoyDev on GitHub →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Coding Tab Section -->
+  <section class="harness-section coding-tab-section" id="coding-tab">
+    <div class="container">
+      <div class="harness-grid">
+        <div>
+          <span class="harness-badge" style="background-color: rgba(34, 211, 238, 0.15); color: #22d3ee;">Available · Coding Tab in Social (0.5.0)</span>
+          <h2>Coding Tab</h2>
+          <p style="color: var(--text-secondary); font-size: 1.05rem; line-height: 1.8; margin-bottom: 8px;">One unified UI for every first-class coding harness — the same semantic timeline, approvals, and diff review flow across all of them. Pick an agent per task; keep the same worktree, branch, and review.</p>
+          <ul class="harness-features">
+            <li><strong>Tier A built-in</strong> — Envoy Harness (envoy-harness ACP) and Pi on your home node</li>
+            <li><strong>Tier B catalog</strong> — Claude Code, Codex, OpenCode, Cursor, CodeWhale, DeepSeek Harness, MiniMax Code, Grok, Gemini, TraeCLI, Qoder, Copilot (probed at runtime; install only what you use)</li>
+            <li>Same semantic timeline across every agent — messages, tool calls, approvals, file changes, completion</li>
+            <li>Permission dock shows scope and risk before tools run; risky steps require approval</li>
+            <li>EnvoyGo: monitor and approve from your phone — not a full IDE</li>
+            <li>Schedules + Heartbeats (0.5.0) — wake an existing task or create a new one on a cron</li>
+          </ul>
+        </div>
+        <div class="family-shot">
+          <img src="screens/desktop/english/envoy_harness.png" alt="Coding Tab — unified UI for every first-class coding harness" loading="lazy">
         </div>
       </div>
     </div>

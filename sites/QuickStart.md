@@ -4,6 +4,17 @@ This guide shows how to install, build, verify, run the node, use the CLI, valid
 
 Requirements narrative: [docs/UserStory.md](docs/UserStory.md). Scenario backlog: [docs/scenarios.md](docs/scenarios.md). Design vs code: [docs/alignment-review.md](docs/alignment-review.md).
 
+## The Coding Tab — at a glance (0.5.0)
+
+The **Coding Tab** in Social desktop is the home-node control plane for repo coding. It drives **14 first-class coding agents** through one UI:
+
+- **Tier A built-in** — `envoy-harness` (ACP) and `pi`
+- **Tier B catalog** — `claudecode`, `codex`, `opencode`, `cursor`, `codewhale`, `deepseek-harness`, `minimax-code`, `grok`, `gemini`, `traecli`, `qoder`, `copilot` (probed at runtime; install only what you use)
+
+Same semantic timeline, permission dock, diff review, and recovery across all of them. Tier B agents use the CLI you already have on `$PATH` (or `~/.local/bin`); no in-app install for the user. **Schedules + Heartbeats** landed in 0.5.0: a cron can wake an existing task or create a new one on a schedule.
+
+Need a dedicated control plane instead of the in-app Coding Tab? See **[EnvoyDev](https://github.com/allenpeng0705/EnvoyCoder)** — a separate desktop app in the EnvoyMesh apps group that drives the same set of agents with a project rail, task tree, and inline approval card. Shares the mesh and pairing with EnvoyMesh; keeps its own project/task state.
+
 ## Table of Contents
 
 - [Requirements](#requirements)

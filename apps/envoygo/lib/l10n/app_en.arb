@@ -50,8 +50,16 @@
   "codingPermAsk": "Ask every time",
   "codingPermFull": "Full access (no ask)",
   "codingAttachFile": "Attach file",
-  "codingSchedulesTitle": "Schedules",
-  "codingScheduleCreate": "New schedule",
+  "codingSchedulesTitle": "Scheduler",
+  "codingSchedulerActionFailed": "That didn’t work. Try again.",
+  "codingSchedulerListFailed": "Couldn’t load the scheduler. Try again.",
+  "codingSchedulerNew": "Start a new task",
+  "codingSchedulerEmpty": "Nothing scheduled yet. Schedule a task from its menu, or start a new one.",
+  "codingSchedulerKindNew": "Starts a new task",
+  "codingSchedulerKindContinue": "Continues this task",
+  "codingSchedulerDesc": "Run a prompt on a schedule. Continue a task you already have, or start a new one. Not Team jobs.",
+  "codingSchedulerTitle": "Scheduler",
+  "codingScheduleCreate": "Start a new task",
   "codingScheduleRunNow": "Run now",
   "codingHarnessMinimax": "MiniMax Code",
   "codingHarnessChecking": "Checking…",
@@ -151,15 +159,15 @@
   "codingInviteReviewBondDenied": "That contact isn’t eligible for a review invite.",
   "codingInviteReviewOpenOnOwnerHome": "Open on the owner’s home node to review this task.",
   "codingReviewOnlyBanner": "Review only — timeline and changes; tools and revert are disabled.",
-  "codingHeartbeatAdd": "Add heartbeat…",
-  "codingHeartbeatAddTitle": "Add heartbeat",
-  "codingHeartbeatAddDesc": "On a schedule, send a prompt to “{title}”. This wakes the existing task — it does not create a new one.",
+  "codingHeartbeatAdd": "Schedule this task…",
+  "codingHeartbeatAddTitle": "Schedule this task",
+  "codingHeartbeatAddDesc": "On a schedule, send a prompt to “{title}”. This continues the task you already have.",
   "@codingHeartbeatAddDesc": {
     "placeholders": {
       "title": { "type": "String" }
     }
   },
-  "codingHeartbeatDefaultName": "Heartbeat · {title}",
+  "codingHeartbeatDefaultName": "Scheduled · {title}",
   "@codingHeartbeatDefaultName": {
     "placeholders": {
       "title": { "type": "String" }
@@ -175,10 +183,10 @@
   "codingHeartbeatPresetCustom": "Custom",
   "codingHeartbeatPrompt": "Prompt",
   "codingHeartbeatEnabled": "Enable now",
-  "codingHeartbeatSave": "Save heartbeat",
+  "codingHeartbeatSave": "Save",
   "codingHeartbeatSaving": "Saving…",
-  "codingHeartbeatSaved": "Heartbeat saved.",
-  "codingHeartbeatSaveFailed": "Couldn’t save the heartbeat. Try again.",
+  "codingHeartbeatSaved": "Saved.",
+  "codingHeartbeatSaveFailed": "Couldn’t save. Try again.",
   "codingHeartbeatInvalidCron": "Enter a valid 5-field cron (UTC).",
   "codingHeartbeatListTitle": "Heartbeats",
   "codingHeartbeatListDesc": "Scheduled prompts for existing Coding tasks. Not Team jobs.",

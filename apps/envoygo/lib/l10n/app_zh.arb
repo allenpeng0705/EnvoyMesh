@@ -51,7 +51,15 @@
   "codingPermFull": "完全访问（不问）",
   "codingAttachFile": "附加文件",
   "codingSchedulesTitle": "定时任务",
-  "codingScheduleCreate": "新建定时任务",
+  "codingSchedulerActionFailed": "这个操作失败了，请重试。",
+  "codingSchedulerListFailed": "无法加载定时任务，请重试。",
+  "codingSchedulerNew": "开始新任务",
+  "codingSchedulerEmpty": "还没有定时任务。可从任务菜单安排，或开始一个新任务。",
+  "codingSchedulerKindNew": "开始新任务",
+  "codingSchedulerKindContinue": "继续这个任务",
+  "codingSchedulerDesc": "按计划发送提示。可以继续已有任务，也可以开始一个新任务。不是团队任务。",
+  "codingSchedulerTitle": "定时任务",
+  "codingScheduleCreate": "开始新任务",
   "codingScheduleRunNow": "立即运行",
   "codingHarnessMinimax": "MiniMax Code",
   "codingHarnessChecking": "检查中…",
@@ -151,15 +159,15 @@
   "codingInviteReviewBondDenied": "该联系人无法接收审阅邀请。",
   "codingInviteReviewOpenOnOwnerHome": "请在所有者的主节点上打开以审阅此任务。",
   "codingReviewOnlyBanner": "只读审阅 — 可查看时间线与变更；工具与还原已禁用。",
-  "codingHeartbeatAdd": "添加心跳…",
-  "codingHeartbeatAddTitle": "添加心跳",
-  "codingHeartbeatAddDesc": "按计划向“{title}”发送提示。这会唤醒已有任务 — 不会新建。",
+  "codingHeartbeatAdd": "定时这个任务…",
+  "codingHeartbeatAddTitle": "定时这个任务",
+  "codingHeartbeatAddDesc": "按计划向“{title}”发送提示。这会继续已有任务，不会新建。",
   "@codingHeartbeatAddDesc": {
     "placeholders": {
       "title": { "type": "String" }
     }
   },
-  "codingHeartbeatDefaultName": "心跳 · {title}",
+  "codingHeartbeatDefaultName": "定时 · {title}",
   "@codingHeartbeatDefaultName": {
     "placeholders": {
       "title": { "type": "String" }
@@ -175,10 +183,10 @@
   "codingHeartbeatPresetCustom": "自定义",
   "codingHeartbeatPrompt": "提示词",
   "codingHeartbeatEnabled": "立即启用",
-  "codingHeartbeatSave": "保存心跳",
+  "codingHeartbeatSave": "保存",
   "codingHeartbeatSaving": "保存中…",
-  "codingHeartbeatSaved": "心跳已保存。",
-  "codingHeartbeatSaveFailed": "无法保存心跳，请重试。",
+  "codingHeartbeatSaved": "已保存。",
+  "codingHeartbeatSaveFailed": "无法保存，请重试。",
   "codingHeartbeatInvalidCron": "请输入有效的 5 段 cron（UTC）。",
   "codingHeartbeatListTitle": "心跳",
   "codingHeartbeatListDesc": "针对已有编程任务的定时提示。不是团队任务。",
