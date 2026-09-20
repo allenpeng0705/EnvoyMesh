@@ -125,9 +125,34 @@ describe("isOwnerOnlyRpcMethod", () => {
       "cancelEnvoyHarnessTurn",
       "ehRespondToPermission",
       "ehRespondToUserQuestion",
+      "codingRespondToPermission",
     ]) {
       expect(isOwnerOnlyRpcMethod(method), method).toBe(false)
     }
+  })
+
+  it("routes a coding tool-permission answer to the coding bridge, not the EH one", async () => {
+    // The two bridges are keyed by requestId and addressed by different RPCs; sending a Coding
+    // prompt's id to the EH bridge would report `delivered:false` and leave the agent waiting.
+    const ns = {
+      mayCallerUseCoding: vi.fn().mockResolvedValue(true),
+      codingRespondToPermission: vi
+        .fn()
+        .mockResolvedValue({ requestId: "req-1", delivered: true }),
+      ehRespondToPermission: vi.fn(),
+    } as unknown as NodeService
+
+    const result = await routeRpcMethod(ns, "codingRespondToPermission", {
+      requestId: "req-1",
+      allowed: true,
+    })
+
+    expect(ns.codingRespondToPermission).toHaveBeenCalledWith({
+      requestId: "req-1",
+      allowed: true,
+    })
+    expect(ns.ehRespondToPermission).not.toHaveBeenCalled()
+    expect(result).toEqual({ requestId: "req-1", delivered: true })
   })
 
   it("every CODING_GATED_RPC method is not owner-only (codingEnabled gate)", () => {

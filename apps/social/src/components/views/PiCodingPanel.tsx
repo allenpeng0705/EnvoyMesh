@@ -427,32 +427,6 @@ export function PiCodingPanel({
       ) : null}
 
       <div className="pi-coding-panel__composer-stack">
-        <CodingComposerToolbar
-          harness="pi"
-          prefs={prefs}
-          onPrefsChange={patchPrefs}
-          modelSuggestions={
-            status?.modelSpec ? [status.modelSpec] : []
-          }
-          busy={busy}
-          onImportSession={() => setImportOpen(true)}
-          onPermissionPolicyChange={(policy) => {
-            // Prefs already saved via onPrefsChange; only push node config.
-            void (async () => {
-              try {
-                const cfg = await nodeService.getNodeConfig()
-                await nodeService.updateNodeConfig({
-                  piSettings: {
-                    ...(cfg.piSettings ?? {}),
-                    autoRunPolicy: policy,
-                  },
-                })
-              } catch {
-                /* ignore */
-              }
-            })()
-          }}
-        />
         <form
           className="pi-chat-composer eh-composer"
           onSubmit={(e) => {
@@ -483,6 +457,32 @@ export function PiCodingPanel({
             }
           />
         </form>
+        <CodingComposerToolbar
+          harness="pi"
+          prefs={prefs}
+          onPrefsChange={patchPrefs}
+          modelSuggestions={
+            status?.modelSpec ? [status.modelSpec] : []
+          }
+          busy={busy}
+          onImportSession={() => setImportOpen(true)}
+          onPermissionPolicyChange={(policy) => {
+            // Prefs already saved via onPrefsChange; only push node config.
+            void (async () => {
+              try {
+                const cfg = await nodeService.getNodeConfig()
+                await nodeService.updateNodeConfig({
+                  piSettings: {
+                    ...(cfg.piSettings ?? {}),
+                    autoRunPolicy: policy,
+                  },
+                })
+              } catch {
+                /* ignore */
+              }
+            })()
+          }}
+        />
       </div>
 
       <CodingImportSessionModal

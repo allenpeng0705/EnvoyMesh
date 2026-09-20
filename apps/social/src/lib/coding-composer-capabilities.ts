@@ -53,14 +53,15 @@ export type CodingComposerCapabilities = {
   /** When permissions is false, explain why Full/Ask cannot be honored. */
   permissionDisabledReason?: string;
   /**
-   * Catalog ACP (non-sidecar) has no Mesh ask dock yet — Ask would cancel
-   * tools without a prompt. Disable until a dock ships.
+   * One permission value cannot be honoured while the rest can.
+   *
+   * Kept because the toolbar draws these as disabled `<option>`s with the reason on them;
+   * nothing sets either today — a catalog ACP agent has the dock, and a sidecar has no policy
+   * control at all — but a harness that can gate *some* values belongs here rather than in a
+   * second code path.
    */
   permissionAskDisabledReason?: string;
-  /**
-   * Sidecar Tier B (codex/claude/cursor) cannot gate tools via Mesh today.
-   * Permissions UI still shows Ask/Safe as guidance; Full is disabled.
-   */
+  /** See `permissionAskDisabledReason`. */
   permissionFullDisabledReason?: string;
 };
 
@@ -110,11 +111,21 @@ const CURSOR_MODES: readonly CodingAgentModeOption[] = [
   { id: "agent", label: "Agent", workingMode: "code" },
 ];
 
+/**
+ * Why a dedicated sidecar shows no Permissions control at all.
+ *
+ * Not a "not yet" for the dock: the coding run path for these agents is a one-shot ask, and
+ * their backends never read `permissionPolicy` (Claude Code's SDK backend runs its own
+ * `bypassPermissions` with tools disabled; Codex's app-server is launched without an approval
+ * policy). Offering Safe default / Ask over a value nothing consumes is the lie this file
+ * exists to prevent — EH and the catalog ACP agents are where the policy is real.
+ *
+ * What closing this needs is per-agent delivery, not UI: Claude's SDK `canUseTool` through the
+ * same dock, and Codex's own approval policy on its app-server launch. Until then the control is
+ * absent and the reason is on it.
+ */
 const SIDECAR_PERMS_REASON =
-  "This agent’s Coding run path does not support Mesh permission gating yet.";
-
-const CATALOG_ASK_DISABLED_REASON =
-  "Ask every time needs an on-screen confirmation. Until that ships, use Safe default (read-only tools auto-run; others stay blocked).";
+  "This agent’s Coding run path does not gate tools through Mesh yet, so a policy here would change nothing.";
 
 function tierBAgentKey(harness: CodingHarnessId): string {
   return codingHarnessToExtAgentId(harness) ?? harness;
@@ -199,10 +210,13 @@ export function codingComposerCapabilities(
     agentModes,
     // Native set_mode only once ACP bridges land; today modes guide prompts.
     canSetMode: false,
-    permissions: true,
+    // Catalog ACP agents gate their tools through Mesh: the policy is delivered, and a tool the
+    // policy does not cover now goes to the Coding dock instead of being cancelled silently —
+    // which is what makes "Ask every time" a real choice here.
+    permissions: !isSidecar,
     ...(isSidecar
-      ? { permissionFullDisabledReason: SIDECAR_PERMS_REASON }
-      : { permissionAskDisabledReason: CATALOG_ASK_DISABLED_REASON }),
+      ? { permissionDisabledReason: SIDECAR_PERMS_REASON }
+      : {}),
   };
 }
 

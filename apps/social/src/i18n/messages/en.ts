@@ -326,6 +326,22 @@ export const en = {
     openInstallGuide: "Install guide",
     composerToolbarAria: "Coding composer options",
     composerModelPlaceholder: "Default model",
+    /*
+     * These eight were used by `CodingComposerToolbar` with inline English fallbacks and were
+     * missing from every catalogue, so they rendered English in all seven languages. The
+     * fallbacks stay in the component (a missing key must degrade, not throw), but the source of
+     * truth for the wording is here now.
+     */
+    agentModeLabel: "Mode",
+    agentModePromptOnly:
+      "Guides this turn’s prompt — native mode switching is not wired for this agent yet.",
+    permissionsShort: "Perms",
+    permissionsTitle:
+      "Safe default auto-runs read-only tools. Ask every time confirms each tool. Full access never prompts — only for tasks you fully trust.",
+    permSafe: "Safe default",
+    permAsk: "Ask every time",
+    permFull: "Full access (no ask)",
+    permissionsUnavailable: "Perms unavailable",
     workingModeAria: "Working mode",
     modeAsk: "Ask",
     modePlan: "Plan",

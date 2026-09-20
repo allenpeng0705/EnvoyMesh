@@ -1128,6 +1128,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.ehRespondToPermission(params);
   }
 
+  async codingRespondToPermission(params: { requestId: string; allowed: boolean }) {
+    return this._ns.codingRespondToPermission(params);
+  }
+
   async cancelEnvoyHarnessTurn(chatId?: string) {
     return this._ns.cancelEnvoyHarnessTurn(chatId);
   }

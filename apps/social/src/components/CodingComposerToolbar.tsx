@@ -1,9 +1,14 @@
 /**
  * Shared Coding composer toolbar — model, Mode, Permissions, Fast, Think, Import.
+ *
+ * It renders **under the field** (the row the reference product puts there: the field, then what
+ * the message will do), and every control in it describes the *next* turn, which is what decides
+ * which of them stay usable while one is running (see `valueLocked` / `actionLocked` below).
  */
 
 import { useMemo } from "react";
 import type { CodingHarnessId } from "@envoymesh/api";
+import { BoltIcon } from "../icons.js";
 import { useT } from "../context/I18nContext.js";
 import {
   codingComposerCapabilities,
@@ -41,7 +46,17 @@ export function CodingComposerToolbar({
 }: CodingComposerToolbarProps) {
   const t = useT();
   const caps = useMemo(() => codingComposerCapabilities(harness), [harness]);
-  const locked = busy || disabled;
+  /**
+   * Two locks, because the controls do two different things.
+   *
+   * `valueLocked` covers the **choices the next run reads** (model, mode, permissions, thinking):
+   * they are a description of what happens next, not an interruption of what is happening, so a
+   * running turn must not grey them out — the reference product's row stays live for exactly
+   * this reason. `actionLocked` covers the controls that **act now** — Fast sends `/fast on|off`
+   * as a message, Import replaces the session — and those must not fire mid-turn.
+   */
+  const valueLocked = disabled;
+  const actionLocked = busy || disabled;
   const datalistId = `coding-composer-models-${harness}`;
 
   const showAnything =
@@ -78,7 +93,7 @@ export function CodingComposerToolbar({
             list={datalistId}
             className="coding-composer-toolbar__model"
             value={prefs.model ?? ""}
-            disabled={locked}
+            disabled={valueLocked}
             placeholder={t(
               "codingView.composerModelPlaceholder",
               "Default model",
@@ -109,7 +124,7 @@ export function CodingComposerToolbar({
                 ? prefs.agentModeId
                 : (caps.agentModes[0]?.id ?? "")
             }
-            disabled={locked}
+            disabled={valueLocked}
             title={
               caps.canSetMode
                 ? undefined
@@ -154,7 +169,7 @@ export function CodingComposerToolbar({
               className={`coding-composer-mode-btn${
                 prefs.mode === id ? " coding-composer-mode-btn--active" : ""
               }`}
-              disabled={locked}
+              disabled={valueLocked}
               aria-pressed={prefs.mode === id}
               data-testid={`coding-composer-mode-${id}`}
               onClick={() =>
@@ -175,7 +190,7 @@ export function CodingComposerToolbar({
           <select
             className="coding-composer-toolbar__perms"
             value={permissionValue}
-            disabled={locked}
+            disabled={valueLocked}
             title={
               caps.permissionDisabledReason ||
               t(
@@ -239,11 +254,18 @@ export function CodingComposerToolbar({
       {caps.fast ? (
         <button
           type="button"
-          className={`coding-composer-chip${
+          className={`coding-composer-chip coding-composer-chip--icon${
             prefs.fast ? " coding-composer-chip--on" : ""
           }`}
-          disabled={locked}
+          // **An action, so `actionLocked` and not `valueLocked`.** Fast is not a preference the
+          // next run reads: it sends `/fast on|off` as its own message, so pressing it mid-turn
+          // would inject a turn. The mode/model/thinking selects, by contrast, stay usable while
+          // the agent works — they describe the next run, and freezing them is what makes a user
+          // wait for a turn to end to change their mind.
+          disabled={actionLocked}
           aria-pressed={prefs.fast}
+          title={t("codingView.modeFast", "Fast")}
+          aria-label={t("codingView.modeFast", "Fast")}
           data-testid="coding-composer-fast"
           onClick={() => {
             const next = !prefs.fast;
@@ -251,7 +273,7 @@ export function CodingComposerToolbar({
             onFastToggle?.(next);
           }}
         >
-          {t("codingView.modeFast", "Fast")}
+          <BoltIcon size={14} />
         </button>
       ) : null}
 
@@ -263,7 +285,7 @@ export function CodingComposerToolbar({
           <select
             className="coding-composer-toolbar__think"
             value={prefs.thinking}
-            disabled={locked}
+            disabled={valueLocked}
             data-testid="coding-composer-thinking"
             onChange={(e) =>
               onPrefsChange({
@@ -289,7 +311,7 @@ export function CodingComposerToolbar({
         <button
           type="button"
           className="coding-composer-chip coding-composer-chip--ghost"
-          disabled={locked}
+          disabled={actionLocked}
           data-testid="coding-composer-import"
           onClick={onImportSession}
         >

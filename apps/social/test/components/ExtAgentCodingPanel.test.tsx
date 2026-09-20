@@ -10,12 +10,14 @@ import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const askCodingHarness = vi.fn();
 const probeExtAgent = vi.fn();
+const codingRespondToPermission = vi.fn();
 const onHandlers = new Map<string, Set<(payload: unknown) => void>>();
 
 const mockNodeService = {
   ...partialNodeService({
     askCodingHarness,
     probeExtAgent,
+    codingRespondToPermission,
     isConnected: true,
   }),
   // `on` deliberately stays outside `partialNodeService`: NodeServiceClient.on is
@@ -40,6 +42,12 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
 function emitTimeline(update: unknown) {
   for (const handler of onHandlers.get("eh:timeline") ?? []) {
     handler(update);
+  }
+}
+
+function emitCodingPermission(payload: unknown) {
+  for (const handler of onHandlers.get("coding:permission") ?? []) {
+    handler(payload);
   }
 }
 
@@ -165,5 +173,99 @@ describe("CodingHarnessPanel (ExtAgentCodingPanel alias)", () => {
         runtime: { permissionPolicy: "safe-only" },
       }),
     );
+  });
+
+  it("shows the tool prompt for this session and answers it through the coding RPC", async () => {
+    probeExtAgent.mockResolvedValue({
+      reachable: true,
+      installState: "installed",
+      installGuide: { installed: true, steps: [] },
+    });
+    codingRespondToPermission.mockResolvedValue({
+      requestId: "req-1",
+      delivered: true,
+    });
+
+    renderWithI18n(
+      <ExtAgentCodingPanel
+        harness="cursor"
+        cwd="/tmp/proj"
+        sessionId="sess-perm"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByTestId("ext-agent-coding-panel")
+          .getAttribute("data-streaming"),
+      ).toBe("false"),
+    );
+
+    emitCodingPermission({
+      requestId: "req-1",
+      sessionId: "sess-perm",
+      toolName: "bash",
+      description: "The agent asks to run this tool.",
+      args: { command: "rm -rf build" },
+      preview: "--- a/build.ts\n@@ edit @@\n- old\n+ new",
+      timeoutMs: 240_000,
+    });
+
+    expect(await screen.findByText("bash")).toBeTruthy();
+    expect(screen.getByText("The agent asks to run this tool.")).toBeTruthy();
+    // The preview is the part a user actually judges, so it must be drawn.
+    expect(screen.getByText(/rm -rf build|--- a\/build\.ts/)).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Allow"));
+
+    // Answered through the *coding* RPC: the EH one would report `delivered:false` here and
+    // leave the agent waiting out its timeout.
+    await waitFor(() =>
+      expect(codingRespondToPermission).toHaveBeenCalledWith({
+        requestId: "req-1",
+        allowed: true,
+      }),
+    );
+    // Answering dismisses the card; a prompt that stayed would be a button that does nothing.
+    await waitFor(() => expect(screen.queryByText("bash")).toBeNull());
+  });
+
+  it("ignores a tool prompt belonging to another session", async () => {
+    probeExtAgent.mockResolvedValue({
+      reachable: true,
+      installState: "installed",
+      installGuide: { installed: true, steps: [] },
+    });
+
+    renderWithI18n(
+      <ExtAgentCodingPanel
+        harness="cursor"
+        cwd="/tmp/proj"
+        sessionId="sess-mine"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByTestId("ext-agent-coding-panel")
+          .getAttribute("data-streaming"),
+      ).toBe("false"),
+    );
+
+    emitCodingPermission({
+      requestId: "req-other",
+      sessionId: "sess-someone-else",
+      toolName: "bash",
+      description: "The agent asks to run this tool.",
+      args: {},
+      timeoutMs: 240_000,
+    });
+
+    // Several Coding tasks can be open at once and the event is broadcast, so a prompt from
+    // another session must not put a card in front of this conversation.
+    expect(screen.queryByText("bash")).toBeNull();
+    expect(codingRespondToPermission).not.toHaveBeenCalled();
   });
 });

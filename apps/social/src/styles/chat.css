@@ -2017,14 +2017,21 @@
   opacity: 0.72;
 }
 
+/*
+ * The options row sits **under** the field — the field, then what the message will do.
+ *
+ * It used to be drawn above the textarea, separated by a bottom border, which read as a header
+ * for the composer and pushed the thing the user types in down the screen. The border is on the
+ * top now for the same reason the row moved: it belongs to the field, not in front of it.
+ */
 .coding-composer-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.45rem 0.55rem;
-  padding: 0.35rem 0.15rem 0.5rem;
-  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-  margin-bottom: 0.35rem;
+  padding: 0.4rem 0.15rem 0.1rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  margin-top: 0.35rem;
 }
 
 .coding-composer-toolbar__field {
@@ -2109,6 +2116,20 @@
   background: color-mix(in srgb, #1565c0 18%, transparent);
   border-color: color-mix(in srgb, #1565c0 40%, transparent);
   font-weight: 600;
+}
+
+/*
+ * An icon-only chip (Fast). Square rather than pill-shaped so a row of them reads as buttons,
+ * and sized to the text chips' height so the row keeps one baseline.
+ */
+.coding-composer-chip--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border-radius: 8px;
 }
 
 .coding-composer-chip--ghost {

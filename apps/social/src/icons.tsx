@@ -88,6 +88,18 @@ export const SendIcon = mkIcon(
   "SendIcon",
 );
 
+/**
+ * Fast mode — the same lightning the reference product draws for the same toggle.
+ *
+ * A glyph rather than the word "Fast" because the label is one word nobody needs twice: it sits
+ * in a row of options where every other control is already named, and the tooltip and the
+ * screen-reader label carry the word for anyone who needs it (see `CodingComposerToolbar`).
+ */
+export const BoltIcon = mkIcon(
+  <polygon points="13 2 3 14 10 14 11 22 21 10 14 10 13 2" />,
+  "BoltIcon",
+);
+
 export const BackIcon = mkIcon(
   <polyline points="15 18 9 12 15 6" />,
   "BackIcon",

@@ -30,7 +30,7 @@
  *
  * E9 asked for membership "generated from the Axis-1 manifest". Measured, the
  * manifest's module-shaped `conceptPattern` cannot decide it: applied to
- * signatures it calls **362 of 443** members clean —
+ * signatures it calls **363 of 444** members clean —
  * `sendCallInvite`, `listChatHistory` and every commerce method included —
  * while whole sections (Voice/Video Calls, Push Notifications) are signal-clean
  * yet plainly product. This figure is computed on every run, not quoted.

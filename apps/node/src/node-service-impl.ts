@@ -1348,7 +1348,7 @@ import {
 } from "./node-service-pi.js";
 import { AcpPermissionBridge } from "./node-service-acp-ui.js";
 import { AcpUserQuestionBridge } from "./node-service-eh-user-question.js";
-import { EhPermissionBridge } from "./node-service-eh-permission.js";
+import { ToolPermissionBridge } from "./tool-permission-bridge.js";
 import { buildEhPromptPayload, pathFromEhActivity } from "./agent-runtime-envoy/eh-prompt-attachments.js";
 import {
   ensurePiTerminalSession,
@@ -5130,7 +5130,7 @@ class NodeServiceImpl implements NodeService {
   );
 
   /** EH tool permissions (`session/request_permission`) — not Pi `pi:proposal`. */
-  private readonly _ehPermissionBridge = new EhPermissionBridge(
+  private readonly _ehPermissionBridge = new ToolPermissionBridge(
     (_event, payload) => {
       const turnId = payload.chatId
         ? this._ehChatRuntime.getTurnForChat(payload.chatId)?.turnId
@@ -5150,6 +5150,34 @@ class NodeServiceImpl implements NodeService {
         this._ehChatRuntime.chatIdForSession(sessionId),
       onResolved: (requestId, status) =>
         this._resolveEhTimelineInteraction(requestId, status),
+    },
+  );
+
+  /**
+   * A Coding session's tool permissions — `session/request_permission` on a catalog ACP
+   * agent, answered by the Coding composer's dock.
+   *
+   * The **same** bridge as EH's, on its own event name. A second implementation was the
+   * alternative and it is the wrong one: the question ("may this tool run?"), the timeout and
+   * the expire-means-deny rule are identical, and a copy would be a second policy to keep in
+   * step. Only the event name differs, because a Coding prompt must reach the Coding dock and
+   * the two surfaces address prompts by different id spaces.
+   *
+   * No `getChatIdForSession`: a coding session is its own conversation, and the event carries
+   * the `sessionId` the panel already holds. No `onResolved` either — the coding transcript is
+   * local state, so there is no timeline interaction row to resolve.
+   */
+  private readonly _codingPermissionBridge = new ToolPermissionBridge(
+    (_event, payload) => {
+      this.emit("coding:permission", payload);
+    },
+    {
+      eventName: "coding:permission",
+      // **Shorter than the client's own 5-minute window for `askCodingHarness`**, on purpose: the
+      // prompt is inside that call, so a bridge that expired at the same moment would race the
+      // RPC timeout and the user would see "timed out" for a turn that is still finishing. A
+      // minute of headroom means the denied tool returns to the caller before the caller gives up.
+      timeoutMs: 240_000,
     },
   );
 
@@ -6614,6 +6642,25 @@ class NodeServiceImpl implements NodeService {
       stored?.permissionPolicy ??
       "safe-only";
     const canStream = true;
+    // A catalog ACP agent asks `session/request_permission` mid-turn. The policy answers the
+    // tools it already covers; anything else goes to the Coding dock and the turn waits — the
+    // same contract EH has, on the Coding event name. A caller with no dock (the HTTP server)
+    // leaves `onPermissionRequest` out, and the session then cancels rather than allowing.
+    const onPermissionRequest = async (req: {
+      toolName: string;
+      args: unknown;
+    }): Promise<boolean> => {
+      const decision = await this._codingPermissionBridge.request({
+        sessionId: streamSessionId,
+        cwd,
+        toolName: req.toolName.trim() || "tool",
+        // Shown verbatim by the dock, exactly as an EH agent's own sentence is: the tool name
+        // is the specific part, and this is the sentence that says what is being asked.
+        description: "The agent asks to run this tool.",
+        args: req.args,
+      });
+      return decision === "allow";
+    };
     const text = await createCodingHarnessBackend(parsed.harness).ask(
       parsed.prompt,
       sessionKey,
@@ -6622,6 +6669,7 @@ class NodeServiceImpl implements NodeService {
       ...(model ? { model } : {}),
       ...(env ? { env } : {}),
       permissionPolicy,
+      onPermissionRequest,
       ...(canStream
         ? {
             onDelta: (chunk: string) => {
@@ -6680,6 +6728,9 @@ class NodeServiceImpl implements NodeService {
     }
     await this._ensureCodingRuntimeStore();
     await this._codingRuntimeStore.clear(parsed.codingSessionId);
+    // A prompt still waiting on a human belongs to the session being cleared: deny it rather
+    // than leave a card on screen for a session that no longer exists.
+    this._codingPermissionBridge.clearForSession(parsed.codingSessionId);
     return { ok: true, codingSessionId: parsed.codingSessionId };
   }
 
@@ -9482,6 +9533,23 @@ class NodeServiceImpl implements NodeService {
       requestId: params.requestId,
       allowed: params.allowed,
     })
+    return { requestId: params.requestId, delivered: result.delivered }
+  }
+
+  /**
+   * Allow or deny a **Coding** session's in-flight tool permission (`coding:permission`).
+   *
+   * `delivered: false` is not an error: the prompt had already been answered, expired, or
+   * belonged to a session that went away — the same contract `ehRespondToPermission` has.
+   */
+  async codingRespondToPermission(params: {
+    requestId: string
+    allowed: boolean
+  }): Promise<{ requestId: string; delivered: boolean }> {
+    const result = this._codingPermissionBridge.respond(
+      params.requestId,
+      params.allowed ? "allow" : "deny",
+    )
     return { requestId: params.requestId, delivered: result.delivered }
   }
 

@@ -1756,6 +1756,40 @@ export function EnvoyHarnessPanel({
         onReviewMinFilesChange={ehReview.setReviewMinFiles}
         composer={
           <div className="eh-composer-with-toolbar">
+            <form
+              className="pi-chat-composer eh-composer"
+              onSubmit={(e) => {
+                e.preventDefault()
+                submitDraft(busyRef.current ? "queue" : "send")
+              }}
+            >
+              <EhChatComposer
+                value={draft}
+                onChange={setDraft}
+                busy={busy}
+                onSubmit={(mode) => {
+                  submitDraft(mode)
+                }}
+                placeholder={placeholder}
+                autoFocus
+                slashCommands={slashCommands}
+                hasAttachments={ehAttachments.attachments.length > 0}
+                attachLeading={
+                  <AgentAttachmentComposerLeading
+                    attachments={ehAttachments.attachments}
+                    busy={ehAttachments.busy}
+                    disabled={!status?.cwd}
+                    pickTitle={t("eh.attachProjectFile", "Attach project file")}
+                    attachAriaLabel={t("eh.attachProjectFile", "Attach project file")}
+                    fileInputRef={ehAttachments.fileInputRef}
+                    onFileInputChange={ehAttachments.handleFileInputChange}
+                    onOpenPicker={ehAttachments.openPicker}
+                    onRemove={ehAttachments.remove}
+                    onClearAll={ehAttachments.clear}
+                  />
+                }
+              />
+            </form>
             <CodingComposerToolbar
               harness="envoy-harness"
               prefs={{
@@ -1810,40 +1844,6 @@ export function EnvoyHarnessPanel({
                 void applyPolicy(policy)
               }}
             />
-            <form
-              className="pi-chat-composer eh-composer"
-              onSubmit={(e) => {
-                e.preventDefault()
-                submitDraft(busyRef.current ? "queue" : "send")
-              }}
-            >
-              <EhChatComposer
-                value={draft}
-                onChange={setDraft}
-                busy={busy}
-                onSubmit={(mode) => {
-                  submitDraft(mode)
-                }}
-                placeholder={placeholder}
-                autoFocus
-                slashCommands={slashCommands}
-                hasAttachments={ehAttachments.attachments.length > 0}
-                attachLeading={
-                  <AgentAttachmentComposerLeading
-                    attachments={ehAttachments.attachments}
-                    busy={ehAttachments.busy}
-                    disabled={!status?.cwd}
-                    pickTitle={t("eh.attachProjectFile", "Attach project file")}
-                    attachAriaLabel={t("eh.attachProjectFile", "Attach project file")}
-                    fileInputRef={ehAttachments.fileInputRef}
-                    onFileInputChange={ehAttachments.handleFileInputChange}
-                    onOpenPicker={ehAttachments.openPicker}
-                    onRemove={ehAttachments.remove}
-                    onClearAll={ehAttachments.clear}
-                  />
-                }
-              />
-            </form>
             <CodingImportSessionModal
               open={importOpen}
               rows={importRows}

@@ -10,6 +10,7 @@ import {
   codingHarnessToExtAgentId,
   extTimelineChatId,
   type CodingHarnessId,
+  type EhPermissionEvent,
   type ExtAgentInstallGuide,
   type ExtAgentReachability,
 } from "@envoymesh/api";
@@ -45,6 +46,7 @@ import { AgentAttachmentComposerLeading } from "../AgentAttachmentComposerLeadin
 import { CodingComposerToolbar } from "../CodingComposerToolbar.js";
 import { CodingImportSessionModal } from "../CodingImportSessionModal.js";
 import { EhChatComposer } from "../ehui/EhChatComposer.js";
+import { EhPermissionDock } from "../ehui/EhPermissionDock.js";
 import { ExtAgentInstallGuideCard } from "../ExtAgentInstallGuideCard.js";
 import { ExtAgentSwitcherInstallDialog } from "../ExtAgentSwitcherInstallDialog.js";
 
@@ -98,6 +100,14 @@ export function CodingHarnessPanel({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<LocalMsg[]>([]);
+  /**
+   * A tool the agent is waiting to be allowed to run.
+   *
+   * The node asks only for tools the session's permission policy does not already cover, and the
+   * turn is blocked until this is answered (or its timeout denies it) — so this is the one piece of
+   * state that must not be lost while the panel is on screen.
+   */
+  const [pendingPermission, setPendingPermission] = useState<EhPermissionEvent | null>(null);
   const [reach, setReach] = useState<ExtAgentReachability | null>(null);
   const [installOpen, setInstallOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -200,6 +210,30 @@ export function CodingHarnessPanel({
   useEffect(() => {
     void refreshProbe();
   }, [refreshProbe]);
+
+  /**
+   * The agent's tool prompt (`coding:permission`), and the two rules that keep it honest.
+   *
+   * **Only this session's prompts.** Several Coding tasks can be open at once and the event is
+   * broadcast to every client, so a prompt from another session would put a card in front of the
+   * wrong conversation — and answering it from here would still reach the right agent, which is
+   * worse: the user would be approving a tool they cannot see the context for.
+   *
+   * **No prompt outlives its turn.** The node expires an unanswered prompt after its own timeout
+   * and denies the tool; once the turn is over there is nothing left to answer, so a card that
+   * stayed would be a button that does nothing.
+   */
+  useEffect(() => {
+    setPendingPermission(null);
+    return nodeService.on("coding:permission", (event) => {
+      if (event.sessionId !== sessionId) return;
+      setPendingPermission(event);
+    });
+  }, [nodeService, sessionId]);
+
+  useEffect(() => {
+    if (!busy) setPendingPermission(null);
+  }, [busy]);
 
   const streamingAssistant = useMemo(() => {
     if (!canStream || !busy) return null;
@@ -455,18 +489,15 @@ export function CodingHarnessPanel({
       ) : null}
 
       <div className="ext-agent-coding-panel__composer-stack">
-        <CodingComposerToolbar
-          harness={harness}
-          prefs={prefs}
-          onPrefsChange={patchPrefs}
-          modelSuggestions={modelSuggestions}
-          busy={busy}
-          onImportSession={() => setImportOpen(true)}
-          onFastToggle={(enabled) => {
-            if (!caps.fast) return;
-            void sendFastSlash(enabled);
-          }}
-        />
+        {pendingPermission ? (
+          <EhPermissionDock
+            permission={pendingPermission}
+            onDismiss={() => setPendingPermission(null)}
+            answer={(requestId, allowed) =>
+              nodeService.codingRespondToPermission({ requestId, allowed })
+            }
+          />
+        ) : null}
         <form
           className="ext-agent-coding-panel__composer pi-chat-composer eh-composer"
           onSubmit={(e) => {
@@ -501,6 +532,18 @@ export function CodingHarnessPanel({
             }
           />
         </form>
+        <CodingComposerToolbar
+          harness={harness}
+          prefs={prefs}
+          onPrefsChange={patchPrefs}
+          modelSuggestions={modelSuggestions}
+          busy={busy}
+          onImportSession={() => setImportOpen(true)}
+          onFastToggle={(enabled) => {
+            if (!caps.fast) return;
+            void sendFastSlash(enabled);
+          }}
+        />
       </div>
 
       <CodingImportSessionModal

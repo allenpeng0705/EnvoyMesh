@@ -77,18 +77,26 @@ export function shouldAskCatalogAcpTool(
   return true;
 }
 
-/**
- * Decide whether to auto-allow a `session/request_permission`.
- * When we would ask but have no UI dock, callers should cancel/deny.
- */
-export function shouldAutoAllowCatalogPermission(
-  policy: CatalogPermissionPolicy | undefined,
-  params: Record<string, unknown>,
-): boolean {
-  const p = policy ?? "safe-only";
-  if (p === "off" || p === "never") return true;
-  if (p === "always-confirm") return false;
+/** One `session/request_permission` request, in the agent-neutral shape a human prompt needs. */
+export interface CatalogToolRequest {
+  /** `""` when the agent sent a shape we do not recognise — callers must cope. */
+  toolName: string;
+  args: unknown;
+  /** The raw params, for the undecidable cases (blob heuristics, previews). */
+  raw: Record<string, unknown>;
+}
 
+/**
+ * Read a `session/request_permission`'s params the one way every caller must agree on.
+ *
+ * Extracted rather than repeated: the *decision* (`shouldAutoAllowCatalogPermission`)
+ * and the *prompt* a human reads (the coding permission dock) both need the tool name
+ * and its arguments, and two extractions drift into two different answers to
+ * "what is this agent asking for".
+ */
+export function extractCatalogAcpToolRequest(
+  params: Record<string, unknown>,
+): CatalogToolRequest {
   const toolCall = (params.toolCall ?? params.tool ?? params) as Record<
     string,
     unknown
@@ -101,9 +109,28 @@ export function shouldAutoAllowCatalogPermission(
       "",
   );
   const args = toolCall?.input ?? toolCall?.arguments ?? params.args ?? params.input;
+  return { toolName, args, raw: params };
+}
+
+/**
+ * Decide whether to auto-allow a `session/request_permission`.
+ *
+ * **`false` means "a human has to decide", not "deny".** A caller with no dock
+ * cancels, which is what `catalog-acp-session.ts` does; a caller with one asks,
+ * and this function is what tells it there is something worth asking about.
+ */
+export function shouldAutoAllowCatalogPermission(
+  policy: CatalogPermissionPolicy | undefined,
+  params: Record<string, unknown>,
+): boolean {
+  const p = policy ?? "safe-only";
+  if (p === "off" || p === "never") return true;
+  if (p === "always-confirm") return false;
+
+  const { toolName, args, raw } = extractCatalogAcpToolRequest(params);
   if (!toolName) {
     // Unknown tool shape under safe-only → do not silently allow writes.
-    const blob = JSON.stringify(params).toLowerCase();
+    const blob = JSON.stringify(raw).toLowerCase();
     if (
       /\b(write|edit|create|delete|bash|shell|execute|run_terminal)\b/.test(
         blob,

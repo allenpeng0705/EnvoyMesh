@@ -62,6 +62,9 @@ export class CatalogAcpBackend implements ExtAgentBackend {
       installHint: codingProviderInstallHint(this.entry),
       onDelta: opts?.onDelta,
       permissionPolicy: opts?.permissionPolicy ?? "safe-only",
+      ...(opts?.onPermissionRequest !== undefined
+        ? { onPermissionRequest: opts.onPermissionRequest }
+        : {}),
     });
   }
 }

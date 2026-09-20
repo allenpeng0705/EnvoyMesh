@@ -1,15 +1,19 @@
 /**
- * EH tool permission bridge — emits eh:permission, resolves on respond/timeout.
+ * Tool permission bridge — emits its configured event, resolves on respond/timeout.
+ *
+ * One bridge serves the EH dock and the Coding dock, so the legs below pin the *option* rather
+ * than the class: the event name is what keeps a Coding prompt out of the EH dock, and it is the
+ * only thing the two callers configure differently.
  */
 
 import { describe, expect, it, vi } from "vitest";
 
-import { EhPermissionBridge } from "../src/node-service-eh-permission.js";
+import { ToolPermissionBridge } from "../src/tool-permission-bridge.js";
 
-describe("EhPermissionBridge", () => {
+describe("ToolPermissionBridge", () => {
   it("emits eh:permission and resolves allow when UI responds", async () => {
     const emitted: Array<{ requestId: string; toolName: string }> = [];
-    const bridge = new EhPermissionBridge((event, payload) => {
+    const bridge = new ToolPermissionBridge((event, payload) => {
       expect(event).toBe("eh:permission");
       emitted.push({ requestId: payload.requestId, toolName: payload.toolName });
     });
@@ -30,7 +34,7 @@ describe("EhPermissionBridge", () => {
   it("auto-denies on timeout", async () => {
     vi.useFakeTimers();
     try {
-      const bridge = new EhPermissionBridge(() => {}, { timeoutMs: 100 });
+      const bridge = new ToolPermissionBridge(() => {}, { timeoutMs: 100 });
       const pending = bridge.request({
         sessionId: "sess-eh",
         toolName: "write",
@@ -45,7 +49,7 @@ describe("EhPermissionBridge", () => {
   });
 
   it("clear() denies all pending requests", async () => {
-    const bridge = new EhPermissionBridge(() => {});
+    const bridge = new ToolPermissionBridge(() => {});
     const pending = bridge.request({
       sessionId: "sess-eh",
       toolName: "edit",
@@ -58,13 +62,31 @@ describe("EhPermissionBridge", () => {
   });
 
   it("returns delivered:false for unknown requestId", () => {
-    const bridge = new EhPermissionBridge(() => {});
+    const bridge = new ToolPermissionBridge(() => {});
     expect(bridge.respond("missing", "allow")).toEqual({ delivered: false });
+  });
+
+  it("emits the configured event name, so a Coding prompt never reaches the EH dock", async () => {
+    const events: string[] = [];
+    const bridge = new ToolPermissionBridge(
+      (event) => {
+        events.push(event);
+      },
+      { eventName: "coding:permission" },
+    );
+    bridge.request({
+      sessionId: "coding-sess",
+      toolName: "bash",
+      description: "run",
+      args: {},
+    });
+    await vi.waitFor(() => expect(events).toHaveLength(1));
+    expect(events).toEqual(["coding:permission"]);
   });
 
   it("attributes the prompt to the chat owning the session", async () => {
     const emitted: Array<{ sessionId: string; chatId?: string }> = [];
-    const bridge = new EhPermissionBridge(
+    const bridge = new ToolPermissionBridge(
       (event, payload) => {
         emitted.push({ sessionId: payload.sessionId, chatId: payload.chatId });
       },
@@ -93,7 +115,7 @@ describe("EhPermissionBridge", () => {
   });
 
   it("clearForSession denies only that session's pending request", async () => {
-    const bridge = new EhPermissionBridge(() => {}, { timeoutMs: 5000 });
+    const bridge = new ToolPermissionBridge(() => {}, { timeoutMs: 5000 });
     const a = bridge.request({
       sessionId: "sess-a",
       toolName: "bash",

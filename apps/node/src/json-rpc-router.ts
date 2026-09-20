@@ -205,6 +205,8 @@ export const CODING_GATED_RPC = new Set<string>([
   "piRespondToProposal",
   "ehRespondToUserQuestion",
   "ehRespondToPermission",
+  // Allow/deny a Coding session's tool prompt (catalog ACP agents).
+  "codingRespondToPermission",
   // Stop Pi/Envoy TUI sessions started via coding surfaces.
   "closeTerminalSession",
   // Project folder picker for Coding (Pi / EH) on family clients.
@@ -1764,6 +1766,11 @@ export async function routeRpcMethod(
       });
     case "ehRespondToPermission":
       return ns.ehRespondToPermission({
+        requestId: String(params.requestId ?? ""),
+        allowed: Boolean(params.allowed),
+      });
+    case "codingRespondToPermission":
+      return ns.codingRespondToPermission({
         requestId: String(params.requestId ?? ""),
         allowed: Boolean(params.allowed),
       });

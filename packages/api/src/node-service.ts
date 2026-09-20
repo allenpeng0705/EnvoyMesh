@@ -1462,6 +1462,8 @@ export interface NodeServiceEvents {
   "eh:turn_token": import("./eh-turn.js").EhTurnTokenEvent;
   "eh:turn_complete": import("./eh-turn.js").EhTurnCompleteEvent;
   "eh:permission": import("./eh-permission.js").EhPermissionEvent;
+  /** A Coding session's tool prompt (catalog ACP agents). */
+  "coding:permission": import("./eh-permission.js").CodingPermissionEvent;
   "eh:files_changed": import("./eh-files-changed.js").EhFilesChangedEvent;
   /** Shared semantic timeline update (parallel to legacy events during migration). */
   "eh:timeline": import("./eh-timeline.js").EhTimelineUpdate;
@@ -2541,6 +2543,11 @@ export interface NodeService extends CoreNodeService {
   ehRespondToPermission(
     params: import("./eh-permission.js").EhRespondToPermissionParams,
   ): Promise<import("./eh-permission.js").EhRespondToPermissionResult>;
+
+  /** Allow/deny a Coding session's in-flight tool permission (`coding:permission`). */
+  codingRespondToPermission(
+    params: import("./eh-permission.js").CodingRespondToPermissionParams,
+  ): Promise<import("./eh-permission.js").CodingRespondToPermissionResult>;
 
   // ClawHub skill marketplace
   getOpenClawPlugins(): Promise<string[]>;

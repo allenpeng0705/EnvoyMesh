@@ -610,6 +610,16 @@ export interface NodeServiceClient {
     requestId: string;
     allowed: boolean;
   }): Promise<{ requestId: string; delivered: boolean }>;
+  /**
+   * Allow/deny a Coding session's tool prompt.
+   *
+   * The sibling of `ehRespondToPermission`: a catalog ACP agent asks mid-turn, the Coding
+   * composer shows the same dock, and the answer resolves the agent's request.
+   */
+  codingRespondToPermission(params: {
+    requestId: string;
+    allowed: boolean;
+  }): Promise<{ requestId: string; delivered: boolean }>;
   cancelEnvoyHarnessTurn(chatId?: string): Promise<{ cancelled: boolean }>;
   /** The configured envoy-harness peer cluster (id/model/capabilities). */
   listEnvoyHarnessPeers(): Promise<
@@ -2237,6 +2247,12 @@ function createWsNodeServiceClient(
     },
     async ehRespondToPermission(params: { requestId: string; allowed: boolean }) {
       return wsClient.rpc("ehRespondToPermission", params) as Promise<{
+        requestId: string;
+        delivered: boolean;
+      }>;
+    },
+    async codingRespondToPermission(params: { requestId: string; allowed: boolean }) {
+      return wsClient.rpc("codingRespondToPermission", params) as Promise<{
         requestId: string;
         delivered: boolean;
       }>;

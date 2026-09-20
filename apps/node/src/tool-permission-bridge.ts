@@ -1,7 +1,19 @@
 /**
- * In-flight tool permission waiter for Envoy Harness chat / terminal.
+ * In-flight tool permission waiter, shared by every surface that asks a human
+ * before a tool runs.
  *
- * Emits `eh:permission` → Social UI dock → `ehRespondToPermission`.
+ * Two producers use it today, and they use **one** implementation because the
+ * question is identical ("may this tool run?") and the failure mode of a second
+ * copy is a second timeout policy:
+ *
+ *   * Envoy Harness chat / terminal — emits `eh:permission`, answered by
+ *     `ehRespondToPermission`;
+ *   * a Coding session on a catalog ACP agent — emits `coding:permission`,
+ *     answered by `codingRespondToPermission`.
+ *
+ * Only the event *name* differs, which is why it is an option rather than a
+ * subclass: a Coding prompt must not be delivered to the EH dock and vice versa,
+ * and the two are addressed by different id spaces.
  */
 
 import { randomUUID } from "node:crypto";
@@ -17,10 +29,18 @@ export interface EhPermissionRequest {
   toolName: string;
   description: string;
   args: unknown;
+  /**
+   * The directory the tool will act in, when the caller knows it.
+   *
+   * Per-request rather than per-bridge because a Coding prompt belongs to the session that
+   * asked, while the bridge outlives every session: a single mutable `cwd` would preview one
+   * project's file against another project's working directory.
+   */
+  cwd?: string;
 }
 
 export interface EhPermissionBridgeEmit {
-  (event: "eh:permission", payload: EhPermissionEvent): void;
+  (event: string, payload: EhPermissionEvent): void;
 }
 
 interface Pending {
@@ -32,10 +52,11 @@ interface Pending {
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 
-export class EhPermissionBridge {
+export class ToolPermissionBridge {
   readonly #pending = new Map<string, Pending>();
   readonly #emit: EhPermissionBridgeEmit;
   readonly #timeoutMs: number;
+  readonly #eventName: string;
   readonly #getCwd: (() => Promise<string | undefined>) | undefined;
   readonly #onResolved: ((requestId: string, status: "allowed" | "denied" | "expired", chatId?: string) => void) | undefined;
 
@@ -50,10 +71,13 @@ export class EhPermissionBridge {
       getCwd?: () => Promise<string | undefined>;
       getChatIdForSession?: (sessionId: string) => string | undefined;
       onResolved?: (requestId: string, status: "allowed" | "denied" | "expired", chatId?: string) => void;
+      /** Wire event this bridge emits. Default `eh:permission`. */
+      eventName?: string;
     },
   ) {
     this.#emit = emit;
     this.#timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.#eventName = opts?.eventName ?? "eh:permission";
     this.#getCwd = opts?.getCwd;
     this.#getChatIdForSession = opts?.getChatIdForSession;
     this.#onResolved = opts?.onResolved;
@@ -73,12 +97,13 @@ export class EhPermissionBridge {
       this.#pending.set(requestId, { resolve, timer, sessionId: req.sessionId, ...(chatId ? { chatId } : {}) });
 
       void (async () => {
-        const cwd = this.#getCwd !== undefined ? await this.#getCwd() : undefined;
+        const cwd =
+          req.cwd ?? (this.#getCwd !== undefined ? await this.#getCwd() : undefined);
         const preview = await buildEhPermissionPreview(
           { toolName: req.toolName, args: req.args },
           cwd,
         );
-        this.#emit("eh:permission", {
+        this.#emit(this.#eventName, {
           requestId,
           sessionId: req.sessionId,
           toolName: req.toolName,

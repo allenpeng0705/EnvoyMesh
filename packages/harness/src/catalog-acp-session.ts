@@ -12,8 +12,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
 import {
   denyOptionId,
+  extractCatalogAcpToolRequest,
   shouldAutoAllowCatalogPermission,
   type CatalogPermissionPolicy,
+  type CatalogToolRequest,
 } from "./catalog-acp-policy.js";
 import { InstallMissingError } from "./daemon-supervisor.js";
 import {
@@ -32,6 +34,14 @@ export type CatalogAcpSessionOpts = {
   onDelta?: (chunk: string) => void;
   /** Default `safe-only` — never silent Full access. */
   permissionPolicy?: CatalogPermissionPolicy;
+  /**
+   * Ask the human before a tool the policy does not already cover.
+   *
+   * **Absent means cancel, never allow.** A caller without a dock (the HTTP server, a
+   * headless run) must leave this undefined; the session then cancels the tool, which is
+   * the behaviour that existed before a dock could answer.
+   */
+  onPermissionRequest?: (req: CatalogToolRequest) => Promise<boolean>;
 };
 
 function encodeRpc(msg: unknown): Buffer {
@@ -191,7 +201,13 @@ export async function runCatalogAcpPrompt(
       try {
         if (method === "session/request_permission") {
           const policy = opts.permissionPolicy ?? "safe-only";
-          const allow = shouldAutoAllowCatalogPermission(policy, params);
+          // Covered by the policy → run it. Otherwise a human decides, if anyone can be
+          // asked; a caller with no dock cancels rather than allowing silently.
+          const covered = shouldAutoAllowCatalogPermission(policy, params);
+          const allow =
+            covered || opts.onPermissionRequest === undefined
+              ? covered
+              : await opts.onPermissionRequest(extractCatalogAcpToolRequest(params));
           if (allow) {
             const optionId = allowOptionId(params.options);
             result = optionId

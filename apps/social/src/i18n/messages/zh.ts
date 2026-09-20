@@ -307,6 +307,16 @@ export const zh = mergeMessages(en, {
     openInstallGuide: "安装指南",
     composerToolbarAria: "编程输入选项",
     composerModelPlaceholder: "默认模型",
+    // 这八项此前只以英文兜底写在组件里，七种语言都会显示英文；现在它们的措辞以这里为准。
+    agentModeLabel: "模式",
+    agentModePromptOnly: "只影响本轮的提示词——该代理尚未接入原生模式切换。",
+    permissionsShort: "权限",
+    permissionsTitle:
+      "默认安全会自动执行只读工具；每次询问会在每个工具执行前确认；完全访问从不询问——仅用于你完全信任的任务。",
+    permSafe: "默认安全",
+    permAsk: "每次询问",
+    permFull: "完全访问（不询问）",
+    permissionsUnavailable: "权限不可用",
     workingModeAria: "工作模式",
     modeAsk: "提问",
     modePlan: "计划",

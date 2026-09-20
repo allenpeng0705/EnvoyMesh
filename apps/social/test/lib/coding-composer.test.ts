@@ -36,17 +36,25 @@ describe("codingComposerCapabilities", () => {
     expect(pi.workingMode).toBe(true);
   });
 
-  it("disables Full access for sidecar Tier B", () => {
+  it("shows no Permissions control for a sidecar the coding run path cannot gate", () => {
     const codex = codingComposerCapabilities("codex");
-    expect(codex.permissionFullDisabledReason).toMatch(/Mesh permission/);
-    expect(codex.permissionAskDisabledReason).toBeUndefined();
+    // The control is *absent*, not drawn with two values that change nothing: a sidecar backend
+    // never reads `permissionPolicy`, so a select here would be the lie this table prevents.
+    expect(codex.permissions).toBe(false);
+    expect(codex.permissionDisabledReason).toMatch(/would change nothing/);
+    expect(codex.permissionFullDisabledReason).toBeUndefined();
     expect(codex.agentModes.some((m) => m.id === "agent")).toBe(true);
     expect(codex.canSetMode).toBe(false);
   });
 
-  it("disables Ask for catalog ACP until a Mesh dock ships", () => {
+  it("gives a catalog ACP agent the full Permissions control, Ask included", () => {
     const gemini = codingComposerCapabilities("gemini");
-    expect(gemini.permissionAskDisabledReason).toMatch(/confirmation/i);
+    // The Mesh dock ships now (`coding:permission` → `codingRespondToPermission`), so "Ask every
+    // time" is answerable instead of cancelling the tool — nothing here may disable it again
+    // without also removing the dock.
+    expect(gemini.permissions).toBe(true);
+    expect(gemini.permissionAskDisabledReason).toBeUndefined();
+    expect(gemini.permissionDisabledReason).toBeUndefined();
     expect(gemini.permissionFullDisabledReason).toBeUndefined();
   });
 

@@ -63,6 +63,13 @@ export type ExtAgentAskOpts = {
    * `safe-only` | `always-confirm` | `off` (Full access).
    */
   permissionPolicy?: "safe-only" | "always-confirm" | "off" | "never";
+  /**
+   * Ask a human before a tool that `permissionPolicy` does not already cover.
+   *
+   * Only a caller with a UI dock passes this. Absent means the session cancels the tool
+   * rather than allowing it silently — the rule catalog ACP has always followed.
+   */
+  onPermissionRequest?: (req: import("./catalog-acp-policy.js").CatalogToolRequest) => Promise<boolean>;
 };
 
 export interface ExtAgentBackend {

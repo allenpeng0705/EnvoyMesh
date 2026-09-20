@@ -1,5 +1,10 @@
 /**
- * Tool permission card above the EH composer (Cursor / Codex pattern).
+ * Tool permission card above the composer (Cursor / Codex pattern).
+ *
+ * One card, two producers: an Envoy Harness turn (`eh:permission`) and a Coding
+ * session on a catalog ACP agent (`coding:permission`). The *question* and the two
+ * buttons are the same in both, so the only difference is which RPC carries the
+ * answer — which is why the answer is a prop rather than a second component.
  */
 
 import { useCallback, useEffect, useState } from "react"
@@ -12,12 +17,22 @@ export interface EhPermissionDockProps {
   permission: EhPermissionEvent
   onDismiss?: () => void
   onResponded?: (allowed: boolean) => void
+  /**
+   * How this prompt's answer reaches the node.
+   *
+   * Defaults to the Envoy Harness RPC, so every existing caller is unchanged; the Coding
+   * composer passes `codingRespondToPermission` because a Coding prompt's `requestId` lives
+   * in the coding bridge, where the EH RPC would report `delivered: false` and the agent
+   * would wait out its timeout.
+   */
+  answer?: (requestId: string, allowed: boolean) => Promise<unknown>
 }
 
 export function EhPermissionDock({
   permission,
   onDismiss,
   onResponded,
+  answer,
 }: EhPermissionDockProps) {
   const t = useT()
   const nodeService = useNodeService()
@@ -36,16 +51,20 @@ export function EhPermissionDock({
       setBusy(true)
       onDismiss?.()
       try {
-        await nodeService.ehRespondToPermission({
-          requestId: permission.requestId,
-          allowed,
-        })
+        if (answer) {
+          await answer(permission.requestId, allowed)
+        } else {
+          await nodeService.ehRespondToPermission({
+            requestId: permission.requestId,
+            allowed,
+          })
+        }
         onResponded?.(allowed)
       } finally {
         setBusy(false)
       }
     },
-    [busy, nodeService, onDismiss, onResponded, permission.requestId],
+    [busy, nodeService, answer, onDismiss, onResponded, permission.requestId],
   )
 
   return (

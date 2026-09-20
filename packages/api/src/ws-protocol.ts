@@ -356,6 +356,7 @@ export type ProductRpcMethods =
     | "piRespondToProposal"
     | "ehRespondToUserQuestion"
     | "ehRespondToPermission"
+    | "codingRespondToPermission"
     | "cancelEnvoyHarnessTurn"
     | "sendToBridge"
     | "getPairedDiagnostics"
