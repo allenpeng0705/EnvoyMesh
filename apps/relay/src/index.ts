@@ -24,6 +24,11 @@ import type { CircuitRelayServerConfig } from "@envoymesh/network";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createHomeTunnelProxy } from "./home-tunnel-proxy.js";
 import {
+  PROXY_HANDSHAKE_TIMEOUT_MS,
+  readProxyResponse,
+  writeProxyConnect,
+} from "./client-proxy-handshake.js";
+import {
   createInitialStandaloneRelayHealthState,
   evaluateStandaloneRelayHealth,
   type StandaloneRelayHealthSnapshot,
@@ -1734,18 +1739,27 @@ try {
 
         console.log(`[relay] client-proxy: dialed ${targetPeerId.slice(0, 12)}…, sending handshake`);
 
-        // Send handshake with pairing token
-        const handshake = JSON.stringify({ type: "proxy-connect", token });
-        await streamIo.write(new TextEncoder().encode(handshake));
+        // Send the handshake as a newline-delimited frame. The home reads frames, and a bare
+        // `JSON.stringify` is not one: it buffers it as incomplete and waits forever, so the phone
+        // sees "Connecting" with no error. `writeProxyConnect` owns the framing (see that module).
+        await writeProxyConnect(streamIo, token);
 
-        // Read handshake response
-        const responseBytes = await streamIo.read();
-        if (!responseBytes) {
+        // Read handshake response, bounded: a home that takes the stream and then says nothing must
+        // fail the phone, not hold this proxy connection (and its capped slot) open.
+        const responseResult = await readProxyResponse(streamIo);
+        if (responseResult.kind === "closed") {
           console.warn(`[relay] client-proxy: home node closed stream before handshake response`);
           ws.close(1011, "home node closed stream");
           return;
         }
-        const response = JSON.parse(new TextDecoder().decode(responseBytes.subarray()));
+        if (responseResult.kind === "timeout") {
+          console.warn(
+            `[relay] client-proxy: home node did not answer the handshake within ${PROXY_HANDSHAKE_TIMEOUT_MS} ms`,
+          );
+          ws.close(1011, "home node did not answer the proxy handshake");
+          return;
+        }
+        const response = JSON.parse(new TextDecoder().decode(responseResult.bytes.subarray()));
         if (response.type !== "proxy-accept") {
           console.warn(`[relay] client-proxy: home node rejected proxy: ${response.reason ?? "unknown"}`);
           ws.close(1011, response.reason ?? "home node rejected proxy");

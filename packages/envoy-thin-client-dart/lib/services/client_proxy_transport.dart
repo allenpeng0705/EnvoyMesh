@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:envoy_thin_client/services/mesh_frame.dart';
 import 'package:envoy_thin_client/services/web_socket_like.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -41,10 +42,13 @@ class ClientProxyTransport implements WebSocketLike {
   /// [relayWsUrl] is the relay WebSocket URL (e.g. ws://relay:15432/ws).
   /// [homePeerId] is the home node's libp2p peer ID.
   /// [sessionToken] is the thin-client session token for authentication.
+  /// [handshakeTimeout] bounds the wait for `proxy-accept` **after** the socket is open; see the
+  /// note on the timeout below for why the transport owns it rather than borrowing the caller's.
   static Future<ClientProxyTransport> connect({
     required String relayWsUrl,
     required String homePeerId,
     required String sessionToken,
+    Duration handshakeTimeout = const Duration(seconds: 20),
   }) async {
     // Connect to the relay WebSocket with peer routing.
     // Use Uri.encodeComponent for the peer ID because base64url encoding
@@ -68,11 +72,13 @@ class ClientProxyTransport implements WebSocketLike {
     await channel.ready;
     transport.readyState = wsOpen;
 
-    // Send the proxy-connect handshake.
-    channel.sink.add(jsonEncode({
+    // Send the proxy-connect handshake. Framed like every other send on this transport: the relay
+    // forwards these bytes verbatim into the home's stream, and an unframed write is a frame the
+    // home buffers forever (see `mesh_frame.dart`).
+    channel.sink.add(frameMeshMessage(jsonEncode({
       'type': 'proxy-connect',
       'token': sessionToken,
-    }));
+    })));
 
     // Use a single subscription for both handshake and JSON-RPC mode.
     final handshakeCompleter = Completer<Map<String, dynamic>>();
@@ -129,7 +135,27 @@ class ClientProxyTransport implements WebSocketLike {
       cancelOnError: true,
     );
 
-    final msg = await handshakeCompleter.future;
+    // `channel.ready` already resolved, so the socket **is** open; what remains is the *handshake*,
+    // which is a different wait. The relay only answers `proxy-accept` once the home has accepted
+    // the proxied stream, and a relay whose home never answers will hold this socket open.
+    //
+    // Bounding it here (rather than trusting the caller to wrap `connect` in a `.timeout`) is what
+    // closes the channel on expiry: a caller's timeout moves its walk on but cannot reach the
+    // channel this method owns, so every timed-out dial would leak one live socket — and with it one
+    // of the relay's capped connection slots. On timeout this closes both.
+    final Map<String, dynamic> msg;
+    try {
+      msg = await handshakeCompleter.future.timeout(handshakeTimeout);
+    } on TimeoutException {
+      transport.readyState = wsClosed;
+      unawaited(transport._subscription?.cancel());
+      transport._subscription = null;
+      unawaited(channel.sink.close());
+      throw TimeoutException(
+        'proxy handshake timed out after ${handshakeTimeout.inMilliseconds} ms',
+        handshakeTimeout,
+      );
+    }
 
     if (msg['type'] == 'proxy-reject') {
       final reason = msg['reason'] as String? ?? 'unknown';
@@ -157,7 +183,10 @@ class ClientProxyTransport implements WebSocketLike {
   @override
   void send(String data) {
     if (readyState == wsOpen) {
-      _channel.sink.add(data);
+      // The delimiter is the contract: the relay forwards this text into the home's libp2p stream,
+      // and the home splits that stream on `\n`. Without it the home sees an incomplete frame and
+      // never answers — a hang, not a parse error.
+      _channel.sink.add(frameMeshMessage(data));
     }
   }
 

@@ -4542,6 +4542,15 @@ export type {
 } from "./json-rpc-wire.js";
 
 // ============================================
+// Newline-delimited frame wire
+// ============================================
+
+// The framing the mesh host transports read (`splitFrames`) and every writer of a raw duplex must
+// use (`encodeJsonFrame`). One module so the delimiter cannot drift between the two ends; see the
+// module for the hang a bare `JSON.stringify` produces.
+export { FRAME_DELIMITER, encodeJsonFrame, splitFrames } from "./frame-wire.js";
+
+// ============================================
 // Ext-agent contract
 // ============================================
 

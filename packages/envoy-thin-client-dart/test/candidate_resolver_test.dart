@@ -177,20 +177,69 @@ void main() {
     expect(candidates.where((c) => c.name.startsWith('p2p-')), isEmpty);
   });
 
-  test('the P2P cap spends its slot on the direct address, not a relay hop', () {
+  test('the scanned desktop QR keeps the relay circuit ahead of its private addresses', () {
     const resolver = CandidateResolver();
-    // Cellular: one P2P candidate, and both a direct address and a relay hop are on offer. A direct
-    // address is one hop instead of two.
+    // The addresses from a real EnvoyDev pairing code: loopback, the LAN address,
+    // the community-relay circuit, that relay's own address, and one more relay.
+    // Off Wi-Fi the walk must still contain the circuit. The loopback must not.
+    const homeId = '12D3KooWFsBvTyCfiJviW16JCbLxFagyZkcTiPufY2TUnc6LSSAv';
+    const circuit =
+        '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo/p2p-circuit/p2p/$homeId';
     final p2p = resolver
         .resolve(
-          node(bootstrapPeers: [directAddr, relayAddr]),
+          node(
+            homePeerId: homeId,
+            lanIp: 'ws://192.168.3.85:4770/ws',
+            bootstrapPeers: [
+              '/ip4/127.0.0.1/tcp/49204/p2p/$homeId',
+              '/ip4/192.168.3.85/tcp/49204/p2p/$homeId',
+              circuit,
+              '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo',
+              '/ip4/47.251.91.97/tcp/4001/p2p/12D3KooWAWiVSpsCjpjauz83ijLugxwScRJi89N4PA1VQ1Czsncb',
+            ],
+          ),
           sessionToken: 'tok',
           isOnWifi: false,
         )
         .where((c) => c.name.startsWith('p2p-'))
         .toList();
-    expect(p2p.map((c) => c.name), ['p2p-direct']);
-    expect(p2p.single.url, directAddr);
+    expect(p2p.first.url, circuit);
+    expect(p2p.any((c) => c.url.contains('127.0.0.1')), isFalse);
+  });
+
+  test('cellular keeps the circuit when every direct address is private', () {
+    const resolver = CandidateResolver();
+    // The shape a desktop QR actually mints: loopback, the LAN address, and the
+    // circuit through the community relay. Off Wi‑Fi the cap is 2. Both private
+    // directs used to fill it, so a phone that paired on the LAN and later opened
+    // on cellular never dialled the only hop that can leave the network.
+    const loopback = '/ip4/127.0.0.1/tcp/4001/p2p/$home';
+    final p2p = resolver
+        .resolve(
+          node(bootstrapPeers: [loopback, directAddr, relayCircuitAddr]),
+          sessionToken: 'tok',
+          isOnWifi: false,
+        )
+        .where((c) => c.name.startsWith('p2p-'))
+        .toList();
+    expect(p2p.map((c) => c.url), contains(relayCircuitAddr));
+    expect(p2p.any((c) => c.url.contains('127.0.0.1')), isFalse);
+  });
+
+  test('a public direct address still outranks the circuit under the cap', () {
+    const resolver = CandidateResolver();
+    const publicAddr = '/ip4/1.2.3.4/tcp/4001/p2p/$home';
+    const extra = '/ip4/47.251.91.97/tcp/4001/p2p/12D3KooWextra';
+    final p2p = resolver
+        .resolve(
+          node(bootstrapPeers: [publicAddr, relayCircuitAddr, extra, directAddr]),
+          sessionToken: 'tok',
+          isOnWifi: false,
+        )
+        .where((c) => c.name.startsWith('p2p-'))
+        .toList();
+    expect(p2p.first.url, publicAddr);
+    expect(p2p.map((c) => c.url), contains(relayCircuitAddr));
   });
 
   test('communityRelayRequiresPeerId defaults to false, so EnvoyGo keeps its token-only rung', () {

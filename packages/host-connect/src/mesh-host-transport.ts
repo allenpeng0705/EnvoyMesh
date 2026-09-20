@@ -36,6 +36,9 @@
 
 import type { HostRpcDispatcher, SessionIdentityResolver } from "./ws-host-contract.js";
 import { rpcErrorCode } from "./rpc-error-code.js";
+// The framing contract is owned by `protocol` so the writer (the relay) and this reader cannot
+// drift: a bare `JSON.stringify` on the wire is an incomplete frame here, which reads as a hang.
+import { encodeJsonFrame, splitFrames } from "@envoymesh/protocol";
 
 /**
  * One duplex, framed.
@@ -74,17 +77,11 @@ interface JsonRpcRequest {
   params?: unknown;
 }
 
-const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/** Split a byte buffer into complete newline-delimited frames, returning the remainder. */
-export function splitFrames(buffer: string, chunk: string): { frames: string[]; rest: string } {
-  const combined = buffer + chunk;
-  const parts = combined.split("\n");
-  // The last part is either empty (a clean boundary) or an incomplete frame.
-  const rest = parts.pop() ?? "";
-  return { frames: parts.filter((part) => part.trim() !== ""), rest };
-}
+// Re-exported rather than re-implemented: `protocol`'s `frame-wire` owns the delimiter, and this
+// transport's public surface keeps the name its importers (`reuse-host`, the product hosts) use.
+export { splitFrames };
 
 /**
  * Serve one mesh connection.
@@ -215,7 +212,7 @@ async function handleFrame<TCaller>(
 
 async function writeFrame(duplex: FramedDuplex, payload: unknown): Promise<void> {
   try {
-    await duplex.write(encoder.encode(`${JSON.stringify(payload)}\n`));
+    await duplex.write(encodeJsonFrame(payload));
   } catch {
     // A write to a closing socket is the peer going away, not a failure of ours; the read loop will
     // end and unwind.

@@ -67,8 +67,11 @@ class CandidateResolver {
   /// LAN → public → P2P → bootstrap → relay (fallback).
   ///
   /// [isOnWifi] only affects how many expensive libp2p candidates we keep
-  /// (more on Wi‑Fi, fewer on cellular). LAN is always tried first when
-  /// known — unreachable private IPs fail fast via HomeRemoteClient.
+  /// (3 on Wi‑Fi, 2 otherwise). LAN is always tried first when known —
+  /// unreachable private IPs fail fast via HomeRemoteClient. The off-LAN
+  /// cap used to be 1 and was filled by the first direct address, which on
+  /// a phone that left the LAN is `127.0.0.1` or a private IP: the circuit
+  /// the QR carried was dropped and cellular could not connect.
   List<HomeRemoteCandidate> resolve(StoredNode node,
       {String? sessionToken, bool? isOnWifi}) {
     final p2pCandidates = _buildLibp2pCandidates(node, sessionToken);
@@ -79,7 +82,10 @@ class CandidateResolver {
         _buildBootstrapPeerCandidates(node, sessionToken);
 
     final onWifi = isOnWifi ?? false;
-    final p2pCap = onWifi ? 2 : 1;
+    // Two off Wi‑Fi, not one. One slot was spent on the private direct address
+    // and the circuit never ran. Wi‑Fi keeps one more so a same-LAN libp2p dial
+    // can still sit beside the circuit.
+    final p2pCap = onWifi ? 3 : 2;
 
     return [
       ...lanCandidates,
@@ -90,28 +96,75 @@ class CandidateResolver {
     ];
   }
 
-  /// Cap expensive libp2p candidates (prefer a direct address, then cn-relay / community when
-  /// present).
+  /// Cap expensive libp2p candidates.
   ///
-  /// A direct address outranks the circuit hops because it is one hop instead of two and needs no
-  /// relay to be up; before this, capping on cellular (1 candidate) would spend the only P2P slot on
-  /// a circuit through a relay while a direct address the payload had just handed us went unused.
+  /// Order under the cap, best first:
+  ///   1. a **public** direct address — one hop, and it is reachable from cellular;
+  ///   2. a relay circuit, **cn-relay first** — the hop that works once the phone
+  ///      has left the LAN;
+  ///   3. a private or loopback direct — only useful on the same network, and the
+  ///      LAN WebSocket is already a separate rung tried before any of these.
+  ///      Loopback is last: `127.0.0.1` on the phone is the phone, not the desktop.
+  ///
+  /// A private direct used to outrank every circuit. On cellular the cap was one,
+  /// so the walk dialled `127.0.0.1` (or `192.168.x`) and never the circuit the
+  /// QR had already published. Same-LAN still wins earlier, on the LAN WebSocket,
+  /// so demoting these addresses does not slow the easy case.
   List<HomeRemoteCandidate> _limitLibp2p(
     List<HomeRemoteCandidate> all, {
     required int max,
   }) {
     if (all.length <= max) return all;
-    final direct =
-        all.where((c) => c.name.startsWith('p2p-direct')).toList();
-    if (direct.isNotEmpty) {
-      return direct.take(max).toList();
+    final publicDirect = <HomeRemoteCandidate>[];
+    final lanDirect = <HomeRemoteCandidate>[];
+    final loopbackDirect = <HomeRemoteCandidate>[];
+    final relays = <HomeRemoteCandidate>[];
+    for (final candidate in all) {
+      if (!candidate.name.startsWith('p2p-direct')) {
+        relays.add(candidate);
+        continue;
+      }
+      if (_isLoopbackMultiaddr(candidate.url)) {
+        loopbackDirect.add(candidate);
+      } else if (_multiaddrIsLanOnly(candidate.url)) {
+        lanDirect.add(candidate);
+      } else {
+        publicDirect.add(candidate);
+      }
     }
-    final preferred = all.where((c) => c.name.contains('cn-relay')).toList();
-    if (preferred.isNotEmpty) {
-      return preferred.take(max).toList();
-    }
-    return all.take(max).toList();
+    final preferred =
+        relays.where((c) => c.name.contains('cn-relay')).toList();
+    final other =
+        relays.where((c) => !c.name.contains('cn-relay')).toList();
+    return <HomeRemoteCandidate>[
+      ...publicDirect,
+      ...preferred,
+      ...other,
+      ...lanDirect,
+      ...loopbackDirect,
+    ].take(max).toList();
   }
+
+  /// A direct multiaddr the phone can only reach on the same network.
+  ///
+  /// Loopback, RFC1918, link-local, and carrier-grade NAT. A public address
+  /// returns false so it keeps its place ahead of the circuit.
+  bool _multiaddrIsLanOnly(String multiaddr) {
+    final match =
+        RegExp(r'^/ip4/(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}/').firstMatch(multiaddr);
+    if (match == null) return _isLoopbackMultiaddr(multiaddr);
+    final a = int.parse(match.group(1)!);
+    final b = int.parse(match.group(2)!);
+    if (a == 0 || a == 10 || a == 127) return true;
+    if (a == 169 && b == 254) return true;
+    if (a == 192 && b == 168) return true;
+    if (a == 172 && b >= 16 && b <= 31) return true;
+    if (a == 100 && b >= 64 && b <= 127) return true;
+    return false;
+  }
+
+  bool _isLoopbackMultiaddr(String multiaddr) =>
+      multiaddr.startsWith('/ip4/127.') || multiaddr.startsWith('/ip6/::1/');
 
   /// Build LAN WebSocket candidates.
   List<HomeRemoteCandidate> _buildLanCandidates(

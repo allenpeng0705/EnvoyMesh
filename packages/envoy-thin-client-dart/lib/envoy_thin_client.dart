@@ -22,6 +22,7 @@ export 'services/client_proxy_transport.dart';
 export 'services/dial_budget.dart';
 export 'services/exceptions.dart';
 export 'services/home_remote_client.dart';
+export 'services/mesh_frame.dart';
 export 'services/pairing_uri.dart';
 export 'services/reconnect_supervisor.dart';
 export 'services/redaction.dart';
