@@ -58,6 +58,77 @@ void main() {
     expect(codingModelToEhHostModel('', 'openai-compatible'), isNull);
   });
 
+  test('codingTaskAgentPrefill strips host model prefixes', () {
+    expect(
+      codingTaskAgentPrefill(model: 'openai:gpt-4o'),
+      (model: 'gpt-4o', providerKind: 'openai-compatible', endpoint: ''),
+    );
+    expect(
+      codingTaskAgentPrefill(
+        model: 'claude-sonnet',
+        providerKind: 'anthropic-compatible',
+        endpoint: 'https://x',
+      ),
+      (
+        model: 'claude-sonnet',
+        providerKind: 'anthropic-compatible',
+        endpoint: 'https://x',
+      ),
+    );
+  });
+
+  test('codingModelSuggestionsForAgent uses home vs catalog by harness', () {
+    expect(
+      codingModelSuggestionsForAgent(
+        harness: 'envoy-harness',
+        homeModels: const ['home-a', 'home-b'],
+        catalogModels: const ['cat-a'],
+      ),
+      ['home-a', 'home-b'],
+    );
+    expect(
+      codingModelSuggestionsForAgent(
+        harness: 'claudecode',
+        homeModels: const ['home-a'],
+        catalogModels: const ['cat-a', 'cat-b'],
+      ),
+      ['cat-a', 'cat-b'],
+    );
+    expect(
+      codingModelSuggestionsForAgent(
+        harness: 'pi',
+        providerKind: 'openai-compatible',
+        homeModels: const ['home-a'],
+      ),
+      isEmpty,
+    );
+  });
+
+  test('codingCatalogModelsFromResponse reads models and configOptions', () {
+    expect(
+      codingCatalogModelsFromResponse({
+        'models': [
+          'm1',
+          {'id': 'm2'},
+          {'model': 'm3'},
+        ],
+        'configOptions': [
+          {
+            'id': 'model',
+            'type': 'model',
+            'currentValue': 'm4',
+            'options': [
+              'm5',
+              {'value': 'm6'},
+            ],
+          },
+        ],
+      }),
+      ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'],
+    );
+    expect(codingCatalogModelsFromResponse(null), isEmpty);
+  });
+
   test('addCodingProject registers path with default harness', () async {
     final project = await addCodingProject(
       '/Users/me/app',

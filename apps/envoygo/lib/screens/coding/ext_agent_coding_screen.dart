@@ -80,6 +80,8 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
   String? _titleOverride;
   bool _busy = false;
   String? _localError;
+  Map<String, dynamic>? _pendingPermission;
+  Map<String, dynamic>? _pendingQuestion;
 
   String get _agentId => widget.harness.trim();
   String get _chatId => extTimelineChatId(widget.sessionId);
@@ -131,17 +133,13 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
 
   Map<String, dynamic> get _runtimePayload {
     final model = (_prefs.model ?? _session?.model)?.trim();
-    final policy = _caps.permissionAskDisabledReason != null &&
-            _prefs.permissionPolicy == 'always-confirm'
-        ? 'safe-only'
-        : _prefs.permissionPolicy;
     return {
       if (model != null && model.isNotEmpty) 'model': model,
       if ((_session?.providerKind ?? '').trim().isNotEmpty)
         'providerKind': _session!.providerKind!.trim(),
       if ((_session?.endpoint ?? '').trim().isNotEmpty)
         'endpoint': _session!.endpoint!.trim(),
-      'permissionPolicy': policy,
+      'permissionPolicy': _prefs.permissionPolicy,
     };
   }
 
@@ -165,14 +163,7 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
   }
 
   Future<void> _loadLocalState() async {
-    var prefs = await loadCodingComposerPrefs(_prefsKey);
-    if (_caps.permissionAskDisabledReason != null &&
-        prefs.permissionPolicy == 'always-confirm') {
-      prefs = await saveCodingComposerPrefs(
-        _prefsKey,
-        prefs.copyWith(permissionPolicy: 'safe-only'),
-      );
-    }
+    final prefs = await loadCodingComposerPrefs(_prefsKey);
     final seed = await loadCodingTranscript(
       kind: 'ext',
       id: widget.sessionId,
@@ -260,6 +251,70 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
         }
       }),
     );
+    _unsubs.add(
+      client.on('coding:permission', (data) {
+        if (data is! Map) return;
+        if (data['sessionId']?.toString() != widget.sessionId) return;
+        if (!mounted) return;
+        setState(() => _pendingPermission = Map<String, dynamic>.from(data));
+      }),
+    );
+    _unsubs.add(
+      client.on('coding:user_question', (data) {
+        if (data is! Map) return;
+        if (data['sessionId']?.toString() != widget.sessionId) return;
+        if (!mounted) return;
+        setState(() => _pendingQuestion = Map<String, dynamic>.from(data));
+      }),
+    );
+  }
+
+  Future<void> _respondCodingPermission(bool allowed) async {
+    final client = ref.read(nodeServiceProvider);
+    final perm = _pendingPermission;
+    if (client == null || perm == null) return;
+    final requestId = perm['requestId']?.toString() ?? '';
+    if (requestId.isEmpty) return;
+    setState(() => _pendingPermission = null);
+    try {
+      await client.codingRespondToPermission(
+        requestId: requestId,
+        allowed: allowed,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
+  Future<void> _respondCodingQuestion({
+    required String value,
+    int? optionIndex,
+    List<int>? optionIndexes,
+    bool cancelled = false,
+  }) async {
+    final client = ref.read(nodeServiceProvider);
+    final q = _pendingQuestion;
+    if (client == null || q == null) return;
+    final requestId = q['requestId']?.toString() ?? '';
+    if (requestId.isEmpty) return;
+    setState(() => _pendingQuestion = null);
+    try {
+      await client.codingRespondToUserQuestion(
+        requestId: requestId,
+        value: value,
+        optionIndex: optionIndex,
+        optionIndexes: optionIndexes,
+        cancelled: cancelled ? true : null,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
   }
 
   Future<void> _bootstrap() async {
@@ -558,7 +613,13 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
         unawaited(_refreshProbe());
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _pendingPermission = null;
+          _pendingQuestion = null;
+        });
+      }
       _scrollToEnd();
     }
   }
@@ -791,6 +852,27 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
               ],
             ),
           ),
+          if (_pendingPermission != null)
+            _CodingPermissionCard(
+              permission: _pendingPermission!,
+              onAllow: () => unawaited(_respondCodingPermission(true)),
+              onDeny: () => unawaited(_respondCodingPermission(false)),
+            ),
+          if (_pendingQuestion != null)
+            _CodingUserQuestionCard(
+              question: _pendingQuestion!,
+              onSingle: (label, index) => unawaited(
+                _respondCodingQuestion(value: label, optionIndex: index),
+              ),
+              onMany: (value, indexes) => unawaited(
+                _respondCodingQuestion(value: value, optionIndexes: indexes),
+              ),
+              onText: (value) =>
+                  unawaited(_respondCodingQuestion(value: value)),
+              onDismiss: () => unawaited(
+                _respondCodingQuestion(value: '', cancelled: true),
+              ),
+            ),
           CodingComposerToolbar(
             caps: _caps,
             prefs: _prefs,
@@ -897,6 +979,205 @@ class _ExtMessageBubble extends StatelessWidget {
               color: isSystem ? scheme.onErrorContainer : null,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CodingPermissionCard extends StatelessWidget {
+  const _CodingPermissionCard({
+    required this.permission,
+    required this.onAllow,
+    required this.onDeny,
+  });
+
+  final Map<String, dynamic> permission;
+  final VoidCallback onAllow;
+  final VoidCallback onDeny;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final tool = permission['toolName']?.toString() ?? 'tool';
+    final desc = permission['description']?.toString() ?? '';
+    final preview = permission['preview']?.toString();
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              l10n.ehPermissionTitle,
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            Text('$tool — $desc'),
+            if (preview != null && preview.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  preview,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 12,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(onPressed: onDeny, child: Text(l10n.ehPermissionDeny)),
+                FilledButton(
+                  onPressed: onAllow,
+                  child: Text(l10n.ehPermissionAllow),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CodingUserQuestionCard extends StatefulWidget {
+  const _CodingUserQuestionCard({
+    required this.question,
+    required this.onSingle,
+    required this.onMany,
+    required this.onText,
+    required this.onDismiss,
+  });
+
+  final Map<String, dynamic> question;
+  final void Function(String label, int index) onSingle;
+  final void Function(String value, List<int> indexes) onMany;
+  final void Function(String value) onText;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_CodingUserQuestionCard> createState() =>
+      _CodingUserQuestionCardState();
+}
+
+class _CodingUserQuestionCardState extends State<_CodingUserQuestionCard> {
+  final Set<int> _picked = {};
+  final TextEditingController _textCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _textCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final prompt = widget.question['prompt']?.toString() ?? '';
+    final options =
+        (widget.question['options'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
+    final recommended = widget.question['recommendedIndex'];
+    final many = widget.question['multiple'] == true && options.length > 1;
+    final freeText = options.isEmpty;
+    final multiline = widget.question['multiline'] == true;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              l10n.ehQuestionTitle,
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            if (prompt.isNotEmpty) Text(prompt),
+            if (many) ...[
+              for (var i = 0; i < options.length; i++)
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: _picked.contains(i),
+                  title: Text(
+                    recommended == i
+                        ? '${options[i]} (${l10n.ehRecommended})'
+                        : options[i],
+                  ),
+                  onChanged: (checked) {
+                    setState(() {
+                      if (checked == true) {
+                        _picked.add(i);
+                      } else {
+                        _picked.remove(i);
+                      }
+                    });
+                  },
+                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: widget.onDismiss,
+                    child: Text(l10n.commonCancel),
+                  ),
+                  FilledButton(
+                    onPressed: _picked.isEmpty
+                        ? null
+                        : () {
+                            final indexes = _picked.toList()..sort();
+                            final value =
+                                indexes.map((i) => options[i]).join(', ');
+                            widget.onMany(value, indexes);
+                          },
+                    child: Text(l10n.commonConfirm),
+                  ),
+                ],
+              ),
+            ] else if (options.isNotEmpty)
+              ...options.asMap().entries.map((e) {
+                final isRec = recommended == e.key;
+                return Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: OutlinedButton(
+                    onPressed: () => widget.onSingle(e.value, e.key),
+                    child: Text(
+                      isRec ? '${e.value} (${l10n.ehRecommended})' : e.value,
+                    ),
+                  ),
+                );
+              })
+            else if (freeText) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: _textCtrl,
+                maxLines: multiline ? 6 : 3,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: widget.onDismiss,
+                    child: Text(l10n.commonCancel),
+                  ),
+                  FilledButton(
+                    onPressed: _textCtrl.text.trim().isEmpty
+                        ? null
+                        : () => widget.onText(_textCtrl.text.trim()),
+                    child: Text(l10n.commonConfirm),
+                  ),
+                ],
+              ),
+            ],
+          ],
         ),
       ),
     );

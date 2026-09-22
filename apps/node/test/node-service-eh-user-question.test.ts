@@ -38,6 +38,35 @@ describe("AcpUserQuestionBridge", () => {
     });
   });
 
+  it("passes a multi-select answer through as option indexes", async () => {
+    const emitted: Array<{ requestId: string; multiple?: boolean }> = [];
+    const bridge = new AcpUserQuestionBridge((_event, payload) => {
+      emitted.push({
+        requestId: payload.requestId,
+        multiple: payload.multiple,
+      });
+    });
+    const pending = bridge.ask(
+      {
+        prompt: "Which files?",
+        options: ["a.ts", "b.ts", "c.ts"],
+        multiple: true,
+      },
+      "chat-1",
+    );
+    await vi.waitFor(() => expect(emitted).toHaveLength(1));
+    expect(emitted[0]?.multiple).toBe(true);
+    bridge.respond(emitted[0]!.requestId, {
+      value: "a.ts, c.ts",
+      optionIndexes: [0, 2],
+    });
+    await expect(pending).resolves.toMatchObject({
+      value: "a.ts, c.ts",
+      optionIndexes: [0, 2],
+      cancelled: false,
+    });
+  });
+
   it("auto-cancels on timeout", async () => {
     vi.useFakeTimers();
     try {

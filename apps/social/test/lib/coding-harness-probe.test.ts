@@ -3,6 +3,7 @@ import {
   harnessNeedsResolve,
   harnessProbeLabelKey,
   probeCodingHarness,
+  readyCodingHarnesses,
 } from "../../src/lib/coding-harness-probe.js";
 
 describe("coding-harness-probe", () => {
@@ -38,5 +39,19 @@ describe("coding-harness-probe", () => {
     expect(r.badge).toBe("not-ready");
     expect(r.installCommand).toContain("codex");
     expect(harnessNeedsResolve(r.badge)).toBe(true);
+  });
+
+  it("readyCodingHarnesses keeps only ready ids", () => {
+    expect(
+      readyCodingHarnesses(
+        {
+          "envoy-harness": "ready",
+          pi: "checking",
+          codex: "install",
+          cursor: "ready",
+        },
+        ["envoy-harness", "pi", "codex", "cursor"],
+      ),
+    ).toEqual(["envoy-harness", "cursor"]);
   });
 });

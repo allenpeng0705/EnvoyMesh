@@ -186,6 +186,9 @@ describe("the endpoint descriptor", () => {
   it("round-trips, at 0600", async () => {
     await writeNodeEndpoint(home, endpoint);
     expect(await readNodeEndpoint(home)).toEqual(endpoint);
+
+    await writeNodeEndpoint(home, { ...endpoint, managedBy: "service" });
+    expect(await readNodeEndpoint(home)).toMatchObject({ managedBy: "service", pid: 1234 });
     if (process.platform !== "win32") {
       expect((await fs.stat(endpointPath(home))).mode & 0o777).toBe(0o600);
     }

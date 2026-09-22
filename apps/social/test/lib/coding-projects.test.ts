@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   addCodingProject,
-  codingHarnessModelSuggestions,
+  codingEnvoyHarnessModelSuggestions,
   codingModelSuggestionsForAgent,
   codingModelToEhHostModel,
   ensureCodingProjectsFromCwds,
@@ -349,32 +349,58 @@ describe("coding-projects", () => {
   });
 });
 
-describe("codingHarnessModelSuggestions", () => {
-  it("follows the selected agent family", () => {
-    expect(codingHarnessModelSuggestions("codex")[0]).toMatch(/gpt|o3|o4/i);
-    expect(codingHarnessModelSuggestions("claudecode")[0]).toMatch(/claude/i);
-    expect(codingHarnessModelSuggestions("minimax-code")[0]).toMatch(/MiniMax/i);
+describe("coding model suggestions", () => {
+  it("uses the Settings provider and EnvoyLocal for Envoy Harness", () => {
+    const list = codingEnvoyHarnessModelSuggestions({
+      modelProviders: {
+        mode: "openai-compatible",
+        presetId: "openai",
+        modelName: "gpt-4o",
+        endpoint: "https://api.openai.com/v1",
+      },
+      envoyLocalModelIds: ["qwen3.5-4b"],
+    });
+    expect(list[0]).toBe("gpt-4o");
+    expect(list).toContain("gpt-5");
+    expect(list).toContain("qwen3.5-4b");
   });
 
-  it("puts compatible-provider models first when custom endpoint is chosen", () => {
+  it("uses only EnvoyLocal when no cloud provider is set", () => {
+    expect(
+      codingEnvoyHarnessModelSuggestions({
+        modelProviders: { mode: "disabled" },
+        envoyLocalModelIds: ["gemma4-e2b"],
+      }),
+    ).toEqual(["gemma4-e2b"]);
+  });
+
+  it("does not invent a model list for other agents", () => {
+    expect(
+      codingModelSuggestionsForAgent({
+        harness: "codex",
+        providerKind: "",
+      }),
+    ).toEqual([]);
+    expect(
+      codingModelSuggestionsForAgent({
+        harness: "codex",
+        catalogModels: ["gpt-5.5", "gpt-5.4"],
+      }),
+    ).toEqual(["gpt-5.5", "gpt-5.4"]);
+  });
+
+  it("uses compatible-provider as free-text (no invented model list)", () => {
     const openai = codingModelSuggestionsForAgent({
       harness: "claudecode",
       providerKind: "openai-compatible",
+      catalogModels: ["haiku"],
     });
-    expect(openai[0]).toMatch(/gpt|o4|o3/i);
+    expect(openai).toEqual([]);
     const anthropic = codingModelSuggestionsForAgent({
       harness: "codex",
       providerKind: "anthropic-compatible",
+      catalogModels: ["gpt-5.5"],
     });
-    expect(anthropic[0]).toMatch(/claude/i);
-  });
-
-  it("uses agent defaults when provider is agent login", () => {
-    const list = codingModelSuggestionsForAgent({
-      harness: "minimax-code",
-      providerKind: "",
-    });
-    expect(list).toContain("MiniMax-M3");
-    expect(list[0]).toBe("MiniMax-M3");
+    expect(anthropic).toEqual([]);
   });
 });

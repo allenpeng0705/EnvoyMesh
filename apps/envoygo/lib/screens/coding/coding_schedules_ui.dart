@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../coding/coding_harness_probe.dart';
 import '../../coding/coding_heartbeat.dart';
 import '../../coding/coding_schedule.dart';
 import '../../l10n/app_localizations.dart';
@@ -317,7 +320,20 @@ class _CodingScheduleCreateDialogState
   CodingHarnessChoice _harness = CodingHarnessChoice.envoyHarness;
   bool _enabled = true;
   bool _busy = false;
+  bool _probing = false;
   String? _error;
+  Map<CodingHarnessChoice, CodingHarnessProbeResult> _probes = {
+    for (final h in CodingHarnessChoice.values)
+      h: const CodingHarnessProbeResult(badge: CodingHarnessProbeBadge.checking),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_probeAll());
+    });
+  }
 
   @override
   void dispose() {
@@ -328,13 +344,46 @@ class _CodingScheduleCreateDialogState
     super.dispose();
   }
 
+  Future<void> _probeAll() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null || !mounted) return;
+    setState(() => _probing = true);
+    final next = <CodingHarnessChoice, CodingHarnessProbeResult>{};
+    await Future.wait(
+      CodingHarnessChoice.values.map((h) async {
+        next[h] = await probeCodingHarnessByWireId(
+          client,
+          wireId: codingHarnessWireId(h),
+          extAgentId: codingHarnessToExtAgentId(h),
+        );
+      }),
+    );
+    if (!mounted) return;
+    setState(() {
+      _probes = next;
+      _probing = false;
+      final snapped = snapCodingHarnessToReady(
+        _harness,
+        CodingHarnessChoice.values,
+        (h) => next[h],
+      );
+      if (snapped != null) _harness = snapped;
+    });
+  }
+
   String get _cron => resolveCodingHeartbeatCron(
         presetOrCustom: _preset,
         customCron: _customCronCtrl.text,
       );
 
+  List<CodingHarnessChoice> get _readyHarnesses => readyCodingHarnessChoices(
+        CodingHarnessChoice.values,
+        (h) => _probes[h],
+      );
+
   bool get _canSave =>
       !_busy &&
+      _readyHarnesses.contains(_harness) &&
       _nameCtrl.text.trim().isNotEmpty &&
       _promptCtrl.text.trim().isNotEmpty &&
       _cwdCtrl.text.trim().isNotEmpty &&
@@ -494,24 +543,33 @@ class _CodingScheduleCreateDialogState
                 ],
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<CodingHarnessChoice>(
-                value: _harness,
-                decoration: InputDecoration(
-                  labelText: l10n.codingHarnessLabel,
+              if (_readyHarnesses.isEmpty)
+                Text(
+                  _probing
+                      ? l10n.codingHarnessChecking
+                      : l10n.codingHarnessNoneReady,
+                )
+              else
+                DropdownButtonFormField<CodingHarnessChoice>(
+                  value: _readyHarnesses.contains(_harness)
+                      ? _harness
+                      : _readyHarnesses.first,
+                  decoration: InputDecoration(
+                    labelText: l10n.codingHarnessLabel,
+                  ),
+                  items: [
+                    for (final h in _readyHarnesses)
+                      DropdownMenuItem(
+                        value: h,
+                        child: Text(codingHarnessDisplayName(h)),
+                      ),
+                  ],
+                  onChanged: _busy
+                      ? null
+                      : (v) {
+                          if (v != null) setState(() => _harness = v);
+                        },
                 ),
-                items: [
-                  for (final h in CodingHarnessChoice.values)
-                    DropdownMenuItem(
-                      value: h,
-                      child: Text(codingHarnessDisplayName(h)),
-                    ),
-                ],
-                onChanged: _busy
-                    ? null
-                    : (v) {
-                        if (v != null) setState(() => _harness = v);
-                      },
-              ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(l10n.codingHeartbeatEnabled),

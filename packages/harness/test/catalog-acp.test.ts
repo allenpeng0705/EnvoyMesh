@@ -25,6 +25,71 @@ describe("catalog ACP helpers", () => {
       ]),
     ).toBe("allow-once");
   });
+
+  it("reads model ids the way a session publishes them", () => {
+    expect(
+      _test.sessionModelIdsFromConfigOptions(
+        [
+          {
+            id: "model",
+            category: "model",
+            type: "select",
+            options: [
+              { value: "haiku", name: "Haiku" },
+              { value: "sonnet", name: "Sonnet" },
+            ],
+          },
+        ],
+        "bare-id",
+      ),
+    ).toEqual(["haiku", "sonnet"]);
+    expect(
+      _test.sessionModelIdsFromConfigOptions(
+        [
+          {
+            id: "model",
+            category: "model",
+            type: "select",
+            options: [
+              {
+                name: "DeepSeek",
+                options: [
+                  {
+                    value: '["deepseek-official","deepseek-v4-flash"]',
+                    name: "DeepSeek-V4-Flash",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        "json-pair",
+      ),
+    ).toEqual(["deepseek-official/deepseek-v4-flash"]);
+  });
+
+  it("DeepSeek / CodeWhale model probe uses json-pair values", () => {
+    expect(_test.modelProbeSpec("codewhale")?.shape).toBe("json-pair");
+    expect(_test.modelProbeSpec("deepseek-harness")?.shape).toBe("json-pair");
+    expect(_test.modelProbeSpec("deepseek-tui")?.shape).toBe("json-pair");
+    expect(_test.modelProbeSpec("codex")?.shape).toBe("bare-id");
+  });
+
+  it("encodes ACP as NDJSON (EnvoyCoder wire)", () => {
+    const frame = _test.encodeRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    expect(frame.toString("utf8")).toBe(
+      '{"jsonrpc":"2.0","id":1,"method":"initialize"}\n',
+    );
+  });
+
+  it("parses codewhale models CLI output as provider/model", () => {
+    expect(
+      _test.parseCodewhaleModelsCli(`Available models (default: deepseek-v4-pro)
+  deepseek-flash (deepseek)
+* deepseek-v4-pro (deepseek)
+`),
+    ).toEqual(["deepseek/deepseek-v4-pro", "deepseek/deepseek-flash"]);
+  });
 });
 
 describe("createCodingHarnessBackend", () => {
@@ -51,23 +116,17 @@ describe("runCatalogAcpPrompt", () => {
 import { Buffer } from "node:buffer";
 let buf = Buffer.alloc(0);
 function send(msg) {
-  const body = Buffer.from(JSON.stringify(msg));
-  process.stdout.write("Content-Length: " + body.length + "\\r\\n\\r\\n");
-  process.stdout.write(body);
+  process.stdout.write(JSON.stringify(msg) + "\\n");
 }
 process.stdin.on("data", (chunk) => {
   buf = Buffer.concat([buf, chunk]);
   while (true) {
-    const idx = buf.indexOf("\\r\\n\\r\\n");
-    if (idx < 0) break;
-    const header = buf.subarray(0, idx).toString("utf8");
-    const m = /content-length:\\s*(\\d+)/i.exec(header);
-    if (!m) { buf = buf.subarray(idx + 4); continue; }
-    const len = Number(m[1]);
-    const start = idx + 4;
-    if (buf.length < start + len) break;
-    const msg = JSON.parse(buf.subarray(start, start + len).toString("utf8"));
-    buf = buf.subarray(start + len);
+    const nl = buf.indexOf(0x0a);
+    if (nl < 0) break;
+    const line = buf.subarray(0, nl).toString("utf8").trim();
+    buf = buf.subarray(nl + 1);
+    if (!line) continue;
+    const msg = JSON.parse(line);
     if (msg.method === "initialize") {
       send({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: 1 } });
     } else if (msg.method === "session/new") {
@@ -120,9 +179,7 @@ const toolInput = toolName === "read_file" ? { path: "a.ts" } : { command: "rm -
 let buf = Buffer.alloc(0);
 let promptId = null;
 function send(msg) {
-  const body = Buffer.from(JSON.stringify(msg));
-  process.stdout.write("Content-Length: " + body.length + "\\r\\n\\r\\n");
-  process.stdout.write(body);
+  process.stdout.write(JSON.stringify(msg) + "\\n");
 }
 function chunk(text) {
   send({ jsonrpc: "2.0", method: "session/update", params: {
@@ -133,16 +190,12 @@ function chunk(text) {
 process.stdin.on("data", (c) => {
   buf = Buffer.concat([buf, c]);
   while (true) {
-    const idx = buf.indexOf("\\r\\n\\r\\n");
-    if (idx < 0) break;
-    const header = buf.subarray(0, idx).toString("utf8");
-    const m = /content-length:\\s*(\\d+)/i.exec(header);
-    if (!m) { buf = buf.subarray(idx + 4); continue; }
-    const len = Number(m[1]);
-    const start = idx + 4;
-    if (buf.length < start + len) break;
-    const msg = JSON.parse(buf.subarray(start, start + len).toString("utf8"));
-    buf = buf.subarray(start + len);
+    const nl = buf.indexOf(0x0a);
+    if (nl < 0) break;
+    const line = buf.subarray(0, nl).toString("utf8").trim();
+    buf = buf.subarray(nl + 1);
+    if (!line) continue;
+    const msg = JSON.parse(line);
     if (msg.method === "initialize") {
       send({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: 1 } });
     } else if (msg.method === "session/new") {
@@ -233,5 +286,88 @@ process.stdin.on("data", (c) => {
     });
     expect(asked).toBe(0);
     expect(text).toBe("decision:allow-once");
+  });
+});
+
+describe("runCatalogAcpPrompt — user question", () => {
+  async function askUserScript(): Promise<{ cwd: string; script: string }> {
+    const cwd = await mkdtemp(join(tmpdir(), "acp-ask-"));
+    const script = join(cwd, "mock-acp-ask.mjs");
+    await writeFile(
+      script,
+      `
+let buf = Buffer.alloc(0);
+let promptId = null;
+function send(msg) {
+  process.stdout.write(JSON.stringify(msg) + "\\n");
+}
+function chunk(text) {
+  send({ jsonrpc: "2.0", method: "session/update", params: {
+    sessionId: "s1",
+    update: { sessionUpdate: "agent_message_chunk", content: { text } },
+  }});
+}
+process.stdin.on("data", (c) => {
+  buf = Buffer.concat([buf, c]);
+  while (true) {
+    const nl = buf.indexOf(0x0a);
+    if (nl < 0) break;
+    const line = buf.subarray(0, nl).toString("utf8").trim();
+    buf = buf.subarray(nl + 1);
+    if (!line) continue;
+    const msg = JSON.parse(line);
+    if (msg.method === "initialize") {
+      send({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: 1 } });
+    } else if (msg.method === "session/new") {
+      send({ jsonrpc: "2.0", id: msg.id, result: { sessionId: "s1" } });
+    } else if (msg.method === "session/prompt") {
+      promptId = msg.id;
+      send({ jsonrpc: "2.0", id: 9002, method: "session/user_question", params: {
+        sessionId: "s1",
+        prompt: "Which files?",
+        options: ["a.ts", "b.ts", "c.ts"],
+        multiple: true,
+      }});
+    } else if (msg.id === 9002) {
+      const r = msg.result || {};
+      chunk("answer:" + (r.value || "") + "|indexes:" + JSON.stringify(r.optionIndexes || []));
+      send({ jsonrpc: "2.0", id: promptId, result: { stopReason: "end_turn" } });
+    }
+  }
+});
+`,
+      "utf8",
+    );
+    return { cwd, script };
+  }
+
+  it("routes ask_user to the dock and returns multi-select indexes", async () => {
+    const { cwd, script } = await askUserScript();
+    const asked: Array<{ prompt: string; multiple?: boolean }> = [];
+    const text = await runCatalogAcpPrompt({
+      command: process.execPath,
+      args: [script],
+      cwd,
+      prompt: "pick",
+      timeoutMs: 8_000,
+      onUserQuestion: async (req) => {
+        asked.push({ prompt: req.prompt, multiple: req.multiple });
+        return { value: "a.ts, c.ts", optionIndexes: [0, 2] };
+      },
+    });
+    expect(asked).toEqual([{ prompt: "Which files?", multiple: true }]);
+    expect(text).toBe('answer:a.ts, c.ts|indexes:[0,2]');
+  });
+
+  it("cancels ask_user when no dock is wired", async () => {
+    const { cwd, script } = await askUserScript();
+    const text = await runCatalogAcpPrompt({
+      command: process.execPath,
+      args: [script],
+      cwd,
+      prompt: "pick",
+      timeoutMs: 8_000,
+    });
+    expect(text).toBe("answer:|indexes:[]");
   });
 });

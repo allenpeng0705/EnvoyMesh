@@ -117,6 +117,7 @@ export function wireClientProxyPushEvents(
     "eh:files_changed",
     "eh:permission",
     "coding:permission",
+    "coding:user_question",
     "eh:user_question",
     "eh:timeline",
     "eh:chats_updated",

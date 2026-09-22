@@ -14,12 +14,15 @@ import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
 import '../../providers/terminal_provider.dart';
 import '../../services/coding_ext_sessions.dart';
+import '../../widgets/coding_agent_fields.dart';
 import '../../widgets/connection_indicator.dart';
 import '../../widgets/pair_required_panel.dart';
 import '../chat/envoy_harness_chat_screen.dart';
 import 'coding_add_project_sheet.dart';
 import 'coding_new_task_sheet.dart';
+import 'coding_project_settings_sheet.dart';
 import 'coding_scheduler_ui.dart';
+import 'coding_task_agent_sheet.dart';
 import 'ext_agent_coding_screen.dart';
 import 'pi_coding_chat_screen.dart';
 
@@ -159,148 +162,204 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
   }
 
   Future<void> _openNewTask({String? initialCwd}) async {
-    final ehCount = _ehThreads(ref.read(chatProvider)).length;
     await showCodingNewTaskSheet(
       context,
       ref,
       initialCwd: initialCwd,
-      onConfirm: (harness, cwd, {model, providerKind, endpoint}) async {
-        if (codingHarnessIsTierB(harness)) {
-          final wireId = codingHarnessWireId(harness);
-          final session = await createCodingExtSession(
-            harness: wireId,
-            cwd: cwd,
-            title: codingHarnessDisplayName(harness),
-            model: model,
-            providerKind: providerKind,
-            endpoint: endpoint,
-          );
-          try {
-            final client = ref.read(nodeServiceProvider);
-            if (client != null &&
-                ((model ?? '').trim().isNotEmpty ||
-                    (providerKind ?? '').trim().isNotEmpty ||
-                    (endpoint ?? '').trim().isNotEmpty)) {
-              await client.setCodingHarnessRuntime(
-                codingSessionId: session.id,
-                cwd: session.cwd,
-                runtime: {
-                  if ((model ?? '').trim().isNotEmpty) 'model': model!.trim(),
-                  if ((providerKind ?? '').trim().isNotEmpty)
-                    'providerKind': providerKind!.trim(),
-                  if ((endpoint ?? '').trim().isNotEmpty)
-                    'endpoint': endpoint!.trim(),
-                },
-              );
-            } else if (client != null) {
-              await client.setCodingHarnessRuntime(
-                codingSessionId: session.id,
-                cwd: session.cwd,
-              );
-            }
-          } catch (_) {
-            await removeCodingExtSession(session.id);
-            rethrow;
-          }
-          if (!mounted) return;
-          setState(() {
-            _extSessions = [
-              session,
-              ..._extSessions.where((s) => s.id != session.id),
-            ];
-          });
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => ExtAgentCodingScreen(
-                sessionId: session.id,
-                harness: session.harness,
-                cwd: session.cwd,
-                title: session.title,
-              ),
-            ),
-          );
-          await _refresh();
-          return;
-        }
-        if (harness == CodingHarnessChoice.envoyHarness) {
-          if (ehCount >= kMaxEnvoyHarnessChats) {
-            throw StateError(
-              'At most $kMaxEnvoyHarnessChats coding chats — remove one first.',
-            );
-          }
-          final ehModel = codingModelToEhHostModel(model, providerKind);
-          final threadId = await ref.read(chatProvider.notifier).createEhChat(
-                projectPath: cwd,
-                model: ehModel,
-                endpoint: (endpoint ?? '').trim().isEmpty ? null : endpoint,
-              );
-          if (!mounted) return;
-          final thread = ref
-              .read(chatProvider)
-              .threads
-              .where((t) => t.id == threadId)
-              .firstOrNull;
-          final parts = threadId.split(':eh:');
-          final chatId = parts.length > 1 ? parts[1] : null;
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => EnvoyHarnessChatScreen(
-                threadId: threadId,
-                displayName: thread?.displayName ?? 'Envoy',
-                chatId: chatId,
-              ),
-            ),
-          );
-          return;
-        }
-
-        Map<String, dynamic>? piOverride;
-        final lockedModel = (model ?? '').trim();
-        final lockedEndpoint = (endpoint ?? '').trim();
-        final lockedProvider = (providerKind ?? '').trim();
-        if (lockedModel.isNotEmpty) {
-          final modelName = lockedModel.contains(':')
-              ? lockedModel.substring(lockedModel.indexOf(':') + 1).trim()
-              : lockedModel;
-          final piProvider = lockedProvider == 'anthropic-compatible'
-              ? 'anthropic'
-              : lockedProvider == 'openai-compatible'
-                  ? 'openai'
-                  : lockedModel.contains(':')
-                      ? lockedModel.substring(0, lockedModel.indexOf(':')).trim()
-                      : null;
-          piOverride = {
-            'model': modelName,
-            if (piProvider != null && piProvider.isNotEmpty)
-              'provider': piProvider,
-            if (lockedProvider == 'openai-compatible')
-              'mode': 'openai-compatible',
-            if (lockedProvider == 'anthropic-compatible')
-              'mode': 'anthropic-compatible',
-            if (lockedEndpoint.isNotEmpty) 'endpoint': lockedEndpoint,
-          };
-        }
-        final sessionId = await ref.read(chatProvider.notifier).createPiTerminal(
-              projectPath: cwd,
-              modelOverride: piOverride,
-            );
-        if (!mounted) return;
-        final session = ref
-            .read(terminalProvider)
-            .sessions
-            .where((s) => s.id == sessionId)
-            .firstOrNull;
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => PiCodingChatScreen(
-              sessionId: sessionId,
-              sessionName: session?.name ?? 'Pi',
-              cwd: session?.cwd,
-            ),
-          ),
+      onConfirm: (harness, cwd, {model, providerKind, endpoint, apiKey}) async {
+        await _startTask(
+          harness: harness,
+          cwd: cwd,
+          title: codingHarnessDisplayName(harness),
+          model: model,
+          providerKind: providerKind,
+          endpoint: endpoint,
+          apiKey: apiKey,
+          openAfterCreate: true,
         );
       },
     );
+    await _refresh();
+  }
+
+  /// Create a Coding task (Social new-task / harness-switch recreate).
+  Future<void> _startTask({
+    required CodingHarnessChoice harness,
+    required String cwd,
+    required String title,
+    String? model,
+    String? providerKind,
+    String? endpoint,
+    String? apiKey,
+    bool openAfterCreate = true,
+  }) async {
+    final ehCount = _ehThreads(ref.read(chatProvider)).length;
+    if (codingHarnessIsTierB(harness)) {
+      final wireId = codingHarnessWireId(harness);
+      final session = await createCodingExtSession(
+        harness: wireId,
+        cwd: cwd,
+        title: title.trim().isEmpty ? codingHarnessDisplayName(harness) : title,
+        model: model,
+        providerKind: providerKind,
+        endpoint: endpoint,
+      );
+      try {
+        final client = ref.read(nodeServiceProvider);
+        if (client != null &&
+            ((model ?? '').trim().isNotEmpty ||
+                (providerKind ?? '').trim().isNotEmpty ||
+                (endpoint ?? '').trim().isNotEmpty ||
+                (apiKey ?? '').trim().isNotEmpty)) {
+          await client.setCodingHarnessRuntime(
+            codingSessionId: session.id,
+            cwd: session.cwd,
+            runtime: {
+              if ((model ?? '').trim().isNotEmpty) 'model': model!.trim(),
+              if ((providerKind ?? '').trim().isNotEmpty)
+                'providerKind': providerKind!.trim(),
+              if ((endpoint ?? '').trim().isNotEmpty)
+                'endpoint': endpoint!.trim(),
+              if ((apiKey ?? '').trim().isNotEmpty) 'apiKey': apiKey!.trim(),
+            },
+          );
+        } else if (client != null) {
+          await client.setCodingHarnessRuntime(
+            codingSessionId: session.id,
+            cwd: session.cwd,
+          );
+        }
+      } catch (_) {
+        await removeCodingExtSession(session.id);
+        rethrow;
+      }
+      if (!mounted) return;
+      setState(() {
+        _extSessions = [
+          session,
+          ..._extSessions.where((s) => s.id != session.id),
+        ];
+      });
+      if (openAfterCreate) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ExtAgentCodingScreen(
+              sessionId: session.id,
+              harness: session.harness,
+              cwd: session.cwd,
+              title: session.title,
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (harness == CodingHarnessChoice.envoyHarness) {
+      if (ehCount >= kMaxEnvoyHarnessChats) {
+        throw StateError(
+          'At most $kMaxEnvoyHarnessChats coding chats — remove one first.',
+        );
+      }
+      final ehModel = codingModelToEhHostModel(model, providerKind);
+      final threadId = await ref.read(chatProvider.notifier).createEhChat(
+            projectPath: cwd,
+            model: ehModel,
+            endpoint: (endpoint ?? '').trim().isEmpty ? null : endpoint,
+            apiKey: (apiKey ?? '').trim().isEmpty ? null : apiKey,
+          );
+      if (!mounted) return;
+      if (openAfterCreate) {
+        final thread = ref
+            .read(chatProvider)
+            .threads
+            .where((t) => t.id == threadId)
+            .firstOrNull;
+        final parts = threadId.split(':eh:');
+        final chatId = parts.length > 1 ? parts[1] : null;
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => EnvoyHarnessChatScreen(
+              threadId: threadId,
+              displayName: thread?.displayName ?? 'Envoy',
+              chatId: chatId,
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    Map<String, dynamic>? piOverride;
+    final lockedModel = (model ?? '').trim();
+    final lockedEndpoint = (endpoint ?? '').trim();
+    final lockedProvider = (providerKind ?? '').trim();
+    final lockedApiKey = (apiKey ?? '').trim();
+    if (lockedModel.isNotEmpty) {
+      final modelName = lockedModel.contains(':')
+          ? lockedModel.substring(lockedModel.indexOf(':') + 1).trim()
+          : lockedModel;
+      final piProvider = lockedProvider == 'anthropic-compatible'
+          ? 'anthropic'
+          : lockedProvider == 'openai-compatible'
+              ? 'openai'
+              : lockedModel.contains(':')
+                  ? lockedModel.substring(0, lockedModel.indexOf(':')).trim()
+                  : null;
+      piOverride = {
+        'model': modelName,
+        if (piProvider != null && piProvider.isNotEmpty) 'provider': piProvider,
+        if (lockedProvider == 'openai-compatible') 'mode': 'openai-compatible',
+        if (lockedProvider == 'anthropic-compatible')
+          'mode': 'anthropic-compatible',
+        if (lockedEndpoint.isNotEmpty) 'endpoint': lockedEndpoint,
+        if (lockedApiKey.isNotEmpty) 'apiKey': lockedApiKey,
+      };
+    }
+    final sessionId = await ref.read(chatProvider.notifier).createPiTerminal(
+          projectPath: cwd,
+          modelOverride: piOverride,
+        );
+    if (!mounted) return;
+    if (openAfterCreate) {
+      final session = ref
+          .read(terminalProvider)
+          .sessions
+          .where((s) => s.id == sessionId)
+          .firstOrNull;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PiCodingChatScreen(
+            sessionId: sessionId,
+            sessionName: session?.name ?? 'Pi',
+            cwd: session?.cwd,
+          ),
+        ),
+      );
+    }
+  }
+
+  /// Switch harness: create a new task under the same folder, then remove the old one.
+  Future<void> _recreateTaskAgent({
+    required CodingAgentFieldsValue next,
+    required String cwd,
+    required String title,
+    required Future<void> Function() removeOld,
+  }) async {
+    final path = normalizeCodingProjectPath(cwd);
+    if (path.isEmpty) return;
+    await _startTask(
+      harness: next.harness,
+      cwd: path,
+      title: title,
+      model: next.model.trim().isEmpty ? null : next.model.trim(),
+      providerKind:
+          next.providerKind.trim().isEmpty ? null : next.providerKind.trim(),
+      endpoint: next.endpoint.trim().isEmpty ? null : next.endpoint.trim(),
+      apiKey: next.apiKey.trim().isEmpty ? null : next.apiKey.trim(),
+      // Create first, drop the old task, then refresh — same order as Social.
+      openAfterCreate: false,
+    );
+    await removeOld();
     await _refresh();
   }
 
@@ -450,6 +509,174 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
     });
   }
 
+  Future<void> _openProjectSettings(CodingProject project) async {
+    final saved = await showCodingProjectSettingsSheet(
+      context,
+      ref,
+      project: project,
+    );
+    if (saved == null || !mounted) return;
+    final projects = await loadCodingProjects();
+    if (!mounted) return;
+    setState(() => _projects = projects);
+  }
+
+  Future<void> _openExtTaskAgent(CodingExtSession session) async {
+    final choice = codingHarnessFromWireId(session.harness) ??
+        CodingHarnessChoice.claudeCode;
+    final prefill = codingTaskAgentPrefill(
+      model: session.model,
+      providerKind: session.providerKind,
+      endpoint: session.endpoint,
+    );
+    final next = await showCodingTaskAgentSheet(
+      context,
+      ref,
+      taskTitle: session.title.trim().isNotEmpty
+          ? session.title
+          : codingHarnessDisplayName(choice),
+      initial: CodingAgentFieldsValue(
+        harness: choice,
+        model: prefill.model,
+        providerKind: prefill.providerKind,
+        endpoint: prefill.endpoint,
+      ),
+    );
+    if (next == null || !mounted) return;
+    final client = ref.read(nodeServiceProvider);
+    if (codingHarnessIsTierB(next.harness)) {
+      final updated = await applyCodingExtTaskAgent(
+        client: client,
+        session: session,
+        next: next,
+      );
+      if (updated != null && mounted) {
+        setState(() {
+          _extSessions = [
+            updated,
+            ..._extSessions.where((s) => s.id != updated.id),
+          ];
+        });
+      }
+      return;
+    }
+    await _recreateTaskAgent(
+      next: next,
+      cwd: session.cwd,
+      title: session.title,
+      removeOld: () => _removeExt(session, confirm: false),
+    );
+  }
+
+  Future<void> _openEhTaskAgent(ChatThread thread) async {
+    final parts = thread.id.split(':eh:');
+    final chatId = parts.length > 1 ? parts[1] : null;
+    final cwd = normalizeCodingProjectPath(thread.description ?? '');
+    var initial = const CodingAgentFieldsValue(
+      harness: CodingHarnessChoice.envoyHarness,
+    );
+    final client = ref.read(nodeServiceProvider);
+    if (client != null && chatId != null) {
+      try {
+        final list = await client.listEnvoyHarnessChats();
+        for (final raw in list) {
+          if (raw['id']?.toString().trim() != chatId) continue;
+          final prefill = codingTaskAgentPrefill(
+            model: raw['model']?.toString(),
+            endpoint: raw['endpoint']?.toString(),
+          );
+          initial = CodingAgentFieldsValue(
+            harness: CodingHarnessChoice.envoyHarness,
+            model: prefill.model,
+            providerKind: prefill.providerKind,
+            endpoint: prefill.endpoint,
+          );
+          break;
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    final next = await showCodingTaskAgentSheet(
+      context,
+      ref,
+      taskTitle: thread.displayName,
+      initial: initial,
+    );
+    if (next == null || !mounted) return;
+    if (next.harness == CodingHarnessChoice.envoyHarness &&
+        client != null &&
+        chatId != null) {
+      final ehModel = codingModelToEhHostModel(next.model, next.providerKind);
+      await client.updateEnvoyHarnessChat(
+        chatId: chatId,
+        model: ehModel ?? '',
+        endpoint: next.endpoint.trim(),
+        apiKey: next.apiKey.trim(),
+      );
+      await _refresh();
+      return;
+    }
+    await _recreateTaskAgent(
+      next: next,
+      cwd: cwd,
+      title: thread.displayName,
+      removeOld: () => _removeEh(thread, confirm: false),
+    );
+  }
+
+  Future<void> _openPiTaskAgent(TerminalSession session) async {
+    final next = await showCodingTaskAgentSheet(
+      context,
+      ref,
+      taskTitle: session.name,
+      initial: const CodingAgentFieldsValue(harness: CodingHarnessChoice.pi),
+    );
+    if (next == null || !mounted) return;
+    final cwd = normalizeCodingProjectPath(session.cwd ?? '');
+    if (next.harness != CodingHarnessChoice.pi) {
+      await _recreateTaskAgent(
+        next: next,
+        cwd: cwd.isEmpty ? (session.cwd ?? '') : cwd,
+        title: session.name,
+        removeOld: () => _removePi(session, confirm: false),
+      );
+      return;
+    }
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    final lockedModel = next.model.trim();
+    Map<String, dynamic>? modelOverride;
+    if (lockedModel.isNotEmpty) {
+      final modelName = lockedModel.contains(':')
+          ? lockedModel.substring(lockedModel.indexOf(':') + 1).trim()
+          : lockedModel;
+      final piProvider = next.providerKind == 'anthropic-compatible'
+          ? 'anthropic'
+          : next.providerKind == 'openai-compatible'
+              ? 'openai'
+              : lockedModel.contains(':')
+                  ? lockedModel.substring(0, lockedModel.indexOf(':')).trim()
+                  : null;
+      modelOverride = {
+        'model': modelName,
+        if (piProvider != null && piProvider.isNotEmpty) 'provider': piProvider,
+        if (next.providerKind == 'openai-compatible') 'mode': 'openai-compatible',
+        if (next.providerKind == 'anthropic-compatible')
+          'mode': 'anthropic-compatible',
+        if (next.endpoint.trim().isNotEmpty) 'endpoint': next.endpoint.trim(),
+        if (next.apiKey.trim().isNotEmpty) 'apiKey': next.apiKey.trim(),
+      };
+    }
+    await client.ensurePiTerminalSession(
+      projectPath: cwd.isEmpty ? (session.cwd ?? '') : cwd,
+      sessionId: session.id,
+      forceRestart: true,
+      modelOverride: modelOverride,
+    );
+    await ref.read(terminalProvider.notifier).loadSessions();
+    await _refresh();
+  }
+
   Future<void> _removeProject(CodingProject project) async {
     final l10n = AppLocalizations.of(context);
     final ok = await showDialog<bool>(
@@ -538,17 +765,25 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
     required String kind,
     required String id,
     required Future<void> Function() onRemove,
+    Future<void> Function()? onAgent,
   }) {
     final archived = _archivedKeys.contains(codingArchiveKey(kind, id));
     return PopupMenuButton<String>(
       onSelected: (value) {
         if (value == 'archive') {
           unawaited(_toggleArchive(kind, id));
+        } else if (value == 'agent') {
+          unawaited(onAgent?.call() ?? Future<void>.value());
         } else if (value == 'remove') {
           unawaited(onRemove());
         }
       },
       itemBuilder: (_) => [
+        if (onAgent != null)
+          PopupMenuItem(
+            value: 'agent',
+            child: Text(l10n.codingTaskAgentTitle),
+          ),
         PopupMenuItem(
           value: 'archive',
           child: Text(archived ? l10n.codingUnarchive : l10n.codingArchive),
@@ -609,6 +844,7 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
           kind: 'eh',
           id: archiveId,
           onRemove: () => _removeEh(thread),
+          onAgent: () => _openEhTaskAgent(thread),
         ),
         onTap: () => _openEh(thread),
         onLongPress: () => unawaited(_toggleArchive('eh', archiveId)),
@@ -656,6 +892,7 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
           kind: 'pi',
           id: session.id,
           onRemove: () => _removePi(session),
+          onAgent: () => _openPiTaskAgent(session),
         ),
         onTap: () => _openPi(session),
         onLongPress: () => unawaited(_toggleArchive('pi', session.id)),
@@ -710,6 +947,7 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
           kind: 'ext',
           id: session.id,
           onRemove: () => _removeExt(session),
+          onAgent: () => _openExtTaskAgent(session),
         ),
         onTap: () => _openExt(session),
         onLongPress: () => unawaited(_toggleArchive('ext', session.id)),
@@ -755,6 +993,8 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
           onSelected: (value) {
             if (value == 'new') {
               unawaited(_openNewTask(initialCwd: project.path));
+            } else if (value == 'settings') {
+              unawaited(_openProjectSettings(project));
             } else if (value == 'remove') {
               unawaited(_removeProject(project));
             }
@@ -763,6 +1003,10 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
             PopupMenuItem(
               value: 'new',
               child: Text(l10n.codingNewTaskTitle),
+            ),
+            PopupMenuItem(
+              value: 'settings',
+              child: Text(l10n.codingProjectSettingsTitle),
             ),
             PopupMenuItem(
               value: 'remove',

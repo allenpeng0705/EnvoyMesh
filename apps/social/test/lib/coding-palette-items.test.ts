@@ -92,14 +92,13 @@ describe("buildCodingPaletteItems", () => {
       ],
       cwdFiles: [{ name: "README.md", path: "/repo/README.md" }],
       canOpenSettings: true,
-      canInvitePeer: true,
     });
     expect(items.some((i) => i.kind === "project")).toBe(true);
     expect(items.some((i) => i.kind === "task")).toBe(true);
     expect(items.some((i) => i.kind === "file")).toBe(true);
     expect(items.some((i) => i.id === "action:new-task")).toBe(true);
     expect(items.some((i) => i.id === "action:new-schedule")).toBe(true);
-    expect(items.some((i) => i.id === "action:invite-peer")).toBe(true);
+    expect(items.some((i) => i.id === "action:invite-peer")).toBe(false);
     expect(items.some((i) => i.id === "action:open-settings")).toBe(true);
   });
 });

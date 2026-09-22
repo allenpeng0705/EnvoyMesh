@@ -1,6 +1,6 @@
 {
   "name": "@envoymesh/api",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -54,8 +54,8 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@envoymesh/identity": "0.5.0",
-    "@envoymesh/protocol": "0.5.0",
+    "@envoymesh/identity": "0.6.0",
+    "@envoymesh/protocol": "0.6.0",
     "@noble/hashes": "^1.8.0",
     "zod": "^4.3.6"
   }

@@ -685,6 +685,10 @@ struct NodeSidecarDescriptor {
     port: Option<u16>,
     #[serde(rename = "ownerId", default)]
     owner_id: Option<String>,
+    #[serde(rename = "managedBy", default)]
+    managed_by: Option<String>,
+    #[serde(default)]
+    version: Option<String>,
 }
 
 fn is_pid_alive(pid: u32) -> bool {
@@ -765,6 +769,314 @@ fn read_node_sidecar_descriptor(profile_dir: &Path) -> Option<NodeSidecarDescrip
     serde_json::from_str(&raw).ok()
 }
 
+const NODE_SERVICE_LABEL: &str = "mesh.envoy.node";
+
+fn service_respawn_flag(profile_dir: &Path) -> PathBuf {
+    home_dir_for_profile(profile_dir).join("background-service.respawn")
+}
+
+fn service_starting_flag(profile_dir: &Path) -> PathBuf {
+    home_dir_for_profile(profile_dir).join("background-service.starting")
+}
+
+fn service_launcher_spec(profile_dir: &Path) -> PathBuf {
+    home_dir_for_profile(profile_dir).join("background-service-launch.json")
+}
+
+fn background_service_unit_path() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var_os("HOME")?;
+        return Some(
+            PathBuf::from(home)
+                .join("Library/LaunchAgents")
+                .join(format!("{NODE_SERVICE_LABEL}.plist")),
+        );
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let home = std::env::var_os("HOME")?;
+        return Some(
+            PathBuf::from(home)
+                .join(".config/systemd/user")
+                .join(format!("{NODE_SERVICE_LABEL}.service")),
+        );
+    }
+    #[cfg(windows)]
+    {
+        let home = std::env::var_os("USERPROFILE")?;
+        return Some(
+            PathBuf::from(home)
+                .join("AppData/Local/EnvoyMesh")
+                .join(format!("{NODE_SERVICE_LABEL}.xml")),
+        );
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
+fn background_service_unit_installed() -> bool {
+    background_service_unit_path()
+        .map(|path| path.is_file())
+        .unwrap_or(false)
+}
+
+/// Quit stops an app-spawned child. A pid the background service owns stays up.
+fn should_stop_app_child(
+    child_pid: u32,
+    managed_by: Option<&str>,
+    endpoint_pid: Option<u32>,
+) -> bool {
+    !(managed_by == Some("service") && endpoint_pid == Some(child_pid))
+}
+
+#[cfg(target_os = "macos")]
+fn current_uid() -> Option<u32> {
+    let output = Command::new("id").arg("-u").output().ok()?;
+    String::from_utf8(output.stdout).ok()?.trim().parse().ok()
+}
+
+fn restart_background_service() {
+    #[cfg(target_os = "macos")]
+    if let Some(uid) = current_uid() {
+        let target = format!("gui/{uid}/{NODE_SERVICE_LABEL}");
+        let domain = format!("gui/{uid}");
+        // bootout + bootstrap so a job stopped for OTA (or never loaded) comes back.
+        let _ = Command::new("launchctl").args(["bootout", &target]).status();
+        if let Some(path) = background_service_unit_path() {
+            let _ = Command::new("launchctl")
+                .args(["bootstrap", &domain, &path.to_string_lossy()])
+                .status();
+        }
+        let _ = Command::new("launchctl")
+            .args(["kickstart", "-k", &target])
+            .status();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = Command::new("systemctl")
+            .args(["--user", "daemon-reload"])
+            .status();
+        let _ = Command::new("systemctl")
+            .args(["--user", "restart", &format!("{NODE_SERVICE_LABEL}.service")])
+            .status();
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("schtasks")
+            .args(["/End", "/TN", NODE_SERVICE_LABEL])
+            .status();
+        let _ = Command::new("schtasks")
+            .args(["/Run", "/TN", NODE_SERVICE_LABEL])
+            .status();
+    }
+}
+
+/// Point an installed service at this app's node when an upgrade moved the bundle.
+/// Returns true when the supervisor was asked to restart.
+fn refresh_service_launcher(profile_dir: &Path, config: &NodeSpawnConfig) -> bool {
+    if !background_service_unit_installed() {
+        return false;
+    }
+    let spec_path = service_launcher_spec(profile_dir);
+    let Ok(raw) = std::fs::read_to_string(&spec_path) else {
+        return false;
+    };
+    let Ok(mut spec) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+    let entry = spec.get("entry").and_then(|v| v.as_str()).unwrap_or("");
+    let exec = spec.get("execPath").and_then(|v| v.as_str()).unwrap_or("");
+    let new_entry = config.node_path.to_string_lossy().to_string();
+    let new_exec = config.node_exe.to_string_lossy().to_string();
+    let env_dir = spec
+        .pointer("/env/TAURI_RESOURCE_DIR")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let new_dir = config
+        .tauri_resource_dir
+        .as_ref()
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_default();
+    // An in-place upgrade replaces EnvoyMesh.app but keeps the same paths.
+    // The running service is still the previous process until it is restarted.
+    let running_version = read_node_sidecar_descriptor(profile_dir)
+        .and_then(|desc| desc.version)
+        .unwrap_or_default();
+    let app_version = env!("CARGO_PKG_VERSION");
+    let version_changed = !running_version.is_empty() && running_version != app_version;
+    if !version_changed
+        && entry == new_entry
+        && exec == new_exec
+        && (new_dir.is_empty() || env_dir == new_dir)
+    {
+        return false;
+    }
+    spec["entry"] = serde_json::Value::String(new_entry);
+    spec["execPath"] = serde_json::Value::String(new_exec.clone());
+    spec["cwd"] = serde_json::Value::String(config.node_cwd.to_string_lossy().to_string());
+    if let Some(env) = spec.get_mut("env").and_then(|value| value.as_object_mut()) {
+        if !new_dir.is_empty() {
+            env.insert(
+                "TAURI_RESOURCE_DIR".to_string(),
+                serde_json::Value::String(new_dir),
+            );
+        }
+        env.insert(
+            "ENVOYMESH_NODE_BUNDLE_DIR".to_string(),
+            serde_json::Value::String(config.node_cwd.to_string_lossy().to_string()),
+        );
+        if config.node_exe.is_file() {
+            env.insert(
+                "ENVOYMESH_NODE_EXE".to_string(),
+                serde_json::Value::String(new_exec),
+            );
+        }
+    }
+    let Ok(pretty) = serde_json::to_string_pretty(&spec) else {
+        return false;
+    };
+    if std::fs::write(&spec_path, format!("{pretty}\n")).is_err() {
+        return false;
+    }
+    info!("Background service launcher points at this app now; restarting it");
+    restart_background_service();
+    true
+}
+
+fn wait_for_attached_home_node(profile_dir: &Path, timeout: Duration) -> Option<AttachedHomeNode> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if let Some(existing) = try_attach_existing_home_node(profile_dir) {
+            return Some(existing);
+        }
+        std::thread::sleep(Duration::from_millis(400));
+    }
+    None
+}
+
+/// English Task Scheduler `/FO LIST` line `Status: Running` (same rule as
+/// `parseNodeServiceStatus` in apps/node). Translated status words → false.
+fn windows_schtasks_list_is_running(stdout: &str) -> bool {
+    for line in stdout.lines() {
+        let lower = line.trim().to_ascii_lowercase();
+        let Some(rest) = lower.strip_prefix("status:") else {
+            continue;
+        };
+        return rest.trim() == "running";
+    }
+    false
+}
+
+fn service_job_running() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let Some(uid) = current_uid() else {
+            return false;
+        };
+        let target = format!("gui/{uid}/{NODE_SERVICE_LABEL}");
+        let Ok(output) = Command::new("launchctl").args(["print", &target]).output() else {
+            return false;
+        };
+        return String::from_utf8_lossy(&output.stdout).contains("state = running");
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let unit = format!("{NODE_SERVICE_LABEL}.service");
+        return Command::new("systemctl")
+            .args(["--user", "is-active", "--quiet", &unit])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+    }
+    #[cfg(windows)]
+    {
+        let Ok(output) = Command::new("schtasks")
+            .args(["/Query", "/TN", NODE_SERVICE_LABEL, "/FO", "LIST"])
+            .output()
+        else {
+            return false;
+        };
+        if !output.status.success() {
+            return false;
+        }
+        return windows_schtasks_list_is_running(&String::from_utf8_lossy(&output.stdout));
+    }
+    #[cfg(not(any(target_os = "macos", unix, windows)))]
+    {
+        false
+    }
+}
+
+/// Unload / stop the login job without deleting the unit file (OTA / restart).
+fn stop_background_service_job() {
+    #[cfg(target_os = "macos")]
+    if let Some(uid) = current_uid() {
+        let target = format!("gui/{uid}/{NODE_SERVICE_LABEL}");
+        let _ = Command::new("launchctl").args(["bootout", &target]).status();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = Command::new("systemctl")
+            .args(["--user", "stop", &format!("{NODE_SERVICE_LABEL}.service")])
+            .status();
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("schtasks")
+            .args(["/End", "/TN", NODE_SERVICE_LABEL])
+            .status();
+    }
+}
+
+/// After the app-owned node exits so a service can take the home: wait for that
+/// service, and start an app-owned node if it never answers.
+fn finish_service_handoff(state: &NodeProcessState) -> bool {
+    let flag = service_starting_flag(&state.config.profile_dir);
+    if !flag.is_file() {
+        return false;
+    }
+    if let Some(existing) = try_attach_existing_home_node(&state.config.profile_dir) {
+        let _ = std::fs::remove_file(&flag);
+        let pid = existing.pid;
+        if let Ok(mut attached) = state.attached.lock() {
+            *attached = Some(existing);
+        }
+        if let Ok(mut guardian) = state.guardian.lock() {
+            guardian.suppress_respawn = true;
+        }
+        info!("Attached to the background service (pid {pid})");
+        return true;
+    }
+    let age = std::fs::metadata(&flag)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .unwrap_or(Duration::ZERO);
+    if age < Duration::from_secs(45) || service_job_running() {
+        return true;
+    }
+    let _ = std::fs::remove_file(&flag);
+    warn!("Background service did not start; running the home node with the app");
+    match spawn_node_process(&state.config) {
+        Ok(child) => {
+            if let Ok(mut slot) = state.child.lock() {
+                *slot = Some(child);
+            }
+            if let Ok(mut guardian) = state.guardian.lock() {
+                guardian.suppress_respawn = false;
+                guardian.child_started_at = Some(Instant::now());
+                guardian.consecutive_liveness_failures = 0;
+            }
+            if let Ok(mut attached) = state.attached.lock() {
+                *attached = None;
+            }
+        }
+        Err(err) => error!("Could not start the home node: {err}"),
+    }
+    true
+}
+
 /// Kill a listener on the node ports — **only if this profile's `node.json` names
 /// that pid**.
 ///
@@ -780,7 +1092,7 @@ fn read_node_sidecar_descriptor(profile_dir: &Path) -> Option<NodeSidecarDescrip
 /// don't have a reliable cross-platform equivalent in the build script).
 #[cfg(unix)]
 fn kill_stale_listeners_on_node_ports(profile_dir: &Path) {
-    let Some(owned_pid) = read_node_sidecar_descriptor(profile_dir).map(|d| d.pid) else {
+    let Some(desc) = read_node_sidecar_descriptor(profile_dir) else {
         if NODE_SIDECAR_PORTS.iter().any(|port| is_port_in_use(*port)) {
             info!(
                 "Node ports are in use but this profile has no node.json — leaving the listeners alone \
@@ -789,6 +1101,14 @@ fn kill_stale_listeners_on_node_ports(profile_dir: &Path) {
         }
         return;
     };
+    if desc.managed_by.as_deref() == Some("service") && is_pid_alive(desc.pid) {
+        info!(
+            "node.json belongs to the background service (pid {}); leaving it running",
+            desc.pid
+        );
+        return;
+    }
+    let owned_pid = desc.pid;
 
     #[cfg(unix)]
     {
@@ -861,12 +1181,26 @@ fn stop_node_child(child_slot: &mut Option<Child>) {
 
 fn stop_node_from_app(app: &tauri::AppHandle) {
     if let Some(state) = app.try_state::<NodeProcessState>() {
+        let desc = read_node_sidecar_descriptor(&state.config.profile_dir);
+        let managed_by = desc.as_ref().and_then(|item| item.managed_by.as_deref());
+        let endpoint_pid = desc.as_ref().map(|item| item.pid);
         if let Ok(mut guardian) = state.guardian.lock() {
             guardian.suppress_respawn = true;
         }
         if let Ok(mut child_guard) = state.child.lock() {
-            stop_node_child(&mut *child_guard);
-            info!("Node process stopped");
+            match child_guard.as_ref().map(|child| child.id()) {
+                Some(pid) if !should_stop_app_child(pid, managed_by, endpoint_pid) => {
+                    info!("Leaving the background service running (pid {pid})");
+                }
+                Some(_) => {
+                    stop_node_child(&mut *child_guard);
+                    info!("Node process stopped");
+                }
+                None if managed_by == Some("service") || background_service_unit_installed() => {
+                    info!("Window closing; the background service keeps the home node running");
+                }
+                None => {}
+            }
         }
     }
 }
@@ -1127,6 +1461,8 @@ fn start_node_guardian(app: tauri::AppHandle) {
                         "Home-node exited with supervisor code {} — not restarting (suppress or rate limit)",
                         NODE_SUPERVISOR_EXIT_CODE
                     );
+                } else if finish_service_handoff(&state) {
+                    // Still starting, attached to the service, or running with the app again.
                 } else {
                     warn!(
                         "Home-node exited (code {:?}) — not auto-respawning",
@@ -1143,6 +1479,52 @@ fn start_node_guardian(app: tauri::AppHandle) {
                 .map(|g| g.is_some())
                 .unwrap_or(false);
             if !child_alive {
+                if finish_service_handoff(&state) {
+                    continue;
+                }
+                let profile = &state.config.profile_dir;
+                let flag = service_respawn_flag(profile);
+                if flag.is_file() && try_attach_existing_home_node(profile).is_none() {
+                    match spawn_node_process(&state.config) {
+                        Ok(child) => {
+                            let _ = std::fs::remove_file(&flag);
+                            if let Ok(mut slot) = state.child.lock() {
+                                if slot.is_none() {
+                                    *slot = Some(child);
+                                } else {
+                                    let mut extra = Some(child);
+                                    stop_node_child(&mut extra);
+                                }
+                            }
+                            if let Ok(mut guardian) = state.guardian.lock() {
+                                guardian.suppress_respawn = false;
+                                guardian.child_started_at = Some(Instant::now());
+                                guardian.consecutive_liveness_failures = 0;
+                            }
+                            if let Ok(mut attached) = state.attached.lock() {
+                                *attached = None;
+                            }
+                            info!("Home node is running with the app again");
+                        }
+                        Err(err) => {
+                            error!(
+                                "Could not start the home node after the background service stopped: {err}"
+                            );
+                        }
+                    }
+                    continue;
+                }
+                if background_service_unit_installed() {
+                    if let Some(existing) = try_attach_existing_home_node(profile) {
+                        let _ = std::fs::remove_file(service_starting_flag(profile));
+                        if let Ok(mut attached) = state.attached.lock() {
+                            *attached = Some(existing);
+                        }
+                        if let Ok(mut guardian) = state.guardian.lock() {
+                            guardian.suppress_respawn = true;
+                        }
+                    }
+                }
                 continue;
             }
 
@@ -1584,6 +1966,30 @@ fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String
         return Ok(());
     }
 
+    // Login service owns the node — restart that job instead of spawning a second child.
+    let respawn_requested = service_respawn_flag(&state.config.profile_dir).is_file();
+    if background_service_unit_installed() && !respawn_requested {
+        drop(child_guard);
+        info!("Restarting the background service instead of spawning an app-owned node");
+        restart_background_service();
+        if let Some(existing) =
+            wait_for_attached_home_node(&state.config.profile_dir, Duration::from_secs(20))
+        {
+            if let Ok(mut attached) = state.attached.lock() {
+                *attached = Some(existing);
+            }
+            if let Ok(mut guardian) = state.guardian.lock() {
+                guardian.suppress_respawn = true;
+                guardian.consecutive_liveness_failures = 0;
+                guardian.child_started_at = None;
+                guardian.last_liveness_probe_at = None;
+            }
+            return Ok(());
+        }
+        warn!("Background service did not answer after restart; spawning an app-owned node");
+        child_guard = state.child.lock().map_err(|e| e.to_string())?;
+    }
+
     let child = spawn_node_process(&state.config)?;
     info!("Node process restarted from Social UI");
     *child_guard = Some(child);
@@ -1601,6 +2007,8 @@ fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String
 }
 
 /// Stop the home-node child without respawning (used before OTA install).
+/// When the login service owns the node, stop that job too so the old binary
+/// is not holding files during replace; the next launch reloads the unit.
 #[tauri::command]
 fn stop_node_process(state: State<'_, NodeProcessState>) -> Result<(), String> {
     if let Ok(mut guardian) = state.guardian.lock() {
@@ -1608,6 +2016,10 @@ fn stop_node_process(state: State<'_, NodeProcessState>) -> Result<(), String> {
     }
     let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
     stop_node_child(&mut child_guard);
+    if background_service_unit_installed() {
+        info!("Stopping the background service for update install");
+        stop_background_service_job();
+    }
     info!("Node process stopped for update install");
     Ok(())
 }
@@ -2185,14 +2597,26 @@ fn main() {
                 node_log_file,
             };
 
-            let (initial_child, attached) = if let Some(existing) =
+            let restarted = refresh_service_launcher(&profile_dir, &spawn_config);
+            let unit_installed = background_service_unit_installed();
+            let respawn_requested = service_respawn_flag(&profile_dir).is_file();
+            let attached_now = if restarted {
+                wait_for_attached_home_node(&profile_dir, Duration::from_secs(20))
+            } else {
                 try_attach_existing_home_node(&profile_dir)
-            {
+            };
+
+            let (initial_child, attached) = if let Some(existing) = attached_now {
                 info!(
                     "Attaching to home node already running ({} pid {} on port {}) — not spawning a second one",
                     existing.app, existing.pid, existing.port
                 );
                 (None, Some(existing))
+            } else if unit_installed && !respawn_requested {
+                info!(
+                    "Background service is installed; this window will use it instead of starting a second node"
+                );
+                (None, None)
             } else {
                 match spawn_node_process(&spawn_config) {
                     Ok(child) => {
@@ -2208,7 +2632,9 @@ fn main() {
                 }
             };
 
-            let suppress_respawn = attached.is_some();
+            let waiting_for_service =
+                initial_child.is_none() && attached.is_none() && unit_installed && !respawn_requested;
+            let suppress_respawn = attached.is_some() || waiting_for_service;
             app.manage(NodeProcessState {
                 child: Mutex::new(initial_child),
                 config: spawn_config,
@@ -2262,6 +2688,32 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
+
+    /// Quitting the app stops the node it spawned. The login service's process
+    /// is a different owner, even when this app can see its pid.
+    #[test]
+    fn quit_leaves_a_service_owned_node_running() {
+        assert!(should_stop_app_child(10, None, Some(10)));
+        assert!(should_stop_app_child(10, Some("app"), Some(10)));
+        assert!(!should_stop_app_child(10, Some("service"), Some(10)));
+        assert!(should_stop_app_child(11, Some("service"), Some(10)));
+    }
+
+    #[test]
+    fn windows_schtasks_list_running_matches_english_status_line() {
+        assert!(windows_schtasks_list_is_running(
+            "Folder: \\\nTaskName: \\EnvoyMesh.node\nStatus: Running\nLogon Mode: Interactive only\n"
+        ));
+        assert!(windows_schtasks_list_is_running("Status: running"));
+        assert!(!windows_schtasks_list_is_running("Status: Ready"));
+        // Translated / unknown word — treat as not running (same as node).
+        assert!(!windows_schtasks_list_is_running("Status: Wird"));
+        // Do not match "running" elsewhere in the LIST dump.
+        assert!(!windows_schtasks_list_is_running(
+            "HostName: running-box\nStatus: Ready\n"
+        ));
+        assert!(!windows_schtasks_list_is_running(""));
+    }
 
     /// `{"ok":true,…}` is not proof of life when every EnvoyMesh-family product
     /// answers the same way: the supervised node must be the one that answered.

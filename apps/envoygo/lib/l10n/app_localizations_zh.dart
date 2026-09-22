@@ -33,10 +33,74 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingNewTaskTitle => '新建任务';
 
   @override
-  String get codingNewTaskDesc => '选择编程引擎和项目文件夹。创建后引擎不可更改。';
+  String get codingNewTaskDesc => '选择编程代理、模型和项目文件夹。之后可在任务的代理设置中更改。';
 
   @override
-  String get codingHarnessLabel => '编程引擎';
+  String get codingHarnessLabel => '代理';
+
+  @override
+  String get codingModelLabel => '模型';
+
+  @override
+  String get codingModelHint => '使用此代理自己的登录与默认模型';
+
+  @override
+  String get codingModelLoading => '正在加载模型…';
+
+  @override
+  String get codingModelEmptyOption => '代理默认';
+
+  @override
+  String get codingProviderLabel => '提供方';
+
+  @override
+  String get codingProviderNone => '代理登录 / 默认';
+
+  @override
+  String get codingProviderOpenai => 'OpenAI 兼容';
+
+  @override
+  String get codingProviderAnthropic => 'Anthropic 兼容';
+
+  @override
+  String get codingProviderHint =>
+      '留空则使用此代理自己的登录。选择 OpenAI 兼容或 Anthropic 兼容时，需要填写接口地址并自行输入模型 ID。';
+
+  @override
+  String get codingEndpointLabel => '接口地址';
+
+  @override
+  String get codingEndpointHint => 'https://api.example.com/v1';
+
+  @override
+  String get codingApiKeyLabel => 'API 密钥';
+
+  @override
+  String get codingApiKeyHint => '保存在家用电脑上，仅用于此任务';
+
+  @override
+  String get codingProjectSettingsTitle => '项目设置';
+
+  @override
+  String get codingProjectSettingsDesc => '此项目下新建任务时使用的名称与默认编程代理。已有任务保留各自的代理。';
+
+  @override
+  String get codingProjectSettingsSave => '保存';
+
+  @override
+  String get codingProjectNameLabel => '名称';
+
+  @override
+  String get codingTaskAgentTitle => '代理设置';
+
+  @override
+  String get codingTaskAgentDesc => '仅此任务。其他任务保留各自的代理。项目默认只用于新建任务。';
+
+  @override
+  String get codingTaskAgentSave => '保存';
+
+  @override
+  String get codingTaskAgentSwitchHint => '切换代理会用新代理重新开始此任务。之前的消息仍留在原来的代理中。';
 
   @override
   String get codingStartTask => '开始任务';
@@ -186,7 +250,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get codingHarnessProbeHint =>
-      'Envoy/Pi 为内置；其他工具是家用电脑上的 CLI——编程页只是调用。就绪 / 未就绪表示是否可用。';
+      '这里只列出家用电脑上已就绪的智能体。安装或检查其他智能体请到 设置 → AI → 编程工具。';
+
+  @override
+  String get codingHarnessNoneReady => '暂无就绪的智能体。请到 设置 → AI → 编程工具 安装。';
 
   @override
   String get codingHarnessHowToFix => '如何解决';

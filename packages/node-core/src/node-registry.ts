@@ -74,6 +74,12 @@ export interface NodeEndpoint {
   ownerId?: string;
   /** The home schema the owner wrote (§4.4). */
   schema?: number;
+  /**
+   * `service` when a login supervisor (launchd, systemd --user, Task Scheduler)
+   * started this process. Absent or `app` means the desktop app owns it and
+   * should stop it on quit.
+   */
+  managedBy?: "app" | "service";
 }
 
 export type AcquireNodeLockResult =
@@ -178,6 +184,8 @@ export async function readNodeEndpoint(home: string): Promise<NodeEndpoint | nul
   if (peerId) endpoint.peerId = peerId;
   if (ownerId) endpoint.ownerId = ownerId;
   if (schema !== undefined) endpoint.schema = schema;
+  const managedBy = str(record["managedBy"]);
+  if (managedBy === "app" || managedBy === "service") endpoint.managedBy = managedBy;
   return endpoint;
 }
 

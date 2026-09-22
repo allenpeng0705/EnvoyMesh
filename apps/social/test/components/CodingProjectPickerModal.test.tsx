@@ -49,6 +49,7 @@ describe("CodingProjectPickerModal", () => {
           endpoint: "",
           apiKey: "",
         }}
+        enabledHarnesses={["envoy-harness", "pi", "codex"]}
         confirmLabel="Add project"
         onClose={() => {}}
         onConfirm={onConfirm}
@@ -57,7 +58,7 @@ describe("CodingProjectPickerModal", () => {
 
     expect(screen.getByTestId("coding-add-project-modal")).toBeTruthy();
     expect(
-      screen.getByText(/Envoy and Pi are built in/i),
+      screen.getByText(/Only agents that are ready/i),
     ).toBeTruthy();
     fireEvent.change(screen.getByTestId("coding-project-settings-harness"), {
       target: { value: "codex" },
@@ -74,7 +75,7 @@ describe("CodingProjectPickerModal", () => {
     });
   });
 
-  it("shows install status on CLI options when probed", () => {
+  it("lists only ready agents (install others in Settings)", () => {
     renderWithI18n(
       <CodingProjectPickerModal
         open
@@ -82,6 +83,7 @@ describe("CodingProjectPickerModal", () => {
         description="desc"
         value="/projects/demo"
         onChange={() => {}}
+        enabledHarnesses={["envoy-harness", "opencode"]}
         harnessProbe={{
           codex: "install",
           opencode: "ready",
@@ -95,14 +97,9 @@ describe("CodingProjectPickerModal", () => {
     const select = screen.getByTestId(
       "coding-project-settings-harness",
     ) as HTMLSelectElement;
-    const codex = [...select.options].find((o) => o.value === "codex");
-    const opencode = [...select.options].find((o) => o.value === "opencode");
-    // The probe's raw `install` badge is deliberately collapsed to `not-ready`
-    // for display (`harnessProbeLabelKey`, pinned by
-    // test/lib/coding-harness-probe.test.ts), so the option speaks the picker's
-    // Ready / Not ready vocabulary rather than the probe's internal badge.
-    // Anchored on `· ` so `/Ready/` cannot also match "Not ready".
-    expect(codex?.textContent).toMatch(/· Not ready$/);
-    expect(opencode?.textContent).toMatch(/· Ready$/);
+    const values = [...select.options].map((o) => o.value);
+    expect(values).toContain("opencode");
+    expect(values).toContain("envoy-harness");
+    expect(values).not.toContain("codex");
   });
 });

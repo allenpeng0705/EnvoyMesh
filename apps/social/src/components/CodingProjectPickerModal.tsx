@@ -2,7 +2,7 @@
  * Add Coding project — folder + default agent / model / provider.
  */
 import { useEffect, useState } from "react";
-import type { CodingHarnessId } from "@envoymesh/api";
+import type { CodingHarnessId, ModelProviderConfig } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import type { CodingTaskPrefill } from "../lib/coding-projects.js";
 import { HomeFolderPicker } from "./HomeFolderPicker.js";
@@ -10,7 +10,7 @@ import {
   CodingAgentModelProviderFields,
   type CodingAgentModelProviderValue,
 } from "./CodingAgentModelProviderFields.js";
-import { codingPrefillToValue } from "../lib/coding-agent-model-provider.js";
+import { codingPrefillToValue, snapCodingAgentToReady } from "../lib/coding-agent-model-provider.js";
 import { ModalPortal } from "./ModalPortal.js";
 
 export type CodingAddProjectConfirm = {
@@ -33,7 +33,11 @@ export interface CodingProjectPickerModalProps {
   /** Prefill agent defaults (usually Coding defaults). */
   initialPrefill?: CodingTaskPrefill;
   codingDefaultsModelHint?: string;
+  /** Settings → AI provider, for the Envoy Harness / Pi model list. */
+  modelProviders?: ModelProviderConfig | null;
   harnessProbe?: Partial<Record<CodingHarnessId, HarnessProbeBadge>>;
+  /** Ready agents only — Settings lists the rest for install. */
+  enabledHarnesses?: readonly CodingHarnessId[];
   error?: string | null;
   busy?: boolean;
   confirmLabel: string;
@@ -51,7 +55,9 @@ export function CodingProjectPickerModal({
   onChange,
   initialPrefill,
   codingDefaultsModelHint = "",
+  modelProviders = null,
   harnessProbe = {},
+  enabledHarnesses,
   error,
   busy = false,
   confirmLabel,
@@ -81,10 +87,21 @@ export function CodingProjectPickerModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    if (enabledHarnesses === undefined) return;
+    setAgentModel((prev) => snapCodingAgentToReady(prev, enabledHarnesses));
+  }, [open, enabledHarnesses]);
+
   if (!open) return null;
 
   const trimmed = value.trim();
-  const canConfirm = trimmed.length > 0 && !busy;
+  const harnessOk =
+    enabledHarnesses === undefined
+      ? true
+      : enabledHarnesses.length > 0 &&
+        enabledHarnesses.includes(agentModel.harness);
+  const canConfirm = trimmed.length > 0 && harnessOk && !busy;
 
   return (
     <ModalPortal>
@@ -156,6 +173,8 @@ export function CodingProjectPickerModal({
               fallbackKind="coding-defaults"
               fallbackModelHint={codingDefaultsModelHint}
               harnessProbe={harnessProbe}
+              enabledHarnesses={enabledHarnesses}
+              modelProviders={modelProviders}
             />
           </div>
 

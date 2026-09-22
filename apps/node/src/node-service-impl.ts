@@ -4,6 +4,7 @@ import {
   productStore,
   requireProductStoreDir,
 } from "./product-store-availability.js";
+import { getNodeBackgroundServiceStatus, setNodeBackgroundService } from "./background-service.js";
 import {
   type ProductStateDir,
   currentProductName,
@@ -166,6 +167,7 @@ import type {
   SetExtAgentProjectPathParams,
   PreviewHomeFsFileParams,
   PreviewHomeFsFileResult,
+  NodeBackgroundServiceStatus,
 } from "@envoymesh/api";
 import { aiBotThreadKey, isAiBotThread, buildAiBotPrompt } from "@envoymesh/api";
 import type { DocumentAgentTurnResult, OwnerAgentTurnResult, CapabilityProviderJob, DocumentAcquisitionCandidate, DocumentAcquisitionJob, SocialProxySession } from "@envoymesh/api";
@@ -578,6 +580,7 @@ import { bridgeConfigToStatusFields } from "./bridge/config.js";
 import { probeExtAgentReachability } from "@envoymesh/harness";
 import { buildExtAgentCommandCatalog } from "@envoymesh/harness";
 import { getCachedClaudeCodeSlashCommands } from "@envoymesh/harness";
+import { probeCodingAgentModels } from "@envoymesh/harness";
 import { buildEnvoyAiCommandCatalog } from "./envoy-ai-command-catalog.js";
 import {
   defaultClaudeCodeModel,
@@ -1438,6 +1441,7 @@ import {
   touchEhChat,
   upsertEhChatSessionId,
   updateEhChatCwd,
+  updateEhChatRuntime,
   updateEhChatTitle,
 } from "./envoy-harness-chats.js";
 import {
@@ -5181,6 +5185,17 @@ class NodeServiceImpl implements NodeService {
     },
   );
 
+  /** Coding catalog ACP `session/user_question` (ask_user) — same docking contract as EH. */
+  private readonly _codingUserQuestionBridge = new AcpUserQuestionBridge(
+    (_event, payload) => {
+      this.emit("coding:user_question", payload);
+    },
+    {
+      eventName: "coding:user_question",
+      timeoutMs: 240_000,
+    },
+  );
+
   // Phase 54 — Envoy Local (downloadable llama-server)
   private readonly _envoyLocalState: EnvoyLocalRuntimeState = createEnvoyLocalRuntimeState();
   private readonly _envoyLocalEmbedState: EnvoyLocalEmbedRuntimeState =
@@ -6661,6 +6676,38 @@ class NodeServiceImpl implements NodeService {
       });
       return decision === "allow";
     };
+    const onUserQuestion = async (req: {
+      prompt: string;
+      options?: readonly string[];
+      recommendedIndex?: number;
+      multiline?: boolean;
+      multiple?: boolean;
+    }) => {
+      const answer = await this._codingUserQuestionBridge.ask(
+        {
+          prompt: req.prompt,
+          ...(req.options !== undefined ? { options: [...req.options] } : {}),
+          ...(req.recommendedIndex !== undefined
+            ? { recommendedIndex: req.recommendedIndex }
+            : {}),
+          ...(req.multiline === true ? { multiline: true } : {}),
+          ...(req.multiple === true ? { multiple: true } : {}),
+          // Bridge timeout owns cancel; this signal satisfies the peer type.
+          signal: AbortSignal.timeout(300_000),
+        },
+        { sessionId: streamSessionId },
+      );
+      return {
+        value: answer.value,
+        ...(answer.optionIndex !== undefined
+          ? { optionIndex: answer.optionIndex }
+          : {}),
+        ...(Array.isArray(answer.optionIndexes) && answer.optionIndexes.length > 0
+          ? { optionIndexes: answer.optionIndexes }
+          : {}),
+        ...(answer.cancelled === true ? { cancelled: true } : {}),
+      };
+    };
     const text = await createCodingHarnessBackend(parsed.harness).ask(
       parsed.prompt,
       sessionKey,
@@ -6670,6 +6717,7 @@ class NodeServiceImpl implements NodeService {
       ...(env ? { env } : {}),
       permissionPolicy,
       onPermissionRequest,
+      onUserQuestion,
       ...(canStream
         ? {
             onDelta: (chunk: string) => {
@@ -6731,6 +6779,7 @@ class NodeServiceImpl implements NodeService {
     // A prompt still waiting on a human belongs to the session being cleared: deny it rather
     // than leave a card on screen for a session that no longer exists.
     this._codingPermissionBridge.clearForSession(parsed.codingSessionId);
+    this._codingUserQuestionBridge.clearForSession(parsed.codingSessionId);
     return { ok: true, codingSessionId: parsed.codingSessionId };
   }
 
@@ -7161,6 +7210,33 @@ class NodeServiceImpl implements NodeService {
       };
     }
     return created;
+  }
+
+  /** Change the model locked on one existing Envoy task. Other tasks stay put. */
+  async updateEnvoyHarnessChat(opts: {
+    chatId: string;
+    model?: string | null;
+    endpoint?: string | null;
+    apiKey?: string | null;
+  }): Promise<import("@envoymesh/api").EhChatTaskSummary> {
+    const chatId = opts.chatId.trim();
+    if (!chatId) throw new Error("envoy_harness_chat_id_required");
+    const { chats } = await this._loadEhChatState();
+    if (!findEhChatById(chats, chatId)) {
+      throw new Error(`envoy_harness_chat_not_found: ${chatId}`);
+    }
+    const nextChats = updateEhChatRuntime(chats, chatId, {
+      ...(opts.model !== undefined ? { model: opts.model } : {}),
+      ...(opts.endpoint !== undefined ? { endpoint: opts.endpoint } : {}),
+      ...(opts.apiKey !== undefined ? { apiKey: opts.apiKey } : {}),
+    });
+    await this.updateNodeConfig({ envoyHarnessChats: nextChats });
+    const listed = await this.listEnvoyHarnessChats();
+    const summary = listed.find((c) => c.id === chatId);
+    if (!summary) {
+      throw new Error(`envoy_harness_chat_not_found: ${chatId}`);
+    }
+    return summary;
   }
 
   /**
@@ -9509,12 +9585,16 @@ class NodeServiceImpl implements NodeService {
     requestId: string
     value: string
     optionIndex?: number
+    optionIndexes?: number[]
     cancelled?: boolean
   }): Promise<{ requestId: string; delivered: boolean }> {
     const result = this._ehUserQuestionBridge.respond(params.requestId, {
       value: params.value,
       ...(params.optionIndex !== undefined
         ? { optionIndex: params.optionIndex }
+        : {}),
+      ...(params.optionIndexes !== undefined
+        ? { optionIndexes: params.optionIndexes }
         : {}),
       ...(params.cancelled === true ? { cancelled: true } : {}),
     })
@@ -9550,6 +9630,32 @@ class NodeServiceImpl implements NodeService {
       params.requestId,
       params.allowed ? "allow" : "deny",
     )
+    return { requestId: params.requestId, delivered: result.delivered }
+  }
+
+  /**
+   * Answer a Coding session's ask_user card (`coding:user_question`).
+   *
+   * Same contract as `ehRespondToUserQuestion`: `delivered: false` when the
+   * prompt already expired or belonged to a cleared session.
+   */
+  async codingRespondToUserQuestion(params: {
+    requestId: string
+    value: string
+    optionIndex?: number
+    optionIndexes?: number[]
+    cancelled?: boolean
+  }): Promise<{ requestId: string; delivered: boolean }> {
+    const result = this._codingUserQuestionBridge.respond(params.requestId, {
+      value: params.value,
+      ...(params.optionIndex !== undefined
+        ? { optionIndex: params.optionIndex }
+        : {}),
+      ...(params.optionIndexes !== undefined
+        ? { optionIndexes: params.optionIndexes }
+        : {}),
+      ...(params.cancelled !== undefined ? { cancelled: params.cancelled } : {}),
+    })
     return { requestId: params.requestId, delivered: result.delivered }
   }
 
@@ -14756,14 +14862,19 @@ class NodeServiceImpl implements NodeService {
     const status = this.getBridgeStatusSnapshot() ?? (await this.getBridgeStatus());
     const agents = mergeExtAgentPresets(status.extAgents);
     const requested = params?.agentId?.trim();
-    const active =
-      (requested
-        ? agents.find((a) => a.id === requested)
-        : undefined) ??
-      resolveActiveExtAgent(agents, status.activeExtAgentId) ??
-      agents[0];
-    const agentId = active?.id ?? requested ?? "pi";
-    const agentName = active?.name ?? agentId;
+    // When the UI names an agent, probe *that* id even if it is not in bridge presets
+    // (catalog-only harnesses like gemini). Falling back to the active agent would
+    // show the wrong model list.
+    const matched = requested
+      ? agents.find((a) => a.id === requested)
+      : undefined;
+    const fallback =
+      matched ??
+      (!requested
+        ? (resolveActiveExtAgent(agents, status.activeExtAgentId) ?? agents[0])
+        : undefined);
+    const agentId = matched?.id ?? requested ?? fallback?.id ?? "pi";
+    const agentName = matched?.name ?? fallback?.name ?? agentId;
     const sessionKey = this._bridgeAskSessionKey();
     const sessionModelOk = this._extAgentSupportsSessionModel(agentId);
     const sessionModel =
@@ -14773,13 +14884,21 @@ class NodeServiceImpl implements NodeService {
 
     let models: Array<{ id: string; label?: string }> | undefined;
     let defaultModel: string | undefined;
-    if (agentId === "hermes") {
+    let probedSession = false;
+    if (params?.probeModels) {
+      const probed = await probeCodingAgentModels(agentId);
+      if (probed !== null) {
+        probedSession = true;
+        models = probed.map((id) => ({ id }));
+      }
+    }
+    if (!probedSession && agentId === "hermes") {
       defaultModel = defaultHermesModel();
       models = await listHermesModels();
-    } else if (agentId === "openhuman") {
+    } else if (!probedSession && agentId === "openhuman") {
       defaultModel = defaultOpenHumanModel();
       models = sessionModelOk ? await listOpenHumanModels() : undefined;
-    } else if (agentId === "claudecode") {
+    } else if (!probedSession && agentId === "claudecode") {
       defaultModel = defaultClaudeCodeModel();
       // Claude Code does not expose /v1/models; common aliases for autocomplete.
       models = [
@@ -16746,6 +16865,14 @@ class NodeServiceImpl implements NodeService {
     }
     const devices = await this._deviceAuthorizationStore.listAuthorizedDevices();
     return { devices };
+  }
+
+  async getBackgroundService(): Promise<NodeBackgroundServiceStatus> {
+    return getNodeBackgroundServiceStatus();
+  }
+
+  async setBackgroundService(params: { enabled: boolean }): Promise<NodeBackgroundServiceStatus> {
+    return setNodeBackgroundService(params.enabled === true);
   }
 
   async revokeAuthorizedDevice(params: RevokeAuthorizedDeviceParams): Promise<RevokeAuthorizedDeviceResult> {

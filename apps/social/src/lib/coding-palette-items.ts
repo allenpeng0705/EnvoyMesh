@@ -22,7 +22,6 @@ export type CodingPaletteAction =
   | { type: "new-task"; projectPath?: string }
   | { type: "add-project" }
   | { type: "open-settings" }
-  | { type: "invite-peer" }
   | { type: "new-schedule" }
   | { type: "open-file"; path: string; chatId?: string };
 
@@ -54,15 +53,12 @@ export type BuildCodingPaletteItemsInput = {
   cwdFiles?: Array<{ name: string; path: string }>;
   /** For open-file EH context. */
   focusedEhChatId?: string | null;
-  /** Include Invite peer when an EH task is selected. */
-  canInvitePeer?: boolean;
   /** Include Open Coding settings. */
   canOpenSettings?: boolean;
   labels?: {
     newTask?: string;
     addProject?: string;
     openSettings?: string;
-    invitePeer?: string;
     newSchedule?: string;
   };
 };
@@ -143,15 +139,6 @@ export function buildCodingPaletteItems(
       label: labels.openSettings ?? "Open Coding settings",
       detail: "Action",
       action: { type: "open-settings" },
-    });
-  }
-  if (input.canInvitePeer) {
-    items.push({
-      id: "action:invite-peer",
-      kind: "action",
-      label: labels.invitePeer ?? "Invite peer to review",
-      detail: "Action",
-      action: { type: "invite-peer" },
     });
   }
 

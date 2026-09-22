@@ -70,6 +70,12 @@ export type ExtAgentAskOpts = {
    * rather than allowing it silently — the rule catalog ACP has always followed.
    */
   onPermissionRequest?: (req: import("./catalog-acp-policy.js").CatalogToolRequest) => Promise<boolean>;
+  /**
+   * Answer `session/user_question` (ask_user). Absent → the session cancels the question.
+   */
+  onUserQuestion?: (
+    req: import("./catalog-acp-user-question.js").CatalogUserQuestion,
+  ) => Promise<import("./catalog-acp-user-question.js").CatalogUserQuestionAnswer>;
 };
 
 export interface ExtAgentBackend {

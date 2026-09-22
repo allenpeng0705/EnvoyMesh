@@ -1,11 +1,11 @@
 /**
  * Create a Coding schedule — new task each fire (Phase 68-C7).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  CODING_ALL_HARNESSES,
   CODING_CRON_PRESETS,
   codingHarnessLabel,
+  type CodingHarnessId,
   type CodingScheduleHarness,
   type CreateCodingScheduleInput,
 } from "@envoymesh/api";
@@ -18,6 +18,8 @@ export type CodingScheduleModalProps = {
   projects: CodingProject[];
   busy?: boolean;
   error?: string | null;
+  /** Ready agents only — Settings lists the rest for install. */
+  enabledHarnesses?: readonly CodingHarnessId[];
   onCancel: () => void;
   onSave: (input: CreateCodingScheduleInput) => void;
 };
@@ -26,15 +28,19 @@ export function CodingScheduleModal({
   projects,
   busy = false,
   error = null,
+  enabledHarnesses = [],
   onCancel,
   onSave,
 }: CodingScheduleModalProps) {
   const t = useT();
+  const ready = enabledHarnesses;
   const [name, setName] = useState(
     () => t("codingView.scheduleDefaultName", "Scheduled run"),
   );
   const [cwd, setCwd] = useState(() => projects[0]?.path ?? "");
-  const [harness, setHarness] = useState<CodingScheduleHarness>("envoy-harness");
+  const [harness, setHarness] = useState<CodingScheduleHarness>(
+    () => (ready[0] ?? "envoy-harness") as CodingScheduleHarness,
+  );
   // Widened to `string` for the same reason as CodingHeartbeatModal: an `as const`
   // preset map pinned the state to one literal, which `CodingCronFields`' setter
   // (`(cron: string) => void`) cannot accept (TS2322).
@@ -48,10 +54,19 @@ export function CodingScheduleModal({
   );
   const [enabled, setEnabled] = useState(true);
 
+  useEffect(() => {
+    if (ready.length === 0) return;
+    if (!ready.includes(harness as CodingHarnessId)) {
+      setHarness(ready[0] as CodingScheduleHarness);
+    }
+  }, [ready, harness]);
+
   const selectedProject = projects.find((p) => p.path === cwd) ?? null;
 
   const canSave =
     !busy &&
+    ready.length > 0 &&
+    ready.includes(harness as CodingHarnessId) &&
     name.trim().length > 0 &&
     prompt.trim().length > 0 &&
     cwd.trim().length > 0 &&
@@ -148,20 +163,32 @@ export function CodingScheduleModal({
 
             <label className="modal-field">
               <span>{t("codingView.scheduleHarness", "Agent")}</span>
-              <select
-                value={harness}
-                disabled={busy}
-                data-testid="coding-schedule-harness"
-                onChange={(e) =>
-                  setHarness(e.target.value as CodingScheduleHarness)
-                }
-              >
-                {CODING_ALL_HARNESSES.map((h) => (
-                  <option key={h} value={h}>
-                    {codingHarnessLabel(h)}
-                  </option>
-                ))}
-              </select>
+              {ready.length === 0 ? (
+                <p
+                  className="coding-harness-catalog-hint"
+                  data-testid="coding-schedule-harness-none"
+                >
+                  {t(
+                    "codingView.harnessNoneReady",
+                    "No ready agents yet. Install one in Settings → AI → Coding agents.",
+                  )}
+                </p>
+              ) : (
+                <select
+                  value={harness}
+                  disabled={busy}
+                  data-testid="coding-schedule-harness"
+                  onChange={(e) =>
+                    setHarness(e.target.value as CodingScheduleHarness)
+                  }
+                >
+                  {ready.map((h) => (
+                    <option key={h} value={h}>
+                      {codingHarnessLabel(h)}
+                    </option>
+                  ))}
+                </select>
+              )}
             </label>
 
             <CodingCronFields

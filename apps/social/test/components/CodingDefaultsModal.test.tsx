@@ -28,6 +28,7 @@ describe("CodingDefaultsModal", () => {
           endpoint: "",
           apiKey: "",
         }}
+        enabledHarnesses={["envoy-harness", "pi", "codex"]}
         envoymeshAiModelHint="openai:gpt-4o"
         onCancel={() => {}}
         onSave={onSave}
@@ -69,6 +70,7 @@ describe("CodingDefaultsModal", () => {
           endpoint: "",
           apiKey: "",
         }}
+        enabledHarnesses={["envoy-harness", "codex"]}
         onCancel={() => {}}
         onSave={() => {}}
       />,
@@ -85,7 +87,7 @@ describe("CodingDefaultsModal", () => {
       screen.getByTestId("coding-provider-hint-defaults").textContent,
     ).toMatch(/most CLIs do not need it/i);
     expect(
-      screen.getByPlaceholderText(/Empty = agent default \(gpt-5\.1-codex\)/i),
+      screen.getByPlaceholderText(/this agent’s own login/i),
     ).toBeTruthy();
   });
 });

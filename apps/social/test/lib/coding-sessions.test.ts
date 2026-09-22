@@ -11,11 +11,35 @@ import {
   getCodingExtSession,
   maybeAutoTitleCodingExtSession,
   shouldAutoSetCodingExtTitle,
+  updateCodingExtSessionAgent,
 } from "../../src/lib/coding-sessions.js";
 
 describe("coding-sessions auto-title", () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  it("changes one session’s agent and leaves the other session alone", () => {
+    const keep = createCodingExtSession({
+      harness: "codex",
+      cwd: "/tmp/keep",
+      model: "keep-model",
+    });
+    const change = createCodingExtSession({
+      harness: "codex",
+      cwd: "/tmp/change",
+      title: "Existing task",
+    });
+    const updated = updateCodingExtSessionAgent(change.id, {
+      harness: "cursor",
+      model: "composer",
+    });
+    expect(updated?.harness).toBe("cursor");
+    expect(updated?.title).toBe("Existing task");
+    expect(getCodingExtSession(keep.id)).toMatchObject({
+      harness: "codex",
+      model: "keep-model",
+    });
   });
 
   it("creates with New task placeholder", () => {

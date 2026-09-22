@@ -1,6 +1,6 @@
 /// Bottom-nav tab ids for [HomeScreen] (Phase 68 — id-based, not index math).
 ///
-/// Owner: Social | Coding | Knowledge | Terminal | Me
+/// Owner: Social | Knowledge | Coding | Terminal | Me
 /// Family+coding: Chats | Coding | Me
 /// Family−coding: Chats | Me
 abstract final class HomeTabId {
@@ -22,8 +22,8 @@ List<String> buildHomeTabIds({
   if (isOwner) {
     return const [
       HomeTabId.social,
-      HomeTabId.coding,
       HomeTabId.knowledge,
+      HomeTabId.coding,
       HomeTabId.terminal,
       HomeTabId.me,
     ];

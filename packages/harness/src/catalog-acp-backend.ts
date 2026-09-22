@@ -65,6 +65,9 @@ export class CatalogAcpBackend implements ExtAgentBackend {
       ...(opts?.onPermissionRequest !== undefined
         ? { onPermissionRequest: opts.onPermissionRequest }
         : {}),
+      ...(opts?.onUserQuestion !== undefined
+        ? { onUserQuestion: opts.onUserQuestion }
+        : {}),
     });
   }
 }

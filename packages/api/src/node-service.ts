@@ -1464,6 +1464,8 @@ export interface NodeServiceEvents {
   "eh:permission": import("./eh-permission.js").EhPermissionEvent;
   /** A Coding session's tool prompt (catalog ACP agents). */
   "coding:permission": import("./eh-permission.js").CodingPermissionEvent;
+  /** A Coding session's ask_user card (catalog ACP agents). */
+  "coding:user_question": import("./eh-user-question.js").CodingUserQuestionEvent;
   "eh:files_changed": import("./eh-files-changed.js").EhFilesChangedEvent;
   /** Shared semantic timeline update (parallel to legacy events during migration). */
   "eh:timeline": import("./eh-timeline.js").EhTimelineUpdate;
@@ -1486,6 +1488,13 @@ export interface NodeServiceEvents {
 
   /** Worker-side read-only team job snapshot (`task.chain.status`). */
   "chain:observed": import("./ws-protocol.js").ChainObservedStatus;
+}
+
+export interface NodeBackgroundServiceStatus {
+  state: "not-installed" | "installed-stopped" | "running" | "failed" | "unsupported" | "unknown";
+  enabled?: boolean;
+  pid?: number;
+  detail: string;
 }
 
 export interface NodeService extends CoreNodeService {
@@ -2427,6 +2436,18 @@ export interface NodeService extends CoreNodeService {
   }): Promise<import("./eh-chat-task.js").EhChatTaskSummary>;
 
   /**
+   * Update the model locked on one existing Envoy task.
+   * Empty string clears that field. Omitted fields are left unchanged.
+   * Does not change other tasks or the project default agent.
+   */
+  updateEnvoyHarnessChat(opts: {
+    chatId: string;
+    model?: string | null;
+    endpoint?: string | null;
+    apiKey?: string | null;
+  }): Promise<import("./eh-chat-task.js").EhChatTaskSummary>;
+
+  /**
    * Phase 68-C2 — build a mesh peer-review invite for an EH Coding task.
    * Returns `messageText` for Social to `sendChat(peerOwnerId, messageText)`.
    * Does not send the chat message itself.
@@ -2548,6 +2569,11 @@ export interface NodeService extends CoreNodeService {
   codingRespondToPermission(
     params: import("./eh-permission.js").CodingRespondToPermissionParams,
   ): Promise<import("./eh-permission.js").CodingRespondToPermissionResult>;
+
+  /** Answer a Coding session's ask_user card (`coding:user_question`). */
+  codingRespondToUserQuestion(
+    params: import("./eh-user-question.js").CodingRespondToUserQuestionParams,
+  ): Promise<import("./eh-user-question.js").CodingRespondToUserQuestionResult>;
 
   // ClawHub skill marketplace
   getOpenClawPlugins(): Promise<string[]>;
@@ -2886,6 +2912,15 @@ export interface NodeService extends CoreNodeService {
 
   /** List owner-authorized satellite devices (shared-identity pairing). */
   listAuthorizedDevices(): Promise<ListAuthorizedDevicesResult>;
+
+  /** Whether the home node is installed as a login background service. */
+  getBackgroundService(): Promise<NodeBackgroundServiceStatus>;
+
+  /**
+   * Turn the background service on or off.
+   * Off removes the service and the app runs the node. On hands the node to the OS supervisor.
+   */
+  setBackgroundService(params: { enabled: boolean }): Promise<NodeBackgroundServiceStatus>;
 
   /** Revoke a previously authorized device certificate. */
   revokeAuthorizedDevice(params: RevokeAuthorizedDeviceParams): Promise<RevokeAuthorizedDeviceResult>;

@@ -67,6 +67,29 @@ CodingHarnessProbeBadge codingHarnessUserBadge(CodingHarnessProbeBadge badge) {
   };
 }
 
+/// Agents a Coding picker may offer — Ready only (Settings lists the rest).
+List<T> readyCodingHarnessChoices<T>(
+  Iterable<T> candidates,
+  CodingHarnessProbeResult? Function(T choice) probeOf,
+) {
+  return [
+    for (final choice in candidates)
+      if (probeOf(choice)?.badge == CodingHarnessProbeBadge.ready) choice,
+  ];
+}
+
+/// Prefer [current] when it is ready; otherwise the first ready choice.
+T? snapCodingHarnessToReady<T>(
+  T current,
+  Iterable<T> candidates,
+  CodingHarnessProbeResult? Function(T choice) probeOf,
+) {
+  final ready = readyCodingHarnessChoices(candidates, probeOf);
+  if (ready.isEmpty) return null;
+  if (ready.contains(current)) return current;
+  return ready.first;
+}
+
 /// [wireId] is `envoy-harness` | `pi` | Tier B id (`claudecode`, `minimax-code`, …).
 /// [extAgentId] overrides the Ext Agent probe id when it differs from [wireId].
 Future<CodingHarnessProbeResult> probeCodingHarnessByWireId(

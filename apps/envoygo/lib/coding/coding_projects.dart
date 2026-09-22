@@ -164,6 +164,151 @@ String? codingModelToEhHostModel(String? model, String? providerKind) {
   return m;
 }
 
+/// Prefill for an existing task's agent sheet (Social `codingTaskAgentValue`).
+///
+/// Strips `openai:` / `anthropic:` host prefixes into [providerKind] so the
+/// compatible provider row matches what the desktop modal shows. API keys are
+/// never prefilled.
+({
+  String model,
+  String providerKind,
+  String endpoint,
+}) codingTaskAgentPrefill({
+  String? model,
+  String? providerKind,
+  String? endpoint,
+}) {
+  var m = (model ?? '').trim();
+  var kind = (providerKind ?? '').trim();
+  if (kind != 'openai-compatible' && kind != 'anthropic-compatible') {
+    kind = '';
+  }
+  if (kind.isEmpty && m.startsWith('openai:')) {
+    kind = 'openai-compatible';
+    m = m.substring('openai:'.length).trim();
+  } else if (kind.isEmpty && m.startsWith('anthropic:')) {
+    kind = 'anthropic-compatible';
+    m = m.substring('anthropic:'.length).trim();
+  }
+  return (
+    model: m,
+    providerKind: kind,
+    endpoint: (endpoint ?? '').trim(),
+  );
+}
+
+/// Custom OpenAI/Anthropic endpoints: free-text model id only.
+List<String> codingCompatibleModelSuggestions(String? providerKind) {
+  return const [];
+}
+
+/// Models for Envoy Harness and Pi from this node's Settings → AI + EnvoyLocal.
+List<String> codingEnvoyHarnessModelSuggestions({
+  Map<String, dynamic>? modelProviders,
+  List<String>? envoyLocalModelIds,
+}) {
+  final out = <String>[];
+  final seen = <String>{};
+  void push(String? raw) {
+    final id = (raw ?? '').trim();
+    if (id.isEmpty || seen.contains(id)) return;
+    seen.add(id);
+    out.add(id);
+  }
+
+  final providers = modelProviders;
+  if (providers != null) {
+    push(providers['modelName']?.toString());
+    final models = providers['models'];
+    if (models is List) {
+      for (final row in models) {
+        if (row is String) {
+          push(row);
+        } else if (row is Map) {
+          push(row['id']?.toString() ?? row['name']?.toString());
+        }
+      }
+    }
+  }
+  for (final id in envoyLocalModelIds ?? const <String>[]) {
+    push(id);
+  }
+  return out;
+}
+
+/// Suggestions for the model field (Social codingModelSuggestionsForAgent).
+List<String> codingModelSuggestionsForAgent({
+  required String harness,
+  String? providerKind,
+  List<String>? catalogModels,
+  List<String>? homeModels,
+}) {
+  final kind = (providerKind ?? '').trim();
+  if (kind == 'openai-compatible' || kind == 'anthropic-compatible') {
+    return const [];
+  }
+  final id = harness.trim();
+  final source = (id == 'envoy-harness' || id == 'pi')
+      ? (homeModels ?? const <String>[])
+      : (catalogModels ?? const <String>[]);
+  final seen = <String>{};
+  final out = <String>[];
+  for (final raw in source) {
+    final s = raw.trim();
+    if (s.isEmpty || seen.contains(s)) continue;
+    seen.add(s);
+    out.add(s);
+  }
+  return out;
+}
+
+/// Model ids published by an Ext Agent catalog (`probeModels: true`).
+List<String> codingCatalogModelsFromResponse(Map<String, dynamic>? catalog) {
+  if (catalog == null) return const [];
+  final seen = <String>{};
+  final out = <String>[];
+  void push(String? raw) {
+    final id = (raw ?? '').trim();
+    if (id.isEmpty || seen.contains(id)) return;
+    seen.add(id);
+    out.add(id);
+  }
+
+  final models = catalog['models'];
+  if (models is List) {
+    for (final row in models) {
+      if (row is String) {
+        push(row);
+      } else if (row is Map) {
+        push(row['id']?.toString() ?? row['model']?.toString());
+      }
+    }
+  }
+  final options = catalog['configOptions'] ?? catalog['sessionModels'];
+  if (options is List) {
+    for (final row in options) {
+      if (row is Map) {
+        final id = row['id']?.toString() ?? '';
+        if (id.contains('model') || row['type']?.toString() == 'model') {
+          final current = row['currentValue'] ?? row['value'];
+          if (current is String) push(current);
+          final values = row['options'] ?? row['values'];
+          if (values is List) {
+            for (final v in values) {
+              if (v is String) {
+                push(v);
+              } else if (v is Map) {
+                push(v['value']?.toString() ?? v['id']?.toString());
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
 Future<List<CodingProject>> loadCodingProjects() async {
   try {
     final prefs = await SharedPreferences.getInstance();

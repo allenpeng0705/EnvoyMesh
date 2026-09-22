@@ -536,6 +536,7 @@ if (nodeLock.acquired) {
     token: "",
     ownerId: profile.owner.ownerId,
     schema: homeMarker?.schema ?? ENVOYMESH_HOME_SCHEMA,
+    managedBy: process.env.ENVOYMESH_MANAGED_BY === "service" ? "service" : "app",
   });
   const release = () => {
     // Synchronous: an `exit` handler cannot await, so the async version never

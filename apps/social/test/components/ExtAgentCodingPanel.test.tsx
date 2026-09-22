@@ -11,6 +11,7 @@ import { partialNodeService } from "../helpers/node-service-mock.js";
 const askCodingHarness = vi.fn();
 const probeExtAgent = vi.fn();
 const codingRespondToPermission = vi.fn();
+const codingRespondToUserQuestion = vi.fn();
 const onHandlers = new Map<string, Set<(payload: unknown) => void>>();
 
 const mockNodeService = {
@@ -18,6 +19,7 @@ const mockNodeService = {
     askCodingHarness,
     probeExtAgent,
     codingRespondToPermission,
+    codingRespondToUserQuestion,
     isConnected: true,
   }),
   // `on` deliberately stays outside `partialNodeService`: NodeServiceClient.on is
@@ -47,6 +49,12 @@ function emitTimeline(update: unknown) {
 
 function emitCodingPermission(payload: unknown) {
   for (const handler of onHandlers.get("coding:permission") ?? []) {
+    handler(payload);
+  }
+}
+
+function emitCodingUserQuestion(payload: unknown) {
+  for (const handler of onHandlers.get("coding:user_question") ?? []) {
     handler(payload);
   }
 }
@@ -229,6 +237,53 @@ describe("CodingHarnessPanel (ExtAgentCodingPanel alias)", () => {
     );
     // Answering dismisses the card; a prompt that stayed would be a button that does nothing.
     await waitFor(() => expect(screen.queryByText("bash")).toBeNull());
+  });
+
+  it("shows an ask_user card and answers through codingRespondToUserQuestion", async () => {
+    probeExtAgent.mockResolvedValue({
+      reachable: true,
+      installState: "installed",
+      installGuide: { installed: true, steps: [] },
+    });
+    codingRespondToUserQuestion.mockResolvedValue({
+      requestId: "q-1",
+      delivered: true,
+    });
+
+    renderWithI18n(
+      <ExtAgentCodingPanel
+        harness="cursor"
+        cwd="/tmp/proj"
+        sessionId="sess-ask"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("ext-agent-coding-panel")).toBeTruthy(),
+    );
+
+    emitCodingUserQuestion({
+      requestId: "q-1",
+      sessionId: "sess-ask",
+      prompt: "Which files?",
+      options: ["a.ts", "b.ts"],
+      multiple: true,
+      timeoutMs: 120_000,
+      kind: "ask",
+    });
+
+    expect(await screen.findByText("Which files?")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("eh-question-option-0"));
+    fireEvent.click(screen.getByTestId("eh-question-option-1"));
+    fireEvent.click(screen.getByTestId("eh-question-confirm"));
+
+    await waitFor(() =>
+      expect(codingRespondToUserQuestion).toHaveBeenCalledWith({
+        requestId: "q-1",
+        value: "a.ts, b.ts",
+        optionIndexes: [0, 1],
+      }),
+    );
   });
 
   it("ignores a tool prompt belonging to another session", async () => {

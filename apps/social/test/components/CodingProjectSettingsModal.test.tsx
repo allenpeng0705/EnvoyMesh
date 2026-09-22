@@ -27,6 +27,7 @@ describe("CodingProjectSettingsModal", () => {
           addedAt: "2020-01-01T00:00:00.000Z",
           defaultHarness: "cursor",
         }}
+        enabledHarnesses={["envoy-harness", "pi", "cursor"]}
         onCancel={() => {}}
         onSave={() => {}}
         onReveal={() => {}}
@@ -48,6 +49,7 @@ describe("CodingProjectSettingsModal", () => {
           label: "app",
           addedAt: "2020-01-01T00:00:00.000Z",
         }}
+        enabledHarnesses={["envoy-harness", "pi", "codex"]}
         onCancel={() => {}}
         onSave={onSave}
         onReveal={() => {}}
@@ -139,6 +141,7 @@ describe("CodingNewSessionSheet task override", () => {
           endpoint: "",
           apiKey: "",
         }}
+        enabledHarnesses={["envoy-harness", "pi", "codex"]}
         onClose={() => {}}
         onConfirm={onConfirm}
         onAddProject={() => {}}

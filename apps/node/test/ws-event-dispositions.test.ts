@@ -230,7 +230,7 @@ describe("H1 — the reusable/social boundary in the tables", () => {
     const social = new Set(Object.keys(SOCIAL_EVENT_DISPOSITIONS));
     const overlap = [...core].filter((k) => social.has(k));
     expect(overlap, "a product table must not redefine a core event").toEqual([]);
-    expect(core.size).toBe(26);
+    expect(core.size).toBe(28);
     expect(social.size).toBe(20);
   });
 });

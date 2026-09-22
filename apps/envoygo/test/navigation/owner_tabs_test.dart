@@ -3,13 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('buildHomeTabIds', () {
-    test('owner gets Social Coding Knowledge Terminal Me', () {
+    test('owner gets Social Knowledge Coding Terminal Me', () {
       expect(
         buildHomeTabIds(isOwner: true, mayUseCoding: true),
         [
           HomeTabId.social,
-          HomeTabId.coding,
           HomeTabId.knowledge,
+          HomeTabId.coding,
           HomeTabId.terminal,
           HomeTabId.me,
         ],
@@ -19,8 +19,8 @@ void main() {
         buildHomeTabIds(isOwner: true, mayUseCoding: false),
         [
           HomeTabId.social,
-          HomeTabId.coding,
           HomeTabId.knowledge,
+          HomeTabId.coding,
           HomeTabId.terminal,
           HomeTabId.me,
         ],

@@ -41,6 +41,9 @@ export type CodingSidebarMenuProps = {
   /** Reveal project folder on the home node. */
   revealLabel?: string;
   onReveal?: () => void;
+  /** Change the agent used by this task only. */
+  agentSettingsLabel?: string;
+  onAgentSettings?: () => void;
   /** Optional archive / unarchive (History-as-list-power). */
   archiveLabel?: string;
   onArchive?: () => void;
@@ -58,6 +61,8 @@ export function CodingSidebarMenu({
   onOpenSettings,
   revealLabel,
   onReveal,
+  agentSettingsLabel,
+  onAgentSettings,
   archiveLabel,
   onArchive,
   heartbeatLabel,
@@ -191,6 +196,24 @@ export function CodingSidebarMenu({
                   }}
                 >
                   {revealLabel}
+                </div>
+              ) : null}
+              {agentSettingsLabel && onAgentSettings ? (
+                <div
+                  className="context-menu-item"
+                  role="menuitem"
+                  data-testid={`${testId}-agent`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    runAction(onAgentSettings);
+                  }}
+                >
+                  {agentSettingsLabel}
                 </div>
               ) : null}
               {heartbeatLabel && onAddHeartbeat ? (

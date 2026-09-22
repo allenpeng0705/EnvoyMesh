@@ -145,7 +145,13 @@ export {
   CatalogAcpBackend,
   createCatalogAcpBackend,
 } from "./catalog-acp-backend.js";
-export { runCatalogAcpPrompt, _test as _catalogAcpTest } from "./catalog-acp-session.js";
+export { runCatalogAcpPrompt, probeCodingAgentModels, _test as _catalogAcpTest } from "./catalog-acp-session.js";
+export {
+  catalogUserQuestionReply,
+  extractCatalogUserQuestion,
+  type CatalogUserQuestion,
+  type CatalogUserQuestionAnswer,
+} from "./catalog-acp-user-question.js";
 export {
   extractContentBlocks,
   extractOneShotAssistantText,

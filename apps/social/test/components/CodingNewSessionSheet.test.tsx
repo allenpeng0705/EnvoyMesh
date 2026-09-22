@@ -17,7 +17,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
 describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
   afterEach(() => cleanup());
 
-  it("lists Tier B harness radios when enabled", () => {
+  it("lists only ready harnesses in the picker", () => {
     const onConfirm = vi.fn();
     renderWithI18n(
       <CodingNewSessionSheet
@@ -28,7 +28,6 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
           "pi",
           "claudecode",
           "codex",
-          "opencode",
           "cursor",
           "codewhale",
         ]}
@@ -44,11 +43,9 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
 
     expect(screen.getByTestId("coding-harness-claudecode")).toBeTruthy();
     expect(screen.getByTestId("coding-harness-codex")).toBeTruthy();
-    expect(screen.getByTestId("coding-harness-opencode")).toBeTruthy();
+    expect(screen.queryByTestId("coding-harness-opencode")).toBeNull();
     expect(screen.getByTestId("coding-harness-cursor")).toBeTruthy();
     expect(screen.getByTestId("coding-harness-codewhale")).toBeTruthy();
-    expect(screen.getByTestId("coding-harness-probe-codex").textContent).toMatch(/Ready/i);
-    expect(screen.getByTestId("coding-harness-probe-opencode").textContent).toMatch(/Not ready/i);
 
     fireEvent.click(screen.getByTestId("coding-harness-codex"));
     fireEvent.click(screen.getByTestId("coding-new-session-confirm"));
@@ -60,6 +57,63 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
       endpoint: "",
       apiKey: "",
     });
+  });
+
+  it("snaps off a not-ready project default once ready agents load", async () => {
+    function Harness() {
+      const [enabled, setEnabled] = React.useState<
+        readonly ("envoy-harness" | "pi" | "codex")[]
+      >([]);
+      return (
+        <>
+          <button
+            type="button"
+            data-testid="coding-test-ready-bump"
+            onClick={() =>
+              setEnabled(["envoy-harness", "pi", "codex"])
+            }
+          >
+            ready
+          </button>
+          <CodingNewSessionSheet
+            open
+            projects={[
+              {
+                path: "/tmp/proj",
+                label: "proj",
+                addedAt: "2026-01-01T00:00:00.000Z",
+                defaultHarness: "opencode",
+              },
+            ]}
+            enabledHarnesses={enabled}
+            onClose={() => {}}
+            onConfirm={() => {}}
+            onAddProject={() => {}}
+          />
+        </>
+      );
+    }
+
+    renderWithI18n(<Harness />);
+
+    // Current project default stays visible until Ready settles; Confirm stays off.
+    expect(
+      (screen.getByTestId("coding-harness-opencode") as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(
+      (screen.getByTestId("coding-new-session-confirm") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByTestId("coding-test-ready-bump"));
+
+    expect(await screen.findByTestId("coding-harness-envoy-harness")).toBeTruthy();
+    expect(
+      (screen.getByTestId("coding-harness-envoy-harness") as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(screen.queryByTestId("coding-harness-opencode")).toBeNull();
   });
 
   it("shows Coding defaults as fallback for Envoy and Pi", () => {
@@ -115,7 +169,74 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
       /CLI.?s auth/i,
     );
     expect(
-      screen.getByPlaceholderText(/Empty = agent default \(gpt-5\.1-codex\)/i),
+      screen.getByPlaceholderText(/this agent’s own login/i),
     ).toBeTruthy();
+  });
+
+  it("starts on the project's agent, not a fixed Envoy Harness default", () => {
+    const onConfirm = vi.fn();
+    renderWithI18n(
+      <CodingNewSessionSheet
+        open
+        projects={[
+          {
+            path: "/tmp/proj",
+            label: "proj",
+            addedAt: "2026-01-01T00:00:00.000Z",
+            defaultHarness: "codex",
+            defaultModel: "gpt-5.1-codex",
+          },
+          {
+            path: "/tmp/other",
+            label: "other",
+            addedAt: "2026-01-01T00:00:00.000Z",
+            defaultHarness: "cursor",
+          },
+        ]}
+        initialProjectPath="/tmp/proj"
+        initialPrefill={{
+          harness: "envoy-harness",
+          model: "",
+          providerKind: "",
+          endpoint: "",
+          apiKey: "",
+        }}
+        enabledHarnesses={[
+          "envoy-harness",
+          "pi",
+          "codex",
+          "cursor",
+        ]}
+        onClose={() => {}}
+        onConfirm={onConfirm}
+        onAddProject={() => {}}
+      />,
+    );
+
+    expect(
+      (screen.getByTestId("coding-harness-codex") as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(
+      (screen.getByTestId("coding-harness-envoy-harness") as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+
+    fireEvent.change(screen.getByTestId("coding-new-task-project"), {
+      target: { value: "/tmp/other" },
+    });
+    expect(
+      (screen.getByTestId("coding-harness-cursor") as HTMLInputElement).checked,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByTestId("coding-harness-pi"));
+    fireEvent.click(screen.getByTestId("coding-new-session-confirm"));
+    expect(onConfirm).toHaveBeenCalledWith({
+      harness: "pi",
+      cwd: "/tmp/other",
+      model: "",
+      providerKind: "",
+      endpoint: "",
+      apiKey: "",
+    });
   });
 });

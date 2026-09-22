@@ -3,12 +3,15 @@
  * Used when a project has no override. Empty Envoy/Pi model → EnvoyMesh AI.
  */
 import { useEffect, useState } from "react";
+import type { CodingHarnessId, ModelProviderConfig } from "@envoymesh/api";
+import type { HarnessProbeBadge } from "../lib/coding-harness-probe.js";
 import { useT } from "../context/I18nContext.js";
 import type { CodingDefaults } from "../lib/coding-projects.js";
 import {
   CodingAgentModelProviderFields,
   type CodingAgentModelProviderValue,
 } from "./CodingAgentModelProviderFields.js";
+import { snapCodingAgentToReady } from "../lib/coding-agent-model-provider.js";
 import { ModalPortal } from "./ModalPortal.js";
 
 export type CodingDefaultsModalProps = {
@@ -19,6 +22,11 @@ export type CodingDefaultsModalProps = {
   onSave: (next: CodingDefaults) => void;
   /** EnvoyMesh AI model label when Coding defaults leave model empty. */
   envoymeshAiModelHint?: string;
+  /** Settings → AI provider, for the Envoy Harness / Pi model list. */
+  modelProviders?: ModelProviderConfig | null;
+  /** Ready agents only — Settings lists the rest for install. */
+  enabledHarnesses?: readonly CodingHarnessId[];
+  harnessProbe?: Partial<Record<CodingHarnessId, HarnessProbeBadge>>;
 };
 
 function defaultsToValue(d: CodingDefaults): CodingAgentModelProviderValue {
@@ -38,6 +46,9 @@ export function CodingDefaultsModal({
   onCancel,
   onSave,
   envoymeshAiModelHint = "",
+  modelProviders = null,
+  enabledHarnesses,
+  harnessProbe = {},
 }: CodingDefaultsModalProps) {
   const t = useT();
   const [agentModel, setAgentModel] = useState(() => defaultsToValue(defaults));
@@ -46,6 +57,11 @@ export function CodingDefaultsModal({
     setAgentModel(defaultsToValue(defaults));
   }, [defaults]);
 
+  useEffect(() => {
+    if (enabledHarnesses === undefined) return;
+    setAgentModel((prev) => snapCodingAgentToReady(prev, enabledHarnesses));
+  }, [enabledHarnesses]);
+
   const baseline = defaultsToValue(defaults);
   const dirty =
     agentModel.harness !== baseline.harness ||
@@ -53,7 +69,12 @@ export function CodingDefaultsModal({
     agentModel.providerKind !== baseline.providerKind ||
     agentModel.endpoint.trim() !== baseline.endpoint.trim() ||
     agentModel.apiKey.trim() !== baseline.apiKey.trim();
-  const canSave = !busy && dirty;
+  const harnessOk =
+    enabledHarnesses === undefined
+      ? true
+      : enabledHarnesses.length > 0 &&
+        enabledHarnesses.includes(agentModel.harness);
+  const canSave = !busy && dirty && harnessOk;
 
   return (
     <ModalPortal>
@@ -102,6 +123,9 @@ export function CodingDefaultsModal({
               scope="defaults"
               fallbackKind="envoymesh-ai"
               fallbackModelHint={envoymeshAiModelHint}
+              modelProviders={modelProviders}
+              enabledHarnesses={enabledHarnesses}
+              harnessProbe={harnessProbe}
             />
 
             {error ? (

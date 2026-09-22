@@ -11,6 +11,7 @@ import {
   extTimelineChatId,
   type CodingHarnessId,
   type EhPermissionEvent,
+  type EhUserQuestionEvent,
   type ExtAgentInstallGuide,
   type ExtAgentReachability,
 } from "@envoymesh/api";
@@ -47,6 +48,7 @@ import { CodingComposerToolbar } from "../CodingComposerToolbar.js";
 import { CodingImportSessionModal } from "../CodingImportSessionModal.js";
 import { EhChatComposer } from "../ehui/EhChatComposer.js";
 import { EhPermissionDock } from "../ehui/EhPermissionDock.js";
+import { EhUserQuestionDock } from "../ehui/EhUserQuestionDock.js";
 import { ExtAgentInstallGuideCard } from "../ExtAgentInstallGuideCard.js";
 import { ExtAgentSwitcherInstallDialog } from "../ExtAgentSwitcherInstallDialog.js";
 
@@ -108,6 +110,7 @@ export function CodingHarnessPanel({
    * state that must not be lost while the panel is on screen.
    */
   const [pendingPermission, setPendingPermission] = useState<EhPermissionEvent | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<EhUserQuestionEvent | null>(null);
   const [reach, setReach] = useState<ExtAgentReachability | null>(null);
   const [installOpen, setInstallOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -225,14 +228,26 @@ export function CodingHarnessPanel({
    */
   useEffect(() => {
     setPendingPermission(null);
-    return nodeService.on("coding:permission", (event) => {
+    setPendingQuestion(null);
+    const unsubPerm = nodeService.on("coding:permission", (event) => {
       if (event.sessionId !== sessionId) return;
       setPendingPermission(event);
     });
+    const unsubQuestion = nodeService.on("coding:user_question", (event) => {
+      if (event.sessionId !== sessionId) return;
+      setPendingQuestion(event);
+    });
+    return () => {
+      unsubPerm();
+      unsubQuestion();
+    };
   }, [nodeService, sessionId]);
 
   useEffect(() => {
-    if (!busy) setPendingPermission(null);
+    if (!busy) {
+      setPendingPermission(null);
+      setPendingQuestion(null);
+    }
   }, [busy]);
 
   const streamingAssistant = useMemo(() => {
@@ -496,6 +511,13 @@ export function CodingHarnessPanel({
             answer={(requestId, allowed) =>
               nodeService.codingRespondToPermission({ requestId, allowed })
             }
+          />
+        ) : null}
+        {pendingQuestion ? (
+          <EhUserQuestionDock
+            question={pendingQuestion}
+            onDismiss={() => setPendingQuestion(null)}
+            answer={(params) => nodeService.codingRespondToUserQuestion(params)}
           />
         ) : null}
         <form

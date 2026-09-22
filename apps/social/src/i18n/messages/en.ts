@@ -187,6 +187,14 @@ export const en = {
       "Remove “{title}” from Coding? Your folder, repo, and files on disk are not deleted.",
     removeTaskAria: "Remove task",
     taskActionsAria: "Task actions",
+    taskAgentSettings: "Agent settings",
+    taskAgentTitle: "Agent settings",
+    taskAgentLabel: "Agent",
+    taskAgentDesc:
+      "This task only. Other tasks keep their agent. The project default is used only when you create a new task.",
+    taskAgentSwitchHint:
+      "Switching the agent starts this task over with the new agent. Earlier messages stay with the previous one.",
+    taskAgentSaveFailed: "Couldn’t save this task’s agent. Try again.",
     inviteReview: "Invite peer to review",
     inviteReviewTitle: "Invite peer to review",
     inviteReviewDesc:
@@ -322,7 +330,9 @@ export const en = {
     harnessProbeUnknown: "Not ready",
     harnessUnavailable: "Not available",
     harnessCatalogHint:
-      "Envoy and Pi are built into EnvoyMesh. Other options are CLIs on this computer — Coding just uses them. If one isn’t installed yet, we’ll show install steps when you start a task.",
+      "Only agents that are ready on this computer are listed. Install or check others in Settings → AI → Coding agents.",
+    harnessNoneReady:
+      "No ready agents yet. Install one in Settings → AI → Coding agents.",
     openInstallGuide: "Install guide",
     composerToolbarAria: "Coding composer options",
     composerModelPlaceholder: "Default model",
@@ -669,6 +679,16 @@ export const en = {
       homeSupervised: "This app is running the home node for this profile.",
       homeNone: "The home node is not running yet.",
       homeHolder: "Held by {app}",
+      serviceTitle: "Background service",
+      serviceHintOff: "The home node runs with this app and stops when you quit.",
+      serviceHintOn: "The home node stays running after you close this window, and starts again when you sign in.",
+      serviceTurnOn: "Turn on",
+      serviceTurnOff: "Turn off",
+      serviceWorking: "Working…",
+      serviceOn: "On",
+      serviceOff: "Off",
+      serviceUnsupported: "This computer cannot run a background service.",
+      serviceFailed: "The background service did not start. {detail}",
     },
   },
   chat: chatMessages,

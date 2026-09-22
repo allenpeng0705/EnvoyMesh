@@ -541,6 +541,13 @@ export interface NodeServiceClient {
     endpoint?: string;
     apiKey?: string;
   }): Promise<import("@envoymesh/api").EhChatTaskSummary>;
+  /** Update the model locked on one existing Envoy task. */
+  updateEnvoyHarnessChat(opts: {
+    chatId: string;
+    model?: string | null;
+    endpoint?: string | null;
+    apiKey?: string | null;
+  }): Promise<import("@envoymesh/api").EhChatTaskSummary>;
   /**
    * Phase 68-C2 — peer-review invite. Social must sendChat(messageText) after.
    */
@@ -620,6 +627,10 @@ export interface NodeServiceClient {
     requestId: string;
     allowed: boolean;
   }): Promise<{ requestId: string; delivered: boolean }>;
+  /** Answer a Coding session's ask_user card. */
+  codingRespondToUserQuestion(
+    params: import("@envoymesh/api").CodingRespondToUserQuestionParams,
+  ): Promise<import("@envoymesh/api").CodingRespondToUserQuestionResult>;
   cancelEnvoyHarnessTurn(chatId?: string): Promise<{ cancelled: boolean }>;
   /** The configured envoy-harness peer cluster (id/model/capabilities). */
   listEnvoyHarnessPeers(): Promise<
@@ -757,6 +768,10 @@ export interface NodeServiceClient {
   ): Promise<import("@envoymesh/api").CreateFleetManifestResult>;
   pairWithHomeNode(params: import("@envoymesh/api").PairWithHomeNodeParams): Promise<import("@envoymesh/api").PairWithHomeNodeResult>;
   listAuthorizedDevices(): Promise<import("@envoymesh/api").ListAuthorizedDevicesResult>;
+  getBackgroundService(): Promise<import("@envoymesh/api").NodeBackgroundServiceStatus>;
+  setBackgroundService(params: {
+    enabled: boolean;
+  }): Promise<import("@envoymesh/api").NodeBackgroundServiceStatus>;
   revokeAuthorizedDevice(
     params: import("@envoymesh/api").RevokeAuthorizedDeviceParams,
   ): Promise<import("@envoymesh/api").RevokeAuthorizedDeviceResult>;
@@ -1725,7 +1740,7 @@ function createWsNodeServiceClient(
       return wsClient.rpc(
         "getExtAgentCommandCatalog",
         (params ?? {}) as Record<string, unknown>,
-        { timeoutMs: 5_000 },
+        { timeoutMs: params?.probeModels ? 12_000 : 5_000 },
       ) as Promise<import("@envoymesh/api").ExtAgentCommandCatalog>;
     },
     async setExtAgentSessionModel(
@@ -2097,6 +2112,16 @@ function createWsNodeServiceClient(
         import("@envoymesh/api").EhChatTaskSummary
       >;
     },
+    async updateEnvoyHarnessChat(opts: {
+      chatId: string;
+      model?: string | null;
+      endpoint?: string | null;
+      apiKey?: string | null;
+    }) {
+      return wsClient.rpc("updateEnvoyHarnessChat", opts, {
+        timeoutMs: 15_000,
+      }) as Promise<import("@envoymesh/api").EhChatTaskSummary>;
+    },
     async createCodingReviewInvite(opts: {
       chatId: string;
       peerOwnerId: string;
@@ -2256,6 +2281,14 @@ function createWsNodeServiceClient(
         requestId: string;
         delivered: boolean;
       }>;
+    },
+    async codingRespondToUserQuestion(
+      params: import("@envoymesh/api").CodingRespondToUserQuestionParams,
+    ) {
+      return wsClient.rpc(
+        "codingRespondToUserQuestion",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").CodingRespondToUserQuestionResult>;
     },
     async cancelEnvoyHarnessTurn(chatId?: string) {
       return wsClient.rpc(
@@ -2563,6 +2596,16 @@ function createWsNodeServiceClient(
     async listAuthorizedDevices() {
       return wsClient.rpc("listAuthorizedDevices", {}) as Promise<
         import("@envoymesh/api").ListAuthorizedDevicesResult
+      >;
+    },
+    async getBackgroundService() {
+      return wsClient.rpc("getBackgroundService", {}) as Promise<
+        import("@envoymesh/api").NodeBackgroundServiceStatus
+      >;
+    },
+    async setBackgroundService(params: { enabled: boolean }) {
+      return wsClient.rpc("setBackgroundService", params) as Promise<
+        import("@envoymesh/api").NodeBackgroundServiceStatus
       >;
     },
     async revokeAuthorizedDevice(params: import("@envoymesh/api").RevokeAuthorizedDeviceParams) {

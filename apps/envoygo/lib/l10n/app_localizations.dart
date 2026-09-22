@@ -159,14 +159,140 @@ abstract class AppLocalizations {
   /// No description provided for @codingNewTaskDesc.
   ///
   /// In en, this message translates to:
-  /// **'Pick a harness and project folder. The harness stays fixed for this task.'**
+  /// **'Pick a coding agent, model, and project folder. The agent stays fixed for this task unless you change it later.'**
   String get codingNewTaskDesc;
 
   /// No description provided for @codingHarnessLabel.
   ///
   /// In en, this message translates to:
-  /// **'Harness'**
+  /// **'Agent'**
   String get codingHarnessLabel;
+
+  /// No description provided for @codingModelLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get codingModelLabel;
+
+  /// No description provided for @codingModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This agent’s own login and default model'**
+  String get codingModelHint;
+
+  /// No description provided for @codingModelLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading models…'**
+  String get codingModelLoading;
+
+  /// No description provided for @codingModelEmptyOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent default'**
+  String get codingModelEmptyOption;
+
+  /// No description provided for @codingProviderLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider'**
+  String get codingProviderLabel;
+
+  /// No description provided for @codingProviderNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent login / default'**
+  String get codingProviderNone;
+
+  /// No description provided for @codingProviderOpenai.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI-compatible'**
+  String get codingProviderOpenai;
+
+  /// No description provided for @codingProviderAnthropic.
+  ///
+  /// In en, this message translates to:
+  /// **'Anthropic-compatible'**
+  String get codingProviderAnthropic;
+
+  /// No description provided for @codingProviderHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave empty to use this agent’s own login. OpenAI-compatible or Anthropic-compatible needs an endpoint and a model id you type in.'**
+  String get codingProviderHint;
+
+  /// No description provided for @codingEndpointLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint'**
+  String get codingEndpointLabel;
+
+  /// No description provided for @codingEndpointHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://api.example.com/v1'**
+  String get codingEndpointHint;
+
+  /// No description provided for @codingApiKeyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'API key'**
+  String get codingApiKeyLabel;
+
+  /// No description provided for @codingApiKeyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Stored on your home computer for this task'**
+  String get codingApiKeyHint;
+
+  /// No description provided for @codingProjectSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Project settings'**
+  String get codingProjectSettingsTitle;
+
+  /// No description provided for @codingProjectSettingsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Name and default coding agent for new tasks in this project. Existing tasks keep their own agent.'**
+  String get codingProjectSettingsDesc;
+
+  /// No description provided for @codingProjectSettingsSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get codingProjectSettingsSave;
+
+  /// No description provided for @codingProjectNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get codingProjectNameLabel;
+
+  /// No description provided for @codingTaskAgentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent settings'**
+  String get codingTaskAgentTitle;
+
+  /// No description provided for @codingTaskAgentDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'This task only. Other tasks keep their agent. The project default is used only when you create a new task.'**
+  String get codingTaskAgentDesc;
+
+  /// No description provided for @codingTaskAgentSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get codingTaskAgentSave;
+
+  /// No description provided for @codingTaskAgentSwitchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Switching the agent starts this task over with the new agent. Earlier messages stay with the previous one.'**
+  String get codingTaskAgentSwitchHint;
 
   /// No description provided for @codingStartTask.
   ///
@@ -459,8 +585,14 @@ abstract class AppLocalizations {
   /// No description provided for @codingHarnessProbeHint.
   ///
   /// In en, this message translates to:
-  /// **'Envoy/Pi are built in. Other tools are CLIs on your home computer — Coding just uses them. Ready / Not ready shows whether each is available.'**
+  /// **'Only agents that are ready on this home computer are listed. Install or check others in Settings → AI → Coding tools.'**
   String get codingHarnessProbeHint;
+
+  /// No description provided for @codingHarnessNoneReady.
+  ///
+  /// In en, this message translates to:
+  /// **'No ready agents yet. Install one in Settings → AI → Coding tools.'**
+  String get codingHarnessNoneReady;
 
   /// No description provided for @codingHarnessHowToFix.
   ///
@@ -1125,7 +1257,7 @@ abstract class AppLocalizations {
   /// No description provided for @navTerminal.
   ///
   /// In en, this message translates to:
-  /// **'Terminal'**
+  /// **'Terminals'**
   String get navTerminal;
 
   /// No description provided for @navKnowledge.

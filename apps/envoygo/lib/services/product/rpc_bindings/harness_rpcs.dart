@@ -31,6 +31,21 @@ mixin HarnessRpcs on HomeRpcSession {
         as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> updateEnvoyHarnessChat({
+    required String chatId,
+    String? model,
+    String? endpoint,
+    String? apiKey,
+  }) async {
+    return await homeClient.call('updateEnvoyHarnessChat', {
+          'chatId': chatId.trim(),
+          if (model != null) 'model': model.trim(),
+          if (endpoint != null) 'endpoint': endpoint.trim(),
+          if (apiKey != null) 'apiKey': apiKey.trim(),
+        }, const Duration(seconds: 30))
+        as Map<String, dynamic>;
+  }
+
   /// Phase 68-C2 — build peer-review invite text. Caller must
   /// [sendChat] with the returned `messageText`.
   Future<Map<String, dynamic>> createCodingReviewInvite({
@@ -338,12 +353,42 @@ mixin HarnessRpcs on HomeRpcSession {
     required String requestId,
     required String value,
     int? optionIndex,
+    List<int>? optionIndexes,
     bool? cancelled,
   }) async {
     return await homeClient.call('ehRespondToUserQuestion', {
           'requestId': requestId,
           'value': value,
           if (optionIndex != null) 'optionIndex': optionIndex,
+          if (optionIndexes != null) 'optionIndexes': optionIndexes,
+          if (cancelled != null) 'cancelled': cancelled,
+        })
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> codingRespondToPermission({
+    required String requestId,
+    required bool allowed,
+  }) async {
+    return await homeClient.call('codingRespondToPermission', {
+          'requestId': requestId,
+          'allowed': allowed,
+        })
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> codingRespondToUserQuestion({
+    required String requestId,
+    required String value,
+    int? optionIndex,
+    List<int>? optionIndexes,
+    bool? cancelled,
+  }) async {
+    return await homeClient.call('codingRespondToUserQuestion', {
+          'requestId': requestId,
+          'value': value,
+          if (optionIndex != null) 'optionIndex': optionIndex,
+          if (optionIndexes != null) 'optionIndexes': optionIndexes,
           if (cancelled != null) 'cancelled': cancelled,
         })
         as Map<String, dynamic>;

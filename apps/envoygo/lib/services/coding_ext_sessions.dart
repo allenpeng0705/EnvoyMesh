@@ -276,6 +276,41 @@ Future<void> updateCodingExtSessionRuntime(
   await _saveCodingExtSessions(all);
 }
 
+/// Change the agent (and model) on one Tier B task. Other sessions stay put.
+Future<CodingExtSession?> updateCodingExtSessionAgent(
+  String id, {
+  required String harness,
+  String? model,
+  String? providerKind,
+  String? endpoint,
+}) async {
+  final h = harness.trim();
+  if (!isCodingTierBHarnessId(h)) return null;
+  final all = List<CodingExtSession>.from(await loadCodingExtSessions());
+  final i = all.indexWhere((s) => s.id == id);
+  if (i < 0) return null;
+  final cur = all[i];
+  final nextModel = (model ?? '').trim();
+  final nextEndpoint = (endpoint ?? '').trim();
+  final nextProvider = providerKind == 'openai-compatible' ||
+          providerKind == 'anthropic-compatible'
+      ? providerKind
+      : null;
+  all[i] = CodingExtSession(
+    id: cur.id,
+    harness: h,
+    cwd: cur.cwd,
+    title: cur.title,
+    createdAt: cur.createdAt,
+    lastUsedAt: DateTime.now().toUtc().toIso8601String(),
+    model: nextModel.isEmpty ? null : nextModel,
+    providerKind: nextProvider,
+    endpoint: nextEndpoint.isEmpty ? null : nextEndpoint,
+  );
+  await _saveCodingExtSessions(all);
+  return all[i];
+}
+
 Future<String?> maybeAutoTitleCodingExtSession(
   String id,
   String prompt,

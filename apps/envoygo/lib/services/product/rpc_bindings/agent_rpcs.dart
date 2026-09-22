@@ -92,12 +92,17 @@ mixin AgentRpcs on HomeRpcSession {
   /// Slash-command catalog for Ext Agent chat autocomplete.
   Future<Map<String, dynamic>> getExtAgentCommandCatalog({
     String? agentId,
+    bool probeModels = false,
   }) async {
-    return await homeClient.call('getExtAgentCommandCatalog', {
-          if (agentId != null && agentId.trim().isNotEmpty)
-            'agentId': agentId.trim(),
-        })
-        as Map<String, dynamic>;
+    return await homeClient.call(
+      'getExtAgentCommandCatalog',
+      {
+        if (agentId != null && agentId.trim().isNotEmpty)
+          'agentId': agentId.trim(),
+        if (probeModels) 'probeModels': true,
+      },
+      probeModels ? const Duration(seconds: 12) : const Duration(seconds: 5),
+    ) as Map<String, dynamic>;
   }
 
   /// EnvoyAI (OpenClaw) slash-command catalog.

@@ -12,6 +12,7 @@ import type {
 import {
   defaultEhChatTitle,
   deriveCodingUiBucket,
+  normalizeEhChatModel,
   resolveEhChatDisplayTitle,
   MAX_ENVOY_HARNESS_CHATS,
 } from "@envoymesh/api/core";
@@ -174,6 +175,38 @@ export function updateEhChatTitle(
   const next = title.trim();
   if (!next) return chats;
   return chats.map((c) => (c.id === chatId ? { ...c, title: next } : c));
+}
+
+/**
+ * Update the model locked on one task. Empty / null clears that field.
+ * Does not change cwd, title, or any other chat.
+ */
+export function updateEhChatRuntime(
+  chats: EhChatTask[],
+  chatId: string,
+  patch: {
+    model?: string | null;
+    endpoint?: string | null;
+    apiKey?: string | null;
+  },
+): EhChatTask[] {
+  return chats.map((c) => {
+    if (c.id !== chatId) return c;
+    const next: EhChatTask = { ...c };
+    const apply = (
+      key: "model" | "endpoint" | "apiKey",
+      value: string | null | undefined,
+    ) => {
+      if (value === undefined) return;
+      const normalized = normalizeEhChatModel(value);
+      if (normalized) next[key] = normalized;
+      else delete next[key];
+    };
+    apply("model", patch.model);
+    apply("endpoint", patch.endpoint);
+    apply("apiKey", patch.apiKey);
+    return next;
+  });
 }
 
 export function removeEhChat(

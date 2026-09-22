@@ -13,7 +13,7 @@ export const zhAiSettingsMessages = {
     browseCatalogue: "浏览目录（{total}）",
     hideCatalogue: "收起目录",
     externalHint:
-      "会显示在新建任务选择器中。请自行安装并登录——EnvoyMesh 仅在编程页选中时运行。",
+      "就绪的会出现在新建任务与项目默认选择里。请在此安装并登录——EnvoyMesh 仅在编程页选中时运行。",
     onMachine: "本机 · {ready}/{total} 就绪",
     recheck: "重新检查",
     recheckHint: "重新检测各工具是否在 PATH 上。不会启动智能体或安装软件包。",

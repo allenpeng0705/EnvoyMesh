@@ -3,8 +3,8 @@
  */
 import { useEffect, useState } from "react";
 import {
-  CODING_ALL_HARNESSES,
   type CodingHarnessId,
+  type ModelProviderConfig,
 } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import type {
@@ -12,12 +12,15 @@ import type {
   CodingProviderKind,
   CodingTaskPrefill,
 } from "../lib/coding-projects.js";
-import { resolveCodingTaskPrefill } from "../lib/coding-projects.js";
+import {
+  normalizeCodingProjectPath,
+  resolveCodingTaskPrefill,
+} from "../lib/coding-projects.js";
 import {
   CodingAgentModelProviderFields,
   type CodingAgentModelProviderValue,
 } from "./CodingAgentModelProviderFields.js";
-import { codingPrefillToValue } from "../lib/coding-agent-model-provider.js";
+import { codingPrefillToValue, snapCodingAgentToReady } from "../lib/coding-agent-model-provider.js";
 import { ModalPortal } from "./ModalPortal.js";
 
 export type { CodingHarnessId };
@@ -26,6 +29,40 @@ export type { CodingHarnessId };
 // consumers, and a second declaration is exactly what drifted from the lib's.
 import type { HarnessProbeBadge } from "../lib/coding-harness-probe.js";
 export type { HarnessProbeBadge };
+
+/** Selected project for a new task, matching a stored path or its normalized form. */
+function projectForNewTask(
+  projects: CodingProject[],
+  initialProjectPath: string,
+): { path: string; project: CodingProject | undefined } {
+  const preferred = initialProjectPath.trim();
+  const normalized = normalizeCodingProjectPath(preferred);
+  const project = projects.find(
+    (p) =>
+      p.path === preferred ||
+      p.path === normalized ||
+      (normalized.length > 0 &&
+        normalizeCodingProjectPath(p.path) === normalized),
+  );
+  if (project) return { path: project.path, project };
+  const fallback = projects[0];
+  return { path: fallback?.path ?? "", project: fallback };
+}
+
+function agentForNewTask(
+  project: CodingProject | undefined,
+  enabledHarnesses: readonly CodingHarnessId[],
+  fallback?: CodingTaskPrefill,
+): CodingAgentModelProviderValue {
+  const prefill = project
+    ? resolveCodingTaskPrefill({ project })
+    : (fallback ?? resolveCodingTaskPrefill({}));
+  const next = codingPrefillToValue(prefill);
+  const harness = enabledHarnesses.includes(next.harness)
+    ? next.harness
+    : (enabledHarnesses[0] ?? next.harness);
+  return { ...next, harness };
+}
 
 export type CodingNewSessionConfirm = {
   harness: CodingHarnessId;
@@ -50,6 +87,8 @@ export type CodingNewSessionSheetProps = {
   onAddProject: () => void;
   /** Current Coding defaults model for Envoy/Pi empty hints. */
   codingDefaultsModelHint?: string;
+  /** Settings → AI provider, for the Envoy Harness / Pi model list. */
+  modelProviders?: ModelProviderConfig | null;
 };
 
 export function CodingNewSessionSheet({
@@ -59,54 +98,24 @@ export function CodingNewSessionSheet({
   initialPrefill,
   busy = false,
   error = null,
-  enabledHarnesses = CODING_ALL_HARNESSES,
+  enabledHarnesses = [],
   harnessProbe = {},
   onClose,
   onConfirm,
   onAddProject,
   codingDefaultsModelHint = "",
+  modelProviders = null,
 }: CodingNewSessionSheetProps) {
   const t = useT();
-  const [projectPath, setProjectPath] = useState(initialProjectPath);
+  const opened = projectForNewTask(projects, initialProjectPath);
+  const [projectPath, setProjectPath] = useState(opened.path);
   const [agentModel, setAgentModel] = useState<CodingAgentModelProviderValue>(
-    () =>
-      codingPrefillToValue(
-        initialPrefill ?? resolveCodingTaskPrefill({}),
-      ),
+    () => agentForNewTask(opened.project, enabledHarnesses, initialPrefill),
   );
 
   useEffect(() => {
-    if (!open) return;
-    const preferred = initialProjectPath.trim();
-    if (preferred && projects.some((p) => p.path === preferred)) {
-      setProjectPath(preferred);
-      return;
-    }
-    setProjectPath(projects[0]?.path ?? "");
-  }, [open, initialProjectPath, projects]);
-
-  useEffect(() => {
-    if (!open) return;
-    const next = codingPrefillToValue(
-      initialPrefill ?? resolveCodingTaskPrefill({}),
-    );
-    const harness = enabledHarnesses.includes(next.harness)
-      ? next.harness
-      : (enabledHarnesses[0] ?? next.harness);
-    const resolved = { ...next, harness };
-    setAgentModel((prev) => {
-      if (
-        prev.harness === resolved.harness &&
-        prev.model === resolved.model &&
-        prev.providerKind === resolved.providerKind &&
-        prev.endpoint === resolved.endpoint &&
-        prev.apiKey === resolved.apiKey
-      ) {
-        return prev;
-      }
-      return resolved;
-    });
-  }, [open, initialPrefill, enabledHarnesses]);
+    setAgentModel((prev) => snapCodingAgentToReady(prev, enabledHarnesses));
+  }, [enabledHarnesses]);
 
   if (!open) return null;
 
@@ -169,11 +178,7 @@ export function CodingNewSessionSheet({
                   setProjectPath(nextPath);
                   const nextProject = projects.find((p) => p.path === nextPath);
                   setAgentModel(
-                    codingPrefillToValue(
-                      resolveCodingTaskPrefill({
-                        project: nextProject,
-                      }),
-                    ),
+                    agentForNewTask(nextProject, enabledHarnesses),
                   );
                 }}
                 data-testid="coding-new-task-project"
@@ -218,6 +223,7 @@ export function CodingNewSessionSheet({
             scope="task"
             fallbackKind="coding-defaults"
             fallbackModelHint={codingDefaultsModelHint}
+            modelProviders={modelProviders}
           />
 
           <p className="coding-project-modal__path-hint">

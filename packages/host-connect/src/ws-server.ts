@@ -963,6 +963,8 @@ export class WsServer<TCaller = unknown> {
       "eh:user_question",
       "eh:timeline",
       "eh:chats_updated",
+      "coding:permission",
+      "coding:user_question",
       // Phase 38 — voice/video call events
       "call:incoming",
       "call:reinvite",

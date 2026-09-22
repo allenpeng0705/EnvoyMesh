@@ -231,6 +231,39 @@ export function updateCodingExtSessionRuntime(
   saveCodingExtSessions(all);
 }
 
+/** Change the agent (and model) on one Tier B task. Other sessions stay put. */
+export function updateCodingExtSessionAgent(
+  id: string,
+  patch: {
+    harness: CodingHarnessId;
+    model?: string;
+    providerKind?: CodingExtSession["providerKind"];
+    endpoint?: string;
+  },
+): CodingExtSession | null {
+  if (!isCodingTierBHarness(patch.harness)) return null;
+  const all = loadCodingExtSessions();
+  const i = all.findIndex((s) => s.id === id);
+  if (i < 0) return null;
+  const cur = all[i];
+  if (!cur) return null;
+  const model = patch.model?.trim() || undefined;
+  const endpoint = patch.endpoint?.trim() || undefined;
+  const next: CodingExtSession = {
+    ...cur,
+    harness: patch.harness,
+    lastUsedAt: new Date().toISOString(),
+    ...(model ? { model } : { model: undefined }),
+    ...(patch.providerKind
+      ? { providerKind: patch.providerKind }
+      : { providerKind: undefined }),
+    ...(endpoint ? { endpoint } : { endpoint: undefined }),
+  };
+  all[i] = next;
+  saveCodingExtSessions(all);
+  return next;
+}
+
 /**
  * If the session still has a placeholder title, set it from the first user prompt.
  * Returns the title that was applied, or null if unchanged.

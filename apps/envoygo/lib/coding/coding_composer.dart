@@ -52,7 +52,7 @@ class CodingComposerCapabilities {
   final bool canSetMode;
   final bool permissions;
   final String? permissionDisabledReason;
-  /// Catalog ACP has no Mesh ask dock yet — Ask would cancel tools silently.
+  /// When set, the Ask option is shown disabled with this reason.
   final String? permissionAskDisabledReason;
   final String? permissionFullDisabledReason;
 }
@@ -189,9 +189,6 @@ const _sidecarNoMeshPerms = {
 const _sidecarPermsReason =
     'This agent’s Coding run path does not support Mesh permission gating yet.';
 
-const _catalogAskDisabledReason =
-    'Ask every time needs an on-screen confirmation. Until that ships, use Safe default (read-only tools auto-run; others stay blocked).';
-
 CodingComposerCapabilities codingComposerCapabilities(String harness) {
   final id = harness.trim();
   if (id == 'envoy-harness') {
@@ -240,10 +237,9 @@ CodingComposerCapabilities codingComposerCapabilities(String harness) {
     attach: true,
     agentModes: agentModes,
     canSetMode: false,
-    permissions: true,
-    // Catalog ACP honors Safe/Full today; Ask would cancel without a dock.
-    permissionAskDisabledReason: isSidecar ? null : _catalogAskDisabledReason,
-    permissionFullDisabledReason: isSidecar ? _sidecarPermsReason : null,
+    // Catalog ACP gates tools through Mesh (permission + ask_user docks).
+    permissions: !isSidecar,
+    permissionDisabledReason: isSidecar ? _sidecarPermsReason : null,
   );
 }
 

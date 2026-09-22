@@ -21,6 +21,7 @@ import {
   summarizeEhChats,
   touchEhChat,
   updateEhChatCwd,
+  updateEhChatRuntime,
   updateEhChatTitle,
   upsertEhChatSessionId,
 } from "../src/envoy-harness-chats.js";
@@ -178,6 +179,18 @@ describe("envoy-harness-chats", () => {
 
     const titled = updateEhChatTitle(chats, "a", "  Fix login  ");
     expect(titled.find((c) => c.id === "a")?.title).toBe("Fix login");
+
+    const runtime = updateEhChatRuntime(
+      [chat({ id: "a", model: "old", title: "Keep me" }), chat({ id: "b", model: "other" })],
+      "a",
+      { model: "openai:gpt-4o", endpoint: "" },
+    );
+    expect(runtime.find((c) => c.id === "a")).toMatchObject({
+      title: "Keep me",
+      model: "openai:gpt-4o",
+    });
+    expect(runtime.find((c) => c.id === "a")?.endpoint).toBeUndefined();
+    expect(runtime.find((c) => c.id === "b")?.model).toBe("other");
 
     expect(removeEhChat(chats, "b").map((c) => c.id)).toEqual(["a"]);
   });

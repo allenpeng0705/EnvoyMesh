@@ -14,7 +14,7 @@ export const aiSettingsMessages = {
     browseCatalogue: "Browse the catalogue ({total})",
     hideCatalogue: "Hide catalogue",
     externalHint:
-      "Shown on the new-task picker. Install and sign in yourself — EnvoyMesh only runs them when you pick one in Coding.",
+      "Ready ones appear when you create a task or set a project default. Install and sign in here — EnvoyMesh only runs them when you pick one in Coding.",
     onMachine: "On this machine · {ready}/{total} ready",
     recheck: "Check again",
     recheckHint:

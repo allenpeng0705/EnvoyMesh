@@ -35,10 +35,77 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get codingNewTaskDesc =>
-      'Pick a harness and project folder. The harness stays fixed for this task.';
+      'Pick a coding agent, model, and project folder. The agent stays fixed for this task unless you change it later.';
 
   @override
-  String get codingHarnessLabel => 'Harness';
+  String get codingHarnessLabel => 'Agent';
+
+  @override
+  String get codingModelLabel => 'Model';
+
+  @override
+  String get codingModelHint => 'This agent’s own login and default model';
+
+  @override
+  String get codingModelLoading => 'Loading models…';
+
+  @override
+  String get codingModelEmptyOption => 'Agent default';
+
+  @override
+  String get codingProviderLabel => 'Provider';
+
+  @override
+  String get codingProviderNone => 'Agent login / default';
+
+  @override
+  String get codingProviderOpenai => 'OpenAI-compatible';
+
+  @override
+  String get codingProviderAnthropic => 'Anthropic-compatible';
+
+  @override
+  String get codingProviderHint =>
+      'Leave empty to use this agent’s own login. OpenAI-compatible or Anthropic-compatible needs an endpoint and a model id you type in.';
+
+  @override
+  String get codingEndpointLabel => 'Endpoint';
+
+  @override
+  String get codingEndpointHint => 'https://api.example.com/v1';
+
+  @override
+  String get codingApiKeyLabel => 'API key';
+
+  @override
+  String get codingApiKeyHint => 'Stored on your home computer for this task';
+
+  @override
+  String get codingProjectSettingsTitle => 'Project settings';
+
+  @override
+  String get codingProjectSettingsDesc =>
+      'Name and default coding agent for new tasks in this project. Existing tasks keep their own agent.';
+
+  @override
+  String get codingProjectSettingsSave => 'Save';
+
+  @override
+  String get codingProjectNameLabel => 'Name';
+
+  @override
+  String get codingTaskAgentTitle => 'Agent settings';
+
+  @override
+  String get codingTaskAgentDesc =>
+      'This task only. Other tasks keep their agent. The project default is used only when you create a new task.';
+
+  @override
+  String get codingTaskAgentSave => 'Save';
+
+  @override
+  String get codingTaskAgentSwitchHint =>
+      'Switching the agent starts this task over with the new agent. Earlier messages stay with the previous one.';
 
   @override
   String get codingStartTask => 'Start task';
@@ -194,7 +261,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get codingHarnessProbeHint =>
-      'Envoy/Pi are built in. Other tools are CLIs on your home computer — Coding just uses them. Ready / Not ready shows whether each is available.';
+      'Only agents that are ready on this home computer are listed. Install or check others in Settings → AI → Coding tools.';
+
+  @override
+  String get codingHarnessNoneReady =>
+      'No ready agents yet. Install one in Settings → AI → Coding tools.';
 
   @override
   String get codingHarnessHowToFix => 'How to fix';
@@ -583,7 +654,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get crossPersonaHelloFailed => 'Could not send Hello.';
 
   @override
-  String get navTerminal => 'Terminal';
+  String get navTerminal => 'Terminals';
 
   @override
   String get navKnowledge => 'Knowledge';

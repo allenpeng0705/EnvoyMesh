@@ -118,7 +118,7 @@ export const CORE_EVENT_NAMES = [
   "config:updated",
   "bridge:status",
   // Envoy Harness turn / permission / activity — reusable host events
-  // (these eleven, plus `pi:proposal` and the three `terminal:*`).
+  // (EH docks, Coding docks, plus `pi:proposal` and the three `terminal:*`).
   "eh:turn_started",
   "eh:turn_token",
   "eh:turn_complete",
@@ -130,6 +130,9 @@ export const CORE_EVENT_NAMES = [
   "eh:user_question",
   "eh:timeline",
   "eh:chats_updated",
+  // Coding catalog ACP docks (permission + ask_user)
+  "coding:permission",
+  "coding:user_question",
   // Terminal / Pi
   "pi:proposal",
   "terminal:session-updated",
@@ -157,8 +160,8 @@ export type CoreEventName = (typeof CORE_EVENT_NAMES)[number];
 /**
  * Events the **reusable** host knows about, and nothing else.
  *
- * All 26 are product-agnostic: node lifecycle, peer/mesh traffic, harness turn
- * events, terminal sessions and the Pi proposal. Twenty-four are plain
+ * All core events are product-agnostic: node lifecycle, peer/mesh traffic, harness turn
+ * events, Coding docks, terminal sessions and the Pi proposal. Most are plain
  * broadcasts; `bridge:status` needs a host handler because it masks bridge
  * capability per caller before emitting.
  *
@@ -194,6 +197,8 @@ export const CORE_EVENT_DISPOSITIONS: Readonly<Record<CoreEventName, EventDispos
     "eh:user_question": { kind: "broadcast" },
     "eh:timeline": { kind: "broadcast" },
     "eh:chats_updated": { kind: "broadcast" },
+    "coding:permission": { kind: "broadcast" },
+    "coding:user_question": { kind: "broadcast" },
 
     "pi:proposal": { kind: "broadcast" },
     "terminal:session-updated": { kind: "broadcast" },

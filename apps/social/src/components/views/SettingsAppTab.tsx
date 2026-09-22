@@ -3,6 +3,7 @@ import { useTheme } from "../../context/ThemeContext.js";
 import { useI18n, useT } from "../../context/I18nContext.js";
 import { ActivityView } from "./ActivityView.js";
 import { AuthorizedDevicesSection } from "./AuthorizedDevicesSection.js";
+import { BackgroundServiceSection } from "./BackgroundServiceSection.js";
 import {
   getTauriAppLogPaths,
   getTauriHomeNodeMode,
@@ -131,6 +132,8 @@ export function SettingsAppTab() {
           management is housekeeping/audit information and pairs
           naturally with the other App-shaped items in this tab. */}
       <AuthorizedDevicesSection />
+
+      {tauriShell ? <BackgroundServiceSection /> : null}
 
       {tauriShell && homeMode ? (
         <div className="settings-card">

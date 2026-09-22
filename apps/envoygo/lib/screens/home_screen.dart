@@ -18,7 +18,7 @@ import 'terminals/terminal_list_screen.dart';
 
 /// Main scaffold with bottom navigation (tab **ids**, not shared int indices).
 ///
-/// Owner: Social / Coding / Knowledge / Terminal / Me.
+/// Owner: Social / Knowledge / Coding / Terminal / Me.
 /// Family+coding: Chats / Coding / Me.
 /// Family−coding: Chats / Me.
 class HomeScreen extends ConsumerWidget {

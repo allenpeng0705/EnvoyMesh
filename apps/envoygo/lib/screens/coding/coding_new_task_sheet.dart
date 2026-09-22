@@ -10,6 +10,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
 import '../../utils/open_external_url.dart';
+import '../../widgets/coding_agent_fields.dart';
 import '../../widgets/home_folder_browser.dart';
 
 enum CodingHarnessChoice {
@@ -122,7 +123,7 @@ const _allHarnessChoices = <CodingHarnessChoice>[
   CodingHarnessChoice.minimaxCode,
 ];
 
-/// Create sheet: harness (immutable) + project folder via [HomeFolderBrowser].
+/// Create sheet: agent + model + project folder via [HomeFolderBrowser].
 Future<void> showCodingNewTaskSheet(
   BuildContext context,
   WidgetRef ref, {
@@ -133,6 +134,7 @@ Future<void> showCodingNewTaskSheet(
     String? model,
     String? providerKind,
     String? endpoint,
+    String? apiKey,
   }) onConfirm,
 }) {
   return showModalBottomSheet<void>(
@@ -159,6 +161,7 @@ class _CodingNewTaskSheet extends ConsumerStatefulWidget {
     String? model,
     String? providerKind,
     String? endpoint,
+    String? apiKey,
   }) onConfirm;
 
   @override
@@ -174,6 +177,8 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
   var _model = '';
   var _providerKind = '';
   var _endpoint = '';
+  var _apiKey = '';
+  List<String> _homeModels = const [];
   List<CodingProject> _projects = const [];
   Map<CodingHarnessChoice, CodingHarnessProbeResult> _probes = {
     for (final h in _allHarnessChoices)
@@ -223,9 +228,29 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
       _model = prefill.model;
       _providerKind = prefill.providerKind;
       _endpoint = prefill.endpoint;
+      _apiKey = prefill.apiKey;
     });
 
     final client = ref.read(nodeServiceProvider);
+    if (client != null) {
+      try {
+        final cfg = await client.getNodeConfig();
+        final mp = (cfg['modelProviders'] as Map?)?.cast<String, dynamic>();
+        final localIds = <String>[];
+        try {
+          final installed = await client.listEnvoyLocalInstalledModels();
+          for (final row in installed) {
+            final id = row['id']?.toString() ?? row['model']?.toString() ?? '';
+            if (id.trim().isNotEmpty) localIds.add(id.trim());
+          }
+        } catch (_) {}
+        final home = codingEnvoyHarnessModelSuggestions(
+          modelProviders: mp,
+          envoyLocalModelIds: localIds,
+        );
+        if (mounted) setState(() => _homeModels = home);
+      } catch (_) {}
+    }
     // Only fall back to home-node defaults when the user has no registered
     // projects yet — otherwise a stale envoyHarnessCwd (often the EnvoyMesh
     // checkout) steals the path after Add project → aiNote.
@@ -275,23 +300,13 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
     setState(() {
       _probes = next;
       _probing = false;
+      final snapped = snapCodingHarnessToReady(
+        _harness,
+        _allHarnessChoices,
+        (h) => next[h],
+      );
+      if (snapped != null) _harness = snapped;
     });
-  }
-
-  String _badgeLabel(AppLocalizations l10n, CodingHarnessProbeBadge badge) {
-    return switch (badge) {
-      CodingHarnessProbeBadge.ready => l10n.codingExtReady,
-      CodingHarnessProbeBadge.checking => l10n.codingHarnessChecking,
-      CodingHarnessProbeBadge.notReady => l10n.codingHarnessNotReady,
-    };
-  }
-
-  Color _badgeColor(ColorScheme scheme, CodingHarnessProbeBadge badge) {
-    return switch (badge) {
-      CodingHarnessProbeBadge.ready => scheme.primary,
-      CodingHarnessProbeBadge.checking => scheme.outline,
-      CodingHarnessProbeBadge.notReady => scheme.error,
-    };
   }
 
   Future<void> _showResolveGuide(CodingHarnessChoice choice) async {
@@ -380,85 +395,6 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
     );
   }
 
-  Widget _harnessTile({
-    required CodingHarnessChoice value,
-    required String title,
-    required String subtitle,
-    required bool enabled,
-  }) {
-    final l10n = AppLocalizations.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    final probe = _probes[value] ??
-        const CodingHarnessProbeResult(
-          badge: CodingHarnessProbeBadge.checking,
-        );
-    final badge = probe.badge;
-    final needsResolve = badge == CodingHarnessProbeBadge.notReady;
-    final line = probe.line?.trim() ?? '';
-
-    return RadioListTile<CodingHarnessChoice>(
-      title: Row(
-        children: [
-          Expanded(child: Text(title)),
-          const SizedBox(width: 8),
-          Text(
-            _badgeLabel(l10n, badge),
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: _badgeColor(scheme, badge),
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-        ],
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(subtitle),
-          if (line.isNotEmpty && needsResolve) ...[
-            const SizedBox(height: 2),
-            Text(
-              line,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontFamily: probe.installCommand != null &&
-                            line == probe.installCommand
-                        ? 'monospace'
-                        : null,
-                    fontSize: probe.installCommand != null &&
-                            line == probe.installCommand
-                        ? 11
-                        : null,
-                  ),
-            ),
-          ],
-          if (needsResolve) ...[
-            const SizedBox(height: 4),
-            TextButton(
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              onPressed: _busy ? null : () => unawaited(_showResolveGuide(value)),
-              child: Text(l10n.codingHarnessHowToFix),
-            ),
-          ],
-        ],
-      ),
-      value: value,
-      groupValue: _harness,
-      onChanged: _busy || !enabled
-          ? null
-          : (v) {
-              if (v == null) return;
-              setState(() => _harness = v);
-              if (needsResolve) unawaited(_showResolveGuide(v));
-            },
-    );
-  }
-
   Future<void> _submit() async {
     final l10n = AppLocalizations.of(context);
     final path = normalizeCodingProjectPath(_pathController.text);
@@ -480,12 +416,14 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
       final model = _model.trim();
       final providerKind = _providerKind.trim();
       final endpoint = _endpoint.trim();
+      final apiKey = _apiKey.trim();
       await saveCodingLastUsedPrefill(
         CodingTaskPrefill(
           harness: wireHarness,
           model: model,
           providerKind: providerKind,
           endpoint: endpoint,
+          apiKey: apiKey,
           cwd: path,
         ),
       );
@@ -495,6 +433,7 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
         model: model.isEmpty ? null : model,
         providerKind: providerKind.isEmpty ? null : providerKind,
         endpoint: endpoint.isEmpty ? null : endpoint,
+        apiKey: apiKey.isEmpty ? null : apiKey,
       );
       await widget.onConfirm(
         _harness,
@@ -502,6 +441,7 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
         model: model.isEmpty ? null : model,
         providerKind: providerKind.isEmpty ? null : providerKind,
         endpoint: endpoint.isEmpty ? null : endpoint,
+        apiKey: apiKey.isEmpty ? null : apiKey,
       );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -603,6 +543,7 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
                                       _model = next.model;
                                       _providerKind = next.providerKind;
                                       _endpoint = next.endpoint;
+                                      _apiKey = next.apiKey;
                                     });
                                   },
                           ),
@@ -612,41 +553,40 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
                 ),
               ],
               const SizedBox(height: 16),
-              Text(
-                l10n.codingHarnessLabel,
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-              _harnessTile(
-                value: CodingHarnessChoice.envoyHarness,
-                title: l10n.chatsCodingEh,
-                subtitle: l10n.ehChooseProjectDesc,
-                enabled: true,
-              ),
-              _harnessTile(
-                value: CodingHarnessChoice.pi,
-                title: l10n.chatsCodingPi,
-                subtitle: l10n.codingPiConsoleHint,
-                enabled: true,
-              ),
-              for (final choice in const [
-                CodingHarnessChoice.claudeCode,
-                CodingHarnessChoice.codex,
-                CodingHarnessChoice.openCode,
-                CodingHarnessChoice.cursor,
-                CodingHarnessChoice.codeWhale,
-                CodingHarnessChoice.minimaxCode,
-              ])
-                _harnessTile(
-                  value: choice,
-                  title: choice == CodingHarnessChoice.minimaxCode
-                      ? l10n.codingHarnessMinimax
-                      : codingHarnessDisplayName(choice),
-                  subtitle: l10n.codingExtHarnessHint,
-                  enabled: mayUseCoding,
+              CodingAgentFields(
+                value: CodingAgentFieldsValue(
+                  harness: _harness,
+                  model: _model,
+                  providerKind: _providerKind,
+                  endpoint: _endpoint,
+                  apiKey: _apiKey,
                 ),
+                onChanged: (next) {
+                  setState(() {
+                    _harness = next.harness;
+                    _model = next.model;
+                    _providerKind = next.providerKind;
+                    _endpoint = next.endpoint;
+                    _apiKey = next.apiKey;
+                  });
+                },
+                enabledHarnesses: [
+                  for (final h in _allHarnessChoices)
+                    if (h == CodingHarnessChoice.envoyHarness ||
+                        h == CodingHarnessChoice.pi ||
+                        mayUseCoding)
+                      h,
+                ],
+                probes: _probes,
+                client: client,
+                homeModels: _homeModels,
+                busy: _busy,
+                harnessAsRadios: true,
+              ),
               const SizedBox(height: 8),
               Text(
                 l10n.chatsPiFolder,
+
                 style: Theme.of(context).textTheme.labelLarge,
               ),
               const SizedBox(height: 6),
@@ -689,7 +629,11 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
               ),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: _busy ? null : () => unawaited(_submit()),
+                onPressed: _busy ||
+                        _probes[_harness]?.badge !=
+                            CodingHarnessProbeBadge.ready
+                    ? null
+                    : () => unawaited(_submit()),
                 child: _busy
                     ? const SizedBox(
                         width: 18,

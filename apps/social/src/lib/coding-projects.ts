@@ -6,8 +6,11 @@
  */
 
 import {
+  hasUsableNonEnvoyLocalModelProvider,
+  inferModelProviderPreset,
   isCodingHarnessId,
   type CodingHarnessId,
+  type ModelProviderConfig,
 } from "@envoymesh/api";
 
 const STORAGE_KEY = "envoymesh.codingProjects";
@@ -254,101 +257,67 @@ export function codingModelToEhHostModel(
   return m;
 }
 
-/** Common model suggestions for compatible providers (EH / Pi / custom endpoint). */
+/** Custom OpenAI/Anthropic endpoints: free-text model id only (no invented list). */
 export function codingCompatibleModelSuggestions(
-  kind: CodingProviderKind | "" | null | undefined,
+  _kind: CodingProviderKind | "" | null | undefined,
 ): string[] {
-  const k = normalizeCodingProviderKind(kind ?? undefined);
-  if (k === "anthropic-compatible") {
-    return [
-      "claude-sonnet-4-5",
-      "claude-opus-4",
-      "claude-haiku-4-5",
-      "claude-sonnet-4-20250514",
-      "claude-3-5-haiku-latest",
-    ];
-  }
-  if (k === "openai-compatible") {
-    return [
-      "gpt-5",
-      "gpt-4.1",
-      "gpt-4o",
-      "o4-mini",
-      "o3",
-      "deepseek-chat",
-    ];
-  }
   return [];
 }
 
 /**
- * Default model suggestions for an agent's own login (no custom provider).
- * Codex → OpenAI-family; Claude Code → Anthropic; MiniMax Code → MiniMax; etc.
+ * Models for Envoy Harness and Pi.
+ *
+ * Those agents do not ship their own list. The choices are this node's
+ * Settings → AI provider (the saved model, then the rest of that provider)
+ * and any EnvoyLocal models installed on the computer.
  */
-export function codingHarnessModelSuggestions(
-  harness: CodingHarnessId | string | null | undefined,
-): string[] {
-  const id = typeof harness === "string" ? harness.trim() : "";
-  switch (id) {
-    case "claudecode":
-      return [
-        "claude-sonnet-4-5",
-        "claude-opus-4",
-        "claude-haiku-4-5",
-        "claude-sonnet-4-20250514",
-      ];
-    case "codex":
-      return ["gpt-5.1-codex", "gpt-5", "gpt-4.1", "o3", "o4-mini"];
-    case "opencode":
-      return ["gpt-4o", "claude-sonnet-4-5", "gemini-2.5-pro"];
-    case "cursor":
-      return ["auto", "gpt-5", "claude-sonnet-4-5", "gemini-2.5-pro"];
-    case "codewhale":
-    case "deepseek-harness":
-    case "deepseek-tui":
-      return ["deepseek-chat", "deepseek-reasoner", "deepseek-coder"];
-    case "minimax-code":
-      return ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"];
-    case "gemini":
-      return ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"];
-    case "grok":
-      return ["grok-4", "grok-3", "grok-3-mini"];
-    case "copilot":
-      return ["gpt-4.1", "gpt-4o", "claude-sonnet-4"];
-    case "qoder":
-      return ["qoder-auto"];
-    case "traecli":
-      return ["trae-auto"];
-    case "envoy-harness":
-    case "pi":
-      return [
-        "gpt-4o",
-        "claude-sonnet-4-20250514",
-        "MiniMax-M3",
-        "openai:gpt-4o",
-      ];
-    default:
-      return [];
+export function codingEnvoyHarnessModelSuggestions(opts: {
+  modelProviders?: ModelProviderConfig | null;
+  envoyLocalModelIds?: readonly string[] | null;
+}): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw: string | null | undefined) => {
+    const id = typeof raw === "string" ? raw.trim() : "";
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  };
+  const providers = opts.modelProviders;
+  if (providers && hasUsableNonEnvoyLocalModelProvider(providers)) {
+    push(providers.modelName);
+    for (const model of inferModelProviderPreset(providers).models) push(model);
   }
+  for (const id of opts.envoyLocalModelIds ?? []) push(id);
+  return out;
 }
 
 /**
- * Merge live catalog models + harness defaults + optional compatible-provider list.
- * When a custom OpenAI/Anthropic provider is selected, those suggestions lead.
+ * Suggestions for the model field.
+ *
+ * Custom OpenAI/Anthropic → empty (type the model id for your endpoint).
+ * Envoy and Pi → {@link codingEnvoyHarnessModelSuggestions}.
+ * Every other agent → only the list that agent published (no invented ids).
  */
 export function codingModelSuggestionsForAgent(opts: {
   harness: CodingHarnessId | string;
   providerKind?: CodingProviderKind | "" | null;
   catalogModels?: readonly string[] | null;
+  homeModels?: readonly string[] | null;
 }): string[] {
-  const compat = codingCompatibleModelSuggestions(opts.providerKind);
-  const harnessDefaults = codingHarnessModelSuggestions(opts.harness);
-  const catalog = (opts.catalogModels ?? [])
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const kind = normalizeCodingProviderKind(opts.providerKind ?? undefined);
+  if (kind === "openai-compatible" || kind === "anthropic-compatible") {
+    return [];
+  }
+  const id = typeof opts.harness === "string" ? opts.harness.trim() : "";
+  const source =
+    id === "envoy-harness" || id === "pi"
+      ? (opts.homeModels ?? [])
+      : (opts.catalogModels ?? []);
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const s of [...compat, ...catalog, ...harnessDefaults]) {
+  for (const raw of source) {
+    const s = raw.trim();
     if (!s || seen.has(s)) continue;
     seen.add(s);
     out.push(s);

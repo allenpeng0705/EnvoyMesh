@@ -201,6 +201,7 @@ class _EnvoyHarnessTerminalChromeState
   Future<void> _respondQuestion({
     required String value,
     int? optionIndex,
+    List<int>? optionIndexes,
     bool cancelled = false,
   }) async {
     final client = ref.read(nodeServiceProvider);
@@ -214,6 +215,7 @@ class _EnvoyHarnessTerminalChromeState
         requestId: requestId,
         value: value,
         optionIndex: optionIndex,
+        optionIndexes: optionIndexes,
         cancelled: cancelled ? true : null,
       );
     } catch (e) {
@@ -401,8 +403,12 @@ class _EnvoyHarnessTerminalChromeState
           if (_question != null)
             _UserQuestionCard(
               question: _question!,
-              onOption: (label, index) =>
+              onSingle: (label, index) =>
                   unawaited(_respondQuestion(value: label, optionIndex: index)),
+              onMany: (value, indexes) => unawaited(
+                _respondQuestion(value: value, optionIndexes: indexes),
+              ),
+              onText: (value) => unawaited(_respondQuestion(value: value)),
               onDismiss: () =>
                   unawaited(_respondQuestion(value: '', cancelled: true)),
             ),
@@ -542,27 +548,48 @@ class _PermissionCard extends StatelessWidget {
   }
 }
 
-class _UserQuestionCard extends StatelessWidget {
+class _UserQuestionCard extends StatefulWidget {
   const _UserQuestionCard({
     required this.question,
-    required this.onOption,
+    required this.onSingle,
+    required this.onMany,
+    required this.onText,
     required this.onDismiss,
   });
 
   final Map<String, dynamic> question;
-  final void Function(String label, int index) onOption;
+  final void Function(String label, int index) onSingle;
+  final void Function(String value, List<int> indexes) onMany;
+  final void Function(String value) onText;
   final VoidCallback onDismiss;
+
+  @override
+  State<_UserQuestionCard> createState() => _UserQuestionCardState();
+}
+
+class _UserQuestionCardState extends State<_UserQuestionCard> {
+  final Set<int> _picked = {};
+  final TextEditingController _textCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _textCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final prompt = question['prompt']?.toString() ?? '';
+    final prompt = widget.question['prompt']?.toString() ?? '';
     final options =
-        (question['options'] as List<dynamic>?)
+        (widget.question['options'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
         [];
-    final recommended = question['recommendedIndex'];
+    final recommended = widget.question['recommendedIndex'];
+    final many = widget.question['multiple'] == true && options.length > 1;
+    final freeText = options.isEmpty;
+    final multiline = widget.question['multiline'] == true;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -576,24 +603,92 @@ class _UserQuestionCard extends StatelessWidget {
               style: Theme.of(context).textTheme.titleSmall,
             ),
             if (prompt.isNotEmpty) Text(prompt),
-            if (options.isNotEmpty)
+            if (many) ...[
+              for (var i = 0; i < options.length; i++)
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: _picked.contains(i),
+                  title: Text(
+                    recommended == i
+                        ? '${options[i]} (${l10n.ehRecommended})'
+                        : options[i],
+                  ),
+                  onChanged: (checked) {
+                    setState(() {
+                      if (checked == true) {
+                        _picked.add(i);
+                      } else {
+                        _picked.remove(i);
+                      }
+                    });
+                  },
+                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: widget.onDismiss,
+                    child: Text(l10n.commonCancel),
+                  ),
+                  FilledButton(
+                    onPressed: _picked.isEmpty
+                        ? null
+                        : () {
+                            final indexes = _picked.toList()..sort();
+                            final value = indexes
+                                .map((i) => options[i])
+                                .join(', ');
+                            widget.onMany(value, indexes);
+                          },
+                    child: Text(l10n.commonConfirm),
+                  ),
+                ],
+              ),
+            ] else if (options.isNotEmpty)
               ...options.asMap().entries.map((e) {
                 final isRec = recommended == e.key;
                 return Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: OutlinedButton(
-                    onPressed: () => onOption(e.value, e.key),
+                    onPressed: () => widget.onSingle(e.value, e.key),
                     child: Text(
                       isRec ? '${e.value} (${l10n.ehRecommended})' : e.value,
                     ),
                   ),
                 );
               })
-            else
+            else if (freeText) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: _textCtrl,
+                maxLines: multiline ? 6 : 3,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  hintText: l10n.ehQuestionTitle,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: widget.onDismiss,
+                    child: Text(l10n.commonCancel),
+                  ),
+                  FilledButton(
+                    onPressed: _textCtrl.text.trim().isEmpty
+                        ? null
+                        : () => widget.onText(_textCtrl.text.trim()),
+                    child: Text(l10n.commonConfirm),
+                  ),
+                ],
+              ),
+            ] else
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: onDismiss,
+                  onPressed: widget.onDismiss,
                   child: Text(l10n.commonCancel),
                 ),
               ),

@@ -1,7 +1,9 @@
 /**
- * In-flight user-question waiter for Envoy Harness chat / terminal.
+ * In-flight user-question waiter for Envoy Harness chat / terminal and
+ * Coding catalog ACP (`ask_user`).
  *
- * Mirrors AcpPermissionBridge: emit → Social UI cards → respond RPC.
+ * Mirrors ToolPermissionBridge: emit → UI cards → respond RPC.
+ * Event name defaults to `eh:user_question`; Coding uses `coding:user_question`.
  */
 
 import { randomUUID } from "node:crypto";
@@ -16,22 +18,27 @@ export interface EhUserQuestionEvent {
   prompt: string;
   options?: string[];
   recommendedIndex?: number;
+  /** When true, the user may pick more than one option. */
+  multiple?: boolean;
   multiline?: boolean;
   timeoutMs: number;
   /** Discriminator for plan review vs generic ask. */
   kind?: "ask" | "plan-review" | "mode-switch";
   chatId?: string;
   turnId?: string;
+  /** Coding session id when the event is `coding:user_question`. */
+  sessionId?: string;
 }
 
 export interface AcpUserQuestionBridgeEmit {
-  (event: "eh:user_question", payload: EhUserQuestionEvent): void;
+  (event: string, payload: EhUserQuestionEvent): void;
 }
 
 interface Pending {
   resolve: (answer: UserQuestionAnswer) => void;
   timer: ReturnType<typeof setTimeout>;
   chatId?: string;
+  sessionId?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -40,22 +47,51 @@ export class AcpUserQuestionBridge {
   readonly #pending = new Map<string, Pending>();
   readonly #emit: AcpUserQuestionBridgeEmit;
   readonly #timeoutMs: number;
-  readonly #onResolved: ((requestId: string, status: "answered" | "cancelled" | "expired", answer: string | undefined, chatId?: string) => void) | undefined;
+  readonly #eventName: string;
+  readonly #onResolved:
+    | ((
+        requestId: string,
+        status: "answered" | "cancelled" | "expired",
+        answer: string | undefined,
+        chatId?: string,
+      ) => void)
+    | undefined;
 
   constructor(
     emit: AcpUserQuestionBridgeEmit,
     opts?: {
       timeoutMs?: number;
-      onResolved?: (requestId: string, status: "answered" | "cancelled" | "expired", answer: string | undefined, chatId?: string) => void;
+      /** Wire event this bridge emits. Default `eh:user_question`. */
+      eventName?: string;
+      onResolved?: (
+        requestId: string,
+        status: "answered" | "cancelled" | "expired",
+        answer: string | undefined,
+        chatId?: string,
+      ) => void;
     },
   ) {
     this.#emit = emit;
     this.#timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.#eventName = opts?.eventName ?? "eh:user_question";
     this.#onResolved = opts?.onResolved;
   }
 
-  /** Block until Social answers or timeout → cancelled. */
-  ask(req: UserQuestionRequest, chatId?: string): Promise<UserQuestionAnswer> {
+  /**
+   * Block until the UI answers or timeout → cancelled.
+   *
+   * Second arg may be a chat id (legacy EH callers) or a scope object.
+   */
+  ask(
+    req: UserQuestionRequest,
+    chatIdOrScope?: string | { chatId?: string; sessionId?: string },
+  ): Promise<UserQuestionAnswer> {
+    const scope =
+      typeof chatIdOrScope === "string"
+        ? { chatId: chatIdOrScope }
+        : (chatIdOrScope ?? {});
+    const chatId = scope.chatId;
+    const sessionId = scope.sessionId;
     const requestId = randomUUID();
     const kind = inferKind(req);
     return new Promise<UserQuestionAnswer>((resolve) => {
@@ -70,8 +106,13 @@ export class AcpUserQuestionBridge {
         });
       }, this.#timeoutMs);
 
-      this.#pending.set(requestId, { resolve, timer, chatId });
-      this.#emit("eh:user_question", {
+      this.#pending.set(requestId, {
+        resolve,
+        timer,
+        ...(chatId ? { chatId } : {}),
+        ...(sessionId ? { sessionId } : {}),
+      });
+      this.#emit(this.#eventName, {
         requestId,
         prompt: req.prompt,
         ...(req.options !== undefined ? { options: [...req.options] } : {}),
@@ -79,9 +120,11 @@ export class AcpUserQuestionBridge {
           ? { recommendedIndex: req.recommendedIndex }
           : {}),
         ...(req.multiline !== undefined ? { multiline: req.multiline } : {}),
+        ...(req.multiple === true ? { multiple: true } : {}),
         timeoutMs: this.#timeoutMs,
         ...(kind !== undefined ? { kind } : {}),
         ...(chatId ? { chatId } : {}),
+        ...(sessionId ? { sessionId } : {}),
       });
     });
   }
@@ -91,6 +134,7 @@ export class AcpUserQuestionBridge {
     answer: {
       value: string;
       optionIndex?: number;
+      optionIndexes?: number[];
       cancelled?: boolean;
     },
   ): { delivered: boolean } {
@@ -98,6 +142,9 @@ export class AcpUserQuestionBridge {
     if (!entry) return { delivered: false };
     clearTimeout(entry.timer);
     this.#pending.delete(requestId);
+    const optionIndexes = (answer.optionIndexes ?? []).filter(
+      (index) => Number.isInteger(index) && index >= 0,
+    );
     entry.resolve(
       answer.cancelled === true
         ? {
@@ -107,6 +154,7 @@ export class AcpUserQuestionBridge {
             ...(answer.optionIndex !== undefined
               ? { optionIndex: answer.optionIndex }
               : {}),
+            ...(optionIndexes.length > 0 ? { optionIndexes } : {}),
           }
         : {
             value: answer.value,
@@ -114,6 +162,7 @@ export class AcpUserQuestionBridge {
             ...(answer.optionIndex !== undefined
               ? { optionIndex: answer.optionIndex }
               : {}),
+            ...(optionIndexes.length > 0 ? { optionIndexes } : {}),
           },
     );
     this.#onResolved?.(
@@ -128,28 +177,32 @@ export class AcpUserQuestionBridge {
   clearForChat(chatId: string): void {
     for (const [id, entry] of this.#pending) {
       if (entry.chatId !== chatId) continue;
-      clearTimeout(entry.timer);
-      entry.resolve({
-        value: "",
-        cancelled: true,
-        cancelledReason: "aborted",
-      });
-      this.#pending.delete(id);
-      this.#onResolved?.(id, "cancelled", undefined, entry.chatId);
+      this.#cancelPending(id, entry);
+    }
+  }
+
+  clearForSession(sessionId: string): void {
+    for (const [id, entry] of this.#pending) {
+      if (entry.sessionId !== sessionId) continue;
+      this.#cancelPending(id, entry);
     }
   }
 
   clear(): void {
     for (const [id, entry] of this.#pending) {
-      clearTimeout(entry.timer);
-      entry.resolve({
-        value: "",
-        cancelled: true,
-        cancelledReason: "aborted",
-      });
-      this.#pending.delete(id);
-      this.#onResolved?.(id, "cancelled", undefined, entry.chatId);
+      this.#cancelPending(id, entry);
     }
+  }
+
+  #cancelPending(id: string, entry: Pending): void {
+    clearTimeout(entry.timer);
+    entry.resolve({
+      value: "",
+      cancelled: true,
+      cancelledReason: "aborted",
+    });
+    this.#pending.delete(id);
+    this.#onResolved?.(id, "cancelled", undefined, entry.chatId);
   }
 
   get size(): number {

@@ -1,10 +1,10 @@
 /**
  * Catalog ACP permission policy — mirrors EH `shouldAskAcpTool` without
- * depending on apps/node. Used by one-shot catalog ACP hosts that have no
- * Mesh permission dock yet: when a prompt would be required, deny/cancel.
+ * depending on apps/node.
  *
- * UI disables "Ask every time" for these harnesses (`permissionAskDisabledReason`)
- * so the label is not offered until a dock can actually confirm tools.
+ * Callers with a Mesh Coding dock pass `onPermissionRequest` so uncovered tools
+ * wait for Allow/Deny. Callers without a dock leave that callback out; the
+ * session then cancels rather than allowing silently.
  */
 
 export type CatalogPermissionPolicy =

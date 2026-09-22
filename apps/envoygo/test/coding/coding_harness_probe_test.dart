@@ -37,6 +37,38 @@ void main() {
     });
   });
 
+  group('readyCodingHarnessChoices / snapCodingHarnessToReady', () {
+    test('filters to ready and snaps off not-ready', () {
+      final probes = <String, CodingHarnessProbeResult>{
+        'a': const CodingHarnessProbeResult(
+          badge: CodingHarnessProbeBadge.ready,
+        ),
+        'b': const CodingHarnessProbeResult(
+          badge: CodingHarnessProbeBadge.notReady,
+        ),
+        'c': const CodingHarnessProbeResult(
+          badge: CodingHarnessProbeBadge.checking,
+        ),
+      };
+      expect(
+        readyCodingHarnessChoices(['a', 'b', 'c'], (id) => probes[id]),
+        ['a'],
+      );
+      expect(
+        snapCodingHarnessToReady('b', ['a', 'b', 'c'], (id) => probes[id]),
+        'a',
+      );
+      expect(
+        snapCodingHarnessToReady('a', ['a', 'b', 'c'], (id) => probes[id]),
+        'a',
+      );
+      expect(
+        snapCodingHarnessToReady('b', ['b', 'c'], (id) => probes[id]),
+        isNull,
+      );
+    });
+  });
+
   group('probeCodingHarnessByWireId', () {
     test('envoy-harness ready / not ready', () async {
       final client = _FakeNodeService();

@@ -33,8 +33,8 @@ function clampMenuPosition(
 export interface EhChatRowMenuProps {
   chat: EhChatTaskSummary;
   onRemove: (chat: EhChatTaskSummary) => void;
-  /** Phase 68-C2 — invite a bonded peer to review this task. */
-  onInviteReview?: (chat: EhChatTaskSummary) => void;
+  /** Change the agent used by this task only. */
+  onAgentSettings?: (chat: EhChatTaskSummary) => void;
   /** History-as-list-power — archive / unarchive this task. */
   archiveLabel?: string;
   onArchive?: (chat: EhChatTaskSummary) => void;
@@ -45,7 +45,7 @@ export interface EhChatRowMenuProps {
 export function EhChatRowMenu({
   chat,
   onRemove,
-  onInviteReview,
+  onAgentSettings,
   archiveLabel,
   onArchive,
   onAddHeartbeat,
@@ -135,11 +135,11 @@ export function EhChatRowMenu({
               style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 10000 }}
               onClick={(e) => e.stopPropagation()}
             >
-              {onInviteReview ? (
+              {onAgentSettings ? (
                 <div
                   className="context-menu-item"
                   role="menuitem"
-                  data-testid={`eh-chat-row-menu-invite-${chat.id}`}
+                  data-testid={`eh-chat-row-menu-agent-${chat.id}`}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -148,13 +148,10 @@ export function EhChatRowMenu({
                     e.preventDefault();
                     e.stopPropagation();
                     setOpen(false);
-                    window.setTimeout(() => onInviteReview(chat), 0);
+                    window.setTimeout(() => onAgentSettings(chat), 0);
                   }}
                 >
-                  {t(
-                    "codingView.inviteReview",
-                    "Invite peer to review",
-                  )}
+                  {t("codingView.taskAgentSettings", "Agent settings")}
                 </div>
               ) : null}
               {onAddHeartbeat ? (

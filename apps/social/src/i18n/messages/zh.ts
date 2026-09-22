@@ -177,6 +177,14 @@ export const zh = mergeMessages(en, {
       "从编程页移除“{title}”？磁盘上的文件夹、仓库和文件不会删除。",
     removeTaskAria: "移除任务",
     taskActionsAria: "任务操作",
+    taskAgentSettings: "引擎设置",
+    taskAgentTitle: "引擎设置",
+    taskAgentLabel: "引擎",
+    taskAgentDesc:
+      "只改这个任务。其他任务仍用各自的引擎。项目默认引擎只在新建任务时使用。",
+    taskAgentSwitchHint:
+      "换成别的引擎后，这个任务会用新引擎重新开始。之前的对话仍留在原来的引擎里。",
+    taskAgentSaveFailed: "没能保存这个任务的引擎。请再试一次。",
     inviteReview: "邀请好友审阅",
     inviteReviewTitle: "邀请好友审阅",
     inviteReviewDesc:
@@ -303,7 +311,9 @@ export const zh = mergeMessages(en, {
     harnessProbeUnknown: "未就绪",
     harnessUnavailable: "不可用",
     harnessCatalogHint:
-      "Envoy 与 Pi 内置在 EnvoyMesh 中。其他选项是本机上的 CLI——编程页只是调用它们。若尚未安装，开始任务时会显示安装步骤。",
+      "这里只列出本机已就绪的智能体。安装或检查其他智能体请到 设置 → AI → 编程智能体。",
+    harnessNoneReady:
+      "暂无就绪的智能体。请到 设置 → AI → 编程智能体 安装。",
     openInstallGuide: "安装指南",
     composerToolbarAria: "编程输入选项",
     composerModelPlaceholder: "默认模型",
@@ -639,6 +649,16 @@ export const zh = mergeMessages(en, {
       homeSupervised: "此应用正在运行该配置对应的主节点。",
       homeNone: "主节点尚未运行。",
       homeHolder: "当前占用：{app}",
+      serviceTitle: "后台服务",
+      serviceHintOff: "主节点随本应用运行，退出应用后会停止。",
+      serviceHintOn: "关闭窗口后主节点仍会继续运行，并在你登录后自动启动。",
+      serviceTurnOn: "开启",
+      serviceTurnOff: "关闭",
+      serviceWorking: "正在处理…",
+      serviceOn: "已开启",
+      serviceOff: "已关闭",
+      serviceUnsupported: "这台电脑无法运行后台服务。",
+      serviceFailed: "后台服务没有启动。{detail}",
     },
   },
   chat: zhChatMessages,

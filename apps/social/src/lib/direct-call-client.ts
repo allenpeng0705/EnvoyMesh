@@ -1017,6 +1017,15 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.createEnvoyHarnessChat(opts);
   }
 
+  async updateEnvoyHarnessChat(opts: {
+    chatId: string;
+    model?: string | null;
+    endpoint?: string | null;
+    apiKey?: string | null;
+  }) {
+    return this._ns.updateEnvoyHarnessChat(opts);
+  }
+
   async createCodingReviewInvite(opts: {
     chatId: string;
     peerOwnerId: string;
@@ -1130,6 +1139,12 @@ export class DirectCallClient implements NodeServiceClient {
 
   async codingRespondToPermission(params: { requestId: string; allowed: boolean }) {
     return this._ns.codingRespondToPermission(params);
+  }
+
+  async codingRespondToUserQuestion(
+    params: import("@envoymesh/api").CodingRespondToUserQuestionParams,
+  ) {
+    return this._ns.codingRespondToUserQuestion(params);
   }
 
   async cancelEnvoyHarnessTurn(chatId?: string) {
@@ -1362,6 +1377,14 @@ export class DirectCallClient implements NodeServiceClient {
 
   async listAuthorizedDevices() {
     return this._ns.listAuthorizedDevices();
+  }
+
+  async getBackgroundService() {
+    return this._ns.getBackgroundService();
+  }
+
+  async setBackgroundService(params: { enabled: boolean }) {
+    return this._ns.setBackgroundService(params);
   }
 
   async revokeAuthorizedDevice(params: Parameters<NodeService["revokeAuthorizedDevice"]>[0]) {

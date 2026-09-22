@@ -3,16 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../coding/coding_harness_probe.dart';
 import '../../coding/coding_projects.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
+import '../../widgets/coding_agent_fields.dart';
 import '../../widgets/home_folder_browser.dart';
 import 'coding_new_task_sheet.dart';
 
 /// Register a folder as a Coding project (parity with Social Add project).
-///
-/// Does not start a task — returns the saved [CodingProject] so the caller
-/// can open New task with that path prefilled.
 Future<CodingProject?> showCodingAddProjectSheet(
   BuildContext context,
   WidgetRef ref,
@@ -25,6 +24,17 @@ Future<CodingProject?> showCodingAddProjectSheet(
   );
 }
 
+const _addProjectHarnessChoices = <CodingHarnessChoice>[
+  CodingHarnessChoice.envoyHarness,
+  CodingHarnessChoice.pi,
+  CodingHarnessChoice.claudeCode,
+  CodingHarnessChoice.codex,
+  CodingHarnessChoice.openCode,
+  CodingHarnessChoice.cursor,
+  CodingHarnessChoice.codeWhale,
+  CodingHarnessChoice.minimaxCode,
+];
+
 class _CodingAddProjectSheet extends ConsumerStatefulWidget {
   const _CodingAddProjectSheet();
 
@@ -33,16 +43,91 @@ class _CodingAddProjectSheet extends ConsumerStatefulWidget {
       _CodingAddProjectSheetState();
 }
 
-class _CodingAddProjectSheetState
-    extends ConsumerState<_CodingAddProjectSheet> {
+class _CodingAddProjectSheetState extends ConsumerState<_CodingAddProjectSheet> {
   final TextEditingController _pathController = TextEditingController();
-  var _harness = CodingHarnessChoice.envoyHarness;
+  var _agent = const CodingAgentFieldsValue(
+    harness: CodingHarnessChoice.envoyHarness,
+  );
   var _busy = false;
+  var _probing = false;
+  List<String> _homeModels = const [];
+  Map<CodingHarnessChoice, CodingHarnessProbeResult> _probes = {
+    for (final h in _addProjectHarnessChoices)
+      h: const CodingHarnessProbeResult(badge: CodingHarnessProbeBadge.checking),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_probeAll());
+      unawaited(_loadHomeModels());
+    });
+  }
 
   @override
   void dispose() {
     _pathController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadHomeModels() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final cfg = await client.getNodeConfig();
+      final mp = (cfg['modelProviders'] as Map?)?.cast<String, dynamic>();
+      final localIds = <String>[];
+      try {
+        final installed = await client.listEnvoyLocalInstalledModels();
+        for (final row in installed) {
+          final id = row['id']?.toString() ?? row['model']?.toString() ?? '';
+          if (id.trim().isNotEmpty) localIds.add(id.trim());
+        }
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _homeModels = codingEnvoyHarnessModelSuggestions(
+          modelProviders: mp,
+          envoyLocalModelIds: localIds,
+        );
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _probeAll() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null || !mounted) return;
+    setState(() => _probing = true);
+    final next = <CodingHarnessChoice, CodingHarnessProbeResult>{};
+    await Future.wait(
+      _addProjectHarnessChoices.map((h) async {
+        next[h] = await probeCodingHarnessByWireId(
+          client,
+          wireId: codingHarnessWireId(h),
+          extAgentId: codingHarnessToExtAgentId(h),
+        );
+      }),
+    );
+    if (!mounted) return;
+    setState(() {
+      _probes = next;
+      _probing = false;
+      final snapped = snapCodingHarnessToReady(
+        _agent.harness,
+        _addProjectHarnessChoices,
+        (h) => next[h],
+      );
+      if (snapped != null && snapped != _agent.harness) {
+        _agent = _agent.copyWith(
+          harness: snapped,
+          model: '',
+          providerKind: '',
+          endpoint: '',
+          apiKey: '',
+        );
+      }
+    });
   }
 
   Future<void> _browse() async {
@@ -70,11 +155,23 @@ class _CodingAddProjectSheetState
       );
       return;
     }
+    if (_probes[_agent.harness]?.badge != CodingHarnessProbeBadge.ready) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.codingHarnessNoneReady)),
+      );
+      return;
+    }
     setState(() => _busy = true);
     try {
       final project = await addCodingProject(
         path,
-        defaultHarness: codingHarnessWireId(_harness),
+        defaultHarness: codingHarnessWireId(_agent.harness),
+        defaultModel: _agent.model.trim().isEmpty ? null : _agent.model.trim(),
+        defaultProviderKind:
+            _agent.providerKind.trim().isEmpty ? null : _agent.providerKind.trim(),
+        defaultEndpoint:
+            _agent.endpoint.trim().isEmpty ? null : _agent.endpoint.trim(),
+        defaultApiKey: _agent.apiKey.trim().isEmpty ? null : _agent.apiKey.trim(),
       );
       if (!mounted) return;
       Navigator.of(context).pop(project);
@@ -140,79 +237,41 @@ class _CodingAddProjectSheetState
                 ),
               ),
               const SizedBox(height: 16),
-              Text(
-                l10n.codingHarnessLabel,
-                style: Theme.of(context).textTheme.labelLarge,
+              Row(
+                children: [
+                  const Spacer(),
+                  if (_probing)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    IconButton(
+                      tooltip: l10n.commonRefresh,
+                      onPressed: client == null
+                          ? null
+                          : () => unawaited(_probeAll()),
+                      icon: const Icon(Icons.refresh, size: 20),
+                    ),
+                ],
               ),
-              RadioListTile<CodingHarnessChoice>(
-                dense: true,
-                title: Text(l10n.chatsCodingEh),
-                value: CodingHarnessChoice.envoyHarness,
-                groupValue: _harness,
-                onChanged: _busy
-                    ? null
-                    : (v) {
-                        if (v != null) setState(() => _harness = v);
-                      },
-              ),
-              RadioListTile<CodingHarnessChoice>(
-                dense: true,
-                title: Text(l10n.chatsCodingPi),
-                value: CodingHarnessChoice.pi,
-                groupValue: _harness,
-                onChanged: _busy
-                    ? null
-                    : (v) {
-                        if (v != null) setState(() => _harness = v);
-                      },
-              ),
-              RadioListTile<CodingHarnessChoice>(
-                dense: true,
-                title: const Text('Claude Code'),
-                value: CodingHarnessChoice.claudeCode,
-                groupValue: _harness,
-                onChanged: _busy
-                    ? null
-                    : (v) {
-                        if (v != null) setState(() => _harness = v);
-                      },
-              ),
-              RadioListTile<CodingHarnessChoice>(
-                dense: true,
-                title: const Text('Codex'),
-                value: CodingHarnessChoice.codex,
-                groupValue: _harness,
-                onChanged: _busy
-                    ? null
-                    : (v) {
-                        if (v != null) setState(() => _harness = v);
-                      },
-              ),
-              RadioListTile<CodingHarnessChoice>(
-                dense: true,
-                title: const Text('OpenCode'),
-                value: CodingHarnessChoice.openCode,
-                groupValue: _harness,
-                onChanged: _busy
-                    ? null
-                    : (v) {
-                        if (v != null) setState(() => _harness = v);
-                      },
-              ),
-              RadioListTile<CodingHarnessChoice>(
-                dense: true,
-                title: const Text('Cursor'),
-                value: CodingHarnessChoice.cursor,
-                groupValue: _harness,
-                onChanged: _busy
-                    ? null
-                    : (v) {
-                        if (v != null) setState(() => _harness = v);
-                      },
+              CodingAgentFields(
+                value: _agent,
+                onChanged: (next) => setState(() => _agent = next),
+                enabledHarnesses: _addProjectHarnessChoices,
+                probes: _probes,
+                client: client,
+                homeModels: _homeModels,
+                busy: _busy,
               ),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: _busy ? null : () => unawaited(_submit()),
+                onPressed: _busy ||
+                        _probes[_agent.harness]?.badge !=
+                            CodingHarnessProbeBadge.ready
+                    ? null
+                    : () => unawaited(_submit()),
                 child: _busy
                     ? const SizedBox(
                         width: 18,

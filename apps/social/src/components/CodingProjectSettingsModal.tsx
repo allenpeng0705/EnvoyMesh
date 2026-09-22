@@ -2,7 +2,7 @@
  * Per-project Coding settings: name, location, default agent + model + provider.
  */
 import { useEffect, useState } from "react";
-import type { CodingHarnessId } from "@envoymesh/api";
+import type { CodingHarnessId, ModelProviderConfig } from "@envoymesh/api";
 import type { HarnessProbeBadge } from "../lib/coding-harness-probe.js";
 import { useT } from "../context/I18nContext.js";
 import type {
@@ -13,6 +13,7 @@ import {
   CodingAgentModelProviderFields,
   type CodingAgentModelProviderValue,
 } from "./CodingAgentModelProviderFields.js";
+import { snapCodingAgentToReady } from "../lib/coding-agent-model-provider.js";
 import { ModalPortal } from "./ModalPortal.js";
 
 export type CodingProjectSettingsModalProps = {
@@ -35,7 +36,11 @@ export type CodingProjectSettingsModalProps = {
   onOpenCodingDefaults?: () => void;
   /** Coding defaults model hint for empty Envoy/Pi fields. */
   codingDefaultsModelHint?: string;
+  /** Settings → AI provider, for the Envoy Harness / Pi model list. */
+  modelProviders?: ModelProviderConfig | null;
   harnessProbe?: Partial<Record<CodingHarnessId, HarnessProbeBadge>>;
+  /** Ready agents only — Settings lists the rest for install. */
+  enabledHarnesses?: readonly CodingHarnessId[];
 };
 
 function projectToValue(project: CodingProject): CodingAgentModelProviderValue {
@@ -58,7 +63,9 @@ export function CodingProjectSettingsModal({
   onReveal,
   onOpenCodingDefaults,
   codingDefaultsModelHint = "",
+  modelProviders = null,
   harnessProbe = {},
+  enabledHarnesses,
 }: CodingProjectSettingsModalProps) {
   const t = useT();
   const [label, setLabel] = useState(project.label);
@@ -69,6 +76,11 @@ export function CodingProjectSettingsModal({
     setAgentModel(projectToValue(project));
   }, [project]);
 
+  useEffect(() => {
+    if (enabledHarnesses === undefined) return;
+    setAgentModel((prev) => snapCodingAgentToReady(prev, enabledHarnesses));
+  }, [enabledHarnesses]);
+
   const trimmedLabel = label.trim();
   const baseline = projectToValue(project);
   const dirty =
@@ -78,7 +90,12 @@ export function CodingProjectSettingsModal({
     agentModel.providerKind !== baseline.providerKind ||
     agentModel.endpoint.trim() !== baseline.endpoint.trim() ||
     agentModel.apiKey.trim() !== baseline.apiKey.trim();
-  const canSave = !busy && trimmedLabel.length > 0 && dirty;
+  const harnessOk =
+    enabledHarnesses === undefined
+      ? true
+      : enabledHarnesses.length > 0 &&
+        enabledHarnesses.includes(agentModel.harness);
+  const canSave = !busy && trimmedLabel.length > 0 && dirty && harnessOk;
   /**
    * UI shows Envoy when `defaultHarness` is unset. Don't write Envoy on a
    * rename-only save; do write if the project already had a harness or the
@@ -176,6 +193,8 @@ export function CodingProjectSettingsModal({
               fallbackKind="coding-defaults"
               fallbackModelHint={codingDefaultsModelHint}
               harnessProbe={harnessProbe}
+              enabledHarnesses={enabledHarnesses}
+              modelProviders={modelProviders}
             />
 
             {onOpenCodingDefaults ? (

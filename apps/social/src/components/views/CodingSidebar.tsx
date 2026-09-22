@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   MAX_ENVOY_HARNESS_CHATS,
   CODING_ALL_HARNESSES,
-  CODING_FEATURED_HARNESSES,
   codingHarnessLabel,
   codingHarnessToExtAgentId,
   familyProfileMayUseCoding,
@@ -71,6 +70,7 @@ import {
   createCodingExtSession,
   loadCodingExtSessions,
   removeCodingExtSession,
+  updateCodingExtSessionAgent,
   CODING_EXT_SESSIONS_CHANGED_EVENT,
   type CodingExtSession,
 } from "../../lib/coding-sessions.js";
@@ -86,26 +86,27 @@ import {
   codingUiBucketShowsChip,
   type ExtProbeStatus,
 } from "../../lib/coding-status-label.js";
-import { AddIcon, SearchIcon, SettingsIcon } from "../../icons.js";
+import { codingTaskAgentValue } from "../../lib/coding-agent-model-provider.js";
+import { AddIcon, SearchIcon } from "../../icons.js";
 import { CodingDefaultsModal } from "../CodingDefaultsModal.js";
 import {
-  CodingNewSessionSheet,
+  readyCodingHarnesses,
   type HarnessProbeBadge,
-} from "../CodingNewSessionSheet.js";
+} from "../../lib/coding-harness-probe.js";
+import { CodingNewSessionSheet } from "../CodingNewSessionSheet.js";
 import { CodingCommandPalette } from "../CodingCommandPalette.js";
 import { CodingHistoryFilters } from "../CodingHistoryFilters.js";
 import { CodingProjectPickerModal } from "../CodingProjectPickerModal.js";
 import { CodingProjectSettingsModal } from "../CodingProjectSettingsModal.js";
+import { CodingTaskAgentModal } from "../CodingTaskAgentModal.js";
 import { CodingSidebarMenu } from "../CodingSidebarMenu.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
-import { CodingInviteReviewModal } from "../CodingInviteReviewModal.js";
 import { CodingHeartbeatModal } from "../CodingHeartbeatModal.js";
 import { CodingScheduleModal } from "../CodingScheduleModal.js";
 import { CodingSchedulerPanel } from "../CodingSchedulerPanel.js";
 import { EhChatRowMenu } from "../EhChatRowMenu.js";
 import { ExtAgentSwitcherInstallDialog } from "../ExtAgentSwitcherInstallDialog.js";
 import { useToastOptional } from "../../hooks/useToast.js";
-import { openChatWithPeer } from "../../lib/open-chat-nav.js";
 
 export type CodingSidebarProps = {
   selected: CodingSessionRef | null;
@@ -176,6 +177,22 @@ function harnessFromListRow(row: ListRow): CodingHarnessId {
  * Left pane of Coding — Projects contain Tasks (Paseo IA).
  * Add project = register folder only; New task = pick project + harness.
  */
+
+/** Stable mark color so the same folder always shows the same letter chip. */
+function projectMarkColor(key: string): string {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 33 + key.charCodeAt(i)) >>> 0;
+  }
+  return `hsl(${hash % 360} 58% 36%)`;
+}
+
+function projectMarkLetter(label: string): string {
+  const trimmed = label.trim();
+  const first = trimmed[0];
+  return first ? first.toUpperCase() : "?";
+}
+
 export function CodingSidebar({
   selected,
   onSelect,
@@ -188,7 +205,7 @@ export function CodingSidebar({
 }: CodingSidebarProps) {
   const t = useT();
   const nodeService = useNodeService();
-  const { nodeConfig, bonds } = useNodeState();
+  const { nodeConfig } = useNodeState();
   const { showToast } = useToastOptional();
   const { sessions: terminalSessions, refresh: refreshTerminalSessions } =
     useTerminalSessions();
@@ -220,10 +237,9 @@ export function CodingSidebar({
   const [revealBusyPath, setRevealBusyPath] = useState<string | null>(null);
   const [deleteEhChatTarget, setDeleteEhChatTarget] =
     useState<EhChatTaskSummary | null>(null);
-  const [inviteReviewTarget, setInviteReviewTarget] =
-    useState<EhChatTaskSummary | null>(null);
-  const [inviteBusy, setInviteBusy] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [taskAgentTarget, setTaskAgentTarget] = useState<ListRow | null>(null);
+  const [taskAgentBusy, setTaskAgentBusy] = useState(false);
+  const [taskAgentError, setTaskAgentError] = useState<string | null>(null);
   const [heartbeatTarget, setHeartbeatTarget] = useState<{
     title: string;
     target: CodingHeartbeatTarget;
@@ -244,6 +260,8 @@ export function CodingSidebar({
   const [harnessProbe, setHarnessProbe] = useState<
     Partial<Record<CodingHarnessId, HarnessProbeBadge>>
   >({});
+  /** Last settled Ready list — kept across rechecks so pickers do not go empty. */
+  const [readyHarnesses, setReadyHarnesses] = useState<CodingHarnessId[]>([]);
   const [pendingInstall, setPendingInstall] = useState<{
     harness: CodingHarnessId;
     cwd: string;
@@ -459,18 +477,18 @@ export function CodingSidebar({
       window.removeEventListener(CODING_EXT_SESSIONS_CHANGED_EVENT, tick);
   }, []);
 
-  // Probe all featured harnesses when create / add-project / project settings opens.
+  // Warm probe when connected so pickers are not empty on first open.
+  // Re-probe when any agent picker opens. Settings still lists every agent.
   useEffect(() => {
-    const shouldProbe =
-      taskSheetOpen || addProjectOpen || projectSettingsTarget != null;
-    if (!shouldProbe || !nodeService.isConnected) return;
+    if (!nodeService.isConnected) return;
     let cancelled = false;
-    const targets = CODING_FEATURED_HARNESSES.filter((h) =>
-      CODING_ALL_HARNESSES.includes(h),
-    );
+    const targets = [...CODING_ALL_HARNESSES];
     setHarnessProbe((prev) => {
       const next = { ...prev };
-      for (const h of targets) next[h] = "checking";
+      for (const h of targets) {
+        // Keep known Ready rows while rechecking so the picker does not flash empty.
+        if (next[h] !== "ready") next[h] = "checking";
+      }
       return next;
     });
     void (async () => {
@@ -484,19 +502,26 @@ export function CodingSidebar({
           next[h] = r.badge === "not-ready" ? "install" : r.badge;
         }),
       );
-      if (!cancelled) setHarnessProbe((prev) => ({ ...prev, ...next }));
+      if (cancelled) return;
+      setHarnessProbe((prev) => ({ ...prev, ...next }));
+      setReadyHarnesses(readyCodingHarnesses(next, CODING_ALL_HARNESSES));
     })();
     return () => {
       cancelled = true;
     };
-    // Intentionally omit nodeService object identity — only sheet open + connection.
+    // Intentionally omit nodeService object identity — connection + picker open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    nodeService.isConnected,
     taskSheetOpen,
     addProjectOpen,
     projectSettingsTarget,
-    nodeService.isConnected,
+    defaultsOpen,
+    taskAgentTarget,
+    scheduleModalOpen,
   ]);
+
+  const enabledHarnesses = readyHarnesses;
 
   // Probe harnesses that already have Ext sessions (sidebar Ready/Not ready chips).
   useEffect(() => {
@@ -798,13 +823,11 @@ export function CodingSidebar({
         cwdFiles: paletteCwdFiles,
         focusedEhChatId:
           selected?.kind === "eh" ? selected.chatId : null,
-        canInvitePeer: selected?.kind === "eh",
         canOpenSettings: true,
         labels: {
           newTask: t("codingView.newSessionCta", "New task"),
           addProject: t("codingView.addProjectCta", "Add project"),
           openSettings: t("codingView.settingsFooter", "Coding defaults"),
-          invitePeer: t("codingView.inviteReview", "Invite peer to review"),
           newSchedule: t("codingView.schedulerTitle", "Scheduler"),
         },
       }),
@@ -822,9 +845,13 @@ export function CodingSidebar({
       openAddProject();
       return;
     }
-    const path = projectPathHint?.trim() || projects[0]?.path || "";
+    const raw = projectPathHint?.trim() || projects[0]?.path || "";
+    const normalized = normalizeCodingProjectPath(raw);
+    const project =
+      projects.find((p) => p.path === raw || p.path === normalized) ??
+      getCodingProject(normalized);
+    const path = project?.path || normalized || raw;
     setSheetInitialProject(path);
-    const project = projects.find((p) => p.path === path);
     setSheetInitialPrefill(
       resolveCodingTaskPrefill({
         project,
@@ -1144,6 +1171,239 @@ export function CodingSidebar({
     }
   };
 
+  const saveTaskAgent = async (
+    row: ListRow,
+    next: ReturnType<typeof codingTaskAgentValue>,
+  ) => {
+    const current = harnessFromListRow(row);
+    const lockedModel = normalizeCodingModelSpec(next.model);
+    const lockedEndpoint = normalizeCodingModelSpec(next.endpoint);
+    const lockedApiKey = normalizeCodingModelSpec(next.apiKey);
+    const providerKind = normalizeCodingProviderKind(next.providerKind) ?? "";
+    setTaskAgentBusy(true);
+    setTaskAgentError(null);
+    try {
+      if (next.harness === current) {
+        if (row.kind === "eh") {
+          const ehHostModel = codingModelToEhHostModel(lockedModel, providerKind);
+          await nodeService.updateEnvoyHarnessChat({
+            chatId: row.chat.id,
+            model: ehHostModel ?? "",
+            endpoint: lockedEndpoint ?? "",
+            apiKey: lockedApiKey ?? "",
+          });
+          await refreshEhChats();
+        } else if (row.kind === "ext") {
+          const updated = updateCodingExtSessionAgent(row.session.id, {
+            harness: next.harness,
+            ...(lockedModel ? { model: lockedModel } : { model: "" }),
+            ...(providerKind ? { providerKind } : {}),
+            endpoint: lockedEndpoint,
+          });
+          if (!updated) throw new Error("task missing");
+          setExtSessions(loadCodingExtSessions());
+          if (lockedModel || providerKind || lockedEndpoint || lockedApiKey) {
+            await nodeService.setCodingHarnessRuntime?.({
+              codingSessionId: updated.id,
+              cwd: updated.cwd,
+              runtime: {
+                ...(lockedModel ? { model: lockedModel } : {}),
+                ...(providerKind ? { providerKind } : {}),
+                ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+                ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
+              },
+            });
+          }
+          onSelect({
+            kind: "ext",
+            sessionId: updated.id,
+            harness: updated.harness,
+            cwd: updated.cwd,
+            title: updated.title,
+          });
+        } else {
+          const modelName = lockedModel
+            ? lockedModel.includes(":")
+              ? lockedModel.slice(lockedModel.indexOf(":") + 1).trim()
+              : lockedModel
+            : undefined;
+          const piProvider =
+            providerKind === "anthropic-compatible"
+              ? "anthropic"
+              : providerKind === "openai-compatible"
+                ? "openai"
+                : lockedModel?.includes(":")
+                  ? lockedModel.slice(0, lockedModel.indexOf(":")).trim()
+                  : undefined;
+          const result = await nodeService.ensurePiTerminalSession({
+            projectPath: row.cwd,
+            sessionId: row.session.sessionId,
+            forceRestart: true,
+            ...(modelName
+              ? {
+                  modelOverride: {
+                    model: modelName,
+                    ...(piProvider ? { provider: piProvider } : {}),
+                    ...(providerKind === "openai-compatible"
+                      ? { mode: "openai-compatible" as const }
+                      : providerKind === "anthropic-compatible"
+                        ? { mode: "anthropic-compatible" as const }
+                        : {}),
+                    ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+                    ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
+                  },
+                }
+              : {}),
+          });
+          if (!result.ok) {
+            setTaskAgentError(result.reason);
+            return;
+          }
+          await refreshTerminalSessions();
+        }
+        setTaskAgentTarget(null);
+        return;
+      }
+
+      let created: CodingSessionRef | null = null;
+      if (next.harness === "envoy-harness") {
+        const ehHostModel = codingModelToEhHostModel(lockedModel, providerKind);
+        const chat = await nodeService.createEnvoyHarnessChat({
+          cwd: row.cwd,
+          title: row.title,
+          forceNew: true,
+          ...(ehHostModel ? { model: ehHostModel } : {}),
+          ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+          ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
+        });
+        created = {
+          kind: "eh",
+          chatId: chat.id,
+          title: row.title,
+          cwd: row.cwd,
+        };
+      } else if (isCodingTierBHarness(next.harness)) {
+        const agentId = codingHarnessToExtAgentId(next.harness);
+        if (!agentId) {
+          setTaskAgentError(t("codingView.harnessUnavailable", "Not available"));
+          return;
+        }
+        const reach = await nodeService.probeExtAgent({ agentId });
+        if (
+          reach.installState === "not-installed" ||
+          (reach.installGuide && !reach.installGuide.installed)
+        ) {
+          setTaskAgentError(
+            t("codingView.harnessNeedsInstall", "Install {name} first.", {
+              name: codingHarnessLabel(next.harness),
+            }),
+          );
+          return;
+        }
+        const session = createCodingExtSession({
+          harness: next.harness,
+          cwd: row.cwd,
+          title: row.title,
+          ...(lockedModel ? { model: lockedModel } : {}),
+          ...(providerKind ? { providerKind } : {}),
+          ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+        });
+        try {
+          await nodeService.setCodingHarnessRuntime?.({
+            codingSessionId: session.id,
+            cwd: row.cwd,
+            runtime: {
+              ...(lockedModel ? { model: lockedModel } : {}),
+              ...(providerKind ? { providerKind } : {}),
+              ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+              ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
+            },
+          });
+        } catch (err) {
+          removeCodingExtSession(session.id);
+          throw err;
+        }
+        created = {
+          kind: "ext",
+          sessionId: session.id,
+          harness: session.harness,
+          cwd: session.cwd,
+          title: session.title,
+        };
+      } else {
+        const modelName = lockedModel
+          ? lockedModel.includes(":")
+            ? lockedModel.slice(lockedModel.indexOf(":") + 1).trim()
+            : lockedModel
+          : undefined;
+        const piProvider =
+          providerKind === "anthropic-compatible"
+            ? "anthropic"
+            : providerKind === "openai-compatible"
+              ? "openai"
+              : lockedModel?.includes(":")
+                ? lockedModel.slice(0, lockedModel.indexOf(":")).trim()
+                : undefined;
+        const result = await nodeService.ensurePiTerminalSession({
+          projectPath: row.cwd,
+          forceRestart: true,
+          ...(modelName
+            ? {
+                modelOverride: {
+                  model: modelName,
+                  ...(piProvider ? { provider: piProvider } : {}),
+                  ...(providerKind === "openai-compatible"
+                    ? { mode: "openai-compatible" as const }
+                    : providerKind === "anthropic-compatible"
+                      ? { mode: "anthropic-compatible" as const }
+                      : {}),
+                  ...(lockedEndpoint ? { endpoint: lockedEndpoint } : {}),
+                  ...(lockedApiKey ? { apiKey: lockedApiKey } : {}),
+                },
+              }
+            : {}),
+        });
+        if (!result.ok) {
+          setTaskAgentError(result.reason);
+          return;
+        }
+        created = {
+          kind: "pi",
+          sessionId: result.session.sessionId,
+          session: result.session,
+        };
+      }
+
+      if (!created) return;
+
+      if (row.kind === "eh") {
+        await nodeService.removeEnvoyHarnessChat(row.chat.id);
+      } else if (row.kind === "ext") {
+        removeCodingExtSession(row.session.id);
+      } else if (created.kind !== "pi" || created.sessionId !== row.session.sessionId) {
+        await nodeService.closeTerminalSession({
+          sessionId: row.session.sessionId,
+        });
+      }
+      await refreshEhChats();
+      await refreshTerminalSessions();
+      setExtSessions(loadCodingExtSessions());
+      onSelect(created);
+      setTaskAgentTarget(null);
+    } catch (err) {
+      setTaskAgentError(
+        err instanceof Error
+          ? err.message
+          : t(
+              "codingView.taskAgentSaveFailed",
+              "Couldn’t save this task’s agent. Try again.",
+            ),
+      );
+    } finally {
+      setTaskAgentBusy(false);
+    }
+  };
+
   const handlePaletteSelect = (item: CodingPaletteItem) => {
     setPaletteOpen(false);
     const a = item.action;
@@ -1172,15 +1432,6 @@ export function CodingSidebar({
       case "open-settings":
         openCodingDefaults();
         return;
-      case "invite-peer": {
-        if (selected?.kind !== "eh") return;
-        const chat = ehChats.find((c) => c.id === selected.chatId);
-        if (chat) {
-          setInviteError(null);
-          setInviteReviewTarget(chat);
-        }
-        return;
-      }
       case "open-file": {
         void nodeService.openEnvoyHarnessFile?.({
           path: a.path,
@@ -1404,9 +1655,9 @@ export function CodingSidebar({
           <EhChatRowMenu
             chat={row.chat}
             onRemove={(c) => setDeleteEhChatTarget(c)}
-            onInviteReview={(c) => {
-              setInviteError(null);
-              setInviteReviewTarget(c);
+            onAgentSettings={() => {
+              setTaskAgentError(null);
+              setTaskAgentTarget(row);
             }}
             onAddHeartbeat={(c) => {
               setHeartbeatError(null);
@@ -1495,6 +1746,14 @@ export function CodingSidebar({
             )}
             removeLabel={t("codingView.remove", "Remove")}
             onRemove={() => setDeleteExtSession(row.session)}
+            agentSettingsLabel={t(
+              "codingView.taskAgentSettings",
+              "Agent settings",
+            )}
+            onAgentSettings={() => {
+              setTaskAgentError(null);
+              setTaskAgentTarget(row);
+            }}
             heartbeatLabel={t("codingView.heartbeatAdd", "Add heartbeat…")}
             onAddHeartbeat={() => {
               const agentId =
@@ -1572,6 +1831,14 @@ export function CodingSidebar({
           )}
           removeLabel={t("codingView.remove", "Remove")}
           onRemove={() => setDeletePiSession(row.session)}
+          agentSettingsLabel={t(
+            "codingView.taskAgentSettings",
+            "Agent settings",
+          )}
+          onAgentSettings={() => {
+            setTaskAgentError(null);
+            setTaskAgentTarget(row);
+          }}
           heartbeatLabel={t("codingView.heartbeatAdd", "Add heartbeat…")}
           onAddHeartbeat={() => {
             setHeartbeatError(null);
@@ -1651,6 +1918,14 @@ export function CodingSidebar({
                   aria-expanded={!collapsed}
                   title={group.cwd}
                 >
+                  <span
+                    className="coding-project-group__mark"
+                    style={{ backgroundColor: projectMarkColor(group.cwd) }}
+                    aria-hidden
+                    data-testid={`coding-project-mark-${group.label}`}
+                  >
+                    {projectMarkLetter(group.label)}
+                  </span>
                   <span className="coding-project-group__chevron" aria-hidden>
                     {collapsed ? "▶" : "▼"}
                   </span>
@@ -1767,22 +2042,6 @@ export function CodingSidebar({
         >
           {t("codingView.schedulerTitle", "Scheduler")}
         </button>
-        <>
-          <div
-            className="coding-sidebar-footer__sep"
-            role="separator"
-            aria-hidden
-          />
-          <button
-            type="button"
-            className="coding-sidebar-settings"
-            onClick={openCodingDefaults}
-            data-testid="coding-settings"
-          >
-            <SettingsIcon size={16} />
-            {t("codingView.settingsFooter", "Coding defaults")}
-          </button>
-        </>
       </div>
 
       {schedulerOpen ? (
@@ -1801,6 +2060,7 @@ export function CodingSidebar({
           projects={projects}
           busy={scheduleBusy}
           error={scheduleError}
+          enabledHarnesses={enabledHarnesses}
           onCancel={() => {
             if (!scheduleBusy) {
               setScheduleModalOpen(false);
@@ -1873,58 +2133,41 @@ export function CodingSidebar({
         />
       ) : null}
 
-      {inviteReviewTarget ? (
-        <CodingInviteReviewModal
-          chatId={inviteReviewTarget.id}
-          chatTitle={inviteReviewTarget.title}
-          bonds={bonds}
-          busy={inviteBusy}
-          error={inviteError}
+      {taskAgentTarget ? (
+        <CodingTaskAgentModal
+          taskTitle={taskAgentTarget.title}
+          value={codingTaskAgentValue(
+            taskAgentTarget.kind === "eh"
+              ? {
+                  harness: "envoy-harness",
+                  model: taskAgentTarget.chat.model,
+                  endpoint: taskAgentTarget.chat.endpoint,
+                }
+              : taskAgentTarget.kind === "ext"
+                ? {
+                    harness: taskAgentTarget.session.harness,
+                    model: taskAgentTarget.session.model,
+                    providerKind: taskAgentTarget.session.providerKind,
+                    endpoint: taskAgentTarget.session.endpoint,
+                  }
+                : { harness: "pi" },
+          )}
+          busy={taskAgentBusy}
+          error={taskAgentError}
+          codingDefaultsModelHint={codingDefaultsModelHint}
+          modelProviders={nodeConfig?.modelProviders ?? null}
+          enabledHarnesses={enabledHarnesses}
+          harnessProbe={harnessProbe}
           onCancel={() => {
-            if (!inviteBusy) {
-              setInviteReviewTarget(null);
-              setInviteError(null);
+            if (!taskAgentBusy) {
+              setTaskAgentTarget(null);
+              setTaskAgentError(null);
             }
           }}
-          onInvite={(peerOwnerId) => {
-            if (inviteBusy) return;
-            setInviteBusy(true);
-            setInviteError(null);
-            void (async () => {
-              try {
-                const { messageText } =
-                  await nodeService.createCodingReviewInvite({
-                    chatId: inviteReviewTarget.id,
-                    peerOwnerId,
-                  });
-                await nodeService.sendChat(peerOwnerId, messageText);
-                showToast(
-                  t(
-                    "codingView.inviteReviewSent",
-                    "Review invite sent.",
-                  ),
-                  "success",
-                );
-                setInviteReviewTarget(null);
-                openChatWithPeer(peerOwnerId);
-              } catch (err) {
-                const msg =
-                  err instanceof Error ? err.message : String(err ?? "");
-                setInviteError(
-                  msg.includes("coding_review_peer")
-                    ? t(
-                        "codingView.inviteReviewBondDenied",
-                        "That contact isn’t eligible for a review invite.",
-                      )
-                    : t(
-                        "codingView.inviteReviewFailed",
-                        "Couldn’t send the review invite. Try again.",
-                      ),
-                );
-              } finally {
-                setInviteBusy(false);
-              }
-            })();
+          onSave={(next) => {
+            const row = taskAgentTarget;
+            if (!row || taskAgentBusy) return;
+            void saveTaskAgent(row, next);
           }}
         />
       ) : null}
@@ -2021,6 +2264,8 @@ export function CodingSidebar({
             defaults: codingDefaults,
           })}
           codingDefaultsModelHint={codingDefaultsModelHint}
+          modelProviders={nodeConfig?.modelProviders ?? null}
+          enabledHarnesses={enabledHarnesses}
           harnessProbe={harnessProbe}
           error={sheetError}
           busy={false}
@@ -2041,6 +2286,8 @@ export function CodingSidebar({
           error={projectSettingsError}
           revealBusy={revealBusyPath === projectSettingsTarget.path}
           codingDefaultsModelHint={codingDefaultsModelHint}
+          modelProviders={nodeConfig?.modelProviders ?? null}
+          enabledHarnesses={enabledHarnesses}
           harnessProbe={harnessProbe}
           onOpenCodingDefaults={() => {
             setProjectSettingsTarget(null);
@@ -2105,6 +2352,9 @@ export function CodingSidebar({
           busy={defaultsBusy}
           error={defaultsError}
           envoymeshAiModelHint={envoymeshAiModelHint}
+          modelProviders={nodeConfig?.modelProviders ?? null}
+          enabledHarnesses={enabledHarnesses}
+          harnessProbe={harnessProbe}
           onCancel={() => {
             if (!defaultsBusy) {
               setDefaultsOpen(false);
@@ -2145,9 +2395,10 @@ export function CodingSidebar({
           initialProjectPath={sheetInitialProject}
           initialPrefill={sheetInitialPrefill}
           codingDefaultsModelHint={codingDefaultsModelHint}
+          modelProviders={nodeConfig?.modelProviders ?? null}
           busy={sheetBusy}
           error={sheetError}
-          enabledHarnesses={CODING_ALL_HARNESSES}
+          enabledHarnesses={enabledHarnesses}
           harnessProbe={harnessProbe}
           onClose={() => {
             if (!sheetBusy) setTaskSheetOpen(false);

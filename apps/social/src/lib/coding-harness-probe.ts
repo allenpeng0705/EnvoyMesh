@@ -185,3 +185,14 @@ export function harnessNeedsResolve(
     badge === "not-ready" || badge === "install" || badge === "unknown"
   );
 }
+
+/**
+ * Agents the task / project / defaults pickers may offer.
+ * Only `ready` counts — install and check live in Settings → Coding agents.
+ */
+export function readyCodingHarnesses(
+  probe: Partial<Record<CodingHarnessId, HarnessProbeBadge>>,
+  candidates: readonly CodingHarnessId[],
+): CodingHarnessId[] {
+  return candidates.filter((id) => probe[id] === "ready");
+}

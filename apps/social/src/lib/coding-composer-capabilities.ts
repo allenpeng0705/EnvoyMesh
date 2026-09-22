@@ -55,10 +55,8 @@ export type CodingComposerCapabilities = {
   /**
    * One permission value cannot be honoured while the rest can.
    *
-   * Kept because the toolbar draws these as disabled `<option>`s with the reason on them;
-   * nothing sets either today — a catalog ACP agent has the dock, and a sidecar has no policy
-   * control at all — but a harness that can gate *some* values belongs here rather than in a
-   * second code path.
+   * Kept for disabled `<option>` reasons. Catalog ACP has the Coding dock, so
+   * Ask/Full are available there; sidecars hide the whole Perms control instead.
    */
   permissionAskDisabledReason?: string;
   /** See `permissionAskDisabledReason`. */

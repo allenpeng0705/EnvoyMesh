@@ -6,14 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { NodeConfig } from "@envoymesh/api";
 import { CodingView } from "../../src/components/views/CodingView.js";
-import { saveCodingProjects } from "../../src/lib/coding-projects.js";
+import { saveCodingProjects, getCodingProject } from "../../src/lib/coding-projects.js";
 import { clearCodingReviewReadonly } from "../../src/lib/open-coding-nav.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { partialNodeService } from "../helpers/node-service-mock.js";
 
 const listEnvoyHarnessChats = vi.fn();
 const createEnvoyHarnessChat = vi.fn();
-const createCodingReviewInvite = vi.fn();
+const updateEnvoyHarnessChat = vi.fn();
 const sendChat = vi.fn();
 const removeEnvoyHarnessChat = vi.fn();
 const setEnvoyHarnessProjectPath = vi.fn();
@@ -47,7 +47,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => partialNodeService({
     listEnvoyHarnessChats,
     createEnvoyHarnessChat,
-    createCodingReviewInvite,
+    updateEnvoyHarnessChat,
     sendChat,
     listCodingHeartbeats: vi.fn().mockResolvedValue([]),
     listCodingSchedules: vi.fn().mockResolvedValue([]),
@@ -75,7 +75,8 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     isConnected: true,
     on: vi.fn(() => () => {}),
     openEnvoyHarnessChat: vi.fn().mockResolvedValue({ turns: [], messages: [] }),
-    getEnvoyHarnessStatus: vi.fn().mockResolvedValue(null),
+    getEnvoyHarnessStatus: vi.fn().mockResolvedValue({ state: "ready" }),
+    getPiStatus: vi.fn().mockResolvedValue({ state: "ready" }),
   }),
   useTerminalSessions: () => ({
     sessions: mockTerminalSessions,
@@ -196,14 +197,12 @@ beforeEach(() => {
     title: "app",
     lastUsedAt: new Date().toISOString(),
   });
-  createCodingReviewInvite.mockResolvedValue({
-    reviewRef: {
-      kind: "eh-workspace-review",
-      v: 1,
-      ownerId: "envoy:owner:me",
-      chatId: "chat-1",
-    },
-    messageText: "invite body",
+  updateEnvoyHarnessChat.mockResolvedValue({
+    id: "chat-1",
+    cwd: "/projects/app",
+    title: "app",
+    lastUsedAt: new Date().toISOString(),
+    model: "gpt-4.1",
   });
   sendChat.mockResolvedValue(undefined);
   removeEnvoyHarnessChat.mockResolvedValue({ removed: true });
@@ -243,7 +242,7 @@ afterEach(() => {
 });
 
 describe("CodingView — Project → Task → Chat", () => {
-  it("shows home empty + opens Coding defaults from footer (not Settings)", async () => {
+  it("shows home empty without a sidebar Coding defaults button", async () => {
     renderWithI18n(<CodingView active />);
     expect(await screen.findByTestId("coding-home")).toBeDefined();
     expect(screen.getByTestId("coding-home-add-project")).toBeDefined();
@@ -251,10 +250,8 @@ describe("CodingView — Project → Task → Chat", () => {
     expect(screen.queryByTestId("coding-new-session-cta")).toBeNull();
     expect(screen.queryByTestId("coding-add-project-cta")).toBeNull();
     expect(screen.queryByText("Projects")).toBeNull();
-    expect(screen.getByTestId("coding-settings")).toBeDefined();
+    expect(screen.queryByTestId("coding-settings")).toBeNull();
     expect(screen.getByTestId("coding-sidebar-empty")).toBeDefined();
-    fireEvent.click(screen.getByTestId("coding-settings"));
-    expect(await screen.findByTestId("coding-defaults-settings")).toBeDefined();
   });
 
   it("home settings tile opens Coding defaults", async () => {
@@ -294,6 +291,7 @@ describe("CodingView — Project → Task → Chat", () => {
     expect(await screen.findByTestId("coding-new-session-sheet")).toBeDefined();
     expect(screen.queryByTestId("home-folder-picker")).toBeNull();
     expect(screen.getByTestId("coding-new-task-project")).toBeDefined();
+    expect(await screen.findByTestId("coding-harness-envoy-harness")).toBeDefined();
 
     fireEvent.click(screen.getByTestId("coding-new-session-confirm"));
 
@@ -341,6 +339,7 @@ describe("CodingView — Project → Task → Chat", () => {
     renderWithI18n(<CodingView active />);
     fireEvent.click(await screen.findByTestId("coding-project-new-task-app"));
     await screen.findByTestId("coding-new-session-sheet");
+    expect(await screen.findByTestId("coding-harness-pi")).toBeDefined();
     fireEvent.click(screen.getByTestId("coding-harness-pi"));
     fireEvent.click(screen.getByTestId("coding-new-session-confirm"));
 
@@ -410,7 +409,9 @@ describe("CodingView — Project → Task → Chat", () => {
     ]);
     renderWithI18n(<CodingView active />);
     expect(await screen.findByTestId("coding-project-group-app")).toBeDefined();
+    expect(screen.getByTestId("coding-project-mark-app").textContent).toBe("A");
     expect(screen.getByTestId("coding-project-group-lib")).toBeDefined();
+    expect(screen.getByTestId("coding-project-mark-lib").textContent).toBe("L");
     expect(screen.getByTestId("coding-project-group-empty-only")).toBeDefined();
     expect(
       screen.getByTestId("coding-project-new-task-empty-only"),
@@ -486,7 +487,15 @@ describe("CodingView — Project → Task → Chat", () => {
     });
   });
 
-  it("offers Invite peer to review and sends chat invite", async () => {
+  it("changes one task’s agent without changing the project default", async () => {
+    saveCodingProjects([
+      {
+        path: "/projects/app",
+        label: "app",
+        addedAt: new Date().toISOString(),
+        defaultHarness: "codex",
+      },
+    ]);
     listEnvoyHarnessChats.mockResolvedValue([
       {
         id: "chat-1",
@@ -494,27 +503,29 @@ describe("CodingView — Project → Task → Chat", () => {
         title: "app",
         lastUsedAt: new Date().toISOString(),
         messageCount: 2,
+        model: "gpt-4o",
       },
     ]);
     renderWithI18n(<CodingView active />);
     await screen.findByTestId("coding-task-chat-1");
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-btn-chat-1"));
-    fireEvent.click(screen.getByTestId("eh-chat-row-menu-invite-chat-1"));
-    expect(await screen.findByTestId("coding-invite-review-modal")).toBeDefined();
-    fireEvent.click(
-      screen.getByTestId("coding-invite-peer-envoy:owner:friend"),
-    );
-    fireEvent.click(screen.getByTestId("coding-invite-review-confirm"));
+    expect(screen.queryByText("Invite peer to review")).toBeNull();
+    fireEvent.click(screen.getByTestId("eh-chat-row-menu-agent-chat-1"));
+    expect(await screen.findByTestId("coding-task-agent-settings")).toBeDefined();
+    expect(await screen.findByTestId("coding-task-agent-harness")).toBeDefined();
+    fireEvent.change(screen.getByTestId("coding-new-task-model"), {
+      target: { value: "gpt-4.1" },
+    });
+    fireEvent.click(screen.getByTestId("coding-task-agent-save"));
     await waitFor(() => {
-      expect(createCodingReviewInvite).toHaveBeenCalledWith({
-        chatId: "chat-1",
-        peerOwnerId: "envoy:owner:friend",
-      });
-      expect(sendChat).toHaveBeenCalledWith(
-        "envoy:owner:friend",
-        "invite body",
+      expect(updateEnvoyHarnessChat).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: "chat-1",
+          model: "gpt-4.1",
+        }),
       );
     });
+    expect(getCodingProject("/projects/app")?.defaultHarness).toBe("codex");
   });
 
   it("opens EH task in review-only mode from openCoding", async () => {

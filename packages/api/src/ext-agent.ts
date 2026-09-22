@@ -221,6 +221,12 @@ export interface ExtAgentCommandCatalog {
 export interface GetExtAgentCommandCatalogParams {
   /** When omitted, uses the currently active Ext Agent. */
   agentId?: string;
+  /**
+   * When true, ask the installed agent which models it publishes
+   * (`session/new` config options), instead of a fixed list.
+   * Coding task forms set this. Chat autocomplete leaves it off.
+   */
+  probeModels?: boolean;
 }
 
 /** Params for {@link NodeService.setExtAgentSessionModel}. */

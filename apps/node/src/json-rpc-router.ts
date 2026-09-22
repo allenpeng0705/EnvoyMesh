@@ -108,6 +108,7 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "revokeAuthorizedDevice",
   "mergeAuthorizedDevices",
   "pruneRevokedDevices",
+  "setBackgroundService",
   "createFamilyProfile",
   "deleteFamilyProfile",
   "wipeFamilyProfile",
@@ -164,6 +165,7 @@ export const CODING_GATED_RPC = new Set<string>([
   "getEnvoyHarnessChatHistory",
   // listEnvoyHarnessChats: soft-deny in impl (returns []) — not hard-gated.
   "createEnvoyHarnessChat",
+  "updateEnvoyHarnessChat",
   "createCodingReviewInvite",
   "listCodingHeartbeats",
   "createCodingHeartbeat",
@@ -207,6 +209,8 @@ export const CODING_GATED_RPC = new Set<string>([
   "ehRespondToPermission",
   // Allow/deny a Coding session's tool prompt (catalog ACP agents).
   "codingRespondToPermission",
+  // Answer a Coding session's ask_user card (catalog ACP agents).
+  "codingRespondToUserQuestion",
   // Stop Pi/Envoy TUI sessions started via coding surfaces.
   "closeTerminalSession",
   // Project folder picker for Coding (Pi / EH) on family clients.
@@ -1017,6 +1021,7 @@ export async function routeRpcMethod(
     case "getExtAgentCommandCatalog":
       return ns.getExtAgentCommandCatalog({
         agentId: params.agentId as string | undefined,
+        probeModels: params.probeModels === true,
       });
     case "setExtAgentSessionModel":
       return ns.setExtAgentSessionModel({
@@ -1385,6 +1390,28 @@ export async function routeRpcMethod(
       });
     case "listAuthorizedDevices":
       return ns.listAuthorizedDevices();
+    case "getBackgroundService": {
+      const status = await ns.getBackgroundService();
+      const caller = getRpcCaller();
+      if (caller?.source === "session") {
+        return {
+          state: status.state,
+          ...(status.enabled === undefined ? {} : { enabled: status.enabled }),
+          ...(status.pid === undefined ? {} : { pid: status.pid }),
+          detail: status.state === "failed"
+            ? "The background service on this computer needs attention. Open EnvoyMesh on that computer to see why."
+            : "",
+        };
+      }
+      return status;
+    }
+    case "setBackgroundService": {
+      const caller = getRpcCaller();
+      if (caller && caller.source !== "local") {
+        throw new Error("Turn the background service on or off from EnvoyMesh on this computer.");
+      }
+      return ns.setBackgroundService({ enabled: params.enabled === true });
+    }
     case "revokeAuthorizedDevice":
       return ns.revokeAuthorizedDevice(params as any);
     case "mergeAuthorizedDevices":
@@ -1629,6 +1656,22 @@ export async function routeRpcMethod(
         endpoint: typeof params.endpoint === "string" ? params.endpoint : undefined,
         apiKey: typeof params.apiKey === "string" ? params.apiKey : undefined,
       });
+    case "updateEnvoyHarnessChat":
+      return ns.updateEnvoyHarnessChat({
+        chatId: String(params.chatId ?? ""),
+        ...(params.model !== undefined
+          ? { model: params.model === null ? null : String(params.model) }
+          : {}),
+        ...(params.endpoint !== undefined
+          ? {
+              endpoint:
+                params.endpoint === null ? null : String(params.endpoint),
+            }
+          : {}),
+        ...(params.apiKey !== undefined
+          ? { apiKey: params.apiKey === null ? null : String(params.apiKey) }
+          : {}),
+      });
     case "createCodingReviewInvite":
       return ns.createCodingReviewInvite({
         chatId: String(params.chatId ?? ""),
@@ -1760,6 +1803,13 @@ export async function routeRpcMethod(
         ...(params.optionIndex !== undefined
           ? { optionIndex: Number(params.optionIndex) }
           : {}),
+        ...(Array.isArray(params.optionIndexes)
+          ? {
+              optionIndexes: params.optionIndexes
+                .map((index) => Number(index))
+                .filter((index) => Number.isInteger(index) && index >= 0),
+            }
+          : {}),
         ...(params.cancelled !== undefined
           ? { cancelled: Boolean(params.cancelled) }
           : {}),
@@ -1773,6 +1823,24 @@ export async function routeRpcMethod(
       return ns.codingRespondToPermission({
         requestId: String(params.requestId ?? ""),
         allowed: Boolean(params.allowed),
+      });
+    case "codingRespondToUserQuestion":
+      return ns.codingRespondToUserQuestion({
+        requestId: String(params.requestId ?? ""),
+        value: String(params.value ?? ""),
+        ...(params.optionIndex !== undefined
+          ? { optionIndex: Number(params.optionIndex) }
+          : {}),
+        ...(Array.isArray(params.optionIndexes)
+          ? {
+              optionIndexes: params.optionIndexes
+                .map((index) => Number(index))
+                .filter((index) => Number.isInteger(index) && index >= 0),
+            }
+          : {}),
+        ...(params.cancelled !== undefined
+          ? { cancelled: Boolean(params.cancelled) }
+          : {}),
       });
     case "cancelEnvoyHarnessTurn":
       return ns.cancelEnvoyHarnessTurn(
