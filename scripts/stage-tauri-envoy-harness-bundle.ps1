@@ -123,10 +123,19 @@ function Build-Package([string]$PkgFilter, [string]$Label) {
     Write-Host ($output -split "`n" | Select-Object -Last 5)
 }
 
+# Topological order: peer/client/adapter/tui all declare
+# "@envoymesh/envoy-harness": "file:../envoy-harness" as a *direct* dep, so they
+# resolve types from envoy-harness/dist/. envoy-harness MUST rebuild first —
+# otherwise a freshly-edited source (e.g. ContinuableSubagentHandle.output)
+# leaves peer/client reading a stale .d.ts and failing TS2353 on the new key.
+# The previous "peer before harness" ordering only succeeded when harness/dist
+# was already current from an earlier run; the first harness-source change
+# broke it. Harness itself uses `await import(PEER_PACKAGE)` + a local
+# PeerCompatModule interface, so it does NOT statically depend on peer.
 Build-Package "@envoymesh/envoy-process"            "Package process (killProcessTree)"
-Build-Package "@envoymesh/envoy-harness-peer"      "Package peer (mesh submitter)"
 Build-Package "@envoymesh/envoy-harness"            "Package 1 (envoy-harness)"
 Build-Package "@envoymesh/envoy-harness-client"     "Package client (ACP client)"
+Build-Package "@envoymesh/envoy-harness-peer"      "Package peer (mesh submitter)"
 Build-Package "@envoymesh/envoy-harness-adapter"   "Package 3 (envoy-harness-adapter)"
 Build-Package "@envoymesh/envoy-harness-tui"       "Package TUI (terminal host)"
 # ehui is NOT staged into resources\ (browser/React package, bundled into
