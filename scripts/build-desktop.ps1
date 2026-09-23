@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # =============================================================================
 # EnvoyMesh Tauri Desktop Builder (Windows / PowerShell)
 #
@@ -7,17 +7,17 @@
 # app, with OpenClaw gateway + EnvoyMesh Node.js runtime bundled inside.
 #
 # Feature packaging notes (family network / push / EnvoyGo l10n):
-#   - Family network: ships in compiled apps/node + Social UI — no extra assets.
+#   - Family network: ships in compiled apps/node + Social UI -- no extra assets.
 #   - Relay roster seed (Phase 46E Path C): stage-bundle-node-runtime.ps1 copies
-#     repo-root relay-roster.json → resources\node\relay-roster.json (CN+US hubs
+#     repo-root relay-roster.json -> resources\node\relay-roster.json (CN+US hubs
 #     for first boot). Homes then poll live relays.
 #   - Push (iOS APNs + Android FCM for EnvoyGo): stage-tauri-push-credentials.ps1
 #     copies repo-root push-config.json + AuthKey_LKPCR48WHW.p8 +
 #     serviceAccountKey.json into resources\node\ after node staging.
-#     Default REQUIRE_PUSH_CREDENTIALS=1 — build fails if those secrets are
+#     Default REQUIRE_PUSH_CREDENTIALS=1 -- build fails if those secrets are
 #     missing when push-config.json is present. Set
 #     $env:REQUIRE_PUSH_CREDENTIALS="0" to allow packaging without push.
-#   - EnvoyGo localization is Flutter-only (apps/envoygo) — not part of this
+#   - EnvoyGo localization is Flutter-only (apps/envoygo) -- not part of this
 #     desktop bundle; Social i18n locales are included via npm run social:build.
 #
 # Usage (from the repo root, in PowerShell):
@@ -28,7 +28,7 @@
 #
 # Flags:
 #   -Out <dir>               Output directory (default: release\)
-#   -Version <ver>            Deprecated — ignored. Version comes from VERSION /
+#   -Version <ver>            Deprecated -- ignored. Version comes from VERSION /
 #                             package.json via sync-version.mjs (kept for scripts
 #                             that still pass -Version).
 #   -ForceOpenClaw            Force re-stage OpenClaw (normally automatic when
@@ -36,18 +36,18 @@
 #   -ForceNodeSidecar         Re-download the Node.js sidecar even if it is already
 #                             staged at apps\tauri\src-tauri\resources\node-runtime
 #   -SkipTypecheck            Skip tsc -b before bundling
-#   -SkipMsi                  Default $true — pass --bundles nsis to tauri build
+#   -SkipMsi                  Default $true -- pass --bundles nsis to tauri build
 #                             so the slow WiX .msi step is skipped (3 GB resource
 #                             tree takes 10-20 min for light.exe). Use -SkipMsi:$false
 #                             to build both NSIS and MSI.
 #   -OpenClawExtensions <val> Extension filter:
-#                             "default" — EnvoyMesh agent allowlist (envoymesh +
+#                             "default" -- EnvoyMesh agent allowlist (envoymesh +
 #                               search/agent utils). Omits OpenClaw Diff UI and
-#                               all third-party chat channels (Discord/Telegram/…);
+#                               all third-party chat channels (Discord/Telegram/...);
 #                               Social is the chat UI. Users can install extras
 #                               later via Skill Manager.
-#                             "all" — keep every OpenClaw extension
-#                             "ext1,ext2" — custom comma-separated keep list
+#                             "all" -- keep every OpenClaw extension
+#                             "ext1,ext2" -- custom comma-separated keep list
 #                             Default: "default" (also required for NSIS 2 GB cap)
 #   -?                        Print this message and exit
 #
@@ -64,7 +64,7 @@
 #   Default -OpenClawExtensions default matches macOS OPENCLAW_EXTENSIONS=default.
 #   Use -OpenClawExtensions all only when you intentionally want the full tree.
 #
-# envoy-harness staging (Phase 8 — aligned with scripts/build-desktop.sh):
+# envoy-harness staging (Phase 8 -- aligned with scripts/build-desktop.sh):
 #   $env:STAGE_ENVOY_HARNESS = "0"   Skip envoy-harness *resources* staging.
 #                                   The node still has static imports of
 #                                   @envoymesh/envoy-harness{,-adapter,-client,-peer},
@@ -78,7 +78,7 @@
 #                                   Use after switching sibling-repo branches
 #                                   or when you want to be sure the staged
 #                                   tree is from-scratch. (Default unset:
-#                                   incremental rebuild — pnpm's tsc skips
+#                                   incremental rebuild -- pnpm's tsc skips
 #                                   unchanged sources.)
 #   $env:ENVOY_HARNESS_DIR  = "..."  Override the sibling monorepo path.
 #                                   Default: $Root\..\envoy-harness.
@@ -86,40 +86,40 @@
 #                                   tui into resources\, and wires them into
 #                                   resources\node\node_modules\@envoymesh\
 #                                   (required for first-launch resolve and
-#                                   Terminal → Envoy).
+#                                   Terminal -> Envoy).
 #   $env:SMOKE_ENVOY_HARNESS = "0"  Skip the post-stage smoke (default 1).
 #                                   See scripts\stage-tauri-envoy-harness-bundle.ps1.
 #
-# Apple review build (opt-in only — see build-desktop.sh; not supported on Windows).
+# Apple review build (opt-in only -- see build-desktop.sh; not supported on Windows).
 #
-# Slim / Full / default presets (Phase 49 — Pi optional on Windows):
-#   default       Uses tauri.conf.json           — includes Pi + OpenClaw
+# Slim / Full / default presets (Phase 49 -- Pi optional on Windows):
+#   default       Uses tauri.conf.json           -- includes Pi + OpenClaw
 #                 (no Kubo; Helia / system ipfs for IPFS).
-#   -Full         Uses tauri.conf.full.json      — Pi + OpenClaw + Kubo
+#   -Full         Uses tauri.conf.full.json      -- Pi + OpenClaw + Kubo
 #                 (fetches Kubo into src-tauri\resources\kubo). Matches CI.
-#   -SkipPi       Switches to tauri.conf.slim.json — omits resources/pi/**/*
+#   -SkipPi       Switches to tauri.conf.slim.json -- omits resources/pi/**/*
 #                 (and Kubo) to stay well under NSIS's 2 GB cap.
 #                 The Pi chat panel will be auto-disabled at runtime by the
 #                 defensive isPiEnabledViaRuntime() check.
 #
 #   Prefer full Pi builds (this script without -SkipPi, or package.json):
-#     build:win / build:win:full / npm run tauri:build:win  → full (Pi + Kubo)
-#     build:win:slim / npm run tauri:build:win:slim         → slim (no Pi)
+#     build:win / build:win:full / npm run tauri:build:win  -> full (Pi + Kubo)
+#     build:win:slim / npm run tauri:build:win:slim         -> slim (no Pi)
 #
 #   Pi terminal (TUI) needs staged pi/ + pi/bin/{fd,rg}.exe and
-#   capabilities/default.json → allow-pick-directory (folder picker ACL).
+#   capabilities/default.json -> allow-pick-directory (folder picker ACL).
 #
 # Prerequisites (Windows):
 #   * Node.js 22+ (https://nodejs.org)
 #   * Rust stable (rustup)
 #   * Microsoft Visual Studio Build Tools 2022 with the "Desktop development
-#     with C++" workload (for the MSVC linker) — see
+#     with C++" workload (for the MSVC linker) -- see
 #     https://v2.tauri.app/start/prerequisites/
-#   * WiX Toolset 3.x (for .msi) — Tauri downloads it automatically on first
+#   * WiX Toolset 3.x (for .msi) -- Tauri downloads it automatically on first
 #     `tauri build`, but a system install is faster
 #
 # Bash twin: scripts/build-desktop.sh (mac/linux cross-compile + native). The
-# two MUST stay in sync step-for-step — when you change one, change the other
+# two MUST stay in sync step-for-step -- when you change one, change the other
 # in the same commit.
 #
 # Tested on:
@@ -132,7 +132,7 @@ param(
     # Output directory (default: release\)
     [string]$Out = "release",
 
-    # Deprecated — version always comes from sync-version.mjs (VERSION / package.json).
+    # Deprecated -- version always comes from sync-version.mjs (VERSION / package.json).
     [string]$Version = "",
 
     # Re-stage OpenClaw even if already populated
@@ -152,7 +152,7 @@ param(
     # while the runtime silently no-ops. -SkipPi wires both ends together.
     #
     # Runtime safety net: apps/node/src/node-service-pi.ts now defensively
-    # calls discoverPiCli() inside isPiEnabledViaRuntime() — even if the
+    # calls discoverPiCli() inside isPiEnabledViaRuntime() -- even if the
     # slim/full config switch is bypassed, Pi is auto-disabled when the
     # sidecar is missing.
     [switch]$SkipPi,
@@ -181,13 +181,13 @@ param(
     [switch]$SkipMsi = $true,
 
     # Skip the staged-OpenClaw pnpm prune step. Default: $false (always prune
-    # the staged tree's devDependencies — required to stay under NSIS's 2 GB
+    # the staged tree's devDependencies -- required to stay under NSIS's 2 GB
     # installer limit). Use -SkipOpenClawPrune only if you've manually
     # curated the staged tree and know what you're doing.
     [switch]$SkipOpenClawPrune,
 
     # Extension filter for OpenClaw. Controls which extensions are kept in
-    # the staged bundle — the rest are pruned (deleted) to save space.
+    # the staged bundle -- the rest are pruned (deleted) to save space.
     #   "default"     EnvoyMesh agent allowlist (no Diff UI / chat channels)
     #   "all"         Keep every extension (no pruning)
     #   "ext1,ext2"   Keep only the named extensions (comma-separated)
@@ -214,17 +214,17 @@ function Write-Info {
 
 function Write-Ok {
     param([string]$Message)
-    Write-Host "  ✓ $Message" -ForegroundColor Green
+    Write-Host "  OK $Message" -ForegroundColor Green
 }
 
 function Write-Warn {
     param([string]$Message)
-    Write-Host "  ⚠ $Message" -ForegroundColor Yellow
+    Write-Host "  ! $Message" -ForegroundColor Yellow
 }
 
 function Write-Fail {
     param([string]$Message)
-    Write-Host "  ✗ $Message" -ForegroundColor Red
+    Write-Host "  X $Message" -ForegroundColor Red
 }
 
 # Built-in allowlist: envoy channel + agent utils + web search providers.
@@ -305,7 +305,7 @@ function Install-EnvoyMeshOpenClawExtension {
     }
 
     # Mirror into plugin discovery roots (skip the source extensions/ itself).
-    # Always ensure dist/extensions exists — OpenClaw prefers that discovery root.
+    # Always ensure dist/extensions exists -- OpenClaw prefers that discovery root.
     foreach ($distExtDir in @(
         (Join-Path $OpenClawRoot "dist\extensions"),
         (Join-Path $OpenClawRoot "dist-runtime\extensions")
@@ -322,7 +322,7 @@ function Install-EnvoyMeshOpenClawExtension {
             Remove-Item -Force -ErrorAction SilentlyContinue
         $pkgJson = Join-Path $envExtDst "package.json"
         if (Test-Path $pkgJson) {
-            # UTF-8 without BOM — PS 5.1 -Encoding UTF8 breaks OpenClaw JSON.parse.
+            # UTF-8 without BOM -- PS 5.1 -Encoding UTF8 breaks OpenClaw JSON.parse.
             $content = Get-Content -Path $pkgJson -Raw -Encoding UTF8
             $content = $content -replace '"\.\/index\.ts"', '"./index.js"'
             $content = $content -replace '"\.\/setup-entry\.ts"', '"./setup-entry.js"'
@@ -354,7 +354,7 @@ function Require-Command {
 
 # Source vcvars64.bat from a Visual Studio install so cl.exe / link.exe / the
 # Windows SDK are on PATH and INCLUDE / LIB are set. By design, VS Build Tools
-# does NOT add MSVC to the global PATH — Microsoft expects you to use a
+# does NOT add MSVC to the global PATH -- Microsoft expects you to use a
 # Developer Command Prompt. We auto-detect any VS install (Build Tools, Community,
 # Professional, Enterprise) and pull its env vars into the current process.
 #
@@ -368,11 +368,11 @@ function Import-VcVarsIfNeeded {
     # Visual Studio\Installer\vswhere.exe
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     if (-not (Test-Path $vswhere)) {
-        return  # no VS Installer, no MSVC install possible — let the build fail with a clear error
+        return  # no VS Installer, no MSVC install possible -- let the build fail with a clear error
     }
     $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
     if (-not $installPath) {
-        return  # VS Installer present but no MSVC workload installed — build will fail loudly below
+        return  # VS Installer present but no MSVC workload installed -- build will fail loudly below
     }
     $vcvars = Join-Path $installPath "VC\Auxiliary\Build\vcvars64.bat"
     if (-not (Test-Path $vcvars)) {
@@ -390,13 +390,13 @@ function Import-VcVarsIfNeeded {
     if (Get-Command "cl.exe" -ErrorAction SilentlyContinue) {
         Write-Info "MSVC env active: cl.exe is now reachable"
     } else {
-        Write-Warn "Sourced $vcvars but cl.exe is still not reachable — the C++ workload may not be installed"
+        Write-Warn "Sourced $vcvars but cl.exe is still not reachable -- the C++ workload may not be installed"
     }
 }
 
 # Invoke a bash script from this Windows host. The scripts/*.sh in this
 # repo are committed with CRLF line endings and assume their own path
-# via `$(dirname "$0")/..` — both break when invoked from a WSL bash
+# via `$(dirname "$0")/..` -- both break when invoked from a WSL bash
 # that sees a Windows path. To make a single .sh file run on Windows
 # without changing every file, we:
 #   1. Copy the script to %TEMP% with \r stripped (LF)
@@ -464,7 +464,7 @@ function Invoke-ExternalQuiet {
     # an `[int]$TailLines` param, but PowerShell's positional binding
     # consumes the second positional ("run" in `npm run typecheck`) into
     # the int param BEFORE the ValueFromRemainingArguments param above
-    # can collect the rest — `npm run typecheck` blew up with
+    # can collect the rest -- `npm run typecheck` blew up with
     # "Cannot convert value 'run' to type 'System.Int32'"). Override
     # with $env:ENVOYMESH_TAIL_LINES if you need a different depth.
     $TailLines = 100
@@ -475,7 +475,7 @@ function Invoke-ExternalQuiet {
     $ErrorActionPreference = "SilentlyContinue"
     # Capture every byte (stdout + stderr) to a log so we can tail it on
     # failure. The log lives under the repo's scripts/build-logs/ dir (not
-    # $env:TEMP) — TEMP logs were hard to find and the path was getting
+    # $env:TEMP) -- TEMP logs were hard to find and the path was getting
     # lost across PowerShell sessions.
     #
     # CAPTURE STRATEGY: PowerShell's call operator `&` correctly handles
@@ -506,7 +506,7 @@ function Invoke-ExternalQuiet {
         # Quote the exe path if it contains spaces (e.g. "C:\Program Files\...").
         $exeForCmd = if ($Exe -match '\s') { "`"$Exe`"" } else { $Exe }
         # Each arg: quote if it contains spaces. Pass through otherwise.
-        # We do NOT escape cmd metacharacters here — these are build-tool
+        # We do NOT escape cmd metacharacters here -- these are build-tool
         # args (paths, flags) that don't contain & | < > etc.
         $quotedArgs = ($ToolArgs | ForEach-Object {
             if ($_ -match '\s') { "`"$_`"" } else { "$_" }
@@ -535,7 +535,7 @@ function Invoke-ExternalQuiet {
             # kernel redirect to capture everything. cmd.exe is always a
             # real .exe so Start-Process issues don't apply.
             if ($exit -ne 0 -and -not (Get-Content $logPath -ErrorAction SilentlyContinue)) {
-                Write-Host "    (first-pass capture was empty — re-running via cmd /c to capture direct console output)" -ForegroundColor DarkGray
+                Write-Host "    (first-pass capture was empty -- re-running via cmd /c to capture direct console output)" -ForegroundColor DarkGray
                 & cmd.exe /c "$cmdLine > `"$logPath`" 2>&1"
                 $exit = $LASTEXITCODE
             }
@@ -557,7 +557,7 @@ function Invoke-ExternalQuiet {
                     Write-Host "      $_" -ForegroundColor DarkGray
                 }
             } else {
-                Write-Host "    --- (no captured output — the command was silent, or its output went elsewhere) ---" -ForegroundColor DarkGray
+                Write-Host "    --- (no captured output -- the command was silent, or its output went elsewhere) ---" -ForegroundColor DarkGray
                 Write-Host "    --- Try running it directly to see live output: ---" -ForegroundColor DarkGray
                 Write-Host "    ---   $cmdDesc ---" -ForegroundColor DarkGray
             }
@@ -569,7 +569,7 @@ function Invoke-ExternalQuiet {
     } finally {
         $ErrorActionPreference = $prevEap
         # Only delete the log on success. On failure, the operator needs the
-        # full log to diagnose — this is the single most useful thing we can
+        # full log to diagnose -- this is the single most useful thing we can
         # leave behind. The next successful run gets a fresh log.
         if ($exit -eq 0) {
             Remove-Item $logPath -ErrorAction SilentlyContinue
@@ -582,7 +582,7 @@ function Invoke-ExternalQuiet {
 # -----------------------------------------------------------------------------
 
 if (-not $PSScriptRoot) {
-    Write-Host "  ✗ `$PSScriptRoot is empty — run as: .\scripts\build-desktop.ps1" -ForegroundColor Red
+    Write-Host "  X `$PSScriptRoot is empty -- run as: .\scripts\build-desktop.ps1" -ForegroundColor Red
     exit 1
 }
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -613,7 +613,7 @@ try {
     $Version = "dev"
 }
 if ($VersionOverrideRequested -and $PSBoundParameters['Version'] -and $PSBoundParameters['Version'] -ne $Version) {
-    Write-Warn "-Version $($PSBoundParameters['Version']) ignored — using synced version $Version from package.json."
+    Write-Warn "-Version $($PSBoundParameters['Version']) ignored -- using synced version $Version from package.json."
 }
 
 Write-Host "============================================"
@@ -634,7 +634,7 @@ Write-Step "1/5  Staging sidecars..."
 # crashed on first launch ("Could not load the sharp module using win32-x64").
 Write-Info "Ensuring sharp platform natives for this host..."
 $sharpOs = "win32"
-# Prefer PROCESSOR_ARCHITECTURE — RuntimeInformation.ProcessArchitecture.ToString()
+# Prefer PROCESSOR_ARCHITECTURE -- RuntimeInformation.ProcessArchitecture.ToString()
 # throws "You cannot call a method on a null-valued expression" on some
 # Windows PowerShell 5.1 / older .NET Framework hosts.
 $sharpCpu = "x64"
@@ -651,19 +651,19 @@ $sharpCandidates = @(
 )
 $sharpPlatPath = $sharpCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 if (-not $sharpPlatPath) {
-    Write-Info "  $sharpPlat missing — running: npm install --os=$sharpOs --cpu=$sharpCpu --include=optional sharp"
+    Write-Info "  $sharpPlat missing -- running: npm install --os=$sharpOs --cpu=$sharpCpu --include=optional sharp"
     Push-Location $RepoRoot
     try {
         & npm install --os=$sharpOs --cpu=$sharpCpu --include=optional sharp
         if ($LASTEXITCODE -ne 0) {
-            Write-Fail "npm install sharp failed — image features need the win32 native"
+            Write-Fail "npm install sharp failed -- image features need the win32 native"
             exit 1
         }
     } finally { Pop-Location }
     $sharpPlatPath = $sharpCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 }
 if (-not $sharpPlatPath) {
-    Write-Fail "$sharpPlat still missing after npm install. Aborting — a Windows EXE without it crashes at boot."
+    Write-Fail "$sharpPlat still missing after npm install. Aborting -- a Windows EXE without it crashes at boot."
     exit 1
 }
 Write-Ok "sharp platform native present ($sharpPlat)"
@@ -676,7 +676,7 @@ if (-not $SkipTypecheck) {
     Write-Info "TypeScript build (tsc -b)..."
     # Full workspace project-references build (same as build-desktop.sh).
     # `npm run node:build` alone can leave packages/api/dist stale when only
-    # apps/node timestamps change — that ships the old join-invite merge.
+    # apps/node timestamps change -- that ships the old join-invite merge.
     $tcExit = Invoke-ExternalQuiet npx tsc -b
     if ($tcExit -ne 0) {
         Write-Fail "npx tsc -b failed (exit $tcExit). The Tauri bundle requires compiled workspace packages + apps\node\dist\."
@@ -684,19 +684,19 @@ if (-not $SkipTypecheck) {
         exit 1
     }
     if (-not (Test-Path $nodeDistEntry)) {
-        Write-Fail "npx tsc -b returned 0 but apps\node\dist\src\index.js is still missing — check the build output for errors."
+        Write-Fail "npx tsc -b returned 0 but apps\node\dist\src\index.js is still missing -- check the build output for errors."
         exit 1
     }
     Write-Ok "EnvoyMesh workspace + node compiled"
 } else {
     Write-Info "-SkipTypecheck: skipping npx tsc -b"
     if (-not (Test-Path $nodeDistEntry)) {
-        Write-Fail "apps\node\dist\src\index.js missing and -SkipTypecheck was passed — cannot continue"
+        Write-Fail "apps\node\dist\src\index.js missing and -SkipTypecheck was passed -- cannot continue"
         exit 1
     }
     $apiMergeJs = Join-Path $RepoRoot "packages\api\dist\wan-join-invite.js"
     if (-not (Test-Path $apiMergeJs) -or -not (Select-String -Path $apiMergeJs -Pattern "isBootstrapRelayMultiaddr" -Quiet)) {
-        Write-Fail "packages\api\dist\wan-join-invite.js lacks isBootstrapRelayMultiaddr — rebuild with npx tsc -b before -SkipTypecheck"
+        Write-Fail "packages\api\dist\wan-join-invite.js lacks isBootstrapRelayMultiaddr -- rebuild with npx tsc -b before -SkipTypecheck"
         exit 1
     }
 }
@@ -726,7 +726,7 @@ if ($ForceNodeSidecar -or -not (Test-Path $nodeExe)) {
         try {
             Invoke-WebRequest -UseBasicParsing -Uri $nodeDownloadUrl -OutFile $zipPath -ErrorAction Stop
         } catch {
-            Write-Fail "Failed to fetch $nodeDownloadUrl — check internet connectivity. Re-run without -ForceNodeSidecar to reuse a previously downloaded sidecar."
+            Write-Fail "Failed to fetch $nodeDownloadUrl -- check internet connectivity. Re-run without -ForceNodeSidecar to reuse a previously downloaded sidecar."
             throw
         }
         Expand-Archive -Path $zipPath -DestinationPath $nodeTmp -Force
@@ -739,7 +739,7 @@ if ($ForceNodeSidecar -or -not (Test-Path $nodeExe)) {
             Copy-Item -Force $srcNode $nodeExe
             Write-Ok "Node.js $nodeVersion ($nodeArch) staged at $nodeExe"
         } else {
-            Write-Fail "node.exe not found in expanded archive — bundle structure may have changed"
+            Write-Fail "node.exe not found in expanded archive -- bundle structure may have changed"
             exit 1
         }
     } finally {
@@ -750,11 +750,11 @@ if ($ForceNodeSidecar -or -not (Test-Path $nodeExe)) {
     Write-Info "Reusing staged sidecar: $nodeExe ($existingVersion). Use -ForceNodeSidecar to redownload."
 }
 
-# 1a2. envoy-harness (Phase 8) — BEFORE node bundle (matches build-desktop.sh).
+# 1a2. envoy-harness (Phase 8) -- BEFORE node bundle (matches build-desktop.sh).
 # Builds the sibling monorepo and copies dist/ into resources\envoy-harness*\.
 # stage-bundle-node-runtime.ps1 then wires the same built packages into
 # resources\node\node_modules\@envoymesh\ for first-launch module resolution.
-Write-Info "Staging envoy-harness (Phase 8 — vendor from sibling monorepo)..."
+Write-Info "Staging envoy-harness (Phase 8 -- vendor from sibling monorepo)..."
 $stageEnvoyHarnessBundle = Join-Path $PSScriptRoot "stage-tauri-envoy-harness-bundle.ps1"
 if (-not (Test-Path $stageEnvoyHarnessBundle)) {
     Write-Fail "missing $stageEnvoyHarnessBundle"
@@ -762,7 +762,7 @@ if (-not (Test-Path $stageEnvoyHarnessBundle)) {
 }
 & $stageEnvoyHarnessBundle
 if ($LASTEXITCODE -ne 0) {
-    Write-Fail "stage-tauri-envoy-harness-bundle.ps1 failed — envoy-harness will not be available at runtime. Set `$env:STAGE_ENVOY_HARNESS=`"0`" to skip for debug builds."
+    Write-Fail "stage-tauri-envoy-harness-bundle.ps1 failed -- envoy-harness will not be available at runtime. Set `$env:STAGE_ENVOY_HARNESS=`"0`" to skip for debug builds."
     exit 1
 }
 Write-Ok "envoy-harness staged"
@@ -771,16 +771,16 @@ Write-Ok "envoy-harness staged"
 Write-Info "Staging EnvoyMesh node runtime..."
 $stageNodePs1 = Join-Path $PSScriptRoot "stage-bundle-node-runtime.ps1"
 if (-not (Test-Path $stageNodePs1)) {
-    Write-Fail "$stageNodePs1 missing — this script must live in scripts\ next to its bash twin."
+    Write-Fail "$stageNodePs1 missing -- this script must live in scripts\ next to its bash twin."
     exit 1
 }
 # The inner script uses `Write-Error` with $ErrorActionPreference="Stop", which
 # becomes a terminating exception in the outer scope. Capture the actual
 # message so the user sees WHY it failed (not just "failed"). Note: we only
-# gate on $stageError, NOT on $LASTEXITCODE — PowerShell's $LASTEXITCODE
+# gate on $stageError, NOT on $LASTEXITCODE -- PowerShell's $LASTEXITCODE
 # carries over from the last external command in the inner script (e.g. a
 # non-zero `npm ls` exit), so it's not a reliable signal that the staging
-# itself failed. The inner script's `Write-Host "  ✓ Node runtime staged ..."`
+# itself failed. The inner script's `Write-Host "  OK Node runtime staged ..."`
 # at the end is the authoritative "it worked" indicator.
 $stageError = $null
 try {
@@ -813,7 +813,7 @@ if (Test-Path $stagePushPs1) {
         exit 1
     }
 } else {
-    Write-Fail "stage-tauri-push-credentials.ps1 missing — cannot stage APNs/FCM secrets for EnvoyGo push"
+    Write-Fail "stage-tauri-push-credentials.ps1 missing -- cannot stage APNs/FCM secrets for EnvoyGo push"
     exit 1
 }
 
@@ -831,12 +831,12 @@ $openclawDest = Join-Path $TauriResources "openclaw"
 # never need -ForceOpenClaw just to get a working bundle.
 # (Earlier we tried to prune in the staged copy, but the staged copy excludes
 # `scripts/` so pnpm's preinstall script crashed. Pruning has to happen where
-# pnpm can actually find its postinstall scripts — that's the source.)
+# pnpm can actually find its postinstall scripts -- that's the source.)
 if (-not $SkipOpenClawPrune -and `
     (Test-Path (Join-Path $openclawSrc "package.json")) -and `
     (Test-Path (Join-Path $openclawSrc "node_modules")) -and `
     (Test-Path (Join-Path $openclawDest "node_modules"))) {
-    Write-Info "Pruning devDependencies from OpenClaw source (idempotent — safe to skip with -SkipOpenClawPrune)..."
+    Write-Info "Pruning devDependencies from OpenClaw source (idempotent -- safe to skip with -SkipOpenClawPrune)..."
     # We used to call `pnpm prune --prod` here, but pnpm 11.x is unreliable
     # in this build's environment:
     #   * With a stale pnpm-lock.yaml (June) vs. current node_modules, pnpm
@@ -869,7 +869,7 @@ if (-not $SkipOpenClawPrune -and `
         # Build-time tools that the staging pipeline invokes via `npx ...`
         # from the openclaw cwd. `pnpm prune --prod` historically kept them
         # because pnpm 11.x was actually running `pnpm install --prod`
-        # (verified: my probe added 32 prod packages including esbuild) —
+        # (verified: my probe added 32 prod packages including esbuild) --
         # our manual prune doesn't have that side effect, so we must
         # preserve them explicitly.
         $openclawKeep = @("esbuild")
@@ -894,7 +894,7 @@ if (-not $SkipOpenClawPrune -and `
         $kept = $devDeps.Count - ($devDeps.Count - $removed)
         Write-Ok "Pruned $removed devDep dirs from source ($($devDeps.Count) declared, $kept kept as build tools)"
     } else {
-        Write-Info "  No devDependencies declared — nothing to prune"
+        Write-Info "  No devDependencies declared -- nothing to prune"
     }
     # Re-copy the freshly-pruned node_modules to staged.
     $nmSrc = Join-Path $openclawSrc "node_modules"
@@ -914,7 +914,7 @@ $openclawStaged = (Test-Path (Join-Path $openclawDest "openclaw.mjs")) -and `
 # Matches the gate in scripts/stage-tauri-openclaw-bundle.sh.
 #
 # Source stamp (scripts/openclaw-stage-stamp.mjs): auto re-stage when
-# packages/openclaw changes — no manual -ForceOpenClaw after upgrades.
+# packages/openclaw changes -- no manual -ForceOpenClaw after upgrades.
 $openclawStampScript = Join-Path $PSScriptRoot "openclaw-stage-stamp.mjs"
 $openclawStampFile = Join-Path $openclawDest ".openclaw-stage-stamp"
 $openclawExpectedStamp = $null
@@ -934,9 +934,9 @@ if ($openclawStaged -and -not $ForceOpenClaw -and $openclawExpectedStamp) {
     }
     if ($stagedStamp -ne $openclawExpectedStamp) {
         if ([string]::IsNullOrEmpty($stagedStamp)) {
-            Write-Info "No .openclaw-stage-stamp on staged OpenClaw — re-staging (first stamp)."
+            Write-Info "No .openclaw-stage-stamp on staged OpenClaw -- re-staging (first stamp)."
         } else {
-            Write-Info "packages\openclaw changed — re-staging OpenClaw."
+            Write-Info "packages\openclaw changed -- re-staging OpenClaw."
             Write-Info "  staged:  $stagedStamp"
             Write-Info "  source:  $openclawExpectedStamp"
         }
@@ -949,19 +949,19 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
         Write-Info "  stamp: $openclawExpectedStamp"
     }
 
-    # Validate dist/entry.js — if it's missing or a broken stub, force re-stage.
+    # Validate dist/entry.js -- if it's missing or a broken stub, force re-stage.
     # EnvoyMesh writes bootstrap stubs at runtime that reference src/ (excluded
     # from Tauri resources). The bash twin does the same check in
     # stage-tauri-openclaw-bundle.sh.
     $stagedEntry = Join-Path $openclawDest "dist/entry.js"
     $needRestage = $false
     if (-not (Test-Path $stagedEntry)) {
-        Write-Info "  dist/entry.js is missing — forcing re-stage"
+        Write-Info "  dist/entry.js is missing -- forcing re-stage"
         $needRestage = $true
     } else {
         $entryContent = Get-Content $stagedEntry -Raw -ErrorAction SilentlyContinue
         if ($entryContent -and ($entryContent -match "EnvoyMesh bootstrap" -or $entryContent -match "from.*src/cli/run-main")) {
-            Write-Info "  dist/entry.js is a broken stub — forcing re-stage"
+            Write-Info "  dist/entry.js is a broken stub -- forcing re-stage"
             $needRestage = $true
         }
     }
@@ -969,7 +969,7 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
     if (-not $needRestage) {
         # Self-heal: if a previous build's pnpm prune --prod ran in the staged
         # tree (without pnpm-workspace.yaml), it moved production deps to
-        # node_modules/.ignored/. Restore them — the compiled dist/*.js files
+        # node_modules/.ignored/. Restore them -- the compiled dist/*.js files
         # import these at runtime. Must handle scoped packages (@scope/name)
         # by merging individual sub-packages, not the scope directory.
         $ignoredDir = Join-Path $openclawDest "node_modules/.ignored"
@@ -979,7 +979,7 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
             foreach ($pkg in (Get-ChildItem -Path $ignoredDir -Directory -ErrorAction SilentlyContinue)) {
                 $destPkg = Join-Path $nmDir $pkg.Name
                 if (Test-Path $destPkg) {
-                    # Scope dir or package exists — merge sub-packages.
+                    # Scope dir or package exists -- merge sub-packages.
                     foreach ($sub in (Get-ChildItem -Path $pkg.FullName -Directory -ErrorAction SilentlyContinue)) {
                         $destSub = Join-Path $destPkg $sub.Name
                         if (-not (Test-Path $destSub)) {
@@ -1003,7 +1003,7 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
         # plugin SDK, and a stray pnpm prune --prod can additionally remove
         # the dir entirely. This is the missing piece the .ignored heal
         # cannot restore (openclaw is the package being installed, not a
-        # dependency of it). Idempotent — safe to run on every reuse.
+        # dependency of it). Idempotent -- safe to run on every reuse.
         # Mirrors the heal in scripts/stage-tauri-openclaw-bundle.sh.
         $selfRefPath = Join-Path $openclawDest "node_modules/openclaw/package.json"
         if (-not (Test-Path $selfRefPath)) {
@@ -1021,7 +1021,7 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
                 } catch { }
                 if (-not $symlinked) {
                     Copy-Item -Force $rootPkg $selfRefPath
-                    Write-Warn "node_modules/openclaw self-ref was a deep copy (symlink creation failed — likely missing developer mode)"
+                    Write-Warn "node_modules/openclaw self-ref was a deep copy (symlink creation failed -- likely missing developer mode)"
                 }
             }
             $rootMjs = Join-Path $openclawDest "openclaw.mjs"
@@ -1052,11 +1052,11 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
             if (Test-Path $selfRefPath) {
                 Write-Info "Restored node_modules\openclaw\ self-reference (workspace staging fix)"
             } else {
-                Write-Warn "Could not restore node_modules\openclaw\ — staged tree is missing package.json"
+                Write-Warn "Could not restore node_modules\openclaw\ -- staged tree is missing package.json"
             }
         }
 
-        # Prune unused extensions on reuse — the cache may predate the
+        # Prune unused extensions on reuse -- the cache may predate the
         # allowlist (3 GB of 143 extensions exceeds NSIS 2 GB cap).
         # Controlled by -OpenClawExtensions (see param block).
         $openclawExtAllowlist = Resolve-OpenClawExtAllowlist -Filter $OpenClawExtensions
@@ -1090,11 +1090,11 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
         # OpenClaw with "OpenClaw tree is incomplete".
         $envExtJs = Join-Path $openclawDest "extensions\envoymesh\index.js"
         if (-not (Test-Path $envExtJs)) {
-            Write-Info "extensions\envoymesh\index.js missing from staged OpenClaw — healing..."
+            Write-Info "extensions\envoymesh\index.js missing from staged OpenClaw -- healing..."
             $extSrcRoot = Join-Path $RepoRoot "OpenClawExtension"
             $healed = Install-EnvoyMeshOpenClawExtension -OpenClawRoot $openclawDest -ExtensionSrc $extSrcRoot
             if (-not $healed -or -not (Test-Path $envExtJs)) {
-                Write-Info "  Could not heal envoymesh extension — forcing full OpenClaw re-stage"
+                Write-Info "  Could not heal envoymesh extension -- forcing full OpenClaw re-stage"
                 $needRestage = $true
             }
         }
@@ -1102,11 +1102,11 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
         # NOTE: We do NOT run pnpm prune --prod in the staged tree here.
         # The staged tree lacks pnpm-workspace.yaml and packages/, so
         # pnpm would orphan most production deps (json5, chalk, express,
-        # ws, etc.) → ERR_MODULE_NOT_FOUND at runtime. The first prune in
+        # ws, etc.) -> ERR_MODULE_NOT_FOUND at runtime. The first prune in
         # the source tree already removed devDeps correctly.
     }
     if ($needRestage) {
-        # dist/entry.js broken and/or envoymesh missing — fall through to
+        # dist/entry.js broken and/or envoymesh missing -- fall through to
         # the full re-stage logic below by clearing the staged flag.
         $openclawStaged = $false
     }
@@ -1114,7 +1114,7 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
 if (-not $openclawStaged -or $ForceOpenClaw) {
     if (-not (Test-Path (Join-Path $openclawSrc "package.json")) -and `
         -not (Test-Path (Join-Path $openclawSrc "openclaw.mjs"))) {
-        Write-Info "packages\openclaw missing — install-openclaw.ps1 will clone from GitHub..."
+        Write-Info "packages\openclaw missing -- install-openclaw.ps1 will clone from GitHub..."
     }
 
     # Copy EnvoyMesh channel extension into OpenClaw source if it's at the
@@ -1133,7 +1133,7 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
 
             # Compile the extension's .ts sources to .js so the gateway can
             # load them at runtime.  The openclaw build uses git ls-files to
-            # discover extensions — our copied extension is not git-tracked,
+            # discover extensions -- our copied extension is not git-tracked,
             # so it won't be compiled by pnpm run build.  We use esbuild
             # (already in openclaw's node_modules) for fast transpilation.
             Write-Info "Compiling EnvoyMesh extension (.ts -> .js)..."
@@ -1156,12 +1156,12 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
                 Write-Warn "Extension compilation issue: $compileError (extension may be incomplete)"
             }
             if (-not (Test-Path (Join-Path $extDst "index.js"))) {
-                Write-Fail "EnvoyMesh extension index.js not produced — aborting build"
+                Write-Fail "EnvoyMesh extension index.js not produced -- aborting build"
                 exit 1
             }
             Write-Ok "EnvoyMesh extension compiled"
         } else {
-            Write-Warn "packages\openclaw\extensions does not exist — skipping extension copy"
+            Write-Warn "packages\openclaw\extensions does not exist -- skipping extension copy"
         }
     }
 
@@ -1174,11 +1174,11 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
             Write-Warn "install-openclaw.ps1 returned non-zero (continuing)"
         }
     } else {
-        Write-Warn "install-openclaw.ps1 not found — assuming OpenClaw is already bootstrapped"
+        Write-Warn "install-openclaw.ps1 not found -- assuming OpenClaw is already bootstrapped"
     }
 
     if (-not (Test-Path (Join-Path $openclawSrc "package.json"))) {
-        Write-Fail "packages\openclaw still missing after bootstrap — drop a clone in or run scripts\setup.ps1"
+        Write-Fail "packages\openclaw still missing after bootstrap -- drop a clone in or run scripts\setup.ps1"
         exit 1
     }
 
@@ -1224,7 +1224,7 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
                 $probeResult = $null
             }
             if (-not $probeResult) {
-                Write-Warn "Default registry $pnpmRegistry unreachable — likely a slow/blocked network"
+                Write-Warn "Default registry $pnpmRegistry unreachable -- likely a slow/blocked network"
                 Write-Info "Auto-switching to China mirror for this run: https://registry.npmmirror.com/"
                 $env:npm_config_registry = "https://registry.npmmirror.com/"
                 pnpm config set registry "https://registry.npmmirror.com/" | Out-Null
@@ -1293,28 +1293,28 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
             # write a stub dist/entry.js. Prefer the already-compiled JS
             # over the .ts source so the stub works even when src/ is
             # excluded from the Tauri resource copy.
-            Write-Warn "OpenClaw build returned non-zero (exit $buildExit) — writing dist\entry.js bootstrap fallback"
+            Write-Warn "OpenClaw build returned non-zero (exit $buildExit) -- writing dist\entry.js bootstrap fallback"
             if (-not (Test-Path "dist")) {
                 New-Item -ItemType Directory -Force -Path "dist" | Out-Null
             }
             if (Test-Path "dist\cli\run-main.js") {
                 $entryStub = @"
-// EnvoyMesh bootstrap — fallback entry when full build failed.
+// EnvoyMesh bootstrap -- fallback entry when full build failed.
 // Uses the pre-compiled JS chunk so src/ exclusion is safe.
 import { runCli } from "./cli/run-main.js";
 "@
             } else {
                 $entryStub = @"
-// EnvoyMesh bootstrap — re-exports the gateway from TS source (runtime
+// EnvoyMesh bootstrap -- re-exports the gateway from TS source (runtime
 // uses tsx to execute this directly when the full build is unavailable).
-// WARNING: requires src/ to be present — will fail if src/ is excluded.
+// WARNING: requires src/ to be present -- will fail if src/ is excluded.
 export * from "../src/cli/run-main.ts";
 "@
             }
             Set-Content -Path "dist/entry.js" -Value $entryStub -Encoding UTF8
         }
         if (-not (Test-Path "dist/entry.js")) {
-            Write-Fail "OpenClaw build did not produce dist\entry.js — gateway will not start"
+            Write-Fail "OpenClaw build did not produce dist\entry.js -- gateway will not start"
             Pop-Location
             exit 1
         }
@@ -1328,7 +1328,7 @@ export * from "../src/cli/run-main.ts";
         & pnpm prune --prod
         $pruneExit = $LASTEXITCODE
         if ($pruneExit -ne 0) {
-            Write-Warn "pnpm prune --prod failed (continuing — staged tree will be larger)"
+            Write-Warn "pnpm prune --prod failed (continuing -- staged tree will be larger)"
         }
     } finally {
         Pop-Location
@@ -1352,7 +1352,7 @@ export * from "../src/cli/run-main.ts";
         ".env.example", "appcast.xml",
         "tsconfig.json", "vitest.config.ts", "tsdown.config.ts",
         "pnpm-workspace.yaml",
-        # Release notes and lock files — not used at runtime, just bulk.
+        # Release notes and lock files -- not used at runtime, just bulk.
         "CHANGELOG.md", "npm-shrinkwrap.json", "pnpm-lock.yaml",
         "CONTRIBUTING.md", "SECURITY.md", "README.md"
     )
@@ -1367,7 +1367,7 @@ export * from "../src/cli/run-main.ts";
 
     # Install clawhub CLI into the staged tree so the "Installed" skills tab
     # works in the Windows installer.  clawhub is a separate npm package
-    # (not part of openclaw's deps) — without it, `clawhub list` fails.
+    # (not part of openclaw's deps) -- without it, `clawhub list` fails.
     $clawhubBin = Join-Path $openclawDest "node_modules\.bin\clawhub"
     if (-not (Test-Path $clawhubBin)) {
         Write-Info "Installing clawhub CLI into staged node_modules..."
@@ -1378,7 +1378,7 @@ export * from "../src/cli/run-main.ts";
         if (Test-Path $clawhubBin) {
             Write-Ok "clawhub CLI installed"
         } else {
-            Write-Warn "clawhub install failed — 'Installed' skills tab will be unavailable"
+            Write-Warn "clawhub install failed -- 'Installed' skills tab will be unavailable"
         }
     }
 
@@ -1414,7 +1414,7 @@ export * from "../src/cli/run-main.ts";
     # Install the compiled envoymesh extension into the OpenClaw plugin discovery
     # directories.  OpenClaw's resolveBundledDirFromPackageRoot() scans:
     #   1. dist/extensions/          (source checkout with built tree)
-    #   2. dist-runtime/extensions/  (runtime tree — preferred in DMG bundles)
+    #   2. dist-runtime/extensions/  (runtime tree -- preferred in DMG bundles)
     #   3. extensions/              (source tree fallback)
     # In the DMG (not a source checkout), if BOTH dist/extensions/ AND
     # dist-runtime/extensions/ exist, it picks dist-runtime/extensions/.
@@ -1432,12 +1432,12 @@ export * from "../src/cli/run-main.ts";
     if (-not (Test-Path (Join-Path $envExtSrc "index.js"))) {
         # Source copy/compile may have been skipped (missing OpenClawExtension
         # or packages/openclaw/extensions). Heal into the staged tree directly.
-        Write-Info "Staged extensions\envoymesh\index.js missing — installing from OpenClawExtension..."
+        Write-Info "Staged extensions\envoymesh\index.js missing -- installing from OpenClawExtension..."
         $ok = Install-EnvoyMeshOpenClawExtension `
             -OpenClawRoot $openclawDest `
             -ExtensionSrc (Join-Path $RepoRoot "OpenClawExtension")
         if (-not $ok -or -not (Test-Path (Join-Path $envExtSrc "index.js"))) {
-            Write-Fail "extensions\envoymesh\index.js missing after OpenClaw stage — OpenClaw will not start. Ensure OpenClawExtension/ exists at repo root."
+            Write-Fail "extensions\envoymesh\index.js missing after OpenClaw stage -- OpenClaw will not start. Ensure OpenClawExtension/ exists at repo root."
             exit 1
         }
     }
@@ -1448,7 +1448,7 @@ export * from "../src/cli/run-main.ts";
             if (Test-Path $envExtDst) { continue }  # already installed
             Write-Info "Installing envoymesh into $(Split-Path (Split-Path $distExtDir -Parent) -Leaf)\$(Split-Path $distExtDir -Leaf)\..."
             Copy-Item -Recurse -Force $envExtSrc $envExtDst
-            # Remove leftover .ts source files — only .js is needed at runtime
+            # Remove leftover .ts source files -- only .js is needed at runtime
             Get-ChildItem -Path $envExtDst -Filter "*.ts" -Recurse | Remove-Item -Force
             # Fix package.json: replace .ts references with .js (UTF-8 without BOM)
             $pkgJson = Join-Path $envExtDst "package.json"
@@ -1462,7 +1462,7 @@ export * from "../src/cli/run-main.ts";
             # Verify critical files
             if (-not (Test-Path (Join-Path $envExtDst "index.js")) -or
                 -not (Test-Path (Join-Path $envExtDst "openclaw.plugin.json"))) {
-                Write-Fail "envoymesh plugin incomplete in $distExtDir — aborting"
+                Write-Fail "envoymesh plugin incomplete in $distExtDir -- aborting"
                 exit 1
             }
         }
@@ -1470,10 +1470,10 @@ export * from "../src/cli/run-main.ts";
         Write-Ok "envoymesh installed in all plugin discovery roots ($jsCount .js files each)"
     }
 
-    # Prune unused OpenClaw extensions — the full set is ~143 dirs with
+    # Prune unused OpenClaw extensions -- the full set is ~143 dirs with
     # production node_modules deps totalling ~2.2 GB. Default keep list is the
     # EnvoyMesh agent allowlist (envoymesh + search/agent utils; no Diff UI or
-    # third-party chat channels — Social is the chat surface). Keeping all
+    # third-party chat channels -- Social is the chat surface). Keeping all
     # extensions pushes the NSIS installer past its 2 GB hard cap.
     # Prune ALL extension directories: dist/extensions/, dist-runtime/extensions/,
     # and extensions/. Controlled by -OpenClawExtensions (see param block).
@@ -1501,10 +1501,10 @@ export * from "../src/cli/run-main.ts";
     # NOTE: We do NOT run `pnpm prune --prod` here in the staged tree.
     # The staged tree is missing pnpm-workspace.yaml and packages/, so pnpm
     # sees it as a plain single package. The root package.json has hundreds
-    # of dependencies that pnpm resolves via workspace sub-packages — without
+    # of dependencies that pnpm resolves via workspace sub-packages -- without
     # those sub-packages, pnpm concludes most deps (json5, chalk, express,
     # ws, etc.) are orphaned and moves them to node_modules/.ignored/. But the
-    # compiled dist/*.js files still import them at runtime →
+    # compiled dist/*.js files still import them at runtime ->
     # ERR_MODULE_NOT_FOUND crash. The first prune (in the source tree, above)
     # already removed devDeps while the workspace structure was intact, so the
     # copied node_modules is correct.
@@ -1521,7 +1521,7 @@ export * from "../src/cli/run-main.ts";
             $_.Attributes -band [System.IO.FileAttributes]::ReparsePoint
         } | ForEach-Object {
             $target = $_.FullName
-            # Use Resolve-Path with ErrorAction SilentlyContinue — if it
+            # Use Resolve-Path with ErrorAction SilentlyContinue -- if it
             # resolves, the target exists. If not, it's dangling.
             try {
                 $null = $_.ResolveLinkTarget($false)
@@ -1532,7 +1532,7 @@ export * from "../src/cli/run-main.ts";
                     $cleaned++
                 }
             } catch {
-                # ResolveLinkTarget failed — link is dangling
+                # ResolveLinkTarget failed -- link is dangling
                 Remove-Item -Force $target -ErrorAction SilentlyContinue
                 $cleaned++
             }
@@ -1547,7 +1547,7 @@ export * from "../src/cli/run-main.ts";
     # plugin SDK, and a stray pnpm prune --prod can additionally remove
     # the dir entirely. This is the missing piece the .ignored heal
     # cannot restore (openclaw is the package being installed, not a
-    # dependency of it). Idempotent — also runs in the reuse path above.
+    # dependency of it). Idempotent -- also runs in the reuse path above.
     # Mirrors the heal in scripts/stage-tauri-openclaw-bundle.sh.
     $selfRefPath = Join-Path $openclawDest "node_modules/openclaw/package.json"
     if (-not (Test-Path $selfRefPath)) {
@@ -1590,7 +1590,7 @@ export * from "../src/cli/run-main.ts";
         if (Test-Path $selfRefPath) {
             Write-Info "Restored node_modules\openclaw\ self-reference (workspace staging fix)"
         } else {
-            Write-Warn "Could not restore node_modules\openclaw\ — staged tree is missing package.json"
+            Write-Warn "Could not restore node_modules\openclaw\ -- staged tree is missing package.json"
         }
     }
 
@@ -1654,7 +1654,7 @@ if ($scrubbedCount -gt 0) {
 # On Windows (where pnpm copies instead of symlinks), they total ~1.85 GB:
 #   @node-llama-cpp (711 MB), @github (422 MB), @openai (279 MB),
 #   @zed-industries (173 MB), @lancedb (158 MB), + smaller ones.
-# Verified safe by grepping dist/*.js — none are imported at runtime.
+# Verified safe by grepping dist/*.js -- none are imported at runtime.
 # KEEP: @anthropic-ai/sdk (used by dist/anthropic-*.js), @larksuiteoapi
 # (used by dist/monitor.account-*.js and dist/client-*.js).
 #
@@ -1705,7 +1705,7 @@ foreach ($entry in $script:OpenClawOrphanedNativesWithDeps) {
                 $orphanCount++
             } catch { }
         } else {
-            Write-Info "Kept $($entry.Pkg) — dependent extension present"
+            Write-Info "Kept $($entry.Pkg) -- dependent extension present"
         }
     }
 }
@@ -1736,7 +1736,7 @@ if ($tsbuildCount -gt 0) {
     Get-ChildItem -Path $openclawDest -Recurse -Filter "*.tsbuildinfo" -File |
         ForEach-Object { Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue }
 }
-# Source maps in control-ui — large, dev-only.
+# Source maps in control-ui -- large, dev-only.
 $controlUiDir = Join-Path $openclawDest "dist/control-ui/assets"
 if (Test-Path $controlUiDir) {
     $mapCount = (Get-ChildItem -Path $controlUiDir -Filter "*.map" -ErrorAction SilentlyContinue).Count
@@ -1746,11 +1746,11 @@ if (Test-Path $controlUiDir) {
     }
 }
 
-# 1c-ter. EnvoyMesh OpenClaw channel — ALWAYS (independent of OpenClaw cache).
+# 1c-ter. EnvoyMesh OpenClaw channel -- ALWAYS (independent of OpenClaw cache).
 # Reusing a stale openclaw tree used to ship without extensions/envoymesh/index.js
 # and the home node refused to start OpenClaw. This step compiles a seed and
 # installs it into the staged tree every build.
-Write-Info "Staging EnvoyMesh OpenClaw extension (always — not tied to OpenClaw reuse)..."
+Write-Info "Staging EnvoyMesh OpenClaw extension (always -- not tied to OpenClaw reuse)..."
 $stageEnvoyExt = Join-Path $PSScriptRoot "stage-openclaw-envoymesh-extension.ps1"
 if (-not (Test-Path $stageEnvoyExt)) {
     Write-Fail "missing $stageEnvoyExt"
@@ -1758,7 +1758,7 @@ if (-not (Test-Path $stageEnvoyExt)) {
 }
 & $stageEnvoyExt
 if ($LASTEXITCODE -ne 0) {
-    Write-Fail "stage-openclaw-envoymesh-extension.ps1 failed — OpenClaw will not start without extensions\envoymesh\index.js"
+    Write-Fail "stage-openclaw-envoymesh-extension.ps1 failed -- OpenClaw will not start without extensions\envoymesh\index.js"
     exit 1
 }
 Write-Ok "EnvoyMesh OpenClaw extension staged"
@@ -1771,7 +1771,7 @@ if ((Test-Path $openclawStampScript) -and (Test-Path (Join-Path $openclawDest "o
         if ($stampNow) {
             $stampNow = $stampNow.Trim()
             Set-Content -Path $openclawStampFile -Value $stampNow -Encoding ascii
-            Write-Info "Wrote OpenClaw source stamp → .openclaw-stage-stamp"
+            Write-Info "Wrote OpenClaw source stamp -> .openclaw-stage-stamp"
         }
     } catch {
         Write-Warn "Could not write .openclaw-stage-stamp: $($_.Exception.Message)"
@@ -1782,7 +1782,7 @@ if ((Test-Path $openclawStampScript) -and (Test-Path (Join-Path $openclawDest "o
 #     Pi is a Node.js package, not a prebuilt binary, so staging = npm-install
 #     the pinned upstream CLI + its transitive deps into resources/pi/.
 #     Mirrors the OpenClaw reuse-vs-force pattern. -SkipPi is the slim-build
-#     escape hatch (Pi is omitted from tauri.conf.slim.json — picked at step 3).
+#     escape hatch (Pi is omitted from tauri.conf.slim.json -- picked at step 3).
 if (-not $SkipPi) {
     Write-Info "Staging Pi agent (local coding sidecar)..."
     $piDest = Join-Path $TauriResources "pi"
@@ -1792,7 +1792,7 @@ if (-not $SkipPi) {
         $piVer = (Get-Content (Join-Path $piDest ".pi-version") -Raw).Trim()
         Write-Info "Reusing staged Pi $piVer at $($piDest.Replace($RepoRoot + '\', '')). Use -ForcePi to re-stage."
     } else {
-        # Delegate to fetch-pi-sidecar.ps1 — npm-installs Pi + transitive deps.
+        # Delegate to fetch-pi-sidecar.ps1 -- npm-installs Pi + transitive deps.
         # Idempotent. The prune pass below trims the staged tree to runtime
         # essentials (source maps, .ts sources, test files, cross-platform
         # native prebuilds). Mirrors the bash twin scripts/stage-tauri-pi-bundle.sh.
@@ -1803,7 +1803,7 @@ if (-not $SkipPi) {
         }
         # ENVOYMESH_PI_VERSION: single source of truth for the Pi pin.
         # Both fetch-pi-sidecar.{sh,ps1} and stage-tauri-pi-bundle.sh honour
-        # it. Empty string → the script's own default (0.82.1) is used.
+        # it. Empty string -> the script's own default (0.82.1) is used.
         if ($env:ENVOYMESH_PI_VERSION) {
             Write-Info "Using ENVOYMESH_PI_VERSION=$env:ENVOYMESH_PI_VERSION"
             & $fetchPs1 -Version $env:ENVOYMESH_PI_VERSION -Force:$ForcePi
@@ -1811,13 +1811,13 @@ if (-not $SkipPi) {
             & $fetchPs1 -Force:$ForcePi
         }
         if ($LASTEXITCODE -ne 0) {
-            Write-Fail "Pi sidecar staging failed — aborting build. Use -SkipPi to omit Pi from this bundle."
+            Write-Fail "Pi sidecar staging failed -- aborting build. Use -SkipPi to omit Pi from this bundle."
             exit 1
         }
     }
 
     # Bundle fd + ripgrep so GUI/Tauri launches (stripped PATH) do not hang
-    # on Pi's GitHub auto-download. Safe on reuse — script is idempotent.
+    # on Pi's GitHub auto-download. Safe on reuse -- script is idempotent.
     $fetchPiTools = Join-Path $PSScriptRoot "fetch-pi-tools.ps1"
     if (-not (Test-Path $fetchPiTools)) {
         Write-Fail "fetch-pi-tools.ps1 not found at $fetchPiTools"
@@ -1826,7 +1826,7 @@ if (-not $SkipPi) {
     Write-Info "Staging Pi tools (fd + ripgrep)..."
     & $fetchPiTools
     if ($LASTEXITCODE -ne 0) {
-        Write-Fail "fetch-pi-tools.ps1 failed — Pi may hang in the GUI without fd/rg"
+        Write-Fail "fetch-pi-tools.ps1 failed -- Pi may hang in the GUI without fd/rg"
         exit 1
     }
     if (-not (Test-Path (Join-Path $piDest "bin\fd.exe"))) {
@@ -1835,7 +1835,7 @@ if (-not $SkipPi) {
     }
     Write-Ok "Pi tools (fd.exe + rg.exe)"
 
-    # Prune pass — mirrors scripts/stage-tauri-pi-bundle.sh (the bash twin
+    # Prune pass -- mirrors scripts/stage-tauri-pi-bundle.sh (the bash twin
     # delegates to this from build-desktop.sh). Skipped when -SkipPiPrune
     # is set; safe to leave on for every reuse (idempotent).
     #
@@ -1899,12 +1899,12 @@ if (-not $SkipPi) {
         foreach ($path in $piFiles) {
             $name = [System.IO.Path]::GetFileName($path)
             $drop = $false
-            # Source maps (incl. *.d.ts.map) — never needed at runtime; also the
+            # Source maps (incl. *.d.ts.map) -- never needed at runtime; also the
             # files that most often exceed Windows MAX_PATH under @mistralai.
             if ($name -like "*.map") { $drop = $true }
-            # Declarations — runtime only needs compiled .js.
+            # Declarations -- runtime only needs compiled .js.
             elseif ($name -like "*.d.ts" -or $name -like "*.d.mts" -or $name -like "*.d.cts") { $drop = $true }
-            # TypeScript sources (not declarations — already handled above).
+            # TypeScript sources (not declarations -- already handled above).
             elseif ($name -like "*.ts") { $drop = $true }
             elseif ($name -match '\.(test|spec)\.(js|mjs|cjs)$') { $drop = $true }
 
@@ -1934,7 +1934,7 @@ if (-not $SkipPi) {
                 }
         }
 
-        # Cross-platform native prebuilds — Pi's native deps ship prebuilt
+        # Cross-platform native prebuilds -- Pi's native deps ship prebuilt
         # bindings for every OS/arch combo. Drop everything except the
         # host's. The Windows binary itself (x86_64-pc-windows-msvc) is
         # the only combo we ship on Windows.
@@ -1968,7 +1968,7 @@ if (-not $SkipPi) {
             }
         }
 
-        # Fail fast if anything still exceeds MAX_PATH — NSIS cannot pack it.
+        # Fail fast if anything still exceeds MAX_PATH -- NSIS cannot pack it.
         $tooLong = New-Object System.Collections.Generic.List[string]
         try {
             $enumRoot = ConvertTo-Win32LongPath $piDest
@@ -1992,7 +1992,7 @@ if (-not $SkipPi) {
         Write-Info "-SkipPiPrune: skipping Pi prune pass (-SkipPiPrune)"
     }
 
-    # Post-stage smoke — mirrors scripts/smoke-pi-bundle.sh (bash twin runs
+    # Post-stage smoke -- mirrors scripts/smoke-pi-bundle.sh (bash twin runs
     # this inside stage-tauri-pi-bundle.sh). Catches "tree looks fine but
     # CLI crashes on import" before the NSIS link step.
     if ($env:SMOKE_PI -ne "0") {
@@ -2021,12 +2021,12 @@ if (-not $SkipPi) {
             $bannerOk = $combined -match '(?i)pi[- ]coding[- ]agent|Usage:|\bpi\b'
             if ($smokeExit -ne 0) {
                 Write-Host $combined
-                Write-Fail "Pi smoke failed — CLI exited $smokeExit. Log: $smokeLog"
+                Write-Fail "Pi smoke failed -- CLI exited $smokeExit. Log: $smokeLog"
                 exit 1
             }
             if (-not $bannerOk) {
                 Write-Host $combined
-                Write-Fail "Pi smoke failed — no recognisable --help banner. Log: $smokeLog"
+                Write-Fail "Pi smoke failed -- no recognisable --help banner. Log: $smokeLog"
                 exit 1
             }
             $smokeOk = $true
@@ -2040,7 +2040,7 @@ if (-not $SkipPi) {
             }
         }
     } else {
-        Write-Info "SMOKE_PI=0 — skipping Pi post-stage smoke"
+        Write-Info "SMOKE_PI=0 -- skipping Pi post-stage smoke"
     }
 } else {
     Write-Info "Skipping Pi sidecar (-SkipPi). The bundle will NOT contain Pi; tauri.conf.slim.json (selected below) omits the resources/pi/**/* entry."
@@ -2053,7 +2053,7 @@ if (-not $SkipPi) {
     }
 }
 
-# 1e. Sidecar smoke check (Social UI is verified after step 2 — Vite dist is
+# 1e. Sidecar smoke check (Social UI is verified after step 2 -- Vite dist is
 # not in git, so requiring it here breaks clean checkouts).
 Write-Info "Sidecar smoke check (full verify runs after Social build)..."
 $sidecarOk = $true
@@ -2083,18 +2083,18 @@ if (-not $SkipPi) {
     if (Test-Path $piFd) {
         Write-Ok "Pi tools (fd.exe)"
     } else {
-        Write-Fail "missing Pi tools at $piFd — run fetch-pi-tools.ps1"
+        Write-Fail "missing Pi tools at $piFd -- run fetch-pi-tools.ps1"
         $sidecarOk = $false
     }
     if (Test-Path $piRg) {
         Write-Ok "Pi tools (rg.exe)"
     } else {
-        Write-Fail "missing Pi tools at $piRg — run fetch-pi-tools.ps1"
+        Write-Fail "missing Pi tools at $piRg -- run fetch-pi-tools.ps1"
         $sidecarOk = $false
     }
 }
 if (-not $sidecarOk) {
-    Write-Fail "Tauri sidecars incomplete — see failures above."
+    Write-Fail "Tauri sidecars incomplete -- see failures above."
     exit 1
 }
 Write-Ok "Sidecars look complete (full resource verify after Social)"
@@ -2107,14 +2107,14 @@ Write-Host ""
 Write-Step "1f/5  Running discovery E2E tests..."
 $discExit = Invoke-ExternalQuiet npx vitest run apps/node/test/discovery-search-roundtrip.test.ts
 if ($discExit -ne 0) {
-    Write-Fail "discovery E2E tests failed — aborting build. Fix tests before rebuilding."
+    Write-Fail "discovery E2E tests failed -- aborting build. Fix tests before rebuilding."
     exit 1
 }
 Write-Ok "Discovery E2E passed"
 Write-Host ""
 
 # -----------------------------------------------------------------------------
-# Step 1g: Kubo (only when -Full — required by tauri.conf.full.json)
+# Step 1g: Kubo (only when -Full -- required by tauri.conf.full.json)
 # -----------------------------------------------------------------------------
 
 if ($Full) {
@@ -2126,11 +2126,11 @@ if ($Full) {
     }
     $bash = Get-Command bash -ErrorAction SilentlyContinue
     if (-not $bash) {
-        Write-Fail "bash not found — install Git for Windows so -Full can run fetch-kubo-sidecar.sh"
+        Write-Fail "bash not found -- install Git for Windows so -Full can run fetch-kubo-sidecar.sh"
         exit 1
     }
     # Use Invoke-BashScript (defined above) to handle CRLF + WSL path
-    # conversion in one place. Don't use `& bash $fetchKubo` directly —
+    # conversion in one place. Don't use `& bash $fetchKubo` directly --
     # see Invoke-BashScript for the three Windows-on-bash quirks it covers.
     $kuboExit = Invoke-BashScript -ScriptPath $fetchKubo
     if ($kuboExit -ne 0) {
@@ -2147,15 +2147,15 @@ if ($Full) {
 }
 
 # -----------------------------------------------------------------------------
-# Step 2: Build Social UI (Tauri frontendDist → apps/social/src/dist)
+# Step 2: Build Social UI (Tauri frontendDist -> apps/social/src/dist)
 # Social includes family-network Settings UI + all i18n locales.
 # -----------------------------------------------------------------------------
 
 Write-Step "2/5  Building Social UI..."
-# Build via workspace from repo root — never `cd apps/social; npm install`.
+# Build via workspace from repo root -- never `cd apps/social; npm install`.
 # Nested install re-resolves @envoymesh/* against the public registry and 404s
 # (those packages are private workspace links only).
-# Also require Tauri updater JS plugins — Social's tsc imports them for OTA.
+# Also require Tauri updater JS plugins -- Social's tsc imports them for OTA.
 # An older node_modules can have @envoymesh/api but miss these after a pull.
 $socialDepRoots = @(
     (Join-Path $RepoRoot "node_modules\@envoymesh\api"),
@@ -2184,7 +2184,7 @@ if (-not (Test-Path $SocialDist)) {
 Write-Ok "Social UI built at apps\social\src\dist"
 Write-Host ""
 
-# Full verify after Social (shared with build-desktop.sh — scripts/verify-tauri-resources.sh).
+# Full verify after Social (shared with build-desktop.sh -- scripts/verify-tauri-resources.sh).
 Write-Info "Verifying Tauri bundle resources (post-Social)..."
 $verifyScript = Join-Path $PSScriptRoot "verify-tauri-resources.sh"
 if (-not (Test-Path $verifyScript)) {
@@ -2193,11 +2193,11 @@ if (-not (Test-Path $verifyScript)) {
 }
 $bash = Get-Command bash -ErrorAction SilentlyContinue
 if (-not $bash) {
-    Write-Fail "bash not found — install Git for Windows to run scripts/verify-tauri-resources.sh"
+    Write-Fail "bash not found -- install Git for Windows to run scripts/verify-tauri-resources.sh"
     exit 1
 }
 # Use Invoke-BashScript (defined above) to handle CRLF + WSL path
-# conversion in one place. Don't use `& bash $verifyScript` directly —
+# conversion in one place. Don't use `& bash $verifyScript` directly --
 # see Invoke-BashScript for the three Windows-on-bash quirks it covers.
 $verifyExit = Invoke-BashScript -ScriptPath $verifyScript
 if ($verifyExit -ne 0) {
@@ -2213,7 +2213,7 @@ Write-Host ""
 Write-Step "3/5  Building Tauri desktop app..."
 
 # Ensure the Rust toolchain is present. The user is responsible for installing
-# Visual Studio Build Tools with the C++ workload — we only check the basics.
+# Visual Studio Build Tools with the C++ workload -- we only check the basics.
 try {
     Require-Command "cargo"
 } catch {
@@ -2236,7 +2236,7 @@ Import-VcVarsIfNeeded
 $cl = Get-Command "cl" -ErrorAction SilentlyContinue
 $link = Get-Command "link" -ErrorAction SilentlyContinue
 if (-not $cl -or -not $link) {
-    Write-Warn "MSVC `cl`/`link` not on PATH — install Visual Studio Build Tools 2022 with the 'Desktop development with C++' workload (https://visualstudio.microsoft.com/visual-cpp-build-tools/). Run this script from a 'Developer Command Prompt for VS 2022' if the workload is installed but cl/link still aren't found."
+    Write-Warn "MSVC `cl`/`link` not on PATH -- install Visual Studio Build Tools 2022 with the 'Desktop development with C++' workload (https://visualstudio.microsoft.com/visual-cpp-build-tools/). Run this script from a 'Developer Command Prompt for VS 2022' if the workload is installed but cl/link still aren't found."
 }
 
 # Tauri CLI. Prefer `cargo tauri` (the cargo subcommand) when available; fall
@@ -2261,9 +2261,9 @@ if (Get-Command "cargo-tauri" -ErrorAction SilentlyContinue) {
 # Use -SkipMsi:$false to also produce a WiX .msi (for enterprise deployment).
 #
 # Slim / Full / default config selection (mirrors apps/tauri/package.json):
-#   -SkipPi   → --config src-tauri/tauri.conf.slim.json  (Pi + Kubo omitted)
-#   -Full     → --config src-tauri/tauri.conf.full.json  (Pi + Kubo; Kubo fetched above)
-#   default   → no --config flag                         (uses tauri.conf.json — Pi, no Kubo)
+#   -SkipPi   -> --config src-tauri/tauri.conf.slim.json  (Pi + Kubo omitted)
+#   -Full     -> --config src-tauri/tauri.conf.full.json  (Pi + Kubo; Kubo fetched above)
+#   default   -> no --config flag                         (uses tauri.conf.json -- Pi, no Kubo)
 # Prefer no -SkipPi (or -Full) for Pi terminal. build:win / tauri:build:win are full.
 #
 # Refuse nonsensical combinations rather than silently picking one.
@@ -2297,7 +2297,7 @@ if ($SkipPi) {
 
 Push-Location $TauriAppDir
 try {
-    # Install from repo root via workspace — never plain `npm install` here.
+    # Install from repo root via workspace -- never plain `npm install` here.
     # Nested install walks the whole monorepo and tries to fetch private
     # @envoymesh/* packages from the public registry (E404).
     $tauriCli = @(
@@ -2322,7 +2322,7 @@ try {
 
     # (Typecheck already done in Step 1.)
 
-    # Resource size check — NSIS has a hard 2 GB installer cap. When the
+    # Resource size check -- NSIS has a hard 2 GB installer cap. When the
     # bundled tree (Node sidecar + EnvoyMesh node + OpenClaw + Social UI)
     # approaches that, makensis fails deep inside the build with a vague
     # "stale temp file" message and the real error is hidden. Print the
@@ -2336,11 +2336,11 @@ try {
     $resourceMb = [math]::Round($resourceBytes / 1MB, 1)
     Write-Info "Staged Tauri resources: $resourceMb MB"
     if ($resourceBytes -gt 1.8GB) {
-        Write-Fail "Resources exceed 1.8 GB — NSIS will likely fail. Switch to WiX with -SkipMsi:`$false or shrink the staged tree."
+        Write-Fail "Resources exceed 1.8 GB -- NSIS will likely fail. Switch to WiX with -SkipMsi:`$false or shrink the staged tree."
         Pop-Location
         exit 1
     } elseif ($resourceBytes -gt 1.5GB) {
-        Write-Warn "Resources exceed 1.5 GB — NSIS (2 GB hard cap) is at risk. Consider WiX instead (-SkipMsi:`$false) or trim packages\openclaw\extensions\."
+        Write-Warn "Resources exceed 1.5 GB -- NSIS (2 GB hard cap) is at risk. Consider WiX instead (-SkipMsi:`$false) or trim packages\openclaw\extensions\."
     }
 
     # Stream the Tauri build live. Tauri/Cargo/makensis together emit a
@@ -2348,7 +2348,7 @@ try {
     # well above the last 30 lines. Tee-Object through -Stream means the
     # operator sees progress AND the full log lands in the temp file
     # that Invoke-ExternalQuiet preserves on failure.
-    Write-Info "Tauri build (x86_64-pc-windows-msvc) — this can take 5-15 minutes..."
+    Write-Info "Tauri build (x86_64-pc-windows-msvc) -- this can take 5-15 minutes..."
     $tauriBuildExit = Invoke-ExternalQuiet $tauriCmd @tauriArgs -Stream
     if ($tauriBuildExit -ne 0) {
         Write-Fail "Tauri build failed (exit $tauriBuildExit)"
@@ -2415,7 +2415,7 @@ if ($nsisExe) {
     $stableExe = Join-Path $publishRoot "envoymesh-desktop.exe"
     Copy-Item -Force $nsisExe.FullName $stableExe
     $stableMb = [math]::Round($nsisExe.Length / 1MB, 1)
-    Write-Ok "${Out}\envoymesh-desktop.exe ($stableMb MB — stable mirror, gpt4people.online/EnvoyMesh/)"
+    Write-Ok "${Out}\envoymesh-desktop.exe ($stableMb MB -- stable mirror, gpt4people.online/EnvoyMesh/)"
 }
 $Published = $destDir
 Write-Host ""
@@ -2437,6 +2437,6 @@ Write-Host ""
 Write-Host "  Cargo keeps intermediates under:"
 Write-Host "    $TauriTarget\"
 Write-Host ""
-Write-Host "  A working Windows installer is typically 150 MB – 600 MB."
+Write-Host "  A working Windows installer is typically 150 MB - 600 MB."
 Write-Host "  For headless portable drops (no UI), use .\scripts\bundle.ps1 instead."
 Write-Host ""
