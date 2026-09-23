@@ -445,6 +445,22 @@ publish_desktop_release() {
 # Step 1: Build workspace packages + Node runtime, then stage sidecars
 echo "[1/6] Building workspace packages + Node runtime..."
 cd "${PROJECT_DIR}"
+# Peer harness must resolve BEFORE tsc -b (apps/node + social statically
+# import @envoymesh/envoy-harness*). Matches npm run node:build / social:build.
+# Staging (stage-tauri-envoy-harness-bundle.sh) runs later for the Tauri
+# resources copy — this step only ensures node_modules links + dist/ exist.
+ENVOY_HARNESS_DIR="${ENVOY_HARNESS_DIR:-$(cd "${PROJECT_DIR}/.." && pwd)/envoy-harness}"
+echo "  Building peer envoy-harness (required for tsc)..."
+if [ ! -d "${ENVOY_HARNESS_DIR}" ]; then
+  echo "error: sibling envoy-harness not found at ${ENVOY_HARNESS_DIR}" >&2
+  echo "  Clone or copy it next to EnvoyMesh, then re-run:" >&2
+  echo "    git clone <envoy-harness-url> ${ENVOY_HARNESS_DIR}" >&2
+  echo "    cd ${PROJECT_DIR} && npm ci && npm run build:envoy-harness" >&2
+  echo "  Or set ENVOY_HARNESS_DIR to an existing checkout." >&2
+  exit 1
+fi
+npm run build:envoy-harness
+npm run peer:deps:check
 npx tsc -b
 echo ""
 echo "[1/6] continued — Staging sidecars (Node.js, OpenClaw, Pi, EnvoyMesh node)..."

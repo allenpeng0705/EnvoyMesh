@@ -672,7 +672,38 @@ Write-Info "Building workspace packages..."
 
 $nodeDistEntry = Join-Path $RepoRoot "apps/node/dist/src/index.js"
 
+# Peer harness must resolve BEFORE tsc -b (apps/node + social statically
+# import @envoymesh/envoy-harness*). Matches npm run node:build / social:build.
+# Staging (stage-tauri-envoy-harness-bundle.ps1) runs later for the Tauri
+# resources copy -- this step only ensures node_modules links + dist/ exist
+# so the TypeScript project-references build can typecheck.
+$envoyHarnessDir = if ($env:ENVOY_HARNESS_DIR) { $env:ENVOY_HARNESS_DIR } else { Join-Path (Split-Path -Parent $RepoRoot) "envoy-harness" }
+
 if (-not $SkipTypecheck) {
+    Write-Info "Building peer envoy-harness (required for tsc)..."
+    if (-not (Test-Path $envoyHarnessDir)) {
+        Write-Fail "Sibling envoy-harness not found at $envoyHarnessDir"
+        Write-Info "  Clone or copy it next to EnvoyMesh, then re-run:"
+        Write-Info "    git clone <envoy-harness-url> $envoyHarnessDir"
+        Write-Info "    cd $RepoRoot ; npm ci ; npm run build:envoy-harness"
+        Write-Info "  Or set `$env:ENVOY_HARNESS_DIR to an existing checkout."
+        exit 1
+    }
+    $ehBuildExit = Invoke-ExternalQuiet npm run build:envoy-harness
+    if ($ehBuildExit -ne 0) {
+        Write-Fail "npm run build:envoy-harness failed (exit $ehBuildExit)"
+        Write-Info "  Needs pnpm in PATH and a built sibling at $envoyHarnessDir"
+        Write-Info "  From the repo root: npm run build:envoy-harness"
+        exit 1
+    }
+    $peerCheckExit = Invoke-ExternalQuiet npm run peer:deps:check
+    if ($peerCheckExit -ne 0) {
+        Write-Fail "peer:deps:check failed -- @envoymesh/envoy-harness* not resolvable from node_modules"
+        Write-Info "  Try: cd $RepoRoot ; npm ci ; npm run build:envoy-harness"
+        exit 1
+    }
+    Write-Ok "envoy-harness peers built and linked"
+
     Write-Info "TypeScript build (tsc -b)..."
     # Full workspace project-references build (same as build-desktop.sh).
     # `npm run node:build` alone can leave packages/api/dist stale when only
@@ -680,7 +711,7 @@ if (-not $SkipTypecheck) {
     $tcExit = Invoke-ExternalQuiet npx tsc -b
     if ($tcExit -ne 0) {
         Write-Fail "npx tsc -b failed (exit $tcExit). The Tauri bundle requires compiled workspace packages + apps\node\dist\."
-        Write-Info "  Try: cd $RepoRoot ; npm ci ; npx tsc -b"
+        Write-Info "  Try: cd $RepoRoot ; npm ci ; npm run build:envoy-harness ; npx tsc -b"
         exit 1
     }
     if (-not (Test-Path $nodeDistEntry)) {
