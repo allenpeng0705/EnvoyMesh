@@ -1276,15 +1276,34 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
         # through PATHEXT (pnpm.cmd / pnpm.ps1) and inherits the parent's
         # stdout/stderr naturally.
         #
-        # Trade-off: no automatic timeout. The operator can Ctrl-C if pnpm
-        # hangs. The previous 10-min timeout was a nice-to-have; correctness
-        # beats having a perfect hang protection. pnpm install takes
-        # <30s on a warm cache and <3min on cold; pathological hangs are
-        # rare and Ctrl-C handles them.
-        Write-Info "pnpm install (this can take 1-3 min on cold cache)..."
+        # Do NOT pipe through Tee-Object / Out-Host: on Windows that
+        # buffers native-command output so the console stays blank for
+        # tens of minutes while pnpm is still working (OpenClaw is a
+        # multi-GB cold install). Log with Start-Transcript instead;
+        # use --reporter=append-only so progress is line-based (no TTY
+        # spinner that dies when stdout is redirected).
+        #
+        # Trade-off: no automatic timeout. Ctrl-C if it truly hangs.
+        # Warm cache: a few minutes. Cold Windows + Defender: often
+        # 15-45+ min. An hour with zero CPU is a hang; an hour with
+        # node.exe active is still installing.
+        $pnpmLog = Join-Path $openclawSrc "pnpm.out"
+        if (Test-Path $pnpmLog) { Remove-Item -Force $pnpmLog -ErrorAction SilentlyContinue }
+        Write-Info "pnpm install (OpenClaw is large -- cold Windows installs often take 15-45+ min)..."
+        Write-Info "  live progress below; also logging to packages\openclaw\pnpm.out"
+        Write-Info "  if the console is quiet, check Task Manager for node.exe / pnpm CPU"
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        & pnpm install --no-frozen-lockfile 2>&1 | Tee-Object -FilePath "pnpm.out" | Out-Host
-        $pnpmExit = $LASTEXITCODE
+        try {
+            Start-Transcript -Path $pnpmLog -Force | Out-Null
+        } catch {
+            # Transcript may fail under some hosts; install still proceeds.
+        }
+        try {
+            & pnpm.cmd install --no-frozen-lockfile --reporter=append-only
+            $pnpmExit = $LASTEXITCODE
+        } finally {
+            try { Stop-Transcript | Out-Null } catch { }
+        }
         $sw.Stop()
         Write-Info "pnpm install finished in $([int]$sw.Elapsed.TotalSeconds)s (exit $pnpmExit)"
 
@@ -1292,14 +1311,22 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
             Write-Info "Retrying with clean node_modules..."
             if (Test-Path "node_modules") { Remove-Item -Recurse -Force "node_modules" }
             $sw = [System.Diagnostics.Stopwatch]::StartNew()
-            & pnpm install --no-frozen-lockfile 2>&1 | Tee-Object -FilePath "pnpm.out" | Out-Host
-            $pnpmExit = $LASTEXITCODE
+            try {
+                Start-Transcript -Path $pnpmLog -Force | Out-Null
+            } catch { }
+            try {
+                & pnpm.cmd install --no-frozen-lockfile --reporter=append-only
+                $pnpmExit = $LASTEXITCODE
+            } finally {
+                try { Stop-Transcript | Out-Null } catch { }
+            }
             $sw.Stop()
             if ($pnpmExit -ne 0) {
                 Write-Fail "pnpm install failed after retry (exit $pnpmExit)"
                 Write-Info "  Common fixes:"
                 Write-Info "    - Set the China mirror: pnpm config set registry https://registry.npmmirror.com"
                 Write-Info "    - Check connectivity: Test-NetConnection registry.npmjs.org -Port 443"
+                Write-Info "    - Exclude packages\openclaw from Windows Defender realtime scan"
                 Write-Info "    - Or run pnpm install manually: cd packages\openclaw ; pnpm install --no-frozen-lockfile"
                 Pop-Location
                 exit 1
