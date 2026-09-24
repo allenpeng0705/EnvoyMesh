@@ -1,4 +1,4 @@
-# Stage push-notification credentials into the Tauri node bundle dir.
+﻿# Stage push-notification credentials into the Tauri node bundle dir.
 #
 # Twin of scripts/stage-tauri-push-credentials.sh. Copies from the repo root:
 #   push-config.json
@@ -27,19 +27,19 @@ if (-not $Dest) {
     $Dest = Join-Path $RepoRoot "apps\tauri\src-tauri\resources\node"
 }
 
-function Write-Ok([string]$msg) { Write-Host "  ✓ $msg" -ForegroundColor Green }
-function Write-WarnMsg([string]$msg) { Write-Host "  ⚠ $msg" -ForegroundColor Yellow }
+function Write-Ok([string]$msg) { Write-Host "  OK $msg" -ForegroundColor Green }
+function Write-WarnMsg([string]$msg) { Write-Host "  ! $msg" -ForegroundColor Yellow }
 function Write-FailMsg([string]$msg) { Write-Host "error: $msg" -ForegroundColor Red; exit 1 }
 
 if (-not (Test-Path $Dest -PathType Container)) {
-    Write-FailMsg "node bundle dir missing at $Dest — run stage-bundle-node-runtime.ps1 first"
+    Write-FailMsg "node bundle dir missing at $Dest -- run stage-bundle-node-runtime.ps1 first"
 }
 
 $configSrc = Join-Path $RepoRoot "push-config.json"
 $require = if ($env:REQUIRE_PUSH_CREDENTIALS) { $env:REQUIRE_PUSH_CREDENTIALS } else { "0" }
 
 if (-not (Test-Path $configSrc -PathType Leaf)) {
-    Write-WarnMsg "No push-config.json at repo root — skipping push credential staging."
+    Write-WarnMsg "No push-config.json at repo root -- skipping push credential staging."
     Write-WarnMsg "Drop push-config.json + AuthKey_*.p8 + serviceAccountKey.json at the repo root, then re-run."
     exit 0
 }
@@ -61,7 +61,7 @@ if (-not (Test-Path $saSrc -PathType Leaf) -and (Test-Path $firebaseFallback -Pa
 
 Write-Host "Staging push credentials into resources\node\..."
 Copy-Item -Force $configSrc (Join-Path $Dest "push-config.json")
-Write-Ok "Staged push-config.json → resources\node\"
+Write-Ok "Staged push-config.json -> resources\node\"
 
 $missing = $false
 function Copy-Secret([string]$src, [string]$destName, [string]$label) {
@@ -71,7 +71,7 @@ function Copy-Secret([string]$src, [string]$destName, [string]$label) {
         return
     }
     Copy-Item -Force $src (Join-Path $Dest $destName)
-    Write-Ok "Staged $destName → resources\node\"
+    Write-Ok "Staged $destName -> resources\node\"
 }
 
 Copy-Secret $keySrc $keyBase "APNs AuthKey (.p8)"
@@ -82,7 +82,7 @@ if ($missing) {
     if ($require -eq "1") {
         Write-FailMsg "$msg (REQUIRE_PUSH_CREDENTIALS=1)"
     }
-    Write-WarnMsg "$msg — packaged app will not send push until they are present."
+    Write-WarnMsg "$msg -- packaged app will not send push until they are present."
     Write-WarnMsg "Expected: $keySrc and $saSrc"
     exit 0
 }

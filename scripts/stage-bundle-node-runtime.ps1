@@ -1,4 +1,4 @@
-# Stage compiled EnvoyMesh node runtime (dist + workspace packages + prod npm deps).
+﻿# Stage compiled EnvoyMesh node runtime (dist + workspace packages + prod npm deps).
 # Used by scripts/bundle.ps1 and Tauri staging on Windows.
 param(
     [Parameter(Mandatory = $true)]
@@ -22,7 +22,7 @@ if (-not ($BundleVersion -match '^\d+\.\d+\.\d+')) {
 }
 
 if (-not (Test-Path (Join-Path $Src "src/index.js"))) {
-    Write-Error "Missing $Src/src/index.js — run: npm run node:build"
+    Write-Error "Missing $Src/src/index.js -- run: npm run node:build"
 }
 
 if (Test-Path $Dest) {
@@ -46,7 +46,7 @@ Copy-Item -Recurse -Force "$Src/*" $distDest
 
 # Discover workspace packages dynamically. We used to hardcode a list, but
 # new packages (kb-obsidian, mobile-*, openclaw-runtime) kept getting missed
-# on Windows — npm ls silently dropped them and the hardcoded list didn't
+# on Windows -- npm ls silently dropped them and the hardcoded list didn't
 # include them. Mirror the bash twin's dynamic discovery instead.
 Write-Host "  Staging @envoymesh workspace packages..."
 $stagedWorkspacePkgs = 0
@@ -58,7 +58,7 @@ foreach ($pkgDir in (Get-ChildItem -Path (Join-Path $Root "packages") -Directory
     $srcPkg = $pkgDir.FullName
     # Require BOTH a built dist AND a package.json. The Capacitor backup
     # removal left behind `packages/mobile-{node,storage,vault}/` shells
-    # containing only an empty dist/ — without the package.json guard
+    # containing only an empty dist/ -- without the package.json guard
     # we crash here with "Cannot find path ... mobile-node/package.json".
     if (-not (Test-Path (Join-Path $srcPkg "dist"))) { continue }
     if (-not (Test-Path (Join-Path $srcPkg "package.json"))) { continue }
@@ -71,7 +71,7 @@ foreach ($pkgDir in (Get-ChildItem -Path (Join-Path $Root "packages") -Directory
 Write-Host "  Staged $stagedWorkspacePkgs @envoymesh workspace packages"
 
 # ---------------------------------------------------------------------------
-# Phase 8 — wire sibling envoy-harness packages into the node's module graph.
+# Phase 8 -- wire sibling envoy-harness packages into the node's module graph.
 # Mirrors scripts/stage-bundle-node-runtime.sh. apps/node statically imports
 # @envoymesh/envoy-harness{,-adapter,-client,-peer}; without this step the
 # packaged node crashes on first launch with ERR_MODULE_NOT_FOUND.
@@ -83,7 +83,7 @@ if (-not $envoyHarnessDir) {
 $stageEnvoyHarnessIntoNode = $true
 if ($env:STAGE_ENVOY_HARNESS -eq "0") {
     if ($env:ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP -eq "1") {
-        Write-Host "  WARN: STAGE_ENVOY_HARNESS=0 + ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 — skipping envoy-harness in node_modules."
+        Write-Host "  WARN: STAGE_ENVOY_HARNESS=0 + ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 -- skipping envoy-harness in node_modules."
         Write-Host "        The packaged node has static imports of @envoymesh/envoy-harness-adapter and WILL crash on startup."
         $stageEnvoyHarnessIntoNode = $false
     } else {
@@ -102,7 +102,7 @@ function Copy-EnvoyHarnessPkg([string]$Pkg) {
     $srcDist = Join-Path $srcPkg "dist"
     $srcJson = Join-Path $srcPkg "package.json"
     if (-not (Test-Path $srcDist)) {
-        Write-Error "Missing dist for @envoymesh/$Pkg at $srcDist — build the sibling monorepo first (cd $envoyHarnessDir && pnpm -F @envoymesh/$Pkg build)"
+        Write-Error "Missing dist for @envoymesh/$Pkg at $srcDist -- build the sibling monorepo first (cd $envoyHarnessDir && pnpm -F @envoymesh/$Pkg build)"
     }
     if (-not (Test-Path $srcJson)) {
         Write-Error "Missing package.json for @envoymesh/$Pkg at $srcPkg"
@@ -114,7 +114,7 @@ function Copy-EnvoyHarnessPkg([string]$Pkg) {
 }
 
 if ($stageEnvoyHarnessIntoNode) {
-    Write-Host "  Staging @envoymesh/envoy-harness (+ process/adapter/client/peer/tui) from sibling monorepo..."
+    Write-Host "  Staging @envoymesh/envoy-harness (and process/adapter/client/peer/tui) from sibling monorepo..."
     foreach ($pkg in @(
         "envoy-process",
         "envoy-harness",
@@ -174,7 +174,7 @@ if ($stageEnvoyHarnessIntoNode) {
 
 Write-Host "  Staging production npm dependencies..."
 # Packages excluded from the staged bundle by default (opt-in via env).
-# Mirrors the bash twin — `@anthropic-ai/claude-agent-sdk` pulls a ~267 MB
+# Mirrors the bash twin -- `@anthropic-ai/claude-agent-sdk` pulls a ~267 MB
 # native Claude binary only used by the in-process claudecode ext-agent
 # backend. The backend lazy-loads it and degrades gracefully when missing.
 # Set INCLUDE_CLAUDE_SDK=1 to bundle it again.
@@ -202,7 +202,7 @@ foreach ($modPath in $npmLines) {
         "$Root/node_modules/@envoymesh/*" { continue }
     }
     if (-not (Test-Path (Join-Path $modPath "package.json"))) { continue }
-    # Read package.json via PowerShell instead of `node -e` — the `node -e`
+    # Read package.json via PowerShell instead of `node -e` -- the `node -e`
     # form breaks on Windows because `process.argv[1]` for `node -e` is the
     # literal string "[eval]" (not the user-supplied path), so `require()`
     # throws "Cannot find module '[eval]'" and the node process exits
@@ -252,7 +252,7 @@ foreach ($modPath in $npmLines) {
 # transitive deps that `npm ls --omit=dev -w @envoymesh/node` silently drops
 # on Windows when peer-dep or workspace-resolution warnings cause it to emit
 # partial output (PowerShell's try/catch can't distinguish partial from
-# complete — the missing packages ship and the node process crashes at
+# complete -- the missing packages ship and the node process crashes at
 # startup with ERR_MODULE_NOT_FOUND).
 #
 # Without this, the bundle builds successfully but fails at runtime with
@@ -261,7 +261,7 @@ foreach ($modPath in $npmLines) {
 # We use a FIXPOINT LOOP: repeatedly scan every package.json in the staged
 # tree (and the seed sources), copy any missing deps from the source roots,
 # until no new packages are added. This handles transitive deps of any
-# depth — e.g. main-event is declared by @libp2p/interface, which itself
+# depth -- e.g. main-event is declared by @libp2p/interface, which itself
 # is a transitive dep of @envoymesh/network. A single-pass scan misses
 # these because @libp2p/interface isn't in the initial scan list; the
 # fixpoint loop discovers it on the second pass after @libp2p/interface
@@ -305,7 +305,7 @@ for ($iter = 1; $iter -le $maxIterations; $iter++) {
     # Collect package.json files to scan this iteration: seeds + EVERY
     # staged package's package.json (recursive, including packages nested
     # inside other packages' node_modules/). We must scan nested packages
-    # too — their declared deps need to be hoisted to the top of the
+    # too -- their declared deps need to be hoisted to the top of the
     # staged tree so Node's resolver can find them. The fixpoint loop's
     # idempotency check (skip if already staged) makes this safe.
     $scanList = @()
@@ -320,7 +320,7 @@ for ($iter = 1; $iter -le $maxIterations; $iter++) {
         try {
             $pkgMeta = Get-Content $pkgJsonPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         } catch { continue }
-        # Include optionalDependencies — sharp's @img/sharp-<platform> natives
+        # Include optionalDependencies -- sharp's @img/sharp-<platform> natives
         # live there. Skipping them ships a bundle that crashes on Windows with
         # "Could not load the sharp module using the win32-x64 runtime".
         $depNames = [System.Collections.Generic.HashSet[string]]::new()
@@ -332,7 +332,7 @@ for ($iter = 1; $iter -le $maxIterations; $iter++) {
         }
         if ($depNames.Count -eq 0) { continue }
         foreach ($depName in $depNames) {
-            # Skip workspace packages — they're staged separately above.
+            # Skip workspace packages -- they're staged separately above.
             if ($depName -like "@envoymesh/*") { continue }
             if (Test-BundleExcludedPackage $depName) {
                 Write-Host "  Skipping excluded package (safety net): $depName"
@@ -375,14 +375,14 @@ if ($safetyNetCopied -gt 0) {
 
 # Sanity check: verify a handful of known-critical runtime deps are present.
 # If any are missing, fail loudly rather than shipping a broken bundle.
-# Each is at a different transitive depth or workspace class — catches
+# Each is at a different transitive depth or workspace class -- catches
 # fixpoint-loop bugs, dynamic-discovery bugs, and npm ls drops.
 # sharp platform natives for THIS host (must be present before packaging).
 # Note: sharp@0.35 ships a separate @img/sharp-libvips-* package on darwin/linux
 # only. On win32, libvips is embedded inside @img/sharp-win32-* (no sibling
 # @img/sharp-libvips-win32-* in sharp's optionalDependencies).
 $ridOs = if ($IsWindows -or $env:OS -match "Windows") { "win32" } elseif ($IsLinux) { "linux" } else { "darwin" }
-# Prefer env vars — RuntimeInformation.ProcessArchitecture.ToString() can throw
+# Prefer env vars -- RuntimeInformation.ProcessArchitecture.ToString() can throw
 # "You cannot call a method on a null-valued expression" on Windows PS 5.1.
 $ridCpu = "x64"
 $procArch = [string]$env:PROCESSOR_ARCHITECTURE
@@ -463,9 +463,9 @@ if ($missing.Count -gt 0) {
     Write-Host "    1. 'npm install' did not complete successfully in the repo root" -ForegroundColor Yellow
     Write-Host "    2. The dep is nested deeper than the search roots (rare; check with 'npm ls <dep>')" -ForegroundColor Yellow
     Write-Host "    3. The dep was pruned by 'npm prune --production' but is actually needed at runtime" -ForegroundColor Yellow
-    Write-Host "    4. sharp platform optionalDeps were omitted — run: npm install --os=$ridOs --cpu=$ridCpu sharp" -ForegroundColor Yellow
+    Write-Host "    4. sharp platform optionalDeps were omitted -- run: npm install --os=$ridOs --cpu=$ridCpu sharp" -ForegroundColor Yellow
     if ($stageEnvoyHarnessIntoNode) {
-        Write-Host "    5. envoy-harness sibling deps missing — run: (cd $envoyHarnessDir && pnpm install && pnpm -r build)" -ForegroundColor Yellow
+        Write-Host "    5. envoy-harness sibling deps missing -- run: (cd $envoyHarnessDir && pnpm install && pnpm -r build)" -ForegroundColor Yellow
     }
     Write-Host ""
     Write-Host "  Diagnostic commands:" -ForegroundColor Cyan
@@ -482,7 +482,7 @@ if ($stageEnvoyHarnessIntoNode) {
 }
 # End-to-end import check: actually run Node's module resolver against
 # every module the runtime entry imports. This catches missing modules
-# that the file-existence sanity check above can't — e.g. transitive
+# that the file-existence sanity check above can't -- e.g. transitive
 # deps of nested packages (psl, declared by tough-cookie which lives
 # inside request/node_modules/), optional native bindings, and broken
 # package.json "exports" maps. Failures here are converted from runtime
@@ -494,7 +494,7 @@ $harnessProbeMods = ""
 if ($stageEnvoyHarnessIntoNode) {
     $harnessProbeMods = @"
 
-  // Phase 8 — sibling monorepo packages (static imports in node-service-impl)
+  // Phase 8 -- sibling monorepo packages (static imports in node-service-impl)
   "@envoymesh/envoy-process", "@envoymesh/envoy-harness",
   "@envoymesh/envoy-harness-adapter", "@envoymesh/envoy-harness-client",
   "@envoymesh/envoy-harness-peer", "@envoymesh/agent-adapter", "smol-toml",
@@ -518,9 +518,9 @@ for (const m of mods) {
   try {
     await import(m);
   } catch (e) {
-    // Fail on ANY import error — sharp throws a plain Error (not
+    // Fail on ANY import error -- sharp throws a plain Error (not
     // ERR_MODULE_NOT_FOUND) when the platform binary is missing.
-    console.error("FAIL: " + m + " — " + (e && e.message ? e.message.split("\n")[0] : e));
+    console.error("FAIL: " + m + " -- " + (e && e.message ? e.message.split("\n")[0] : e));
     failed++;
   }
 }
@@ -535,7 +535,7 @@ Set-Content -Path $probePath -Value $probeScript -Encoding UTF8
 # IMPORTANT: the probe writes "All N imports resolved." to stderr by design
 # (Node's console.error). PowerShell's `2>&1` wraps stderr as ErrorRecord
 # objects, and under $ErrorActionPreference="Stop" these would trigger the
-# outer try/catch in build-desktop.ps1 as if the script had failed — even
+# outer try/catch in build-desktop.ps1 as if the script had failed -- even
 # though the probe succeeded. We explicitly unwrap each record to a string
 # via Write-Host, and read $LASTEXITCODE (not the pipeline) for the real
 # pass/fail signal.
@@ -557,7 +557,7 @@ try {
         Write-Host "    $text"
     }
     if ($probeExit -ne 0) {
-        Write-Host "  ✗ End-to-end import probe failed — see FAIL lines above" -ForegroundColor Red
+        Write-Host "  X End-to-end import probe failed -- see FAIL lines above" -ForegroundColor Red
         Write-Host "    The node process would crash with ERR_MODULE_NOT_FOUND." -ForegroundColor Red
         exit 1
     }
@@ -604,7 +604,7 @@ if (Test-Path $nodeConfigSrc) {
     Copy-Item -Force $nodeConfigSrc (Join-Path $Dest "node-config.json")
 }
 
-# Phase 46E Path C — seed fleet roster for first boot.
+# Phase 46E Path C -- seed fleet roster for first boot.
 $rosterRoot = Join-Path $Root "relay-roster.json"
 $rosterExample = Join-Path $Root "docs/examples/relay-roster.example.json"
 $rosterDest = Join-Path $Dest "relay-roster.json"
@@ -616,15 +616,15 @@ if (Test-Path $rosterRoot) {
     Copy-Item -Force $rosterExample $rosterDest
 }
 
-# Phase 50 — stage push notification credentials into the bundle.
+# Phase 50 -- stage push notification credentials into the bundle.
 # These are optional secret files the operator places at the repo root
 # before building. They get bundled into the exe so the home node can
 # push to EnvoyGo without manual post-install file copying.
 #
-# Files (all optional — push silently skips if missing):
-#   push-config.json              — credential config
-#   AuthKey_*.p8                  — APNs private key
-#   serviceAccountKey.json        — FCM service account (also accepts
+# Files (all optional -- push silently skips if missing):
+#   push-config.json              -- credential config
+#   AuthKey_*.p8                  -- APNs private key
+#   serviceAccountKey.json        -- FCM service account (also accepts
 #                                   firebase-service-account.json)
 $pushConfigSrc = Join-Path $Root "push-config.json"
 if (Test-Path $pushConfigSrc) {
@@ -652,7 +652,7 @@ if (Test-Path $fcmKeySrc) {
             }
         } catch { }
     }
-    Write-Host "  Staging bundled FCM service account JSON (firebase-service-account.json → $destSa)..."
+    Write-Host "  Staging bundled FCM service account JSON (firebase-service-account.json -> $destSa)..."
     Copy-Item -Force $fcmKeyLegacy (Join-Path $Dest $destSa)
 }
 # If push-config.json names different basenames, stage those too.
@@ -678,7 +678,7 @@ if (Test-Path $pushConfigSrc) {
             }
         }
     } catch {
-        Write-Host "  ⚠ Could not parse push-config.json for named credential paths: $($_.Exception.Message)"
+        Write-Host "  ! Could not parse push-config.json for named credential paths: $($_.Exception.Message)"
     }
 }
 
@@ -687,7 +687,7 @@ if (Test-Path $pushConfigSrc) {
 Write-Host "  Verifying wan-join-invite bootstrap filter in staged @envoymesh/api..."
 $filterJs = Join-Path $Dest "node_modules/@envoymesh/api/dist/wan-join-invite.js"
 if (-not (Test-Path $filterJs)) {
-    Write-Host "  CRITICAL: missing $filterJs — run npx tsc -b before packaging" -ForegroundColor Red
+    Write-Host "  CRITICAL: missing $filterJs -- run npx tsc -b before packaging" -ForegroundColor Red
     exit 1
 }
 if (-not (Select-String -Path $filterJs -Pattern "isBootstrapRelayMultiaddr" -Quiet)) {
@@ -731,7 +731,7 @@ if (!merged.seedAddrs.includes(circuit) || !merged.seedAddrs.includes(lan)) {
 if (isBootstrapRelayMultiaddr(circuit) || isBootstrapRelayMultiaddr(lan)) {
   throw new Error("circuit/LAN must not pass isBootstrapRelayMultiaddr");
 }
-console.log("  ✓ wan-join-invite bootstrap filter OK");
+console.log("  OK wan-join-invite bootstrap filter OK");
 '@ | Set-Content -Path $filterProbe -Encoding UTF8
 try {
     $nodeBin = if ($env:ENVOYMESH_NODE_EXE) { $env:ENVOYMESH_NODE_EXE } else { "node" }
@@ -778,6 +778,6 @@ if (Test-Path $mammothTest) {
     Remove-Item -Recurse -Force $mammothTest -ErrorAction SilentlyContinue
     $scrubbed++
 }
-Write-Host "  ✓ Scrubbed $scrubbed build/test path(s) from staged node_modules"
+Write-Host "  OK Scrubbed $scrubbed build/test path(s) from staged node_modules"
 
-Write-Host "  ✓ Node runtime staged at $Dest"
+Write-Host "  OK Node runtime staged at $Dest"

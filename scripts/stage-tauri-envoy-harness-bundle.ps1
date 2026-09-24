@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # Stage envoy-harness packages for Tauri desktop bundles.
 #
 # PowerShell twin of scripts/stage-tauri-envoy-harness-bundle.sh. Builds the
@@ -18,17 +18,17 @@
 #
 # Environment variables (read at invocation time):
 #   $env:STAGE_ENVOY_HARNESS = "0"   Skip envoy-harness staging entirely
-#                                   (debug only — bundle will not have
+#                                   (debug only -- bundle will not have
 #                                   envoy-harness at runtime).
 #   $env:STAGE_ENVOY_HARNESS = "1"   Force a clean rebuild + overwrite. Runs
-#                                   `pnpm -F <pkg> clean` (best-effort —
+#                                   `pnpm -F <pkg> clean` (best-effort --
 #                                   swallows "no clean script" errors)
 #                                   then `pnpm -F <pkg> build`. The clean
 #                                   step clears .tsbuildinfo + dist/.
 #                                   Use after switching sibling-repo
 #                                   branches or when you want to be sure
 #                                   the staged tree is from-scratch.
-#                                   Default (unset): incremental rebuild —
+#                                   Default (unset): incremental rebuild --
 #                                   pnpm's tsc skips unchanged sources.
 #   $env:ENVOY_HARNESS_DIR  = "..."  Override the sibling monorepo path.
 #                                   Default: $Root\..\envoy-harness.
@@ -38,7 +38,7 @@ param()
 
 $ErrorActionPreference = "Stop"
 
-# Prefer $PSScriptRoot — $MyInvocation.MyCommand.Path can be $null when the
+# Prefer $PSScriptRoot -- $MyInvocation.MyCommand.Path can be $null when the
 # script is invoked via `& path.ps1` under some hosts, which then throws
 # "You cannot call a method on a null-valued expression".
 if ($PSScriptRoot) {
@@ -67,8 +67,8 @@ function Write-Warn([string]$m) { Write-Host "  WARN $m" -ForegroundColor Yellow
 
 # ---- Skip gate ------------------------------------------------------------
 if ($StageMode -eq "0") {
-    Write-Host "[stage-tauri-envoy-harness-bundle] STAGE_ENVOY_HARNESS=0 — skipping envoy-harness resources staging."
-    Write-Info "NOTE: apps/node still statically imports @envoymesh/envoy-harness-adapter (+ client/peer)."
+    Write-Host "[stage-tauri-envoy-harness-bundle] STAGE_ENVOY_HARNESS=0 -- skipping envoy-harness resources staging."
+    Write-Info "NOTE: apps/node still statically imports @envoymesh/envoy-harness-adapter (and client/peer)."
     Write-Info "stage-bundle-node-runtime.ps1 will refuse STAGE_ENVOY_HARNESS=0 unless ENVOYMESH_ALLOW_BROKEN_HARNESS_SKIP=1 (non-runnable debug bundle)."
     exit 0
 }
@@ -89,7 +89,7 @@ $requiredPkgs = @(
 foreach ($pkg in $requiredPkgs) {
     $pkgPath = Join-Path $envHarnessDir "packages\$pkg"
     if (-not (Test-Path $pkgPath)) {
-        Write-Fail "$envHarnessDir\packages\$pkg missing — wrong repo at ENVOY_HARNESS_DIR?"
+        Write-Fail "$envHarnessDir\packages\$pkg missing -- wrong repo at ENVOY_HARNESS_DIR?"
     }
 }
 
@@ -107,7 +107,7 @@ if (-not $pnpmCmd) {
 $forceRebuild = $false
 if ($StageMode -eq "1") {
     $forceRebuild = $true
-    Write-Info "STAGE_ENVOY_HARNESS=1 — clean rebuild of envoy-harness packages."
+    Write-Info "STAGE_ENVOY_HARNESS=1 -- clean rebuild of envoy-harness packages."
 }
 
 function Build-Package([string]$PkgFilter, [string]$Label) {
@@ -125,7 +125,7 @@ function Build-Package([string]$PkgFilter, [string]$Label) {
 
 # Topological order: peer/client/adapter/tui all declare
 # "@envoymesh/envoy-harness": "file:../envoy-harness" as a *direct* dep, so they
-# resolve types from envoy-harness/dist/. envoy-harness MUST rebuild first —
+# resolve types from envoy-harness/dist/. envoy-harness MUST rebuild first --
 # otherwise a freshly-edited source (e.g. ContinuableSubagentHandle.output)
 # leaves peer/client reading a stale .d.ts and failing TS2353 on the new key.
 # The previous "peer before harness" ordering only succeeded when harness/dist
@@ -141,12 +141,12 @@ Build-Package "@envoymesh/envoy-harness-tui"       "Package TUI (terminal host)"
 # ehui is NOT staged into resources\ (browser/React package, bundled into
 # the Social UI's static assets). It IS built here because apps\social
 # depends on it via a file: link whose package.json points at
-# ./dist/index.js — so `npm run social:build` resolves the SIBLING repo's
+# ./dist/index.js -- so `npm run social:build` resolves the SIBLING repo's
 # dist. Without this build a changed ehui is bundled stale (or the Social
 # build fails outright after a clean).
 Build-Package "@envoymesh/envoy-harness-ehui"      "Package EHUI (React panels, Social UI build-time dep)"
 
-# ---- Stage dist/ → resources/ -------------------------------------------
+# ---- Stage dist/ -> resources/ -------------------------------------------
 function Stage-Dist([string]$SrcPkg, [string]$DestName) {
     $srcDist = Join-Path $envHarnessDir (Join-Path "packages\$SrcPkg" "dist")
     $destDir = Join-Path $DestBase $DestName
@@ -176,7 +176,7 @@ function Stage-Dist([string]$SrcPkg, [string]$DestName) {
                 }
             }
         }
-        # TUI entry is bin.js (not index.js) — keep main honest for the flatten.
+        # TUI entry is bin.js (not index.js) -- keep main honest for the flatten.
         if ($SrcPkg -eq "envoy-harness-tui") {
             $out.main = "./bin.js"
             $out.exports = [ordered]@{
@@ -248,5 +248,5 @@ if ($SmokeEnabled) {
 Write-Host "[stage-tauri-envoy-harness-bundle] Done."
 Write-Info "Tauri will pick up resources\envoy-harness{,-adapter,-client,-peer,-tui}\ via the globs in apps\tauri\src-tauri\tauri.conf.json."
 Write-Info "ACP stdio entry: resources\envoy-harness\cli\acp-stdio.js (12b)."
-Write-Info "TUI entry: resources\envoy-harness-tui\bin.js (Terminal → Envoy)."
-Write-Info "Runtime resolve goes through resources\node\node_modules\@envoymesh\ (wired by stage-bundle-node-runtime.ps1 — required for first launch)."
+Write-Info "TUI entry: resources\envoy-harness-tui\bin.js (Terminal -> Envoy)."
+Write-Info "Runtime resolve goes through resources\node\node_modules\@envoymesh\ (wired by stage-bundle-node-runtime.ps1 -- required for first launch)."

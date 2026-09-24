@@ -1,7 +1,7 @@
-# Always compile OpenClawExtension → resources\openclaw-envoymesh (seed),
+﻿# Always compile OpenClawExtension -> resources\openclaw-envoymesh (seed),
 # then install that seed into the staged OpenClaw tree.
 #
-# Runs on EVERY desktop build — even when OpenClaw is reused from cache —
+# Runs on EVERY desktop build -- even when OpenClaw is reused from cache --
 # so a stale/partial openclaw tree can never ship without
 # extensions\envoymesh\index.js.
 #
@@ -9,7 +9,7 @@
 param()
 
 $ErrorActionPreference = "Stop"
-# Prefer $PSScriptRoot — $MyInvocation.MyCommand.Path can be $null when the
+# Prefer $PSScriptRoot -- $MyInvocation.MyCommand.Path can be $null when the
 # script is invoked via `& path.ps1` under some hosts, which then throws
 # "You cannot call a method on a null-valued expression".
 if ($PSScriptRoot) {
@@ -32,7 +32,7 @@ if (-not (Test-Path (Join-Path $ExtSrc "index.ts"))) {
     exit 1
 }
 
-# ASCII arrows — Windows consoles often mojibake Unicode (→ / —).
+# ASCII arrows -- Windows consoles often mojibake Unicode (-> / --).
 Write-Host "[stage-openclaw-envoymesh] Compiling seed -> $Seed"
 if (Test-Path $Seed) { Remove-Item -Recurse -Force $Seed }
 New-Item -ItemType Directory -Force -Path $Seed | Out-Null
@@ -40,7 +40,7 @@ Copy-Item -Recurse -Force (Join-Path $ExtSrc "*") $Seed
 $seedNm = Join-Path $Seed "node_modules"
 if (Test-Path $seedNm) { Remove-Item -Recurse -Force $seedNm }
 # OpenClawExtension/tsconfig.json extends ../tsconfig.package-boundary.base.json
-# which does not exist under the seed path — esbuild would spam a warning per
+# which does not exist under the seed path -- esbuild would spam a warning per
 # file. Drop TS project files; we only need a plain transpile.
 Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Seed "tsconfig.json")
 Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Seed ".oxlintrc.json")
@@ -58,7 +58,7 @@ $esbuildLocalUnix = Join-Path $Root "packages\openclaw\node_modules\.bin\esbuild
 if (Test-Path $esbuildLocal) { $esbuildCmd = $esbuildLocal }
 elseif (Test-Path $esbuildLocalUnix) { $esbuildCmd = $esbuildLocalUnix }
 
-# One esbuild invocation for top-level + src (skip *.test.ts) — quieter/faster.
+# One esbuild invocation for top-level + src (skip *.test.ts) -- quieter/faster.
 # Relative entry paths preserve src/ layout under --outdir=.
 $esbuildArgs = @(
     "--bundle=false", "--format=esm", "--platform=node",
@@ -87,7 +87,7 @@ try {
 } finally { Pop-Location }
 
 if (-not (Test-Path (Join-Path $Seed "index.js"))) {
-    Write-Fail "seed index.js not produced — is esbuild available?"
+    Write-Fail "seed index.js not produced -- is esbuild available?"
     exit 1
 }
 
@@ -96,7 +96,7 @@ Get-ChildItem -Path $Seed -Filter "*.ts" -Recurse -File -ErrorAction SilentlyCon
 
 $pkgJson = Join-Path $Seed "package.json"
 if (Test-Path $pkgJson) {
-    # UTF-8 without BOM — PS 5.1 -Encoding UTF8 breaks OpenClaw JSON.parse.
+    # UTF-8 without BOM -- PS 5.1 -Encoding UTF8 breaks OpenClaw JSON.parse.
     $content = Get-Content -Path $pkgJson -Raw -Encoding UTF8
     $content = $content -replace '"\.\/index\.ts"', '"./index.js"'
     $content = $content -replace '"\.\/setup-entry\.ts"', '"./setup-entry.js"'
@@ -108,7 +108,7 @@ $jsCount = @(Get-ChildItem -Path $Seed -Filter "*.js" -Recurse -File).Count
 Write-Ok "seed ready ($jsCount .js files)"
 
 if (-not (Test-Path (Join-Path $Oc "openclaw.mjs"))) {
-    Write-Info "staged OpenClaw missing at $Oc — seed only (run OpenClaw staging first for full install)"
+    Write-Info "staged OpenClaw missing at $Oc -- seed only (run OpenClaw staging first for full install)"
     exit 0
 }
 

@@ -1,4 +1,4 @@
-# Fetch the upstream Pi coding-agent package (Windows twin of fetch-pi-sidecar.sh).
+﻿# Fetch the upstream Pi coding-agent package (Windows twin of fetch-pi-sidecar.sh).
 # Called during Tauri build to bundle Pi inside the app on Windows.
 #
 # Unlike OpenClaw (prebuilt per-OS binaries), Pi is a Node.js package
@@ -7,7 +7,7 @@
 # staging dir via npm.
 #
 # Usage: .\scripts\fetch-pi-sidecar.ps1 [-Version <ver>]
-#   -Version: Pi version to fetch (default: 0.82.1 — pinned, see §4 of
+#   -Version: Pi version to fetch (default: 0.82.1 -- pinned, see S4 of
 #             docs/pi-integration-design.md; bump deliberately, never "latest")
 #
 # Output: a self-contained Pi install at $OutputDir containing:
@@ -35,7 +35,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Pin by default — supply-chain hygiene, see design doc §4. Pass -Version
+# Pin by default -- supply-chain hygiene, see design doc S4. Pass -Version
 # to test a newer Pi (never use "latest" in CI).
 #
 # Override precedence (highest first):
@@ -63,7 +63,7 @@ Write-Host "Fetching Pi coding-agent $Version..."
 # entry point exists. -Force overrides.
 if (-not $Force -and (Test-Path $StagedVersionFile) -and (Get-Content $StagedVersionFile -Raw).Trim() -eq $Version) {
     if (Test-Path $PiCli) {
-        Write-Host "  ✓ Pi $Version already staged at $($OutputDir.Replace($RepoRoot + '\', ''))"
+        Write-Host "  OK Pi $Version already staged at $($OutputDir.Replace($RepoRoot + '\', ''))"
         exit 0
     }
 }
@@ -118,7 +118,7 @@ if (-not (Test-Path $PiCli)) { $missing += "dist/cli.js" }
 if (-not (Test-Path $PiSdk)) { $missing += "dist/index.js" }
 if (-not (Test-Path $PiPkg)) { $missing += "package.json" }
 if ($missing.Count -gt 0) {
-    Write-Error "Pi package incomplete after npm install — missing: $($missing -join ', ')"
+    Write-Error "Pi package incomplete after npm install -- missing: $($missing -join ', ')"
     exit 1
 }
 
@@ -132,7 +132,7 @@ $envoymeshScope = Join-Path $OutputDir "node_modules\@earendil-works"
 $piDeps = if (Test-Path $envoymeshScope) {
     (Get-ChildItem $envoymeshScope -Directory | Select-Object -ExpandProperty Name) -join " "
 } else { "(none)" }
-Write-Host ("  ✓ Pi $Version staged at $($OutputDir.Replace($RepoRoot + '\', '')) ({0:N1} MB)" -f $stagedSize)
+Write-Host ("  OK Pi $Version staged at $($OutputDir.Replace($RepoRoot + '\', '')) ({0:N1} MB)" -f $stagedSize)
 Write-Host "    @earendil-works packages: $piDeps"
 Write-Host "    CLI entry: node_modules\@earendil-works\pi-coding-agent\dist\cli.js"
 Write-Host "    SDK entry: node_modules\@earendil-works\pi-coding-agent\dist\index.js"

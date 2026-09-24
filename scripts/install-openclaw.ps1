@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # =============================================================================
 # EnvoyMesh OpenClaw bootstrap (Windows / PowerShell)
 #
@@ -45,10 +45,10 @@ Write-Host ""
 if ((Test-Path "$SourceDir/openclaw.mjs") -or (Test-Path "$SourceDir/package.json")) {
     Write-Host "[1/2] Bundled OpenClaw found at $SourceDir"
     Write-RuntimeWrapper
-    # Do NOT write a stub dist/entry.js here — EnvoyAI requires a real
+    # Do NOT write a stub dist/entry.js here -- EnvoyAI requires a real
     # compiled dist (dist/config/config.js). setup.ps1 step 4 builds it.
     if (-not (Test-Path "$SourceDir/dist/config/config.js")) {
-        Write-Host "  dist/ not built yet — setup.ps1 will pnpm install + build" -ForegroundColor Yellow
+        Write-Host "  dist/ not built yet -- setup.ps1 will pnpm install + build" -ForegroundColor Yellow
     }
     Write-Host "  Runtime wrapper: $BinDir/openclaw" -ForegroundColor Green
     Write-Host "  setup.ps1 will pnpm install + build the gateway" -ForegroundColor Green
@@ -60,9 +60,9 @@ if ((Test-Path "$SourceDir/openclaw.mjs") -or (Test-Path "$SourceDir/package.jso
         if ($LASTEXITCODE -ne 0) { $clawhubOk = $false }
     } catch { $clawhubOk = $false }
     if ($clawhubOk) {
-        Write-Host "  ClawHub installed — run: clawhub login" -ForegroundColor Green
+        Write-Host "  ClawHub installed -- run: clawhub login" -ForegroundColor Green
     } else {
-        Write-Host "  ClawHub optional — install later: npm i -g clawhub" -ForegroundColor Yellow
+        Write-Host "  ClawHub optional -- install later: npm i -g clawhub" -ForegroundColor Yellow
     }
     Write-Host ""
     Write-Host "OpenClaw bootstrap complete. Continue with: .\scripts\setup.ps1" -ForegroundColor Green
@@ -95,7 +95,7 @@ Write-Host "[1/4] Checking OpenClaw on PATH..."
 $openclawOnPath = Get-Command "openclaw" -ErrorAction SilentlyContinue
 if ($openclawOnPath) {
     Write-Host "  openclaw on PATH at $($openclawOnPath.Source)" -ForegroundColor Green
-    Write-Host "  Note: EnvoyMesh spawns gateway from packages/openclaw — clone it for full integration."
+    Write-Host "  Note: EnvoyMesh spawns gateway from packages/openclaw -- clone it for full integration."
 }
 
 # ---- Clone source if missing ----

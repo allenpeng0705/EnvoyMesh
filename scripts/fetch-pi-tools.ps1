@@ -1,9 +1,9 @@
-# Fetch pinned fd + ripgrep into resources\pi\bin\ (Windows twin of fetch-pi-tools.sh).
-# See that script for why — Pi hangs in GUI apps without these on PATH.
+﻿# Fetch pinned fd + ripgrep into resources\pi\bin\ (Windows twin of fetch-pi-tools.sh).
+# See that script for why -- Pi hangs in GUI apps without these on PATH.
 param()
 
 $ErrorActionPreference = "Stop"
-if (-not $PSScriptRoot) { throw "PSScriptRoot empty — run as .\scripts\fetch-pi-tools.ps1" }
+if (-not $PSScriptRoot) { throw "PSScriptRoot empty -- run as .\scripts\fetch-pi-tools.ps1" }
 $Root = Split-Path -Parent $PSScriptRoot
 $Dest = Join-Path $Root "apps\tauri\src-tauri\resources\pi\bin"
 
@@ -12,7 +12,7 @@ $RgVersion = if ($env:ENVOYMESH_RG_VERSION) { $env:ENVOYMESH_RG_VERSION } else {
 
 # Desktop Windows installers in this repo are always x86_64-pc-windows-msvc
 # (tauri build --target x86_64-pc-windows-msvc). Do NOT follow the build
-# host CPU — ARM64 Windows would otherwise stage aarch64 fd/rg that the
+# host CPU -- ARM64 Windows would otherwise stage aarch64 fd/rg that the
 # x64 Node/Pi child cannot run. Override with ENVOYMESH_PI_TOOLS_TARGET.
 $target = if ($env:ENVOYMESH_PI_TOOLS_TARGET) {
     $env:ENVOYMESH_PI_TOOLS_TARGET
@@ -27,7 +27,7 @@ $want = "fd=$FdVersion;rg=$RgVersion;target=$target"
 if ((Test-Path (Join-Path $Dest $fdExe)) -and (Test-Path (Join-Path $Dest $rgExe)) -and (Test-Path $marker)) {
     $have = (Get-Content $marker -Raw).Trim()
     if ($have -eq $want) {
-        Write-Host "  ✓ Pi tools already staged ($want)"
+        Write-Host "  OK Pi tools already staged ($want)"
         exit 0
     }
 }
@@ -63,15 +63,15 @@ try {
             try { & $cacheFd --version 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $fdOk = $true } } catch { }
             try { & $cacheRg --version 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $rgOk = $true } } catch { }
             if ($fdOk -and $rgOk) {
-                Write-Host "  ⚠ GitHub download failed — copying fd/rg from $cache"
+                Write-Host "  ! GitHub download failed -- copying fd/rg from $cache"
                 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
                 Copy-Item -Force $cacheFd (Join-Path $Dest $fdExe)
                 Copy-Item -Force $cacheRg (Join-Path $Dest $rgExe)
                 Set-Content -Path $marker -Value "$want;source=user-cache" -Encoding UTF8 -NoNewline
-                Write-Host "  ✓ Pi tools staged from user cache at $Dest"
+                Write-Host "  OK Pi tools staged from user cache at $Dest"
                 exit 0
             }
-            Write-Host "  ⚠ cache tools present but not runnable on this host — skipping cache fallback"
+            Write-Host "  ! cache tools present but not runnable on this host -- skipping cache fallback"
         }
         throw "Failed to download fd/rg from GitHub and no usable $cache cache. Install with: winget install sharkdp.fd BurntSushi.ripgrep.MSVC"
     }
@@ -91,7 +91,7 @@ try {
     Copy-Item -Force $fdFound.FullName (Join-Path $Dest $fdExe)
     Copy-Item -Force $rgFound.FullName (Join-Path $Dest $rgExe)
     Set-Content -Path $marker -Value $want -Encoding UTF8 -NoNewline
-    Write-Host "  ✓ Pi tools staged at $Dest ($fdExe, $rgExe)"
+    Write-Host "  OK Pi tools staged at $Dest ($fdExe, $rgExe)"
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
