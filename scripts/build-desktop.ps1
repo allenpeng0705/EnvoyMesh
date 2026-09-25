@@ -309,6 +309,39 @@ function Copy-TreeWindowsSafe {
     return $true
 }
 
+# True when packages/openclaw/dist looks like a real gateway build (not our
+# bootstrap stub). Newer OpenClaw refuses to rebuild while nested under
+# EnvoyMesh's root node_modules ("Declaration input escapes checkout").
+function Test-OpenClawDistUsable {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $entry = Join-Path $Root "dist\entry.js"
+    $cfg = Join-Path $Root "dist\config\config.js"
+    if (-not (Test-Path -LiteralPath $entry)) { return $false }
+    if (-not (Test-Path -LiteralPath $cfg)) { return $false }
+    try {
+        $text = Get-Content -LiteralPath $entry -Raw -ErrorAction Stop
+    } catch { return $false }
+    if ($text -match "EnvoyMesh bootstrap|from\s+[`"'].*src/cli/run-main") {
+        return $false
+    }
+    return $true
+}
+
+function Write-OpenClawNestedBuildHelp {
+    $sibling = Join-Path (Split-Path -Parent $RepoRoot) "openclaw"
+    Write-Info "  Newer OpenClaw builds refuse packages\openclaw while EnvoyMesh has a root node_modules"
+    Write-Info "  (error: Declaration input escapes checkout / nested inside another install)."
+    Write-Info "  Build OpenClaw in a SIBLING checkout, then copy dist back:"
+    Write-Info "    git clone --depth 1 https://github.com/openclaw/openclaw.git $sibling"
+    Write-Info "    cd $sibling"
+    Write-Info "    pnpm install"
+    Write-Info "    pnpm run build"
+    Write-Info "    robocopy $sibling\dist $RepoRoot\packages\openclaw\dist /MIR"
+    Write-Info "    if (Test-Path $sibling\dist-runtime) { robocopy $sibling\dist-runtime $RepoRoot\packages\openclaw\dist-runtime /E }"
+    Write-Info "  Or copy packages\openclaw\dist (+ dist-runtime) from a PC that already built OK."
+    Write-Info "  Then: .\scripts\build-desktop.ps1 -ForceOpenClaw"
+}
+
 # Built-in allowlist: envoy channel + agent utils + web search providers.
 # Excludes OpenClaw Diff UI and all third-party chat/IM channels (Social is chat).
 $script:OpenClawDefaultAllowlist = @(
@@ -991,7 +1024,7 @@ if (-not $SkipOpenClawPrune -and `
             if ($openclawKeep -contains $dep) { continue }
             $topLevel = Join-Path $nmSrc $dep
             if (Test-Path $topLevel) {
-                Remove-Item -Recurse -Force $topLevel -ErrorAction SilentlyContinue
+                Remove-TreeWindowsSafe $topLevel | Out-Null
                 $removed++
             }
             # pnpm 11.x flattens deps into .pnpm/<name>@<ver>/node_modules/<name>/;
@@ -999,7 +1032,7 @@ if (-not $SkipOpenClawPrune -and `
             # the whole <name>@* dir to drop the dep + its transitive copies.
             if (Test-Path $pnpmVirtSrc) {
                 Get-ChildItem -Path $pnpmVirtSrc -Directory -Filter ("$dep@*") -ErrorAction SilentlyContinue | ForEach-Object {
-                    Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue
+                    Remove-TreeWindowsSafe $_.FullName | Out-Null
                     $removed++
                 }
             }
@@ -1009,11 +1042,21 @@ if (-not $SkipOpenClawPrune -and `
     } else {
         Write-Info "  No devDependencies declared -- nothing to prune"
     }
-    # Re-copy the freshly-pruned node_modules to staged.
+    # Re-copy the freshly-pruned node_modules to staged (long-path aware).
     $nmSrc = Join-Path $openclawSrc "node_modules"
     $nmDst = Join-Path $openclawDest "node_modules"
-    if (Test-Path $nmDst) { Remove-Item -Recurse -Force $nmDst }
-    Copy-Item -Recurse -Force $nmSrc $nmDst
+    if (Test-Path $nmDst) {
+        if (-not (Remove-TreeWindowsSafe $nmDst)) {
+            Write-Fail "Could not clear staged OpenClaw node_modules (Windows long path). Try: cmd /c rmdir /s /q `"$nmDst`""
+            exit 1
+        }
+    }
+    try {
+        Copy-TreeWindowsSafe -Src $nmSrc -Dst $nmDst | Out-Null
+    } catch {
+        Write-Fail "Failed re-copying pruned node_modules: $($_.Exception.Message)"
+        exit 1
+    }
     Write-Ok "Re-copied pruned node_modules to staged tree"
 }
 $openclawStaged = (Test-Path (Join-Path $openclawDest "openclaw.mjs")) -and `
@@ -1105,7 +1148,7 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
                     $restored++
                 }
             }
-            Remove-Item -Recurse -Force $ignoredDir -ErrorAction SilentlyContinue
+            Remove-TreeWindowsSafe $ignoredDir | Out-Null
             if ($restored -gt 0) {
                 Write-Info "Restored $restored package(s) from node_modules\.ignored/ (prune artefact)"
             }
@@ -1184,7 +1227,7 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
                     Get-ChildItem -Path $extDir -Directory | Where-Object {
                         -not ($openclawExtAllowlist -contains $_.Name)
                     } | ForEach-Object {
-                        Remove-Item -Recurse -Force $_.FullName
+                        Remove-TreeWindowsSafe $_.FullName | Out-Null
                         $removedCount++
                     }
                     if ($removedCount -gt 0) {
@@ -1448,39 +1491,56 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
         # build, so devDeps are only removed from the staged tree.
 
         Write-Info "pnpm run build (this can take 1-2 minutes)..."
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        & pnpm run build
-        $buildExit = $LASTEXITCODE
-        $sw.Stop()
-        Write-Info "pnpm run build finished in $([int]$sw.Elapsed.TotalSeconds)s (exit $buildExit)"
+        # Newer OpenClaw (openclaw-native-declarations) walks module resolution
+        # upward and ABORTS when EnvoyMesh's root node_modules is an ancestor
+        # ("Declaration input escapes checkout"). Building inside
+        # packages\openclaw cannot work on a normal EnvoyMesh checkout.
+        $ancestorNm = Join-Path $RepoRoot "node_modules"
+        $skipOpenClawBuild = $false
+        if (Test-Path -LiteralPath $ancestorNm) {
+            if (Test-OpenClawDistUsable $openclawSrc) {
+                Write-Warn "EnvoyMesh root node_modules present -- skipping OpenClaw rebuild; reusing existing dist\"
+                Write-Info "  (OpenClaw cannot rebuild while nested; see docs if you need a fresh dist.)"
+                $skipOpenClawBuild = $true
+                $buildExit = 0
+            } else {
+                Write-Fail "OpenClaw has no usable dist\ and cannot be built under EnvoyMesh\node_modules"
+                Write-OpenClawNestedBuildHelp
+                Pop-Location
+                exit 1
+            }
+        }
+        if (-not $skipOpenClawBuild) {
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            & pnpm run build
+            $buildExit = $LASTEXITCODE
+            $sw.Stop()
+            Write-Info "pnpm run build finished in $([int]$sw.Elapsed.TotalSeconds)s (exit $buildExit)"
+        } else {
+            Write-Info "pnpm run build skipped (reusing dist)"
+        }
 
         if ($buildExit -ne 0) {
-            # Match the bash twin's fallback: if the full build fails,
-            # write a stub dist/entry.js. Prefer the already-compiled JS
-            # over the .ts source so the stub works even when src/ is
-            # excluded from the Tauri resource copy.
-            Write-Warn "OpenClaw build returned non-zero (exit $buildExit) -- writing dist\entry.js bootstrap fallback"
-            if (-not (Test-Path "dist")) {
-                New-Item -ItemType Directory -Force -Path "dist" | Out-Null
-            }
-            if (Test-Path "dist\cli\run-main.js") {
-                $entryStub = @"
-// EnvoyMesh bootstrap -- fallback entry when full build failed.
-// Uses the pre-compiled JS chunk so src/ exclusion is safe.
-import { runCli } from "./cli/run-main.js";
-"@
+            # Do NOT write a stub entry.js when the failure is the nested
+            # node_modules guard -- a stub gateway will not start and only
+            # hides the real fix. Prefer a real pre-built dist, or fail.
+            if (Test-OpenClawDistUsable $openclawSrc) {
+                Write-Warn "OpenClaw build returned non-zero (exit $buildExit) -- keeping existing usable dist\"
             } else {
-                $entryStub = @"
-// EnvoyMesh bootstrap -- re-exports the gateway from TS source (runtime
-// uses tsx to execute this directly when the full build is unavailable).
-// WARNING: requires src/ to be present -- will fail if src/ is excluded.
-export * from "../src/cli/run-main.ts";
-"@
+                Write-Fail "OpenClaw build failed (exit $buildExit) and packages\openclaw\dist is not usable"
+                Write-OpenClawNestedBuildHelp
+                Pop-Location
+                exit 1
             }
-            Set-Content -Path "dist/entry.js" -Value $entryStub -Encoding UTF8
         }
         if (-not (Test-Path "dist/entry.js")) {
             Write-Fail "OpenClaw build did not produce dist\entry.js -- gateway will not start"
+            Pop-Location
+            exit 1
+        }
+        if (-not (Test-Path "dist/config/config.js")) {
+            Write-Fail "OpenClaw dist\config\config.js missing -- gateway will not start (stub/incomplete dist)"
+            Write-OpenClawNestedBuildHelp
             Pop-Location
             exit 1
         }
@@ -1643,7 +1703,7 @@ export * from "../src/cli/run-main.ts";
                 $restored++
             }
         }
-        Remove-Item -Recurse -Force $ignoredDir -ErrorAction SilentlyContinue
+        Remove-TreeWindowsSafe $ignoredDir | Out-Null
         if ($restored -gt 0) {
             Write-Info "Restored $restored package(s) from node_modules\.ignored/"
         }
@@ -1868,7 +1928,7 @@ foreach ($pkg in $script:OpenClawDevOnlyPackages) {
             $sz = (Get-ChildItem -Path $pkgPath -Recurse -File -ErrorAction SilentlyContinue |
                    Measure-Object -Property Length -Sum).Sum
             $scrubbedBytes += [int]$sz
-            Remove-Item -Recurse -Force $pkgPath -ErrorAction SilentlyContinue
+            Remove-TreeWindowsSafe $pkgPath | Out-Null
             $scrubbedCount++
         } catch { }
     }
@@ -1941,7 +2001,7 @@ foreach ($entry in $script:OpenClawOrphanedNativesWithDeps) {
                 $sz = (Get-ChildItem -Path $pkgPath -Recurse -File -ErrorAction SilentlyContinue |
                        Measure-Object -Property Length -Sum).Sum
                 $orphanBytes += [int]$sz
-                Remove-Item -Recurse -Force $pkgPath -ErrorAction SilentlyContinue
+                Remove-TreeWindowsSafe $pkgPath | Out-Null
                 $orphanCount++
             } catch { }
         } else {
