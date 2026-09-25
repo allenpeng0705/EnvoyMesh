@@ -227,6 +227,33 @@ function Write-Fail {
     Write-Host "  X $Message" -ForegroundColor Red
 }
 
+# Windows MAX_PATH-safe recursive delete. OpenClaw/Pi nest packages with
+# path components that blow past ~260 chars; Remove-Item then throws
+# "Could not find a part of the path" mid-tree and leaves a half-deleted
+# node_modules. Prefer \\?\ + .NET Directory.Delete; fall back to the
+# robocopy /MIR empty-dir trick.
+function Remove-TreeWindowsSafe {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $true }
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $long = if ($resolved.StartsWith("\\?\")) { $resolved }
+            elseif ($resolved.StartsWith("\\")) { "\\?\UNC\" + $resolved.Substring(2) }
+            else { "\\?\" + $resolved }
+    try {
+        [System.IO.Directory]::Delete($long, $true)
+        return -not (Test-Path -LiteralPath $Path)
+    } catch { }
+    $empty = Join-Path $env:TEMP ("envoymesh-empty-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $empty | Out-Null
+    try {
+        & cmd.exe /c "robocopy `"$empty`" `"$resolved`" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /nc /ns /np >NUL"
+        & cmd.exe /c "rmdir /s /q `"$resolved`""
+    } finally {
+        Remove-Item -LiteralPath $empty -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    return -not (Test-Path -LiteralPath $Path)
+}
+
 # Built-in allowlist: envoy channel + agent utils + web search providers.
 # Excludes OpenClaw Diff UI and all third-party chat/IM channels (Social is chat).
 $script:OpenClawDefaultAllowlist = @(
@@ -1262,6 +1289,25 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
             }
         }
 
+        # Fail fast on Node / package-manager gates before the multi-GB
+        # download. OpenClaw's preinstall script is the source of truth
+        # (currently requires Node >=24.16.0 <25 || >=26.1.0 on newer
+        # checkouts; older checkouts only warn about non-pnpm).
+        $preinstallGate = Join-Path $openclawSrc "scripts\preinstall-package-manager-warning.mjs"
+        if (Test-Path $preinstallGate) {
+            $hostNode = (node -p "process.versions.node" 2>$null)
+            Write-Info "OpenClaw preinstall gate (host Node $hostNode)..."
+            & node $preinstallGate
+            if ($LASTEXITCODE -ne 0) {
+                Write-Fail "OpenClaw preinstall check failed under Node $hostNode"
+                Write-Info "  Upgrade Node to satisfy packages\openclaw (see the error above),"
+                Write-Info "  then re-run: .\scripts\build-desktop.ps1 -ForceNodeSidecar"
+                Write-Info "  (-ForceNodeSidecar redownloads the Node sidecar to match the new host)."
+                Pop-Location
+                exit 1
+            }
+        }
+
         # Run pnpm via the synchronous call operator (`&`). This is the
         # pattern that worked for the user when they ran pnpm install
         # directly. It streams live output to the console, captures
@@ -1309,7 +1355,13 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
 
         if ($pnpmExit -ne 0) {
             Write-Info "Retrying with clean node_modules..."
-            if (Test-Path "node_modules") { Remove-Item -Recurse -Force "node_modules" }
+            if (Test-Path "node_modules") {
+                if (-not (Remove-TreeWindowsSafe "node_modules")) {
+                    Write-Fail "Could not delete packages\openclaw\node_modules (Windows long-path). Close other apps locking it, then: cmd /c rmdir /s /q packages\openclaw\node_modules"
+                    Pop-Location
+                    exit 1
+                }
+            }
             $sw = [System.Diagnostics.Stopwatch]::StartNew()
             try {
                 Start-Transcript -Path $pnpmLog -Force | Out-Null
@@ -1324,6 +1376,7 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
             if ($pnpmExit -ne 0) {
                 Write-Fail "pnpm install failed after retry (exit $pnpmExit)"
                 Write-Info "  Common fixes:"
+                Write-Info "    - Upgrade Node if preinstall complained (need >=24.16 <25 or >=26.1)"
                 Write-Info "    - Set the China mirror: pnpm config set registry https://registry.npmmirror.com"
                 Write-Info "    - Check connectivity: Test-NetConnection registry.npmjs.org -Port 443"
                 Write-Info "    - Exclude packages\openclaw from Windows Defender realtime scan"
