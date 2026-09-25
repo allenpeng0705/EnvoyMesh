@@ -9,6 +9,74 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Src = Join-Path $Root "apps/node/dist"
 
+# Windows MAX_PATH helpers (OpenClaw / AWS SDK nests blow past ~260 chars).
+function ConvertTo-Win32LongPath([string]$Path) {
+    if ([string]::IsNullOrEmpty($Path)) { return $Path }
+    if ($Path.StartsWith("\\?\")) { return $Path }
+    if ($Path.StartsWith("\\")) { return "\\?\UNC\" + $Path.Substring(2) }
+    return "\\?\" + $Path
+}
+function Remove-TreeWindowsSafe([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $true }
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $long = ConvertTo-Win32LongPath $resolved
+    try {
+        [System.IO.Directory]::Delete($long, $true)
+        return -not (Test-Path -LiteralPath $Path)
+    } catch { }
+    $empty = Join-Path $env:TEMP ("envoymesh-empty-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $empty | Out-Null
+    try {
+        & cmd.exe /c "robocopy `"$empty`" `"$resolved`" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /nc /ns /np >NUL"
+        & cmd.exe /c "rmdir /s /q `"$resolved`""
+    } finally {
+        Remove-Item -LiteralPath $empty -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    return -not (Test-Path -LiteralPath $Path)
+}
+function Copy-TreeWindowsSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$Src,
+        [Parameter(Mandatory = $true)][string]$Dst,
+        [string[]]$ExcludeDirs = @("node_modules"),
+        [string[]]$ExcludeFiles = @("*.d.ts", "*.d.mts", "*.d.cts", "*.map", "*.tsbuildinfo")
+    )
+    if (-not (Test-Path -LiteralPath $Src)) {
+        throw "Copy-TreeWindowsSafe: source missing: $Src"
+    }
+    $srcAbs = (Resolve-Path -LiteralPath $Src).Path
+    $dstAbs = [System.IO.Path]::GetFullPath($Dst)
+    if (-not (Test-Path -LiteralPath $dstAbs)) {
+        New-Item -ItemType Directory -Force -Path $dstAbs | Out-Null
+    }
+    $argList = New-Object System.Collections.Generic.List[string]
+    [void]$argList.Add($srcAbs)
+    [void]$argList.Add($dstAbs)
+    [void]$argList.Add("/E")
+    [void]$argList.Add("/R:1")
+    [void]$argList.Add("/W:1")
+    [void]$argList.Add("/NFL")
+    [void]$argList.Add("/NDL")
+    [void]$argList.Add("/NJH")
+    [void]$argList.Add("/NJS")
+    [void]$argList.Add("/NP")
+    [void]$argList.Add("/XJD")
+    [void]$argList.Add("/XJF")
+    if ($ExcludeDirs.Count -gt 0) {
+        [void]$argList.Add("/XD")
+        foreach ($d in $ExcludeDirs) { [void]$argList.Add($d) }
+    }
+    if ($ExcludeFiles.Count -gt 0) {
+        [void]$argList.Add("/XF")
+        foreach ($f in $ExcludeFiles) { [void]$argList.Add($f) }
+    }
+    & robocopy.exe @($argList.ToArray()) | Out-Null
+    if ($LASTEXITCODE -ge 8) {
+        throw "robocopy failed (exit $LASTEXITCODE) copying $Src -> $Dst"
+    }
+    return $true
+}
+
 # Project version comes from the VERSION file at repo root (same source of
 # truth as scripts/sync-version.mjs). Reading it here keeps the bundled
 # node's synthetic package.json in sync without manual edits on every bump.
@@ -26,7 +94,9 @@ if (-not (Test-Path (Join-Path $Src "src/index.js"))) {
 }
 
 if (Test-Path $Dest) {
-    Remove-Item -Recurse -Force $Dest
+    if (-not (Remove-TreeWindowsSafe $Dest)) {
+        Write-Error "Could not clear previous staged node runtime at $Dest (Windows long path). Try: cmd /c rmdir /s /q `"$Dest`""
+    }
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $Dest "node_modules") | Out-Null
 
@@ -178,8 +248,14 @@ Write-Host "  Staging production npm dependencies..."
 # native Claude binary only used by the in-process claudecode ext-agent
 # backend. The backend lazy-loads it and degrades gracefully when missing.
 # Set INCLUDE_CLAUDE_SDK=1 to bundle it again.
+#
+# OpenClaw (@openclaw/*) is staged under resources/openclaw/ with its own
+# node_modules -- never copy those trees into resources/node (Windows
+# MAX_PATH blow-ups from nested @openclaw/.../libphonenumber-js paths).
 $includeClaudeSdk = if ($env:INCLUDE_CLAUDE_SDK -eq "1") { $true } else { $false }
 function Test-BundleExcludedPackage([string]$name) {
+    if ($name -eq "openclaw") { return $true }
+    if ($name -like "@openclaw/*") { return $true }
     if ($includeClaudeSdk) { return $false }
     if ($name -eq "@anthropic-ai/claude-agent-sdk") { return $true }
     if ($name -like "@anthropic-ai/claude-agent-sdk-*") { return $true }
@@ -244,7 +320,13 @@ foreach ($modPath in $npmLines) {
         Write-Host "  Skipping broken/non-dir dep path for ${pkgName}: $copySrc"
         continue
     }
-    Copy-Item -Recurse -Force $copySrc $destMod
+    try {
+        # Exclude nested node_modules -- fixpoint loop hoists deps to top-level.
+        Copy-TreeWindowsSafe -Src $copySrc -Dst $destMod | Out-Null
+    } catch {
+        Write-Host "  WARN: failed copying ${pkgName}: $($_.Exception.Message)"
+        continue
+    }
 }
 
 # Safety net: scan every staged @envoymesh/* package's declared dependencies
@@ -269,12 +351,13 @@ foreach ($modPath in $npmLines) {
 #
 # Seed sources (scanned on pass 1 to bootstrap the loop):
 #   - apps/node/package.json            (direct runtime deps)
-#   - packages/openclaw/package.json    (deps imported via openclaw-runtime)
+# OpenClaw deps are NOT seeded here -- OpenClaw is staged under
+# resources/openclaw/ with its own node_modules. Seeding packages/openclaw
+# pulled @openclaw/* trees that exceed Windows MAX_PATH.
 # And on every pass, every staged @envoymesh/* + non-workspace package.json.
 $depSearchRoots = @(
     (Join-Path $Root "node_modules"),
-    (Join-Path $Root "apps/node/node_modules"),
-    (Join-Path $Root "packages/openclaw/node_modules")
+    (Join-Path $Root "apps/node/node_modules")
 )
 # Phase 8: envoy-harness unique deps (smol-toml) live in the sibling monorepo.
 if ($stageEnvoyHarnessIntoNode) {
@@ -296,8 +379,6 @@ $stagedNodeModules = Join-Path $Dest "node_modules"
 $seedPkgs = @()
 $appsNodePkg = Join-Path $Root "apps/node/package.json"
 if (Test-Path $appsNodePkg) { $seedPkgs += $appsNodePkg }
-$openclawPkg = Join-Path $Root "packages/openclaw/package.json"
-if (Test-Path $openclawPkg) { $seedPkgs += $openclawPkg }
 
 $safetyNetCopied = 0
 $maxIterations = 15  # fixpoint convergence guard; nested deps add depth
@@ -362,8 +443,12 @@ for ($iter = 1; $iter -le $maxIterations; $iter++) {
                 Write-Host "  Skipping broken/non-dir safety-net path for ${depName}: $copySrc"
                 continue
             }
-            Copy-Item -Recurse -Force $copySrc $destDep
-            $copiedThisIter++
+            try {
+                Copy-TreeWindowsSafe -Src $copySrc -Dst $destDep | Out-Null
+                $copiedThisIter++
+            } catch {
+                Write-Host "  WARN: safety-net copy failed for ${depName}: $($_.Exception.Message)"
+            }
         }
     }
     $safetyNetCopied += $copiedThisIter
