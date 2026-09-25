@@ -1568,14 +1568,52 @@ export * from "../src/cli/run-main.ts";
     # Install clawhub CLI into the staged tree so the "Installed" skills tab
     # works in the Windows installer.  clawhub is a separate npm package
     # (not part of openclaw's deps) -- without it, `clawhub list` fails.
-    $clawhubBin = Join-Path $openclawDest "node_modules\.bin\clawhub"
-    if (-not (Test-Path $clawhubBin)) {
+    #
+    # Do NOT run `npm install` inside the staged OpenClaw tree: that tree was
+    # built with pnpm and its package.json uses protocols npm rejects
+    # (EUNSUPPORTEDPROTOCOL). Install clawhub in an empty temp package, then
+    # copy the package + .bin shims in. Failure is non-fatal.
+    $clawhubBinCmd = Join-Path $openclawDest "node_modules\.bin\clawhub.cmd"
+    $clawhubBinUnix = Join-Path $openclawDest "node_modules\.bin\clawhub"
+    $clawhubPkg = Join-Path $openclawDest "node_modules\clawhub\package.json"
+    if (-not (Test-Path $clawhubPkg)) {
         Write-Info "Installing clawhub CLI into staged node_modules..."
-        Push-Location $openclawDest
+        $clawTmp = Join-Path $env:TEMP ("envoymesh-clawhub-" + [guid]::NewGuid().ToString("N"))
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
         try {
-            & npm install --no-save clawhub 2>&1 | Select-Object -Last 3
-        } finally { Pop-Location }
-        if (Test-Path $clawhubBin) {
+            New-Item -ItemType Directory -Force -Path $clawTmp | Out-Null
+            Push-Location $clawTmp
+            try {
+                & npm.cmd init -y 2>&1 | Out-Null
+                & npm.cmd install clawhub --no-fund --no-audit 2>&1 |
+                    Select-Object -Last 5 |
+                    ForEach-Object { Write-Host "  $_" }
+            } finally { Pop-Location }
+
+            $srcPkg = Join-Path $clawTmp "node_modules\clawhub"
+            $dstNm = Join-Path $openclawDest "node_modules"
+            $dstPkg = Join-Path $dstNm "clawhub"
+            $dstBin = Join-Path $dstNm ".bin"
+            if (Test-Path $srcPkg) {
+                if (Test-Path $dstPkg) { Remove-TreeWindowsSafe $dstPkg | Out-Null }
+                New-Item -ItemType Directory -Force -Path $dstNm | Out-Null
+                Copy-TreeWindowsSafe -Src $srcPkg -Dst $dstPkg -ExcludeFiles @() | Out-Null
+                New-Item -ItemType Directory -Force -Path $dstBin | Out-Null
+                foreach ($shimName in @("clawhub", "clawhub.cmd", "clawhub.ps1")) {
+                    $srcShim = Join-Path $clawTmp "node_modules\.bin\$shimName"
+                    if (Test-Path $srcShim) {
+                        Copy-Item -Force $srcShim (Join-Path $dstBin $shimName)
+                    }
+                }
+            }
+        } catch {
+            Write-Warn "clawhub install threw: $($_.Exception.Message)"
+        } finally {
+            $ErrorActionPreference = $prevEap
+            if (Test-Path $clawTmp) { Remove-TreeWindowsSafe $clawTmp | Out-Null }
+        }
+        if ((Test-Path $clawhubPkg) -and ((Test-Path $clawhubBinCmd) -or (Test-Path $clawhubBinUnix))) {
             Write-Ok "clawhub CLI installed"
         } else {
             Write-Warn "clawhub install failed -- 'Installed' skills tab will be unavailable"
