@@ -342,6 +342,89 @@ function Write-OpenClawNestedBuildHelp {
     Write-Info "  Then: .\scripts\build-desktop.ps1 -ForceOpenClaw"
 }
 
+# Build OpenClaw outside EnvoyMesh (sibling dir), then copy dist/ back into
+# packages\openclaw. Returns $true when packages\openclaw\dist is usable.
+function Invoke-OpenClawSiblingBuild {
+    param(
+        [Parameter(Mandatory = $true)][string]$DestOpenClawSrc
+    )
+    $sibling = $env:ENVOYMESH_OPENCLAW_BUILD_DIR
+    if ([string]::IsNullOrWhiteSpace($sibling)) {
+        $sibling = Join-Path (Split-Path -Parent $RepoRoot) "openclaw"
+    }
+    $repoUrl = "https://github.com/openclaw/openclaw.git"
+    Write-Info "Building OpenClaw in isolated sibling: $sibling"
+    Write-Info "  (override with `$env:ENVOYMESH_OPENCLAW_BUILD_DIR)"
+
+    if (-not (Test-Path (Join-Path $sibling "package.json"))) {
+        $parent = Split-Path -Parent $sibling
+        if (-not (Test-Path $parent)) {
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        }
+        if (Test-Path $sibling) {
+            Write-Fail "Sibling path exists but is not an OpenClaw checkout: $sibling"
+            return $false
+        }
+        Write-Info "Cloning OpenClaw (depth 1)..."
+        & git clone --depth 1 $repoUrl $sibling
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $sibling "package.json"))) {
+            Write-Fail "git clone failed for $repoUrl -> $sibling"
+            return $false
+        }
+    }
+
+    Push-Location $sibling
+    try {
+        Write-Info "Sibling pnpm install (may take several minutes)..."
+        & pnpm.cmd install --no-frozen-lockfile --reporter=append-only
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "Sibling pnpm install failed (exit $LASTEXITCODE) in $sibling"
+            return $false
+        }
+        Write-Info "Sibling pnpm run build..."
+        & pnpm.cmd run build
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "Sibling pnpm run build failed (exit $LASTEXITCODE) in $sibling"
+            return $false
+        }
+    } finally {
+        Pop-Location
+    }
+
+    if (-not (Test-OpenClawDistUsable $sibling)) {
+        Write-Fail "Sibling build finished but $sibling\dist is still not usable"
+        return $false
+    }
+
+    $srcDist = Join-Path $sibling "dist"
+    $dstDist = Join-Path $DestOpenClawSrc "dist"
+    Write-Info "Copying sibling dist\ -> packages\openclaw\dist\"
+    if (Test-Path $dstDist) { Remove-TreeWindowsSafe $dstDist | Out-Null }
+    try {
+        Copy-TreeWindowsSafe -Src $srcDist -Dst $dstDist -ExcludeFiles @("*.d.ts", "*.d.mts", "*.d.cts", "*.map", "*.tsbuildinfo") | Out-Null
+    } catch {
+        # dist is required at runtime; fall back to full copy without type excludes
+        Write-Warn "Filtered dist copy failed ($($_.Exception.Message)); retrying without excludes..."
+        if (Test-Path $dstDist) { Remove-TreeWindowsSafe $dstDist | Out-Null }
+        Copy-TreeWindowsSafe -Src $srcDist -Dst $dstDist -ExcludeFiles @() | Out-Null
+    }
+
+    $srcRt = Join-Path $sibling "dist-runtime"
+    if (Test-Path $srcRt) {
+        $dstRt = Join-Path $DestOpenClawSrc "dist-runtime"
+        Write-Info "Copying sibling dist-runtime\ -> packages\openclaw\dist-runtime\"
+        if (Test-Path $dstRt) { Remove-TreeWindowsSafe $dstRt | Out-Null }
+        Copy-TreeWindowsSafe -Src $srcRt -Dst $dstRt -ExcludeFiles @() | Out-Null
+    }
+
+    if (-not (Test-OpenClawDistUsable $DestOpenClawSrc)) {
+        Write-Fail "Copied sibling dist but packages\openclaw\dist is still not usable"
+        return $false
+    }
+    Write-Ok "OpenClaw dist ready from sibling build"
+    return $true
+}
+
 # Built-in allowlist: envoy channel + agent utils + web search providers.
 # Excludes OpenClaw Diff UI and all third-party chat/IM channels (Social is chat).
 $script:OpenClawDefaultAllowlist = @(
@@ -1494,20 +1577,30 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
         # Newer OpenClaw (openclaw-native-declarations) walks module resolution
         # upward and ABORTS when EnvoyMesh's root node_modules is an ancestor
         # ("Declaration input escapes checkout"). Building inside
-        # packages\openclaw cannot work on a normal EnvoyMesh checkout.
+        # packages\openclaw cannot work on a normal EnvoyMesh checkout --
+        # build in a sibling dir and copy dist back instead.
         $ancestorNm = Join-Path $RepoRoot "node_modules"
         $skipOpenClawBuild = $false
         if (Test-Path -LiteralPath $ancestorNm) {
             if (Test-OpenClawDistUsable $openclawSrc) {
                 Write-Warn "EnvoyMesh root node_modules present -- skipping OpenClaw rebuild; reusing existing dist\"
-                Write-Info "  (OpenClaw cannot rebuild while nested; see docs if you need a fresh dist.)"
                 $skipOpenClawBuild = $true
                 $buildExit = 0
             } else {
-                Write-Fail "OpenClaw has no usable dist\ and cannot be built under EnvoyMesh\node_modules"
-                Write-OpenClawNestedBuildHelp
+                Write-Warn "EnvoyMesh root node_modules present -- OpenClaw cannot build in packages\openclaw"
+                Write-Info "  Auto-building in sibling checkout (one-time clone + install + build)..."
+                # Must leave packages\openclaw cwd before sibling work uses Push-Location.
                 Pop-Location
-                exit 1
+                $sibOk = Invoke-OpenClawSiblingBuild -DestOpenClawSrc $openclawSrc
+                Push-Location $openclawSrc
+                if (-not $sibOk) {
+                    Write-Fail "Sibling OpenClaw build failed"
+                    Write-OpenClawNestedBuildHelp
+                    Pop-Location
+                    exit 1
+                }
+                $skipOpenClawBuild = $true
+                $buildExit = 0
             }
         }
         if (-not $skipOpenClawBuild) {
@@ -1517,13 +1610,10 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
             $sw.Stop()
             Write-Info "pnpm run build finished in $([int]$sw.Elapsed.TotalSeconds)s (exit $buildExit)"
         } else {
-            Write-Info "pnpm run build skipped (reusing dist)"
+            Write-Info "pnpm run build skipped (dist ready)"
         }
 
         if ($buildExit -ne 0) {
-            # Do NOT write a stub entry.js when the failure is the nested
-            # node_modules guard -- a stub gateway will not start and only
-            # hides the real fix. Prefer a real pre-built dist, or fail.
             if (Test-OpenClawDistUsable $openclawSrc) {
                 Write-Warn "OpenClaw build returned non-zero (exit $buildExit) -- keeping existing usable dist\"
             } else {
