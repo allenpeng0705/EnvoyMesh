@@ -1527,13 +1527,25 @@ export * from "../src/cli/run-main.ts";
         "CONTRIBUTING.md", "SECURITY.md", "README.md"
     )
     Write-Info "Copying OpenClaw tree (long-path aware; skipping *.d.ts / *.map)..."
-    Get-ChildItem -Path $openclawSrc -Force | Where-Object {
-        -not ($exclude -contains $_.Name) -and
-        # Skip any other top-level dot dir (local IDE/state); never needed in the bundle.
-        -not ($_.PSIsContainer -and $_.Name.StartsWith("."))
-    } | ForEach-Object {
-        $destItem = Join-Path $openclawDest $_.Name
+    # Explicit skip set -- do NOT rely only on $exclude -contains (PS5.1
+    # -Force listing of reparse points / junctions can surprise Name matching).
+    $skipNames = [System.Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::OrdinalIgnoreCase)
+    foreach ($n in $exclude) { [void]$skipNames.Add($n) }
+    [void]$skipNames.Add(".openclaw")
+
+    Get-ChildItem -Path $openclawSrc -Force -ErrorAction SilentlyContinue | ForEach-Object {
         $itemName = $_.Name
+        if ([string]::IsNullOrEmpty($itemName)) { return }
+        if ($skipNames.Contains($itemName)) { return }
+        # Any top-level dot entry is local state / IDE -- never stage it.
+        if ($itemName.StartsWith(".")) { return }
+        # Junctions / symlinks (e.g. leftover .openclaw) -- robocopy exit 16.
+        if ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            Write-Info "Skipping reparse point: $itemName"
+            return
+        }
+        $destItem = Join-Path $openclawDest $itemName
         if ($_.PSIsContainer) {
             try {
                 Copy-TreeWindowsSafe -Src $_.FullName -Dst $destItem | Out-Null
