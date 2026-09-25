@@ -1513,26 +1513,32 @@ export * from "../src/cli/run-main.ts";
         ".github", ".vscode", ".npmrc",
         ".oxfmtrc.jsonc", ".oxlintrc.json",
         ".crabbox.yaml", ".dockerignore", ".semgrepignore",
+        # Local OpenClaw runtime state (created on first run) -- not for bundles.
+        # Often a junction/reparse point; robocopy exits 16 if forced to copy it.
+        ".openclaw",
         "apps", "docs", "ui", "scripts", "src", "qa", "test", "packages",
         "config", "data", "deploy", "git-hooks",
         "docker-compose.yml", "Dockerfile", "fly.toml",
         ".env.example", "appcast.xml",
         "tsconfig.json", "vitest.config.ts", "tsdown.config.ts",
         "pnpm-workspace.yaml",
-        # Release notes and lock files -- not used at runtime, just bulk.
-        "CHANGELOG.md", "npm-shrinkwrap.json", "pnpm-lock.yaml",
+        # Build logs / lock files -- not used at runtime, just bulk.
+        "pnpm.out", "CHANGELOG.md", "npm-shrinkwrap.json", "pnpm-lock.yaml",
         "CONTRIBUTING.md", "SECURITY.md", "README.md"
     )
     Write-Info "Copying OpenClaw tree (long-path aware; skipping *.d.ts / *.map)..."
     Get-ChildItem -Path $openclawSrc -Force | Where-Object {
-        -not ($exclude -contains $_.Name)
+        -not ($exclude -contains $_.Name) -and
+        # Skip any other top-level dot dir (local IDE/state); never needed in the bundle.
+        -not ($_.PSIsContainer -and $_.Name.StartsWith("."))
     } | ForEach-Object {
         $destItem = Join-Path $openclawDest $_.Name
+        $itemName = $_.Name
         if ($_.PSIsContainer) {
             try {
                 Copy-TreeWindowsSafe -Src $_.FullName -Dst $destItem | Out-Null
             } catch {
-                Write-Fail "Failed copying $($_.Name): $($_.Exception.Message)"
+                Write-Fail "Failed copying ${itemName}: $($_.Exception.Message)"
                 exit 1
             }
         } else {
