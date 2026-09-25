@@ -254,11 +254,15 @@ function Remove-TreeWindowsSafe {
     return -not (Test-Path -LiteralPath $Path)
 }
 
-# Windows MAX_PATH-safe recursive copy via robocopy + \\?\ prefixes.
+# Windows MAX_PATH-safe recursive copy via robocopy.
 # OpenClaw dist/extensions/*/node_modules nests paths well past 260 chars;
 # PowerShell Copy-Item then throws DirectoryNotFoundException mid-tree.
 # *.d.ts / *.map are type-only and never needed at runtime (also the usual
 # MAX_PATH offenders under @aws-sdk / @mistralai).
+#
+# NOTE: Do NOT pass \\?\ prefixes to robocopy -- on many Windows hosts that
+# yields exit 16 ("Serious error") even when the source is fine. Rely on
+# /XF to drop type-only long names, then prune non-allowlist extensions.
 function Copy-TreeWindowsSafe {
     param(
         [Parameter(Mandatory = $true)][string]$Src,
@@ -274,21 +278,20 @@ function Copy-TreeWindowsSafe {
     if (-not (Test-Path -LiteralPath $dstAbs)) {
         New-Item -ItemType Directory -Force -Path $dstAbs | Out-Null
     }
-    $srcLong = if ($srcAbs.StartsWith("\\")) { "\\?\UNC\" + $srcAbs.Substring(2) } else { "\\?\" + $srcAbs }
-    $dstLong = if ($dstAbs.StartsWith("\\")) { "\\?\UNC\" + $dstAbs.Substring(2) } else { "\\?\" + $dstAbs }
 
     $argList = New-Object System.Collections.Generic.List[string]
-    [void]$argList.Add($srcLong)
-    [void]$argList.Add($dstLong)
+    [void]$argList.Add($srcAbs)
+    [void]$argList.Add($dstAbs)
     [void]$argList.Add("/E")
-    [void]$argList.Add("/R:2")
+    [void]$argList.Add("/R:1")
     [void]$argList.Add("/W:1")
     [void]$argList.Add("/NFL")
     [void]$argList.Add("/NDL")
     [void]$argList.Add("/NJH")
     [void]$argList.Add("/NJS")
     [void]$argList.Add("/NP")
-    [void]$argList.Add("/XJ")   # do not follow junctions (avoid openclaw self-ref loops)
+    [void]$argList.Add("/XJD")  # skip directory junctions (openclaw self-refs)
+    [void]$argList.Add("/XJF")  # skip file symlinks
     if ($ExcludeDirs.Count -gt 0) {
         [void]$argList.Add("/XD")
         foreach ($d in $ExcludeDirs) { [void]$argList.Add($d) }
@@ -298,9 +301,10 @@ function Copy-TreeWindowsSafe {
         foreach ($f in $ExcludeFiles) { [void]$argList.Add($f) }
     }
     & robocopy.exe @($argList.ToArray()) | Out-Null
+    $code = $LASTEXITCODE
     # robocopy: 0-7 = success (bit flags); >=8 = failure
-    if ($LASTEXITCODE -ge 8) {
-        throw "robocopy failed (exit $LASTEXITCODE) copying $Src -> $Dst"
+    if ($code -ge 8) {
+        throw "robocopy failed (exit $code) copying $Src -> $Dst"
     }
     return $true
 }
@@ -1496,9 +1500,11 @@ export * from "../src/cli/run-main.ts";
         Pop-Location
     }
 
-    # Copy the OpenClaw tree (excluding dev cruft) into the Tauri resources.
-    # Use long-path-aware robocopy -- Copy-Item dies on nested
-    # dist/extensions/*/node_modules paths past Windows MAX_PATH (~260).
+    # Copy ONLY what the gateway needs at runtime (whitelist). A blacklist
+    # against Get-ChildItem -Force keeps tripping on Windows-only junk
+    # (`.openclaw` junctions, odd `CHANGELOG` reparse points, IDE dirs) and
+    # robocopy exit 16. Runtime needs: package.json, openclaw.mjs, dist/,
+    # extensions/, skills/, dist-runtime/, plus node_modules/ below.
     if (Test-Path $openclawDest) {
         if (-not (Remove-TreeWindowsSafe $openclawDest)) {
             Write-Fail "Could not clear previous staged OpenClaw at $openclawDest"
@@ -1506,59 +1512,50 @@ export * from "../src/cli/run-main.ts";
         }
     }
     New-Item -ItemType Directory -Force -Path $openclawDest | Out-Null
-    $exclude = @(
-        "node_modules", ".git", ".gitattributes", ".gitignore",
-        ".turbo", "target",
-        ".agents", ".artifacts", ".claude",
-        ".github", ".vscode", ".npmrc",
-        ".oxfmtrc.jsonc", ".oxlintrc.json",
-        ".crabbox.yaml", ".dockerignore", ".semgrepignore",
-        # Local OpenClaw runtime state (created on first run) -- not for bundles.
-        # Often a junction/reparse point; robocopy exits 16 if forced to copy it.
-        ".openclaw",
-        "apps", "docs", "ui", "scripts", "src", "qa", "test", "packages",
-        "config", "data", "deploy", "git-hooks",
-        "docker-compose.yml", "Dockerfile", "fly.toml",
-        ".env.example", "appcast.xml",
-        "tsconfig.json", "vitest.config.ts", "tsdown.config.ts",
-        "pnpm-workspace.yaml",
-        # Build logs / lock files -- not used at runtime, just bulk.
-        "pnpm.out", "CHANGELOG.md", "npm-shrinkwrap.json", "pnpm-lock.yaml",
-        "CONTRIBUTING.md", "SECURITY.md", "README.md"
-    )
-    Write-Info "Copying OpenClaw tree (long-path aware; skipping *.d.ts / *.map)..."
-    # Explicit skip set -- do NOT rely only on $exclude -contains (PS5.1
-    # -Force listing of reparse points / junctions can surprise Name matching).
-    $skipNames = [System.Collections.Generic.HashSet[string]]::new(
-        [StringComparer]::OrdinalIgnoreCase)
-    foreach ($n in $exclude) { [void]$skipNames.Add($n) }
-    [void]$skipNames.Add(".openclaw")
 
-    Get-ChildItem -Path $openclawSrc -Force -ErrorAction SilentlyContinue | ForEach-Object {
-        $itemName = $_.Name
-        if ([string]::IsNullOrEmpty($itemName)) { return }
-        if ($skipNames.Contains($itemName)) { return }
-        # Any top-level dot entry is local state / IDE -- never stage it.
-        if ($itemName.StartsWith(".")) { return }
-        # Junctions / symlinks (e.g. leftover .openclaw) -- robocopy exit 16.
-        if ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-            Write-Info "Skipping reparse point: $itemName"
-            return
+    $openclawKeepFiles = @(
+        "package.json",
+        "openclaw.mjs",
+        "LICENSE",
+        "THIRD_PARTY_NOTICES.md"
+    )
+    $openclawKeepDirs = @(
+        "dist",
+        "dist-runtime",
+        "extensions",
+        "skills"
+    )
+
+    Write-Info "Copying OpenClaw runtime whitelist (dist/extensions/skills + entry files)..."
+    foreach ($name in $openclawKeepFiles) {
+        $srcItem = Join-Path $openclawSrc $name
+        if (-not (Test-Path -LiteralPath $srcItem)) { continue }
+        Copy-Item -Force -LiteralPath $srcItem -Destination (Join-Path $openclawDest $name)
+    }
+    foreach ($name in $openclawKeepDirs) {
+        $srcItem = Join-Path $openclawSrc $name
+        if (-not (Test-Path -LiteralPath $srcItem)) { continue }
+        if (-not ((Get-Item -LiteralPath $srcItem).PSIsContainer)) {
+            Write-Info "Skipping non-directory $name"
+            continue
         }
-        $destItem = Join-Path $openclawDest $itemName
-        if ($_.PSIsContainer) {
-            try {
-                Copy-TreeWindowsSafe -Src $_.FullName -Dst $destItem | Out-Null
-            } catch {
-                Write-Fail "Failed copying ${itemName}: $($_.Exception.Message)"
-                exit 1
-            }
-        } else {
-            Copy-Item -Force $_.FullName $destItem
+        # Skip if the top-level entry itself is a junction/symlink.
+        $item = Get-Item -LiteralPath $srcItem -Force
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            Write-Warn "Skipping reparse point directory: $name"
+            continue
+        }
+        try {
+            Copy-TreeWindowsSafe -Src $srcItem -Dst (Join-Path $openclawDest $name) | Out-Null
+            Write-Info "  staged $name\"
+        } catch {
+            Write-Fail "Failed copying ${name}: $($_.Exception.Message)"
+            exit 1
         }
     }
     if (Test-Path (Join-Path $openclawSrc "node_modules")) {
         try {
+            Write-Info "  staging node_modules\ (long -- may take several minutes)..."
             Copy-TreeWindowsSafe `
                 -Src (Join-Path $openclawSrc "node_modules") `
                 -Dst (Join-Path $openclawDest "node_modules") | Out-Null
