@@ -254,6 +254,57 @@ function Remove-TreeWindowsSafe {
     return -not (Test-Path -LiteralPath $Path)
 }
 
+# Windows MAX_PATH-safe recursive copy via robocopy + \\?\ prefixes.
+# OpenClaw dist/extensions/*/node_modules nests paths well past 260 chars;
+# PowerShell Copy-Item then throws DirectoryNotFoundException mid-tree.
+# *.d.ts / *.map are type-only and never needed at runtime (also the usual
+# MAX_PATH offenders under @aws-sdk / @mistralai).
+function Copy-TreeWindowsSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$Src,
+        [Parameter(Mandatory = $true)][string]$Dst,
+        [string[]]$ExcludeDirs = @(),
+        [string[]]$ExcludeFiles = @("*.d.ts", "*.d.mts", "*.d.cts", "*.map", "*.tsbuildinfo")
+    )
+    if (-not (Test-Path -LiteralPath $Src)) {
+        throw "Copy-TreeWindowsSafe: source missing: $Src"
+    }
+    $srcAbs = (Resolve-Path -LiteralPath $Src).Path
+    $dstAbs = [System.IO.Path]::GetFullPath($Dst)
+    if (-not (Test-Path -LiteralPath $dstAbs)) {
+        New-Item -ItemType Directory -Force -Path $dstAbs | Out-Null
+    }
+    $srcLong = if ($srcAbs.StartsWith("\\")) { "\\?\UNC\" + $srcAbs.Substring(2) } else { "\\?\" + $srcAbs }
+    $dstLong = if ($dstAbs.StartsWith("\\")) { "\\?\UNC\" + $dstAbs.Substring(2) } else { "\\?\" + $dstAbs }
+
+    $argList = New-Object System.Collections.Generic.List[string]
+    [void]$argList.Add($srcLong)
+    [void]$argList.Add($dstLong)
+    [void]$argList.Add("/E")
+    [void]$argList.Add("/R:2")
+    [void]$argList.Add("/W:1")
+    [void]$argList.Add("/NFL")
+    [void]$argList.Add("/NDL")
+    [void]$argList.Add("/NJH")
+    [void]$argList.Add("/NJS")
+    [void]$argList.Add("/NP")
+    [void]$argList.Add("/XJ")   # do not follow junctions (avoid openclaw self-ref loops)
+    if ($ExcludeDirs.Count -gt 0) {
+        [void]$argList.Add("/XD")
+        foreach ($d in $ExcludeDirs) { [void]$argList.Add($d) }
+    }
+    if ($ExcludeFiles.Count -gt 0) {
+        [void]$argList.Add("/XF")
+        foreach ($f in $ExcludeFiles) { [void]$argList.Add($f) }
+    }
+    & robocopy.exe @($argList.ToArray()) | Out-Null
+    # robocopy: 0-7 = success (bit flags); >=8 = failure
+    if ($LASTEXITCODE -ge 8) {
+        throw "robocopy failed (exit $LASTEXITCODE) copying $Src -> $Dst"
+    }
+    return $true
+}
+
 # Built-in allowlist: envoy channel + agent utils + web search providers.
 # Excludes OpenClaw Diff UI and all third-party chat/IM channels (Social is chat).
 $script:OpenClawDefaultAllowlist = @(
@@ -1446,8 +1497,13 @@ export * from "../src/cli/run-main.ts";
     }
 
     # Copy the OpenClaw tree (excluding dev cruft) into the Tauri resources.
+    # Use long-path-aware robocopy -- Copy-Item dies on nested
+    # dist/extensions/*/node_modules paths past Windows MAX_PATH (~260).
     if (Test-Path $openclawDest) {
-        Remove-Item -Recurse -Force $openclawDest
+        if (-not (Remove-TreeWindowsSafe $openclawDest)) {
+            Write-Fail "Could not clear previous staged OpenClaw at $openclawDest"
+            exit 1
+        }
     }
     New-Item -ItemType Directory -Force -Path $openclawDest | Out-Null
     $exclude = @(
@@ -1467,13 +1523,31 @@ export * from "../src/cli/run-main.ts";
         "CHANGELOG.md", "npm-shrinkwrap.json", "pnpm-lock.yaml",
         "CONTRIBUTING.md", "SECURITY.md", "README.md"
     )
+    Write-Info "Copying OpenClaw tree (long-path aware; skipping *.d.ts / *.map)..."
     Get-ChildItem -Path $openclawSrc -Force | Where-Object {
         -not ($exclude -contains $_.Name)
     } | ForEach-Object {
-        Copy-Item -Recurse -Force $_.FullName (Join-Path $openclawDest $_.Name)
+        $destItem = Join-Path $openclawDest $_.Name
+        if ($_.PSIsContainer) {
+            try {
+                Copy-TreeWindowsSafe -Src $_.FullName -Dst $destItem | Out-Null
+            } catch {
+                Write-Fail "Failed copying $($_.Name): $($_.Exception.Message)"
+                exit 1
+            }
+        } else {
+            Copy-Item -Force $_.FullName $destItem
+        }
     }
     if (Test-Path (Join-Path $openclawSrc "node_modules")) {
-        Copy-Item -Recurse -Force (Join-Path $openclawSrc "node_modules") (Join-Path $openclawDest "node_modules")
+        try {
+            Copy-TreeWindowsSafe `
+                -Src (Join-Path $openclawSrc "node_modules") `
+                -Dst (Join-Path $openclawDest "node_modules") | Out-Null
+        } catch {
+            Write-Fail "Failed copying OpenClaw node_modules: $($_.Exception.Message)"
+            exit 1
+        }
     }
 
     # Install clawhub CLI into the staged tree so the "Installed" skills tab
@@ -1597,7 +1671,9 @@ export * from "../src/cli/run-main.ts";
                 Get-ChildItem -Path $extBase -Directory | Where-Object {
                     -not ($openclawExtAllowlist -contains $_.Name)
                 } | ForEach-Object {
-                    Remove-Item -Recurse -Force $_.FullName
+                    if (-not (Remove-TreeWindowsSafe $_.FullName)) {
+                        Write-Warn "Could not fully prune extension $($_.Name) (long path) -- continuing"
+                    }
                     $removedCount++
                 }
                 if ($removedCount -gt 0) {
