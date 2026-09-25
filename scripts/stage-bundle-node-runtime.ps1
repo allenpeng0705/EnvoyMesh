@@ -351,13 +351,15 @@ foreach ($modPath in $npmLines) {
 #
 # Seed sources (scanned on pass 1 to bootstrap the loop):
 #   - apps/node/package.json            (direct runtime deps)
-# OpenClaw deps are NOT seeded here -- OpenClaw is staged under
-# resources/openclaw/ with its own node_modules. Seeding packages/openclaw
-# pulled @openclaw/* trees that exceed Windows MAX_PATH.
+# OpenClaw package.json is NOT seeded (avoids pulling @openclaw/* into the
+# staged node tree / Windows MAX_PATH). But packages/openclaw/node_modules
+# IS a search root so shared deps like psl (via tough-cookie/request) can
+# still be located and hoisted.
 # And on every pass, every staged @envoymesh/* + non-workspace package.json.
 $depSearchRoots = @(
     (Join-Path $Root "node_modules"),
-    (Join-Path $Root "apps/node/node_modules")
+    (Join-Path $Root "apps/node/node_modules"),
+    (Join-Path $Root "packages/openclaw/node_modules")
 )
 # Phase 8: envoy-harness unique deps (smol-toml) live in the sibling monorepo.
 if ($stageEnvoyHarnessIntoNode) {
@@ -424,8 +426,26 @@ for ($iter = 1; $iter -le $maxIterations; $iter++) {
             # Search all known node_modules locations for this dep.
             $srcDep = $null
             foreach ($nmRoot in $depSearchRoots) {
+                if (-not (Test-Path $nmRoot)) { continue }
                 $candidate = Join-Path $nmRoot $depName
                 if (Test-Path $candidate) { $srcDep = $candidate; break }
+            }
+            # Nested under another package (e.g. request/node_modules/psl)
+            # when not hoisted to the root of that node_modules tree.
+            if (-not $srcDep) {
+                $leaf = ($depName -split '/')[-1]
+                foreach ($nmRoot in $depSearchRoots) {
+                    if (-not (Test-Path $nmRoot)) { continue }
+                    $hit = Get-ChildItem -Path $nmRoot -Recurse -Directory -Filter $leaf -ErrorAction SilentlyContinue |
+                        Where-Object {
+                            $_.Name -eq $leaf -and
+                            (Test-Path (Join-Path $_.FullName "package.json")) -and
+                            # Prefer exact scoped path match when dep is scoped.
+                            (($depName -notlike "@*") -or ($_.FullName -replace '\\','/' -match ("/" + [regex]::Escape($depName) + "$")))
+                        } |
+                        Select-Object -First 1
+                    if ($hit) { $srcDep = $hit.FullName; break }
+                }
             }
             if (-not $srcDep) { continue }
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destDep) | Out-Null
