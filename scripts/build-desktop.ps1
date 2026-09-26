@@ -2574,24 +2574,30 @@ if (-not (Test-Path $SocialDist)) {
 Write-Ok "Social UI built at apps\social\src\dist"
 Write-Host ""
 
-# Full verify after Social (shared with build-desktop.sh -- scripts/verify-tauri-resources.sh).
+# Full verify after Social. Prefer the PowerShell twin so Windows does not
+# require Git Bash; fall back to the .sh via bash when the .ps1 is absent.
 Write-Info "Verifying Tauri bundle resources (post-Social)..."
-$verifyScript = Join-Path $PSScriptRoot "verify-tauri-resources.sh"
-if (-not (Test-Path $verifyScript)) {
-    Write-Fail "verify-tauri-resources.sh missing at $verifyScript"
-    exit 1
-}
-$bash = Get-Command bash -ErrorAction SilentlyContinue
-if (-not $bash) {
-    Write-Fail "bash not found -- install Git for Windows to run scripts/verify-tauri-resources.sh"
-    exit 1
-}
-# Use Invoke-BashScript (defined above) to handle CRLF + WSL path
-# conversion in one place. Don't use `& bash $verifyScript` directly --
-# see Invoke-BashScript for the three Windows-on-bash quirks it covers.
-$verifyExit = Invoke-BashScript -ScriptPath $verifyScript
-if ($verifyExit -ne 0) {
-    Write-Fail "verify-tauri-resources.sh failed (exit $verifyExit)"
+$verifyPs1 = Join-Path $PSScriptRoot "verify-tauri-resources.ps1"
+$verifySh = Join-Path $PSScriptRoot "verify-tauri-resources.sh"
+if (Test-Path $verifyPs1) {
+    & $verifyPs1
+    if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+        Write-Fail "verify-tauri-resources.ps1 failed (exit $LASTEXITCODE)"
+        exit 1
+    }
+} elseif (Test-Path $verifySh) {
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if (-not $bash) {
+        Write-Fail "bash not found and verify-tauri-resources.ps1 missing -- sync scripts\verify-tauri-resources.ps1 or install Git for Windows"
+        exit 1
+    }
+    $verifyExit = Invoke-BashScript -ScriptPath $verifySh
+    if ($verifyExit -ne 0) {
+        Write-Fail "verify-tauri-resources.sh failed (exit $verifyExit)"
+        exit 1
+    }
+} else {
+    Write-Fail "verify-tauri-resources.ps1 / .sh missing in scripts\"
     exit 1
 }
 Write-Host ""
