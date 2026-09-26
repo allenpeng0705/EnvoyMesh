@@ -558,6 +558,50 @@ foreach ($dep in $criticalDeps) {
         $missing += $dep
     }
 }
+# Auto-fetch plain npm canaries absent from every local search root (common
+# on Windows when OpenClaw was pruned and never hoisted psl). Workspace /
+# sharp natives still fail hard -- those need a real install.
+if ($missing.Count -gt 0) {
+    $fetchable = @($missing | Where-Object {
+        $_ -notlike "@envoymesh/*" -and
+        $_ -notlike "@img/*" -and
+        $_ -ne "sharp" -and
+        $_ -ne "smol-toml"
+    })
+    foreach ($dep in $fetchable) {
+        Write-Host "  Fetching missing canary dep via npm: $dep"
+        $tmp = Join-Path $env:TEMP ("envoymesh-pack-" + [guid]::NewGuid().ToString("N"))
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+            Push-Location $tmp
+            try {
+                & npm.cmd install $dep --prefix $tmp --no-save --no-fund --no-audit 2>&1 |
+                    Select-Object -Last 3 |
+                    ForEach-Object { Write-Host "    $_" }
+                $pkgDir = Join-Path $tmp "node_modules\$(($dep -replace '/', '\'))"
+                if (-not (Test-Path $pkgDir)) {
+                    Write-Host "  WARN: npm install did not produce $pkgDir"
+                    continue
+                }
+                $destDep = Join-Path $Dest "node_modules\$(($dep -replace '/', '\'))"
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destDep) | Out-Null
+                if (Test-Path $destDep) { Remove-TreeWindowsSafe $destDep | Out-Null }
+                Copy-TreeWindowsSafe -Src $pkgDir -Dst $destDep -ExcludeDirs @() -ExcludeFiles @() | Out-Null
+                Write-Host "  OK fetched $dep into staged node_modules"
+            } finally { Pop-Location }
+        } catch {
+            Write-Host "  WARN: fetch $dep failed: $($_.Exception.Message)"
+        } finally {
+            $ErrorActionPreference = $prevEap
+            if (Test-Path $tmp) { Remove-TreeWindowsSafe $tmp | Out-Null }
+        }
+    }
+    $missing = @($criticalDeps | Where-Object {
+        -not (Test-Path (Join-Path $Dest "node_modules/$_"))
+    })
+}
 if ($missing.Count -gt 0) {
     Write-Host ""
     Write-Host "  CRITICAL: missing runtime deps: $($missing -join ', ')" -ForegroundColor Red
