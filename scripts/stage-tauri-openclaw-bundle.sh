@@ -47,6 +47,10 @@ _openclaw_resolve_ext_allowlist() {
 # devDeps), so `pnpm prune --prod` cannot remove them. Verified by grepping
 # dist/*.js — none of these are imported at runtime (highlight.js IS used,
 # so it's kept). Saves ~250 MB on macOS, ~500-700 MB on Windows.
+#
+# Also scrub matching dirs under node_modules/.pnpm/ — robocopy/cp of a pnpm
+# tree often skips junction'd top-level names while the virtual store still
+# holds the full native binaries (~1.85 GB on Windows if left behind).
 _openclaw_dev_only_packages="typescript @typescript @oxlint @oxlint-tsgolint @shikijs vite @rolldown rolldown rolldown-plugin-dts esbuild @esbuild vitest @vitest playwright-core playwright jsdom tree-sitter-bash tree-sitter @babel webpack rollup lightningcss lightningcss-darwin-arm64 lightningcss-win32-x64-msvc lightningcss-linux-x64-gnu lightningcss-linux-arm64-gnu oxfmt @oxfmt tsdown"
 
 # Orphaned heavy native packages — deps of extensions that we typically
@@ -64,16 +68,20 @@ _openclaw_dev_only_packages="typescript @typescript @oxlint @oxlint-tsgolint @sh
 _openclaw_orphaned_native_pkgs_with_deps="
   @node-llama-cpp|
   node-llama-cpp|
-  @github|copilot
-  @openai|codex
+  @github|copilot github-copilot copilot-proxy
+  @openai|codex codex-supervisor
   @zed-industries|acpx
   @lancedb|memory-lancedb
   @matrix-org|matrix
-  @azure|msteams azure-speech
+  @tloncorp|tlon matrix
+  @azure|msteams azure-speech microsoft microsoft-foundry
+  @microsoft|msteams microsoft microsoft-foundry
   @opentelemetry|diagnostics-otel diagnostics-prometheus
   @pierre|diffs
   @discordjs|discord
   @larksuiteoapi|feishu
+  @line|line
+  @slack|slack
 "
 
 _openclaw_extension_is_kept() {
@@ -88,23 +96,73 @@ _openclaw_extension_is_kept() {
   return 1
 }
 
+# Remove top-level node_modules/$pkg and matching .pnpm virtual-store dirs.
+_openclaw_rm_nm_pkg() {
+  local pkg="$1"
+  local removed_here=0
+  if [ -e "$DEST/node_modules/$pkg" ]; then
+    rm -rf "$DEST/node_modules/$pkg"
+    removed_here=1
+  fi
+  if [ -d "$DEST/node_modules/.pnpm" ]; then
+    local pattern
+    case "$pkg" in
+      @*/*)
+        # @scope/name → @scope+name@*
+        local scope name
+        scope="${pkg%%/*}"
+        name="${pkg#*/}"
+        pattern="${scope}+${name}@"
+        ;;
+      @*)
+        # whole scope → @scope+*
+        pattern="${pkg}+"
+        ;;
+      *)
+        pattern="${pkg}@"
+        ;;
+    esac
+    local d
+    for d in "$DEST/node_modules/.pnpm"/${pattern}*; do
+      [ -e "$d" ] || continue
+      rm -rf "$d"
+      removed_here=1
+    done
+  fi
+  return $((1 - removed_here))  # 0 if anything removed (bash true), else 1
+}
+
 _openclaw_scrub_dev_tooling() {
   local removed=0
   for pkg in $_openclaw_dev_only_packages; do
-    if [ -d "$DEST/node_modules/$pkg" ]; then
-      rm -rf "$DEST/node_modules/$pkg"
+    if _openclaw_rm_nm_pkg "$pkg"; then
       removed=$((removed + 1))
     fi
   done
+  # Platform lightningcss binaries not in the static list.
+  local lc
+  for lc in "$DEST/node_modules"/lightningcss-*; do
+    [ -e "$lc" ] || continue
+    if _openclaw_rm_nm_pkg "$(basename "$lc")"; then
+      removed=$((removed + 1))
+    fi
+  done
+  if [ -d "$DEST/node_modules/.pnpm" ]; then
+    for lc in "$DEST/node_modules/.pnpm"/lightningcss@* "$DEST/node_modules/.pnpm"/lightningcss-*@*; do
+      [ -e "$lc" ] || continue
+      rm -rf "$lc"
+      removed=$((removed + 1))
+    done
+  fi
   # Orphaned natives — only scrub if dependent extensions are absent.
-  # Use process substitution < <(...) instead of a pipe so the while loop
-  # runs in the current shell and `removed` accumulates correctly.
   while IFS='|' read -r pkg exts; do
     pkg="${pkg%%#*}"  # strip inline comments
     pkg="$(echo "$pkg" | xargs)"  # trim whitespace
     [ -z "$pkg" ] && continue
-    if [ -d "$DEST/node_modules/$pkg" ] && ! _openclaw_extension_is_kept "$exts"; then
-      rm -rf "$DEST/node_modules/$pkg"
+    if _openclaw_extension_is_kept "$exts"; then
+      continue
+    fi
+    if _openclaw_rm_nm_pkg "$pkg"; then
       removed=$((removed + 1))
       echo "    scrubbed $pkg (no dependent extension kept)"
     fi
@@ -125,7 +183,28 @@ _openclaw_scrub_dev_tooling() {
   [ -d "$DEST/dist/control-ui/assets" ] && \
     find "$DEST/dist/control-ui/assets" -name '*.map' -type f -delete 2>/dev/null
   if [ "$removed" -gt 0 ]; then
-    echo "  Scrubbed $removed dev/orphaned packages from node_modules"
+    echo "  Scrubbed $removed dev/orphaned packages from node_modules (top-level + .pnpm)"
+  fi
+
+  # Fail loud if known orphans remain (>5 MB) — same gate as build-desktop.ps1.
+  local leftover=""
+  while IFS='|' read -r pkg exts; do
+    pkg="${pkg%%#*}"; pkg="$(echo "$pkg" | xargs)"
+    [ -z "$pkg" ] && continue
+    _openclaw_extension_is_kept "$exts" && continue
+    local sz=0
+    if [ -e "$DEST/node_modules/$pkg" ]; then
+      sz=$(du -sm "$DEST/node_modules/$pkg" 2>/dev/null | awk '{print $1}')
+      if [ "${sz:-0}" -gt 5 ]; then
+        leftover="$leftover  $pkg (${sz}MB top-level)"$'\n'
+      fi
+    fi
+  done < <(echo "$_openclaw_orphaned_native_pkgs_with_deps")
+  if [ -n "$leftover" ]; then
+    echo "error: OpenClaw scrub left heavy orphans behind:" >&2
+    echo "$leftover" >&2
+    echo "  Re-stage with STAGE_OPENCLAW_BUNDLE=1 after fixing deletes." >&2
+    exit 1
   fi
 }
 

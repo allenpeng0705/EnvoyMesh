@@ -36,10 +36,10 @@
 #   -ForceNodeSidecar         Re-download the Node.js sidecar even if it is already
 #                             staged at apps\tauri\src-tauri\resources\node-runtime
 #   -SkipTypecheck            Skip tsc -b before bundling
-#   -SkipMsi                  Default $true -- pass --bundles nsis to tauri build
-#                             so the slow WiX .msi step is skipped (3 GB resource
-#                             tree takes 10-20 min for light.exe). Use -SkipMsi:$false
-#                             to build both NSIS and MSI.
+#   -SkipMsi                  Default $true -- --bundles nsis (fast; ~2 GB cap).
+#                             Pass -SkipMsi:$false for --bundles msi (WiX; no
+#                             2 GB cap; light.exe is slow on large trees).
+#                             Required when staged resources exceed ~1.8 GB.
 #   -OpenClawExtensions <val> Extension filter:
 #                             "default" -- EnvoyMesh agent allowlist (envoymesh +
 #                               search/agent utils). Omits OpenClaw Diff UI and
@@ -175,9 +175,10 @@ param(
     # Skip tsc -b before bundling
     [switch]$SkipTypecheck,
 
-    # Skip the WiX .msi bundle (default: $true). The .msi build is slow on
-    # large resource trees; NSIS is the de-facto Windows installer format.
-    # Use -SkipMsi:$false to also produce a .msi (for enterprise deployment).
+    # Skip the WiX .msi bundle (default: $true) -- build NSIS .exe only.
+    # NSIS has a hard ~2 GB installer cap. When staged resources exceed
+    # ~1.8 GB (common once OpenClaw + node + Pi copy on Windows), pass
+    # -SkipMsi:$false to build a WiX .msi instead (no 2 GB cap; slower).
     [switch]$SkipMsi = $true,
 
     # Skip the staged-OpenClaw pnpm prune step. Default: $false (always prune
@@ -1987,87 +1988,111 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
     Write-Ok "OpenClaw staged at $openclawDest"
 }
 
-# 1c-bis. Scrub dev-only tooling from staged OpenClaw node_modules.
-# OpenClaw's package.json lists typescript/vite/esbuild/etc. as PRODUCTION
-# dependencies (not devDeps), so `pnpm prune --prod` cannot remove them.
-# These packages are verified unused by dist/*.js (grepped: 0 importers)
-# and together account for ~250 MB on Mac / ~500-700 MB on Windows (native
-# win32-x64 binaries are 2-3x larger). Scrubbing them is what brings the
-# bundle back under NSIS's 2 GB cap.
-# KEEP highlight.js (used by sessions-*.js for runtime syntax highlighting).
+# 1c-bis. Scrub dev-only tooling + orphaned natives from staged OpenClaw
+# node_modules. OpenClaw marks typescript/vite/esbuild/etc. as PRODUCTION
+# deps, so `pnpm prune --prod` cannot remove them. Extension pruning also
+# leaves heavy native scopes (@github, @openai, …) hoisted in node_modules.
+# On Windows those orphans alone are ~1.85 GB -- the usual reason one PC
+# stages ~2.8 GB while another lands ~1.4 GB installers.
+#
+# CRITICAL: scrub top-level AND node_modules/.pnpm/<pkg>@* (pnpm virtual
+# store). robocopy /XJD skips junction'd top-level links, so a top-level-only
+# scrub silently no-ops while .pnpm still holds the full binaries.
+# KEEP highlight.js (sessions-*.js). KEEP @anthropic-ai/sdk (dist/anthropic-*.js).
+
+function Get-DirSizeBytes([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return 0L }
+    try {
+        $sum = (Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+            Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+        if ($null -eq $sum) { return 0L }
+        return [long]$sum
+    } catch { return 0L }
+}
+
+# Remove a package from a node_modules root: top-level entry + matching .pnpm
+# virtual-store dirs. Returns bytes removed (best-effort).
+function Remove-OpenClawNmPackage {
+    param(
+        [Parameter(Mandatory = $true)][string]$NmRoot,
+        [Parameter(Mandatory = $true)][string]$Pkg
+    )
+    $removedBytes = 0L
+    $targets = New-Object System.Collections.Generic.List[string]
+
+    $top = Join-Path $NmRoot $Pkg
+    if (Test-Path -LiteralPath $top) { [void]$targets.Add($top) }
+
+    $pnpm = Join-Path $NmRoot ".pnpm"
+    if (Test-Path -LiteralPath $pnpm) {
+        # pnpm store names: lodash@1.2.3_…  or  @scope+name@1.2.3_…
+        if ($Pkg -match '^@([^/]+)/(.+)$') {
+            $filter = "@$($Matches[1])+$($Matches[2])@*"
+            Get-ChildItem -LiteralPath $pnpm -Directory -Filter $filter -ErrorAction SilentlyContinue |
+                ForEach-Object { [void]$targets.Add($_.FullName) }
+        } elseif ($Pkg.StartsWith("@")) {
+            # Whole scope (@github, @openai, …)
+            Get-ChildItem -LiteralPath $pnpm -Directory -Filter ($Pkg + "+*") -ErrorAction SilentlyContinue |
+                ForEach-Object { [void]$targets.Add($_.FullName) }
+        } else {
+            Get-ChildItem -LiteralPath $pnpm -Directory -Filter ($Pkg + "@*") -ErrorAction SilentlyContinue |
+                ForEach-Object { [void]$targets.Add($_.FullName) }
+        }
+    }
+
+    foreach ($t in $targets) {
+        if (-not (Test-Path -LiteralPath $t)) { continue }
+        $sz = Get-DirSizeBytes $t
+        if (-not (Remove-TreeWindowsSafe $t)) {
+            Write-Warn "Could not delete scrub target (long path?): $t"
+            continue
+        }
+        $removedBytes += $sz
+    }
+    return $removedBytes
+}
+
 $script:OpenClawDevOnlyPackages = @(
+    # Keep in sync with scripts/stage-tauri-openclaw-bundle.sh _openclaw_dev_only_packages
     "typescript", "@typescript",
     "@oxlint", "@oxlint-tsgolint",
-    "vite", "@rolldown",
+    "@shikijs",
+    "vite", "@rolldown", "rolldown", "rolldown-plugin-dts",
     "esbuild", "@esbuild",
     "vitest", "@vitest",
     "playwright-core", "playwright",
     "jsdom",
     "tree-sitter-bash", "tree-sitter",
-    "@shikijs",
     "@babel",
-    "webpack", "rollup"
+    "webpack", "rollup",
+    "lightningcss",
+    "lightningcss-darwin-arm64", "lightningcss-win32-x64-msvc",
+    "lightningcss-linux-x64-gnu", "lightningcss-linux-arm64-gnu",
+    "oxfmt", "@oxfmt",
+    "tsdown"
 )
-$scrubbedNmDir = Join-Path $openclawDest "node_modules"
-$scrubbedCount = 0
-$scrubbedBytes = 0
-foreach ($pkg in $script:OpenClawDevOnlyPackages) {
-    $pkgPath = Join-Path $scrubbedNmDir $pkg
-    if (Test-Path $pkgPath) {
-        try {
-            $sz = (Get-ChildItem -Path $pkgPath -Recurse -File -ErrorAction SilentlyContinue |
-                   Measure-Object -Property Length -Sum).Sum
-            $scrubbedBytes += [int]$sz
-            Remove-TreeWindowsSafe $pkgPath | Out-Null
-            $scrubbedCount++
-        } catch { }
-    }
-}
-# Also clean dangling .bin/ entries left by the scrubbed packages.
-$binDir = Join-Path $scrubbedNmDir ".bin"
-if (Test-Path $binDir) {
-    Get-ChildItem -Path $binDir -Force | Where-Object {
-        $_.LinkType -ne $null -and -not (Test-Path $_.Target[0])
-    } | ForEach-Object {
-        Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue
-    }
-}
-if ($scrubbedCount -gt 0) {
-    $scrubbedMB = [math]::Round($scrubbedBytes / 1MB, 1)
-    Write-Ok "Scrubbed $scrubbedCount dev-only packages from node_modules (~$scrubbedMB MB)"
-}
-
-# Scrub orphaned heavy native packages left behind after extension pruning.
-# These packages are dependencies of extensions we typically remove (copilot,
-# codex, acpx, memory-lancedb, matrix, msteams, etc.) but pnpm's hoisting
-# leaves them in node_modules/ even after the extension dir is gone.
-# On Windows (where pnpm copies instead of symlinks), they total ~1.85 GB:
-#   @node-llama-cpp (711 MB), @github (422 MB), @openai (279 MB),
-#   @zed-industries (173 MB), @lancedb (158 MB), + smaller ones.
-# Verified safe by grepping dist/*.js -- none are imported at runtime.
-# KEEP: @anthropic-ai/sdk (used by dist/anthropic-*.js), @larksuiteoapi
-# (used by dist/monitor.account-*.js and dist/client-*.js).
-#
-# CONDITIONAL: only scrub a package when NONE of its dependent extensions
-# are present in the staged tree. This makes the scrub safe whether the
-# caller kept all extensions (OPENCLAW_EXTENSIONS=all / -OpenClawExtensions all)
-# or pruned to an allowlist (default on macOS + Windows).
+# Also match lightningcss-* platform packages discovered at scrub time.
 $script:OpenClawOrphanedNativesWithDeps = @(
     # Format: @{ Pkg = "..."; Deps = @("ext1", "ext2") }
     # Scrub Pkg only when none of Deps exist under extensions/roots.
     @{ Pkg = "@node-llama-cpp";   Deps = @() },
     @{ Pkg = "node-llama-cpp";    Deps = @() },
-    @{ Pkg = "@github";           Deps = @("copilot") },
-    @{ Pkg = "@openai";           Deps = @("codex") },
+    @{ Pkg = "@github";           Deps = @("copilot", "github-copilot", "copilot-proxy") },
+    @{ Pkg = "@openai";           Deps = @("codex", "codex-supervisor") },
     @{ Pkg = "@zed-industries";   Deps = @("acpx") },
     @{ Pkg = "@lancedb";          Deps = @("memory-lancedb") },
     @{ Pkg = "@matrix-org";       Deps = @("matrix") },
-    @{ Pkg = "@azure";            Deps = @("msteams", "azure-speech") },
+    @{ Pkg = "@tloncorp";         Deps = @("tlon", "matrix") },
+    @{ Pkg = "@azure";            Deps = @("msteams", "azure-speech", "microsoft", "microsoft-foundry") },
+    @{ Pkg = "@microsoft";        Deps = @("msteams", "microsoft", "microsoft-foundry") },
     @{ Pkg = "@opentelemetry";    Deps = @("diagnostics-otel", "diagnostics-prometheus") },
     @{ Pkg = "@pierre";           Deps = @("diffs") },
     @{ Pkg = "@discordjs";        Deps = @("discord") },
-    @{ Pkg = "@larksuiteoapi";    Deps = @("feishu") }
+    @{ Pkg = "@larksuiteoapi";    Deps = @("feishu") },
+    @{ Pkg = "@line";             Deps = @("line") },
+    @{ Pkg = "@slack";            Deps = @("slack") }
 )
+
 function Test-ExtensionKept {
     param([string[]]$Exts, [string]$TreeRoot)
     foreach ($ext in $Exts) {
@@ -2077,31 +2102,131 @@ function Test-ExtensionKept {
     }
     return $false
 }
-$orphanCount = 0
-$orphanBytes = 0
-foreach ($entry in $script:OpenClawOrphanedNativesWithDeps) {
-    $pkgPath = Join-Path $scrubbedNmDir $entry.Pkg
-    if (Test-Path $pkgPath) {
+
+$scrubbedNmDir = Join-Path $openclawDest "node_modules"
+$scrubbedCount = 0
+$scrubbedBytes = 0L
+if (Test-Path -LiteralPath $scrubbedNmDir) {
+    Write-Info "Scrubbing OpenClaw node_modules (top-level + .pnpm)..."
+    foreach ($pkg in $script:OpenClawDevOnlyPackages) {
+        $n = Remove-OpenClawNmPackage -NmRoot $scrubbedNmDir -Pkg $pkg
+        if ($n -gt 0) { $scrubbedCount++; $scrubbedBytes += $n }
+    }
+    # Platform-specific lightningcss binaries not in the static list.
+    Get-ChildItem -LiteralPath $scrubbedNmDir -Directory -Filter "lightningcss-*" -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $n = Remove-OpenClawNmPackage -NmRoot $scrubbedNmDir -Pkg $_.Name
+            if ($n -gt 0) { $scrubbedCount++; $scrubbedBytes += $n }
+        }
+    $pnpmLightning = Join-Path $scrubbedNmDir ".pnpm"
+    if (Test-Path -LiteralPath $pnpmLightning) {
+        Get-ChildItem -LiteralPath $pnpmLightning -Directory -Filter "lightningcss@*" -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $sz = Get-DirSizeBytes $_.FullName
+                if (Remove-TreeWindowsSafe $_.FullName) {
+                    $scrubbedCount++; $scrubbedBytes += $sz
+                }
+            }
+        Get-ChildItem -LiteralPath $pnpmLightning -Directory -Filter "lightningcss-*@*" -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $sz = Get-DirSizeBytes $_.FullName
+                if (Remove-TreeWindowsSafe $_.FullName) {
+                    $scrubbedCount++; $scrubbedBytes += $sz
+                }
+            }
+    }
+
+    foreach ($entry in $script:OpenClawOrphanedNativesWithDeps) {
         $keep = $false
         if ($entry.Deps.Count -gt 0) {
             $keep = Test-ExtensionKept -Exts $entry.Deps -TreeRoot $openclawDest
         }
-        if (-not $keep) {
-            try {
-                $sz = (Get-ChildItem -Path $pkgPath -Recurse -File -ErrorAction SilentlyContinue |
-                       Measure-Object -Property Length -Sum).Sum
-                $orphanBytes += [int]$sz
-                Remove-TreeWindowsSafe $pkgPath | Out-Null
-                $orphanCount++
-            } catch { }
-        } else {
+        if ($keep) {
             Write-Info "Kept $($entry.Pkg) -- dependent extension present"
+            continue
+        }
+        $n = Remove-OpenClawNmPackage -NmRoot $scrubbedNmDir -Pkg $entry.Pkg
+        if ($n -gt 0) {
+            $scrubbedCount++
+            $scrubbedBytes += $n
+            Write-Info ("  scrubbed {0} (~{1} MB)" -f $entry.Pkg, [math]::Round($n / 1MB, 1))
+        }
+    }
+
+    # Clean dangling .bin entries left by scrubbed packages.
+    $binDir = Join-Path $scrubbedNmDir ".bin"
+    if (Test-Path $binDir) {
+        Get-ChildItem -Path $binDir -Force -ErrorAction SilentlyContinue | Where-Object {
+            $_.LinkType -ne $null -and ($_.Target.Count -eq 0 -or -not (Test-Path $_.Target[0]))
+        } | ForEach-Object {
+            Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue
         }
     }
 }
-if ($orphanCount -gt 0) {
-    $orphanMB = [math]::Round($orphanBytes / 1MB, 1)
-    Write-Ok "Scrubbed $orphanCount orphaned native packages (~$orphanMB MB)"
+
+if ($scrubbedCount -gt 0) {
+    $scrubbedMB = [math]::Round($scrubbedBytes / 1MB, 1)
+    Write-Ok "Scrubbed $scrubbedCount OpenClaw package target(s) (~$scrubbedMB MB)"
+} else {
+    Write-Info "OpenClaw scrub: no matching package dirs found (already clean, or layout unexpected)"
+}
+
+# Post-scrub audit: if known orphans are still on disk, the Windows long-path
+# delete failed or packages only live under an unexpected path. Fail loud so
+# the next PC does not silently ship a 2.8 GB staged tree.
+$orphanStillPresent = @()
+foreach ($entry in $script:OpenClawOrphanedNativesWithDeps) {
+    if ($entry.Deps.Count -gt 0 -and (Test-ExtensionKept -Exts $entry.Deps -TreeRoot $openclawDest)) {
+        continue
+    }
+    $top = Join-Path $scrubbedNmDir $entry.Pkg
+    $sz = Get-DirSizeBytes $top
+    if ($sz -gt 5MB) {
+        $orphanStillPresent += ("{0} ({1} MB top-level)" -f $entry.Pkg, [math]::Round($sz / 1MB, 1))
+        continue
+    }
+    $pnpm = Join-Path $scrubbedNmDir ".pnpm"
+    if (Test-Path -LiteralPath $pnpm) {
+        $filter = if ($entry.Pkg.StartsWith("@") -and ($entry.Pkg -notmatch '/')) {
+            $entry.Pkg + "+*"
+        } elseif ($entry.Pkg -match '^@([^/]+)/(.+)$') {
+            "@$($Matches[1])+$($Matches[2])@*"
+        } else {
+            $entry.Pkg + "@*"
+        }
+        $hit = Get-ChildItem -LiteralPath $pnpm -Directory -Filter $filter -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($hit) {
+            $psz = Get-DirSizeBytes $hit.FullName
+            if ($psz -gt 5MB) {
+                $orphanStillPresent += ("{0} ({1} MB under .pnpm)" -f $entry.Pkg, [math]::Round($psz / 1MB, 1))
+            }
+        }
+    }
+}
+if ($orphanStillPresent.Count -gt 0) {
+    Write-Fail "OpenClaw scrub left heavy orphans behind (NSIS will blow past 2 GB):"
+    foreach ($o in $orphanStillPresent) { Write-Info "  still present: $o" }
+    Write-Info "  Re-run with -ForceOpenClaw after syncing this script, or delete apps\tauri\src-tauri\resources\openclaw and retry."
+    exit 1
+}
+
+# Largest remaining top-level packages (investigation aid when totals are high).
+if (Test-Path -LiteralPath $scrubbedNmDir) {
+    $topLeft = Get-ChildItem -LiteralPath $scrubbedNmDir -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne ".bin" } |
+        ForEach-Object {
+            [pscustomobject]@{ Name = $_.Name; MB = [math]::Round((Get-DirSizeBytes $_.FullName) / 1MB, 1) }
+        } |
+        Sort-Object MB -Descending |
+        Select-Object -First 12
+    if ($topLeft) {
+        Write-Info "Largest remaining OpenClaw node_modules entries:"
+        foreach ($row in $topLeft) {
+            if ($row.MB -lt 1) { continue }
+            Write-Host ("    {0,-28} {1,8} MB" -f $row.Name, $row.MB)
+        }
+    }
 }
 
 # Scrub stray build artefacts that leak in via the reuse path (the exclude
@@ -2652,9 +2777,11 @@ if (Get-Command "cargo-tauri" -ErrorAction SilentlyContinue) {
     }
     $tauriCmd = "npx"
 }
-# Build the tauri args. -SkipMsi (default $true) restricts tauri to the NSIS
-# bundle, dodging the slow light.exe link step on the 3 GB resource tree.
-# Use -SkipMsi:$false to also produce a WiX .msi (for enterprise deployment).
+# Build the tauri args.
+#   -SkipMsi (default) -> --bundles nsis   (fast; hard ~2 GB installer cap)
+#   -SkipMsi:$false    -> --bundles msi    (WiX; no 2 GB cap; light.exe is slow)
+# Always pass an explicit --bundles value: tauri.conf.json lists nsis/dmg/appimage
+# and would still pick NSIS if we only omitted the flag.
 #
 # Slim / Full / default config selection (mirrors apps/tauri/package.json):
 #   -SkipPi   -> --config src-tauri/tauri.conf.slim.json  (Pi + Kubo omitted)
@@ -2670,6 +2797,9 @@ if ($SkipPi -and $Full) {
 $tauriArgs = @("tauri", "build", "--target", "x86_64-pc-windows-msvc")
 if ($SkipMsi) {
     $tauriArgs += @("--bundles", "nsis")
+} else {
+    $tauriArgs += @("--bundles", "msi")
+    Write-Info "Installer format: WiX .msi (-SkipMsi:`$false)"
 }
 if ($SkipPi) {
     $slimConf = Join-Path $TauriSrcDir "tauri.conf.slim.json"
@@ -2718,11 +2848,11 @@ try {
 
     # (Typecheck already done in Step 1.)
 
-    # Resource size check -- NSIS has a hard 2 GB installer cap. When the
-    # bundled tree (Node sidecar + EnvoyMesh node + OpenClaw + Social UI)
+    # Resource size check -- NSIS has a hard ~2 GB installer cap. When the
+    # bundled tree (Node sidecar + EnvoyMesh node + OpenClaw + Pi + harness)
     # approaches that, makensis fails deep inside the build with a vague
-    # "stale temp file" message and the real error is hidden. Print the
-    # staged size up-front so the next failure mode is at least visible.
+    # "stale temp file" / mmapping error. Print size + per-dir breakdown
+    # up-front. WiX (.msi via -SkipMsi:$false) has no 2 GB cap.
     $resourceBytes = 0L
     if (Test-Path $TauriResources) {
         $sum = (Get-ChildItem -Path $TauriResources -Recurse -File -ErrorAction SilentlyContinue |
@@ -2731,12 +2861,32 @@ try {
     }
     $resourceMb = [math]::Round($resourceBytes / 1MB, 1)
     Write-Info "Staged Tauri resources: $resourceMb MB"
+    if ($resourceBytes -gt 1.5GB -and (Test-Path $TauriResources)) {
+        Get-ChildItem -Path $TauriResources -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            $dirSum = (Get-ChildItem -Path $_.FullName -Recurse -File -ErrorAction SilentlyContinue |
+                Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+            if ($null -eq $dirSum) { $dirSum = 0 }
+            $dirMb = [math]::Round([long]$dirSum / 1MB, 1)
+            Write-Host ("    {0,-22} {1,8} MB" -f $_.Name, $dirMb)
+        }
+    }
+    $allowLargeNsis = ($env:ENVOYMESH_ALLOW_LARGE_NSIS -eq "1")
     if ($resourceBytes -gt 1.8GB) {
-        Write-Fail "Resources exceed 1.8 GB -- NSIS will likely fail. Switch to WiX with -SkipMsi:`$false or shrink the staged tree."
-        Pop-Location
-        exit 1
-    } elseif ($resourceBytes -gt 1.5GB) {
-        Write-Warn "Resources exceed 1.5 GB -- NSIS (2 GB hard cap) is at risk. Consider WiX instead (-SkipMsi:`$false) or trim packages\openclaw\extensions\."
+        if (-not $SkipMsi) {
+            Write-Warn "Resources are $resourceMb MB (>1.8 GB). Continuing with WiX .msi (no 2 GB cap)."
+        } elseif ($allowLargeNsis) {
+            Write-Warn "Resources are $resourceMb MB (>1.8 GB). ENVOYMESH_ALLOW_LARGE_NSIS=1 set -- continuing with NSIS (makensis may still fail)."
+        } else {
+            Write-Fail "Resources are $resourceMb MB (>1.8 GB). NSIS installers fail above ~2 GB."
+            Write-Info "  This is total staged size (openclaw + node + pi + envoy-harness + ...), not a failed extension prune."
+            Write-Info "  Other PCs that succeed either stage a smaller tree or build WiX."
+            Write-Info "  Fix: re-run with -SkipMsi:`$false  (forces --bundles msi), or shrink the staged tree."
+            Write-Info "  Override (not recommended): `$env:ENVOYMESH_ALLOW_LARGE_NSIS=1"
+            Pop-Location
+            exit 1
+        }
+    } elseif ($resourceBytes -gt 1.5GB -and $SkipMsi) {
+        Write-Warn "Resources exceed 1.5 GB -- NSIS (2 GB hard cap) is at risk. Consider -SkipMsi:`$false (WiX) if the next build fails in makensis."
     }
 
     # Stream the Tauri build live. Tauri/Cargo/makensis together emit a
