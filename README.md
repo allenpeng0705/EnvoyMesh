@@ -31,6 +31,8 @@ EnvoyMesh is a private social network that you — and your AI agent — actuall
 
 - **Your devices run the network** — no central server, no account to lose.
 - **Your identity is cryptographic** — Ed25519 keys you control, self-sovereign DIDs.
+- **One mesh protocol on libp2p** — peers talk with signed envelopes over the EnvoyMesh wire protocol (discovery, bonds, chat, knowledge, agent tasks).
+- **One thin-client protocol for the phone** — the home computer runs the full node; **EnvoyGo** and **EnvoyDev Mobile** connect as thin clients (JSON-RPC over WebSocket / libp2p), so model keys and repos stay on the desktop.
 - **Your AI agent works for you** — runs on your hardware, follows your policies.
 - **Security by design** — signed messages, policy-based trust tiers, end-to-end auditability.
 
@@ -79,10 +81,13 @@ Pair EnvoyGo to your home node via QR. Requires a running EnvoyMesh desktop inst
 
 - [Download](#download)
 - [What can I do with EnvoyMesh?](#what-can-i-do-with-envoymesh)
+- [Coding](#coding)
+- [Apps built on EnvoyMesh](#apps-built-on-envoymesh)
 - [Getting Started](#getting-started)
   - [Headless home node (advanced)](#headless-home-node-advanced)
 - [How It Works](#how-it-works)
   - [System architecture](#system-architecture)
+  - [Two protocols](#two-protocols)
   - [Network Architecture](#network-architecture)
   - [Security Pipeline](#security-pipeline)
   - [Agent Bridge](#agent-bridge)
@@ -108,7 +113,7 @@ Pair EnvoyGo to your home node via QR. Requires a running EnvoyMesh desktop inst
 
 ### AI Agent
 - **Built-in AI (EnvoyAI / OpenClaw)** — ships on by default; auto-starts with your node on port `:18789`. Mesh-aware (contacts, knowledge, chat).
-- **Coding agents** — **Envoy Harness** powers coding chat (and Terminal); **Pi** is available in Terminal and for Ext Agent. Configure separately under Settings → AI (no shared “active engine” switch).
+- **Coding tab** — projects, tasks, and coding agents in one place (see [Coding](#coding)). **Envoy Harness** and **Pi** are built in; Claude Code, Codex, Cursor, OpenCode, and more run when installed on the home computer.
 - **External Agent Bridge** — connect HomeClaw, Hermes, OpenHuman, or any HTTP agent as a second engine. Opt-in via Settings → AI → AI Engine.
 - **Two-engine modes** — run built-in only, built-in + external, external only, or none.
 - **Agent autonomy** — your agent can make friends, search knowledge, and execute tasks within your safety rules.
@@ -137,7 +142,7 @@ Pair EnvoyGo to your home node via QR. Requires a running EnvoyMesh desktop inst
 - **Network-wide discovery** — search for documents, capabilities, and peers across the mesh.
 
 ### Mobile & Remote Access
-- **EnvoyGo (product mobile app)** — Flutter thin client for remote access to your home node: chat, AI, terminals, Browser, family network, native WebRTC voice calls. [Download](#download).
+- **EnvoyGo (product mobile app)** — Flutter thin client for remote access to your home node: chat, AI, terminals, Browser, family network, native WebRTC voice calls. Same home↔phone protocol as EnvoyDev Mobile. [Download](#download).
 - **Terminals** — chat-integrated remote shell; Pi and Envoy Harness TUIs on the desktop Terminal view.
 - **Multi-device identity** — same owner ID across all your devices.
 
@@ -145,6 +150,76 @@ Pair EnvoyGo to your home node via QR. Requires a running EnvoyMesh desktop inst
 - **One home node, many profiles** — turn your home computer into a private family social network; each member pairs their phone and gets their own profile, AI threads, and family chat. No cloud, no subscription.
 - **Owner vs. member roles** — owner keeps full EnvoyMesh; members get a focused subset (profile, AI, bots, family chat, push) with no terminal, vault, or mesh settings.
 - **Shared AI, isolated data** — all members share the home node's model config, but each person's AI history and data stay sealed.
+
+---
+
+## Coding
+
+The desktop Social app’s **Coding** tab is where you drive coding agents on your home computer — the machine where your repos live. It is not a replacement for Claude Code or Cursor; it is the **control plane**: same project list, task timeline, approvals, and diff review, for every agent you choose.
+
+### What it is
+
+- **Projects on the left, tasks in the middle.** Register a folder as a project, then create tasks under it. Each task has its own agent, model, and transcript.
+- **One window, many agents.** Built-in **Envoy Harness** (coding chat + Terminal) and **Pi** (Terminal / Ext Agent). Catalogued CLIs — Claude Code, Codex, GitHub Copilot, OpenCode, Cursor, DeepSeek, and more — when they are installed and ready on this machine. Install only what you use; Coding probes Ready / Not ready under **Settings → AI → Coding tools**.
+- **See what the agent is doing.** Live transcript with messages, tool calls, and a closable **Changes** overlay for file diffs.
+- **Approve before risky steps.** Permission prompts show scope before tools run.
+- **Heartbeats and schedules.** Recurring prompts on existing tasks, or cron that creates a new task and runs once — not the same as Team jobs.
+- **Peer review.** Invite a bonded contact to review a coding task from your home node.
+- **Keys stay with the agent.** EnvoyMesh does not proxy your provider credentials. External CLIs keep their own login; Envoy / Pi fall back to EnvoyMesh AI when you leave the model empty.
+
+Coding agents do **not** get mesh contacts or vault knowledge — that stays with Built-in OpenClaw (EnvoyAI). Open Coding from the main nav, or from Terminals via the Coding shortcut.
+
+→ Full product for multi-agent coding workflows: **[EnvoyDev](#apps-built-on-envoymesh)** ([GitHub](https://github.com/allenpeng0705/EnvoyCoder)).
+
+---
+
+## Apps built on EnvoyMesh
+
+EnvoyMesh defines the **shared protocols** the family runs on — not just a desktop UI:
+
+1. **Mesh protocol (libp2p)** — peer-to-peer discovery, bonds, signed envelopes, chat, knowledge, agent tasks between home nodes (and relays).
+2. **Home↔phone thin-client protocol** — JSON-RPC (WebSocket / libp2p circuit) from a phone app to the home desktop. The phone is a window; the home computer runs the node, agents, and keys.
+
+**EnvoyGo** and **EnvoyDev Mobile** both use that thin-client path to reach the desktop. **Veda Notes** pairs with EnvoyMesh Home for sync and Home AI. Product-specific state stays in each app; identity and mesh stay shared.
+
+| App | What it is | Link |
+|-----|------------|------|
+| **EnvoyMesh** | Desktop home node + Social UI — full mesh peer (this repo) | [Website](https://www.homeclaw.cn/envoy/) |
+| **EnvoyGo** | Phone thin client → EnvoyMesh home (chat, AI, calls, family) | [Download](#download) |
+| **EnvoyDev** | Coding-agent control plane — desktop + **EnvoyDev Mobile** (same thin-client protocol) | [GitHub · EnvoyCoder](https://github.com/allenpeng0705/EnvoyCoder) |
+| **Veda Notes** | AI journal; pairs with EnvoyMesh Home for private sync, Home AI, family social | [Veda Notes](https://www.homeclaw.cn/veda-ai/) |
+
+### EnvoyDev
+
+**EnvoyDev** is the dedicated coding control plane in the EnvoyMesh apps group. Run Claude Code, Codex, OpenCode, Cursor, and more on your own machines; reach them from a desktop window or phone. Your code stays on your machine; model keys stay with the agent that uses them.
+
+<p align="center">
+  <img src="sites/screens/envoydev-project.png" alt="EnvoyDev project view — one task, transcript, and files" width="800" />
+</p>
+<p align="center"><em>EnvoyDev project view — projects and tasks on the left, live transcript in the middle, files on the right.</em></p>
+
+<p align="center">
+  <img src="sites/screens/envoydev-agents.png" alt="EnvoyDev Agents settings — Ready / Not ready per coding CLI" width="800" />
+</p>
+<p align="center"><em>Agents settings — every catalogued harness on this machine, with Ready / Not ready status.</em></p>
+
+- **Desktop** shares mesh identity and pairing with EnvoyMesh; project/task state lives under EnvoyDev’s own home path.
+- **EnvoyDev Mobile** is a thin client to the EnvoyDev / home desktop — same home↔phone protocol family as **EnvoyGo** (pair via QR, `host:port`, or SSH hop). The phone never runs the coding agent or holds provider keys.
+
+- Source and docs: [github.com/allenpeng0705/EnvoyCoder](https://github.com/allenpeng0705/EnvoyCoder)
+- Built-in agent runtime: [envoy-harness](https://github.com/allenpeng0705/envoy-harness)
+
+The **Coding** tab in EnvoyMesh Social is the mesh-integrated coding surface inside the home-node desktop app. EnvoyDev is the fuller standalone product when coding agents are your primary workflow.
+
+### Veda Notes
+
+**Veda Notes** is an intelligent journaling app (AI insights, privacy-first, multilingual, rich media). Pair it with EnvoyMesh on your computer to unlock:
+
+- **Private note sync** — Markdown to your home node; data stays on your network
+- **Home AI chat** — ask about your notes using models on your computer
+- **Family social** — feed, blog, and messaging through your private mesh
+
+Product page: [homeclaw.cn/veda-ai](https://www.homeclaw.cn/veda-ai/).
 
 ---
 
@@ -228,7 +303,7 @@ For detailed setup, configuration, Docker, mobile, and packaging: **[QuickStart.
 
 ### System architecture
 
-Every home node is a full peer. EnvoyGo is a thin client to your home; friends connect over signed mesh envelopes (optionally via relay).
+Every home node is a full peer on the mesh. Phones are thin clients to *your* home; friends’ homes talk peer-to-peer over signed mesh envelopes (optionally via relay).
 
 <p align="center">
   <img src="sites/screens/envoymesh-network.svg" alt="EnvoyMesh Network architecture — Primary Envoy, EnvoyGo, Friend Envoy, external agents, Obsidian" width="830" />
@@ -237,6 +312,30 @@ Every home node is a full peer. EnvoyGo is a thin client to your home; friends c
 <p align="center"><em>Primary Envoy (desktop) · EnvoyGo (phone) · Friend Envoy · External agents · Obsidian vault</em></p>
 
 Interactive version on the [website](https://www.homeclaw.cn/envoy/).
+
+### Two protocols
+
+EnvoyMesh standardizes **two** complementary protocols so every app in the family can interoperate without a cloud account server:
+
+| Protocol | Transport | Who speaks it | What it carries |
+|----------|-----------|---------------|-----------------|
+| **Mesh protocol** | **libp2p** (TCP/QUIC, mDNS, DHT, circuit relay) | Home node ↔ home node (and lean relays) | Signed `EnvoyEnvelope`s — chat, bonds, knowledge, agent tasks, discovery |
+| **Home↔phone (thin client)** | WebSocket and/or libp2p to the home node | Phone app → your desktop | JSON-RPC + events — UI remote control; no full mesh peer on the phone |
+
+```
+  Friend's Mac                          Your Mac (home node)                    Your phone
+  ┌──────────────┐   mesh / libp2p     ┌────────────────────┐  thin client   ┌──────────────┐
+  │ Full Envoy   │◀───────────────────▶│ EnvoyMesh desktop  │◀──────────────▶│ EnvoyGo or   │
+  │ peer         │  signed envelopes   │ Social + node      │  JSON-RPC      │ EnvoyDev     │
+  └──────────────┘                     └────────────────────┘  / pairing     │ Mobile       │
+                                                 ▲                            └──────────────┘
+                                                 │ pair QR / host:port / SSH hop
+                                                 └──── phone never holds mesh keys or agent secrets
+```
+
+- **Peers on the mesh** verify signatures and trust tiers; relays help discovery and circuit hops but do not read payloads.
+- **Thin clients** (**EnvoyGo**, **EnvoyDev Mobile**) pair once, then call the home node. Agents, vault, and provider keys stay on the computer.
+- Product UIs differ; the wire contracts stay the same so a phone can reach “home” wherever the desktop app is running.
 
 ### Network Architecture
 
@@ -873,10 +972,11 @@ For the full design, see [`docs/knowledge-base-and-rag.md`](docs/knowledge-base-
 
 ## Mobile (EnvoyGo)
 
-**Product mobile app: EnvoyGo** (`apps/envoygo/`) — Flutter thin client. This is what “mobile / phone / iOS / Android” means in this repo.
+**Product mobile app: EnvoyGo** (`apps/envoygo/`) — Flutter **thin client** to your EnvoyMesh home node. This is what “mobile / phone / iOS / Android” means in this repo for Social / family features.
 
-A lightweight app that acts as a **remote client** to your home node:
-- Connects via WebSocket or libp2p circuit relay
+It speaks the **home↔phone thin-client protocol** (not a full mesh peer on the device):
+
+- Connects via WebSocket or libp2p circuit relay to the home desktop
 - Chats, AI threads, Inbox, Browser, Terminals, Family Network, Settings
 - **Native WebRTC voice calls** — peer-to-peer media; home node does signaling only
 - Automatic reconnection with multi-transport fallback
@@ -884,6 +984,7 @@ A lightweight app that acts as a **remote client** to your home node:
 
 **Install:** [Download EnvoyGo](#download) (App Store / Google Play + QR codes).  
 **Pairing:** Scan a QR code from your desktop Social UI → instant connection.  
+**Same thin-client idea:** [EnvoyDev Mobile](https://github.com/allenpeng0705/EnvoyCoder) pairs to the coding desktop the same way — UI on the phone, agents and keys on the computer.  
 Design: [`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md).
 
 > The old Capacitor full-node stack (`apps/mobile/`) was removed. Do not recreate it unless explicitly requested.
@@ -911,7 +1012,7 @@ EnvoyMesh/
 
 ## Current Status
 
-**Active product surfaces:** Social (desktop) + **EnvoyGo** (mobile), with **Envoy Harness** for coding chat / Terminal and **Pi** for Terminal + Ext Agent. Dynamic relay roster (CN + US community hubs) ships in the desktop package seed.
+**Active product surfaces:** Social (desktop, including the **Coding** tab) + **EnvoyGo** (mobile), with **Envoy Harness** for coding chat / Terminal and **Pi** for Terminal + Ext Agent. Family apps: **[EnvoyDev](https://github.com/allenpeng0705/EnvoyCoder)** (coding control plane) and **[Veda Notes](https://www.homeclaw.cn/veda-ai/)**. Dynamic relay roster (CN + US community hubs) ships in the desktop package seed.
 
 Recent milestones (see [`docs/implementation-plan.md`](docs/implementation-plan.md) for the full list):
 
@@ -921,7 +1022,8 @@ Recent milestones (see [`docs/implementation-plan.md`](docs/implementation-plan.
 - **Phase 45** — Web content browsing (Browser on desktop + EnvoyGo)
 - **Phase 46** — Multi-relay fleet coordination; **46E** dynamic relay roster
 - **Phase 49** — Pi local coding agent (sidecar)
-- **Coding agents UX** — Envoy Harness = coding chat + Terminal; Pi = Terminal + Ext Agent (no shared active-engine switch)
+- **Phase 68** — Coding tab (projects, tasks, multi-harness, Changes overlay, heartbeats / schedules)
+- **Coding agents UX** — Envoy Harness = coding chat + Terminal; Pi = Terminal + Ext Agent; external CLIs via Settings → AI → Coding tools
 
 Earlier phases (trust modes, Agent Network / Team jobs, fleet onboarding, terminals, audio messages, family network, …) are also shipped — details in the roadmap.
 
@@ -933,12 +1035,13 @@ Earlier phases (trust modes, Agent Network / Team jobs, fleet onboarding, termin
 - **Headless home node (advanced):** [docs/headless-home-node.md](docs/headless-home-node.md)
 - **End-user guidebook:** [EnvoyMesh Guidebook 0.4.0](EnvoyMesh_GuideBook_0.4.0.md) ([简体中文](EnvoyMesh_GuideBook_0.4.0.zh-CN.md) · [HTML](sites/EnvoyMesh_GuideBook_0.4.0.html))
 - **Downloads / screenshots:** [Website](https://www.homeclaw.cn/envoy/) · [Download section](#download)
-- **Core concepts:** [Architecture reference](AGENTS.md) · [High-level design](docs/high-level-design.md) · [Security model](docs/security.md)
+- **Core concepts:** [Architecture reference](AGENTS.md) · [High-level design](docs/high-level-design.md) · [Security model](docs/security.md) · [Two protocols](#two-protocols) · [Protocol reference](docs/protocol-standard.md)
 - **AI Agent:** [Bridge guide](docs/agent_bridge_guide.md) · [OpenClaw setup](docs/openclaw-extension.md) · [AI Engine config](docs/agent-network-config.md)
 - **Agent Network:** [Operator guide](docs/agent-network-guide.md) ([中文](docs/agent-network-guide.zh-CN.md)) · [Fleet onboarding](docs/fleet-onboarding.md) · [Team jobs protocol](docs/agent_network.md)
 - **Knowledge base:** [Knowledge base & RAG](docs/knowledge-base-and-rag.md) · [Obsidian integration](#obsidian-integration)
 - **Voice & calls:** [Audio messages](docs/audio-message-support.md) · [Voice calls (desktop; video planned)](docs/voice-video-call-support.md) · [Native WebRTC on EnvoyGo](docs/voice-video-call-envoygo.md)
 - **Mobile:** [EnvoyGo design](docs/flutter-thin-client-design.md)
+- **Coding / family apps:** [Coding](#coding) · [EnvoyDev (EnvoyCoder)](https://github.com/allenpeng0705/EnvoyCoder) · [Veda Notes](https://www.homeclaw.cn/veda-ai/) · [envoy-harness](https://github.com/allenpeng0705/envoy-harness)
 - **For developers:** [Protocol reference](docs/protocol-standard.md) · [Roadmap](docs/implementation-plan.md)
 
 ---

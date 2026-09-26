@@ -31,6 +31,8 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 
 - **您的设备运行网络** — 无中央服务器，无账号可丢失。
 - **您的身份是加密的** — Ed25519 密钥由您掌控，自主主权 DIDs。
+- **一套基于 libp2p 的 mesh 协议** — 对等节点用签名信封通信（发现、建联、聊天、知识、代理任务）。
+- **一套家用电脑 ↔ 手机的轻客户端协议** — 电脑跑完整节点；**EnvoyGo** 与 **EnvoyDev Mobile** 作为轻客户端连接（WebSocket / libp2p 上的 JSON-RPC），模型密钥与代码仓库留在桌面端。
 - **您的 AI 代理为您工作** — 运行在您的硬件上，遵循您的策略。
 - **安全设计为先** — 签名消息，基于策略的信任层级，端到端可审计。
 
@@ -79,10 +81,13 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 
 - [下载](#下载)
 - [功能一览](#功能一览)
+- [编程（Coding）](#编程coding)
+- [基于 EnvoyMesh 的应用](#基于-envoymesh-的应用)
 - [快速开始](#快速开始)
   - [无界面主节点（高级）](#无界面主节点高级)
 - [工作原理](#工作原理)
   - [系统架构](#系统架构)
+  - [两套协议](#两套协议)
   - [网络架构](#网络架构)
   - [安全管道](#安全管道)
   - [代理桥接](#代理桥接)
@@ -108,7 +113,7 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 
 ### AI 代理
 - **内置 AI（EnvoyAI / OpenClaw）** — 默认开启；随节点自动启动，端口 `:18789`。可访问 mesh（联系人、知识、聊天）。
-- **编码助手** — **Envoy Harness** 负责编码聊天（并始终可在终端中使用）；**Pi** 可用于终端与 Ext Agent。在 Settings → AI 中分别配置（无共享「当前引擎」开关）。
+- **编程页（Coding）** — 项目、任务与编程代理集中在一处（见[编程（Coding）](#编程coding)）。内置 **Envoy Harness** 与 **Pi**；本机已安装时还可驱动 Claude Code、Codex、Cursor、OpenCode 等。
 - **外部代理桥接** — 连接 HomeClaw、Hermes、OpenHuman 或任何 HTTP 代理作为第二引擎。通过 Settings → AI → AI Engine 可选启用。
 - **双引擎模式** — 仅内置、内置 + 外部、仅外部、无 AI。
 - **代理自主权** — 您的代理可以在安全规则内交友、搜索知识、执行任务。
@@ -206,7 +211,7 @@ EnvoyMesh **协作任务**（协议名：chains）让你的代理分解复杂工
 - **全网发现** — 在整个网络中搜索文档、能力和节点。
 
 ### 移动与远程访问
-- **EnvoyGo（产品移动应用）** — Flutter 轻客户端，远程访问家庭节点：聊天、AI、终端、Browser、家庭网络、原生 WebRTC 语音通话。[下载](#下载)。
+- **EnvoyGo（产品移动应用）** — Flutter 轻客户端，远程访问家庭节点：聊天、AI、终端、Browser、家庭网络、原生 WebRTC 语音通话。与 EnvoyDev Mobile 使用同一套家用电脑 ↔ 手机协议。[下载](#下载)。
 - **终端** — 聊天集成的远程 shell；桌面终端视图同时支持 Pi 与 Envoy Harness TUI。
 - **多设备身份** — 所有设备共享同一 owner ID。
 
@@ -214,6 +219,76 @@ EnvoyMesh **协作任务**（协议名：chains）让你的代理分解复杂工
 - **一个主节点，多个个人资料** — 将您的家用计算机变成私有家庭社交网络；每个成员配对手机，获得自己的个人资料、AI 线程和家庭聊天。无云、无订阅。
 - **所有者与成员角色** — 所有者保留完整的 EnvoyMesh；成员获得专注子集（个人资料、AI、机器人、家庭聊天、推送），无终端、保险库或网格设置。
 - **共享 AI，隔离数据** — 所有成员共享主节点的模型配置，但每个人的 AI 历史和数据保持密封。
+
+---
+
+## 编程（Coding）
+
+桌面 Social 应用的 **编程** 页，用于在**家用电脑**（代码所在的那台机器）上驱动编程代理。它不是 Claude Code 或 Cursor 的替代品，而是**控制平面**：同一套项目列表、任务时间线、审批与差异审阅，适配您选用的每一种代理。
+
+### 它能做什么
+
+- **左侧项目，中间任务。** 将文件夹注册为项目，再在其下创建任务。每个任务有独立的代理、模型与对话记录。
+- **一个窗口，多种代理。** 内置 **Envoy Harness**（编程聊天 + 终端）与 **Pi**（终端 / Ext Agent）。本机已安装且就绪时，可驱动 Claude Code、Codex、GitHub Copilot、OpenCode、Cursor、DeepSeek 等。只装自己用的即可；在 **设置 → AI → 编程工具** 中查看就绪 / 未就绪。
+- **看见代理在做什么。** 实时对话含消息与工具调用；可关闭的 **变更** 面板展示文件差异。
+- **危险步骤前先审批。** 权限提示会说明范围，再执行工具。
+- **心跳与定时。** 对已有任务的周期性提示，或按 cron 新建任务并跑一次 — 与「协作任务」不是一回事。
+- **同伴审阅。** 从家节点邀请已建联联系人审阅某次编程任务。
+- **密钥留在代理侧。** EnvoyMesh 不代持您的模型密钥。外部 CLI 使用各自登录；Envoy / Pi 在未填模型时回退到 EnvoyMesh AI。
+
+编程代理**不能**访问 mesh 联系人或保险库知识 — 那仍由内置 OpenClaw（EnvoyAI）负责。从主导航打开编程页，或从终端页的编程快捷入口进入。
+
+→ 更完整的多智能体编程产品：**[EnvoyDev](#基于-envoymesh-的应用)**（[GitHub](https://github.com/allenpeng0705/EnvoyCoder)）。
+
+---
+
+## 基于 EnvoyMesh 的应用
+
+EnvoyMesh 定义的是同族应用共用的**协议**，而不只是桌面 UI：
+
+1. **Mesh 协议（基于 libp2p）** — 家庭主节点之间（及轻量中继）的发现、建联、签名信封、聊天、知识、代理任务。
+2. **家用电脑 ↔ 手机轻客户端协议** — 手机应用通过 WebSocket / libp2p 电路以 JSON-RPC 连接桌面主节点。手机是窗口；节点、代理与密钥留在电脑上。
+
+**EnvoyGo** 与 **EnvoyDev Mobile** 都走这条轻客户端路径连到桌面。**Veda Notes** 与 EnvoyMesh Home 配对做同步与 Home AI。各产品状态分开存放；身份与 mesh 共享。
+
+| 应用 | 简介 | 链接 |
+|------|------|------|
+| **EnvoyMesh** | 桌面家庭主节点 + Social UI — 完整 mesh 对等节点（本仓库） | [官网](https://www.homeclaw.cn/envoy/) |
+| **EnvoyGo** | 手机轻客户端 → EnvoyMesh 家节点（聊天、AI、通话、家庭） | [下载](#下载) |
+| **EnvoyDev** | 编程代理控制平面 — 桌面 + **EnvoyDev Mobile**（同一套轻客户端协议） | [GitHub · EnvoyCoder](https://github.com/allenpeng0705/EnvoyCoder) |
+| **Veda Notes** | AI 日记；与 EnvoyMesh Home 配对后可私有同步、Home AI、家庭社交 | [Veda Notes](https://www.homeclaw.cn/veda-ai/) |
+
+### EnvoyDev
+
+**EnvoyDev** 是 EnvoyMesh 应用族中的编程控制平面。在您自己的机器上运行 Claude Code、Codex、OpenCode、Cursor 等；用桌面窗口或手机继续同一任务。代码不离开本机，模型密钥留在使用它们的代理侧。
+
+<p align="center">
+  <img src="sites/screens/envoydev-project.png" alt="EnvoyDev 项目视图 — 任务、对话与文件" width="800" />
+</p>
+<p align="center"><em>EnvoyDev 项目视图 — 左侧项目与任务，中间实时对话，右侧文件。</em></p>
+
+<p align="center">
+  <img src="sites/screens/envoydev-agents.png" alt="EnvoyDev Agents 设置 — 各编程 CLI 的就绪状态" width="800" />
+</p>
+<p align="center"><em>Agents 设置 — 本机上每个已编目的 harness，以及就绪 / 未就绪状态。</em></p>
+
+- **桌面端**与 EnvoyMesh 共享身份与配对；项目/任务状态保存在 EnvoyDev 自己的主目录下。
+- **EnvoyDev Mobile** 是连到 EnvoyDev / 家用桌面的轻客户端 — 与 **EnvoyGo** 同属家用电脑 ↔ 手机协议族（扫码、`host:port` 或 SSH 跳板配对）。手机从不运行编程代理，也不持有厂商密钥。
+
+- 源码与文档：[github.com/allenpeng0705/EnvoyCoder](https://github.com/allenpeng0705/EnvoyCoder)
+- 内置代理运行时：[envoy-harness](https://github.com/allenpeng0705/envoy-harness)
+
+EnvoyMesh Social 里的 **编程** 页是家节点桌面应用内的 mesh 集成编程面；当编程代理是您的主工作流时，EnvoyDev 是更完整的独立产品。
+
+### Veda Notes
+
+**Veda Notes** 是智能日记应用（AI 洞察、隐私优先、多语言、富媒体）。与电脑上的 EnvoyMesh 配对后可解锁：
+
+- **私有笔记同步** — Markdown 同步到家庭主节点；数据留在您的网络内
+- **Home AI 对话** — 用电脑上的模型就您的笔记提问
+- **家庭社交** — 通过私有 mesh 使用动态、博客与消息
+
+产品页：[homeclaw.cn/veda-ai](https://www.homeclaw.cn/veda-ai/)。
 
 ---
 
@@ -297,7 +372,7 @@ npm run social:dev    # 打开 http://localhost:5173
 
 ### 系统架构
 
-每个家庭主节点都是完整对等节点。EnvoyGo 是连到你家主节点的轻客户端；朋友之间通过签名信封通信（可选经中继）。
+每个家庭主节点都是 mesh 上的完整对等节点。手机是连到*您家*主节点的轻客户端；朋友的家节点之间通过签名信封点对点通信（可选经中继）。
 
 <p align="center">
   <img src="sites/screens/envoymesh-network-zh.svg" alt="EnvoyMesh 网络架构 — 主 Envoy、EnvoyGo、朋友 Envoy、外部代理、Obsidian" width="830" />
@@ -306,6 +381,30 @@ npm run social:dev    # 打开 http://localhost:5173
 <p align="center"><em>主 Envoy（桌面）· EnvoyGo（手机）· 朋友 Envoy · 外部代理 · Obsidian 保险箱</em></p>
 
 交互版见[官网](https://www.homeclaw.cn/envoy/)。
+
+### 两套协议
+
+EnvoyMesh 标准化了**两套**互补协议，使同族应用无需云账号服务器即可互通：
+
+| 协议 | 传输 | 谁使用 | 承载内容 |
+|------|------|--------|----------|
+| **Mesh 协议** | **libp2p**（TCP/QUIC、mDNS、DHT、电路中继） | 家庭主节点 ↔ 家庭主节点（及轻量中继） | 签名 `EnvoyEnvelope` — 聊天、建联、知识、代理任务、发现 |
+| **家用电脑 ↔ 手机（轻客户端）** | WebSocket 和/或 libp2p 连到家节点 | 手机应用 → 您的桌面 | JSON-RPC + 事件 — UI 远程控制；手机上不跑完整 mesh 对等节点 |
+
+```
+  朋友的 Mac                          您的 Mac（家庭主节点）                    您的手机
+  ┌──────────────┐   mesh / libp2p     ┌────────────────────┐  轻客户端     ┌──────────────┐
+  │ 完整 Envoy   │◀───────────────────▶│ EnvoyMesh 桌面     │◀─────────────▶│ EnvoyGo 或   │
+  │ 对等节点     │  签名信封           │ Social + 节点      │  JSON-RPC     │ EnvoyDev     │
+  └──────────────┘                     └────────────────────┘  / 配对       │ Mobile       │
+                                                 ▲                            └──────────────┘
+                                                 │ 扫码 / host:port / SSH 跳板
+                                                 └──── 手机不持有 mesh 密钥或代理密钥
+```
+
+- **Mesh 上的对等节点**验证签名与信任层级；中继帮助发现与电路跳转，但不读取载荷。
+- **轻客户端**（**EnvoyGo**、**EnvoyDev Mobile**）配对一次后调用家节点。代理、保险箱与厂商密钥留在电脑上。
+- 各产品 UI 不同；线路契约相同，因此手机总能连到正在运行桌面应用的「家」。
 
 ### 网络架构
 
@@ -861,10 +960,11 @@ MCP 来源的笔记默认为 `friends` 敏感度（非 public）。
 
 ## 移动端（EnvoyGo）
 
-**产品移动应用：EnvoyGo**（`apps/envoygo/`）— Flutter 轻客户端。本仓库中「手机 / iOS / Android」均指它。
+**产品移动应用：EnvoyGo**（`apps/envoygo/`）— 连到您 EnvoyMesh 家庭主节点的 Flutter **轻客户端**。本仓库中「手机 / iOS / Android」在社交 / 家庭功能上均指它。
 
-轻量级应用，作为家庭节点的**远程客户端**：
-- 通过 WebSocket 或 libp2p 电路中继连接
+它使用**家用电脑 ↔ 手机轻客户端协议**（设备上不是完整 mesh 对等节点）：
+
+- 通过 WebSocket 或 libp2p 电路中继连到桌面主节点
 - 聊天、AI 线程、收件箱、Browser、终端、家庭网络、设置
 - **原生 WebRTC 语音通话** — 媒体点对点；家庭节点仅做信令
 - 自动重连，多传输回退
@@ -872,6 +972,7 @@ MCP 来源的笔记默认为 `friends` 敏感度（非 public）。
 
 **安装：** [下载 EnvoyGo](#下载)（App Store / Google Play + 二维码）。  
 **配对：** 扫描桌面 Social UI 的二维码 → 即时连接。  
+**同一套轻客户端思路：** [EnvoyDev Mobile](https://github.com/allenpeng0705/EnvoyCoder) 以同样方式配对到编程桌面 — UI 在手机，代理与密钥在电脑。  
 设计说明：[`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md)。
 
 > 旧版 Capacitor 全节点方案（`apps/mobile/`）已移除。除非明确要求，请勿重建。
@@ -899,7 +1000,7 @@ EnvoyMesh/
 
 ## 当前状态
 
-**当前产品面：** Social（桌面）+ **EnvoyGo**（手机）；**Envoy Harness** 负责编码聊天 / 终端，**Pi** 用于终端与 Ext Agent。动态中继名册（CN + US 社区枢纽）随桌面安装包种子分发。
+**当前产品面：** Social（桌面，含 **编程** 页）+ **EnvoyGo**（手机）；**Envoy Harness** 负责编程聊天 / 终端，**Pi** 用于终端与 Ext Agent。同族应用：**[EnvoyDev](https://github.com/allenpeng0705/EnvoyCoder)**（编程控制平面）、**[Veda Notes](https://www.homeclaw.cn/veda-ai/)**。动态中继名册（CN + US 社区枢纽）随桌面安装包种子分发。
 
 近期里程碑（完整列表见 [`docs/implementation-plan.md`](docs/implementation-plan.md)）：
 
@@ -909,7 +1010,8 @@ EnvoyMesh/
 - **Phase 45** — Web 内容浏览（桌面 + EnvoyGo Browser）
 - **Phase 46** — 多中继舰队协调；**46E** 动态中继名册
 - **Phase 49** — Pi 本地编码助手（sidecar）
-- **编码助手 UX** — Envoy Harness = 编码聊天 + 终端；Pi = 终端 + Ext Agent（无共享「当前引擎」开关）
+- **Phase 68** — 编程页（项目、任务、多 harness、变更面板、心跳 / 定时）
+- **编程代理 UX** — Envoy Harness = 编程聊天 + 终端；Pi = 终端 + Ext Agent；外部 CLI 见 设置 → AI → 编程工具
 
 更早的阶段（信任模式、Agent Network / 协作任务、舰队入职、终端、语音消息、家庭网络等）亦已发布 — 详见路线图。
 
@@ -921,12 +1023,13 @@ EnvoyMesh/
 - **无界面主节点（高级）：** [docs/headless-home-node.md](docs/headless-home-node.md)
 - **终端用户指南：** [EnvoyMesh 完整指南 0.4.0](EnvoyMesh_GuideBook_0.4.0.zh-CN.md)（[English](EnvoyMesh_GuideBook_0.4.0.md) · [HTML](sites/EnvoyMesh_GuideBook_0.4.0.zh-CN.html)）
 - **下载 / 截图：** [官网](https://www.homeclaw.cn/envoy/) · [下载章节](#下载)
-- **核心概念：** [架构参考](AGENTS.md) · [高级设计](docs/high-level-design.md) · [安全模型](docs/security.md)
+- **核心概念：** [架构参考](AGENTS.md) · [高级设计](docs/high-level-design.md) · [安全模型](docs/security.md) · [两套协议](#两套协议) · [协议参考](docs/protocol-standard.md)
 - **AI 代理：** [桥接指南](docs/agent_bridge_guide.md) · [OpenClaw 设置](docs/openclaw-extension.md) · [AI Engine 配置](docs/agent-network-config.md)
 - **Agent Network：** [操作指南](docs/agent-network-guide.zh-CN.md)（[English](docs/agent-network-guide.md)）· [团队入职](docs/fleet-onboarding.md) · [协作任务协议](docs/agent_network.md)
 - **知识库：** [知识库 & RAG](docs/knowledge-base-and-rag.md) · [Obsidian 集成](#obsidian-集成)
 - **语音与通话：** [语音消息](docs/audio-message-support.md) · [语音通话（桌面；视频计划中）](docs/voice-video-call-support.md) · [EnvoyGo 原生 WebRTC](docs/voice-video-call-envoygo.md)
 - **移动：** [EnvoyGo 设计](docs/flutter-thin-client-design.md)
+- **编程 / 同族应用：** [编程（Coding）](#编程coding) · [EnvoyDev（EnvoyCoder）](https://github.com/allenpeng0705/EnvoyCoder) · [Veda Notes](https://www.homeclaw.cn/veda-ai/) · [envoy-harness](https://github.com/allenpeng0705/envoy-harness)
 - **开发者：** [协议参考](docs/protocol-standard.md) · [路线图](docs/implementation-plan.md)
 
 ---
