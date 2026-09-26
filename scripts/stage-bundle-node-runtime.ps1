@@ -300,10 +300,20 @@ foreach ($modPath in $npmLines) {
     $destMod = Join-Path $Dest "node_modules/$pkgName"
     if (Test-Path $destMod) { continue }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destMod) | Out-Null
-    # Prefer the hoisted copy under $Root/node_modules when present (avoids
-    # nested npm-ls paths pinning an older major, e.g. uint8arrays@5 vs 6).
+    # Prefer the hoisted copy under $Root/node_modules ONLY when its
+    # version matches the npm-ls path. Blindly preferring hoisted used to
+    # pin uuid@10 over request's uuid@3 (breaks nat-upnp -> uuid/v4) and
+    # protons-runtime@5 over @6/@7 (breaks streamMessage for network).
     $hoisted = Join-Path $Root "node_modules/$pkgName"
-    if (Test-Path $hoisted) { $modPath = $hoisted }
+    if ((Test-Path $hoisted) -and (Test-Path $modPath)) {
+        try {
+            $hv = (Get-Content (Join-Path $hoisted "package.json") -Raw | ConvertFrom-Json).version
+            $mv = (Get-Content (Join-Path $modPath "package.json") -Raw | ConvertFrom-Json).version
+            if ($hv -and $mv -and ($hv -eq $mv)) { $modPath = $hoisted }
+        } catch { }
+    } elseif (Test-Path $hoisted) {
+        $modPath = $hoisted
+    }
     # Resolve pnpm/npm symlinks before copy (relative targets break when
     # relocated into the staged tree).
     $copySrc = $modPath
@@ -476,6 +486,86 @@ for ($iter = 1; $iter -le $maxIterations; $iter++) {
 }
 if ($safetyNetCopied -gt 0) {
     Write-Host "  Safety net: copied $safetyNetCopied missing deps in $iter pass(es) (npm ls dropped them)"
+}
+
+# --- Version skew fixups (Windows staging) ---------------------------------
+# Copy-TreeWindowsSafe strips nested node_modules, so request loses its
+# uuid@3 and resolves to hoisted uuid@10 (no ./v4 export). Likewise the
+# hoisted protons-runtime@5 lacks streamMessage required by @envoymesh/network.
+function Find-PkgDirByVersionPrefix([string]$Name, [string]$VersionPrefix) {
+    $pnpm = Join-Path $Root "node_modules\.pnpm"
+    if (Test-Path $pnpm) {
+        $hit = Get-ChildItem -Path $pnpm -Directory -Filter ($Name + "@" + $VersionPrefix + "*") -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($hit) {
+            $cand = Join-Path $hit.FullName "node_modules\$Name"
+            if (Test-Path (Join-Path $cand "package.json")) { return $cand }
+        }
+    }
+    # Nested copies under other packages
+    foreach ($nmRoot in $depSearchRoots) {
+        if (-not (Test-Path $nmRoot)) { continue }
+        $hit = Get-ChildItem -Path $nmRoot -Recurse -Directory -Filter $Name -ErrorAction SilentlyContinue |
+            Where-Object {
+                $pj = Join-Path $_.FullName "package.json"
+                if (-not (Test-Path $pj)) { return $false }
+                try {
+                    $ver = (Get-Content $pj -Raw | ConvertFrom-Json).version
+                    return ($ver -like ($VersionPrefix + "*"))
+                } catch { return $false }
+            } | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+
+Write-Host "  Repairing known version skews in staged node_modules..."
+# 1) request needs uuid@3 (uuid/v4 subpath). Nest it under request/.
+$requestDest = Join-Path $Dest "node_modules\request"
+if (Test-Path $requestDest) {
+    $uuid3Src = Find-PkgDirByVersionPrefix "uuid" "3."
+    if ($uuid3Src) {
+        $uuidNest = Join-Path $requestDest "node_modules\uuid"
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $uuidNest) | Out-Null
+        if (Test-Path $uuidNest) { Remove-TreeWindowsSafe $uuidNest | Out-Null }
+        try {
+            Copy-TreeWindowsSafe -Src $uuid3Src -Dst $uuidNest -ExcludeDirs @() -ExcludeFiles @() | Out-Null
+            Write-Host "  OK nested uuid@3 under request/node_modules (nat-upnp / uuid/v4)"
+        } catch {
+            Write-Host "  WARN: could not nest uuid@3 under request: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Host "  WARN: uuid@3 not found in source trees -- nat-upnp may fail uuid/v4"
+    }
+}
+# 2) protons-runtime must export streamMessage (need @6 or @7, not @5.6).
+$prDest = Join-Path $Dest "node_modules\protons-runtime"
+$needsPrFix = $true
+if (Test-Path (Join-Path $prDest "package.json")) {
+    try {
+        # Quick check: look for streamMessage in the package entry
+        $prIndex = Join-Path $prDest "dist\src\index.js"
+        if (-not (Test-Path $prIndex)) { $prIndex = Join-Path $prDest "dist\index.js" }
+        if ((Test-Path $prIndex) -and (Select-String -Path $prIndex -Pattern "streamMessage" -Quiet)) {
+            $needsPrFix = $false
+        }
+    } catch { }
+}
+if ($needsPrFix) {
+    $prSrc = Find-PkgDirByVersionPrefix "protons-runtime" "6."
+    if (-not $prSrc) { $prSrc = Find-PkgDirByVersionPrefix "protons-runtime" "7." }
+    if ($prSrc) {
+        if (Test-Path $prDest) { Remove-TreeWindowsSafe $prDest | Out-Null }
+        try {
+            Copy-TreeWindowsSafe -Src $prSrc -Dst $prDest -ExcludeDirs @() -ExcludeFiles @() | Out-Null
+            $ver = (Get-Content (Join-Path $prDest "package.json") -Raw | ConvertFrom-Json).version
+            Write-Host "  OK replaced staged protons-runtime with @$ver (streamMessage)"
+        } catch {
+            Write-Host "  WARN: could not replace protons-runtime: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Host "  WARN: protons-runtime@6/@7 not found -- @envoymesh/network may fail streamMessage"
+    }
 }
 
 # Sanity check: verify a handful of known-critical runtime deps are present.

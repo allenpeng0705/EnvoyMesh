@@ -1004,22 +1004,22 @@ if (-not (Test-Path $stageNodePs1)) {
     exit 1
 }
 # The inner script uses `Write-Error` with $ErrorActionPreference="Stop", which
-# becomes a terminating exception in the outer scope. Capture the actual
-# message so the user sees WHY it failed (not just "failed"). Note: we only
-# gate on $stageError, NOT on $LASTEXITCODE -- PowerShell's $LASTEXITCODE
-# carries over from the last external command in the inner script (e.g. a
-# non-zero `npm ls` exit), so it's not a reliable signal that the staging
-# itself failed. The inner script's `Write-Host "  OK Node runtime staged ..."`
-# at the end is the authoritative "it worked" indicator.
+# becomes a terminating exception in the outer scope. Also honour a non-zero
+# exit from the import probe (`exit 1`) -- that used to be ignored, so the
+# build continued to push-credentials and reported a confusing later failure.
 $stageError = $null
+$stageNodeExit = 0
 try {
     & $stageNodePs1 -Dest (Join-Path $TauriResources "node")
+    $stageNodeExit = $LASTEXITCODE
 } catch {
     $stageError = $_.Exception.Message
+    if ($null -eq $stageNodeExit -or $stageNodeExit -eq 0) { $stageNodeExit = 1 }
 }
-if ($stageError) {
+if ($stageError -or ($stageNodeExit -ne 0)) {
     Write-Fail "stage-bundle-node-runtime.ps1 failed"
-    Write-Info "  Reason: $stageError"
+    if ($stageError) { Write-Info "  Reason: $stageError" }
+    if ($stageNodeExit -ne 0) { Write-Info "  Exit code: $stageNodeExit (often the end-to-end import probe)" }
     Write-Info "  The most common cause is a workspace package without a built dist. From the repo root, run:"
     Write-Info "    npx tsc -b"
     exit 1
