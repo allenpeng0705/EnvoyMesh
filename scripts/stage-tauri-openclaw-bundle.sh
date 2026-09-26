@@ -84,6 +84,7 @@ _openclaw_orphaned_native_pkgs_with_deps="
   @slack|slack
   @aws-sdk|amazon-bedrock amazon-bedrock-mantle tlon
   @smithy|amazon-bedrock amazon-bedrock-mantle tlon
+  @mistralai|mistral
 "
 
 _openclaw_extension_is_kept() {

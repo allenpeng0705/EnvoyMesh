@@ -310,6 +310,71 @@ function Copy-TreeWindowsSafe {
     return $true
 }
 
+# Link node_modules/openclaw/<dir> -> ../../<dir> without deep-copying.
+# Prefer directory junction (/J: no admin) over symlink (/D: needs Developer
+# Mode). Never fall back to Copy-Item for dist/extensions/skills -- that
+# doubles the staged OpenClaw tree (~250+ MB) and is what inflated
+# "openclaw 258 MB" under node_modules on Windows.
+function Set-OpenClawNmDirLink {
+    param(
+        [Parameter(Mandatory = $true)][string]$LinkPath,
+        [Parameter(Mandatory = $true)][string]$TargetRelative
+    )
+    if (Test-Path -LiteralPath $LinkPath) {
+        $item = Get-Item -LiteralPath $LinkPath -Force
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            return $true
+        }
+        # Real directory = previous deep-copy fallback. Replace with a link.
+        Remove-TreeWindowsSafe $LinkPath | Out-Null
+    }
+    $parent = Split-Path -Parent $LinkPath
+    if (-not (Test-Path -LiteralPath $parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+    try {
+        & cmd.exe /c "mklink /J `"$LinkPath`" `"$TargetRelative`"" 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $LinkPath)) { return $true }
+    } catch { }
+    try {
+        & cmd.exe /c "mklink /D `"$LinkPath`" `"$TargetRelative`"" 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $LinkPath)) { return $true }
+    } catch { }
+    Write-Warn "Could not link $LinkPath -> $TargetRelative (enable Windows Developer Mode). Refusing deep copy."
+    return $false
+}
+
+function Ensure-OpenClawSelfReference {
+    param([Parameter(Mandatory = $true)][string]$OpenClawRoot)
+    $selfRefDir = Join-Path $OpenClawRoot "node_modules\openclaw"
+    $selfRefPath = Join-Path $selfRefDir "package.json"
+    New-Item -ItemType Directory -Force -Path $selfRefDir | Out-Null
+    $rootPkg = Join-Path $OpenClawRoot "package.json"
+    if ((Test-Path $rootPkg) -and -not (Test-Path $selfRefPath)) {
+        $symlinked = $false
+        try {
+            & cmd.exe /c "mklink `"$selfRefPath`" `"..\..\package.json`"" 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { $symlinked = $true }
+        } catch { }
+        if (-not $symlinked) { Copy-Item -Force $rootPkg $selfRefPath }
+    }
+    $rootMjs = Join-Path $OpenClawRoot "openclaw.mjs"
+    $selfRefMjs = Join-Path $selfRefDir "openclaw.mjs"
+    if ((Test-Path $rootMjs) -and -not (Test-Path $selfRefMjs)) {
+        $created = $false
+        try {
+            & cmd.exe /c "mklink `"$selfRefMjs`" `"..\..\openclaw.mjs`"" 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { $created = $true }
+        } catch { }
+        if (-not $created) { Copy-Item -Force $rootMjs $selfRefMjs }
+    }
+    foreach ($top in @("dist", "extensions", "skills")) {
+        $rootTop = Join-Path $OpenClawRoot $top
+        if (-not (Test-Path $rootTop)) { continue }
+        Set-OpenClawNmDirLink -LinkPath (Join-Path $selfRefDir $top) -TargetRelative "..\..\$top" | Out-Null
+    }
+}
+
 # True when packages/openclaw/dist looks like a real gateway build (not our
 # bootstrap stub). Newer OpenClaw refuses to rebuild while nested under
 # EnvoyMesh's root node_modules ("Declaration input escapes checkout").
@@ -1245,55 +1310,11 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
         # cannot restore (openclaw is the package being installed, not a
         # dependency of it). Idempotent -- safe to run on every reuse.
         # Mirrors the heal in scripts/stage-tauri-openclaw-bundle.sh.
-        $selfRefPath = Join-Path $openclawDest "node_modules/openclaw/package.json"
-        if (-not (Test-Path $selfRefPath)) {
-            $selfRefDir = Split-Path $selfRefPath -Parent
-            New-Item -ItemType Directory -Force -Path $selfRefDir | Out-Null
-            $rootPkg = Join-Path $openclawDest "package.json"
-            if (Test-Path $rootPkg) {
-                # New-Item -ItemType SymbolicLink requires admin or developer-mode
-                # on Windows; use cmd /c mklink (works without elevation in dev mode)
-                # and fall back to a deep copy if symlink creation fails.
-                $symlinked = $false
-                try {
-                    & cmd.exe /c "mklink `"$selfRefPath`" `"..\..\package.json`"" 2>&1 | Out-Null
-                    if ($LASTEXITCODE -eq 0) { $symlinked = $true }
-                } catch { }
-                if (-not $symlinked) {
-                    Copy-Item -Force $rootPkg $selfRefPath
-                    Write-Warn "node_modules/openclaw self-ref was a deep copy (symlink creation failed -- likely missing developer mode)"
-                }
-            }
-            $rootMjs = Join-Path $openclawDest "openclaw.mjs"
-            $selfRefMjs = Join-Path $selfRefDir "openclaw.mjs"
-            if (Test-Path $rootMjs) {
-                $created = $false
-                try {
-                    & cmd.exe /c "mklink `"$selfRefMjs`" `"..\..\openclaw.mjs`"" 2>&1 | Out-Null
-                    if ($LASTEXITCODE -eq 0) { $created = $true }
-                } catch { }
-                if (-not $created) { Copy-Item -Force $rootMjs $selfRefMjs }
-            }
-            foreach ($top in @("dist", "extensions", "skills")) {
-                $rootTop = Join-Path $openclawDest $top
-                $selfRefTop = Join-Path $selfRefDir $top
-                if (Test-Path $rootTop) {
-                    $created = $false
-                    try {
-                        & cmd.exe /c "mklink /D `"$selfRefTop`" `"..\..\$top`"" 2>&1 | Out-Null
-                        if ($LASTEXITCODE -eq 0) { $created = $true }
-                    } catch { }
-                    if (-not $created) {
-                        if (Test-Path $selfRefTop) { Remove-Item -Recurse -Force $selfRefTop }
-                        Copy-Item -Recurse -Force $rootTop $selfRefTop
-                    }
-                }
-            }
-            if (Test-Path $selfRefPath) {
-                Write-Info "Restored node_modules\openclaw\ self-reference (workspace staging fix)"
-            } else {
-                Write-Warn "Could not restore node_modules\openclaw\ -- staged tree is missing package.json"
-            }
+        Ensure-OpenClawSelfReference -OpenClawRoot $openclawDest
+        if (Test-Path (Join-Path $openclawDest "node_modules\openclaw\package.json")) {
+            Write-Info "Restored node_modules\openclaw\ self-reference (workspace staging fix)"
+        } else {
+            Write-Warn "Could not restore node_modules\openclaw\ -- staged tree is missing package.json"
         }
 
         # Prune unused extensions on reuse -- the cache may predate the
@@ -1934,55 +1955,15 @@ if (-not $openclawStaged -or $ForceOpenClaw) {
     }
 
     # Self-heal: workspace staging doesn't create node_modules/openclaw/
-    # self-reference. dist/*.js uses `import "openclaw/..."` for the
-    # plugin SDK, and a stray pnpm prune --prod can additionally remove
-    # the dir entirely. This is the missing piece the .ignored heal
-    # cannot restore (openclaw is the package being installed, not a
-    # dependency of it). Idempotent -- also runs in the reuse path above.
+    # self-reference. dist/*.js uses `import "openclaw/..."` for the plugin
+    # SDK, and a stray pnpm prune --prod can additionally remove the dir
+    # entirely. Idempotent -- also runs in the reuse path above.
     # Mirrors the heal in scripts/stage-tauri-openclaw-bundle.sh.
-    $selfRefPath = Join-Path $openclawDest "node_modules/openclaw/package.json"
-    if (-not (Test-Path $selfRefPath)) {
-        $selfRefDir = Split-Path $selfRefPath -Parent
-        New-Item -ItemType Directory -Force -Path $selfRefDir | Out-Null
-        $rootPkg = Join-Path $openclawDest "package.json"
-        if (Test-Path $rootPkg) {
-            $symlinked = $false
-            try {
-                & cmd.exe /c "mklink `"$selfRefPath`" `"..\..\package.json`"" 2>&1 | Out-Null
-                if ($LASTEXITCODE -eq 0) { $symlinked = $true }
-            } catch { }
-            if (-not $symlinked) { Copy-Item -Force $rootPkg $selfRefPath }
-        }
-        $rootMjs = Join-Path $openclawDest "openclaw.mjs"
-        $selfRefMjs = Join-Path $selfRefDir "openclaw.mjs"
-        if (Test-Path $rootMjs) {
-            $created = $false
-            try {
-                & cmd.exe /c "mklink `"$selfRefMjs`" `"..\..\openclaw.mjs`"" 2>&1 | Out-Null
-                if ($LASTEXITCODE -eq 0) { $created = $true }
-            } catch { }
-            if (-not $created) { Copy-Item -Force $rootMjs $selfRefMjs }
-        }
-        foreach ($top in @("dist", "extensions", "skills")) {
-            $rootTop = Join-Path $openclawDest $top
-            $selfRefTop = Join-Path $selfRefDir $top
-            if (Test-Path $rootTop) {
-                $created = $false
-                try {
-                    & cmd.exe /c "mklink /D `"$selfRefTop`" `"..\..\$top`"" 2>&1 | Out-Null
-                    if ($LASTEXITCODE -eq 0) { $created = $true }
-                } catch { }
-                if (-not $created) {
-                    if (Test-Path $selfRefTop) { Remove-Item -Recurse -Force $selfRefTop }
-                    Copy-Item -Recurse -Force $rootTop $selfRefTop
-                }
-            }
-        }
-        if (Test-Path $selfRefPath) {
-            Write-Info "Restored node_modules\openclaw\ self-reference (workspace staging fix)"
-        } else {
-            Write-Warn "Could not restore node_modules\openclaw\ -- staged tree is missing package.json"
-        }
+    Ensure-OpenClawSelfReference -OpenClawRoot $openclawDest
+    if (Test-Path (Join-Path $openclawDest "node_modules\openclaw\package.json")) {
+        Write-Info "Restored node_modules\openclaw\ as self-reference (workspace staging fix)"
+    } else {
+        Write-Warn "Could not restore node_modules\openclaw\ -- staged tree is missing package.json"
     }
 
     Write-Ok "OpenClaw staged at $openclawDest"
@@ -2094,7 +2075,11 @@ $script:OpenClawOrphanedNativesWithDeps = @(
     # Deep @aws-sdk/.pnpm paths routinely hit Windows MAX_PATH (260) and
     # makensis fails with "failed opening file". Only needed by Bedrock/Tlon.
     @{ Pkg = "@aws-sdk";          Deps = @("amazon-bedrock", "amazon-bedrock-mantle", "tlon") },
-    @{ Pkg = "@smithy";           Deps = @("amazon-bedrock", "amazon-bedrock-mantle", "tlon") }
+    @{ Pkg = "@smithy";           Deps = @("amazon-bedrock", "amazon-bedrock-mantle", "tlon") },
+    # Ultra-long operation filenames under @mistralai/.../models/operations/
+    # routinely exceed Windows MAX_PATH once nested in .pnpm (same class of
+    # failure as Pi's mistral prune). Not on the default extension allowlist.
+    @{ Pkg = "@mistralai";        Deps = @("mistral") }
 )
 
 function Test-ExtensionKept {
@@ -2174,6 +2159,9 @@ if ($scrubbedCount -gt 0) {
 } else {
     Write-Info "OpenClaw scrub: no matching package dirs found (already clean, or layout unexpected)"
 }
+
+# Heal fat deep-copy self-refs left by older builds (replace with junctions).
+Ensure-OpenClawSelfReference -OpenClawRoot $openclawDest
 
 # Post-scrub audit: if known orphans are still on disk, the Windows long-path
 # delete failed or packages only live under an unexpected path. Fail loud so
@@ -2345,7 +2333,9 @@ if (Test-Path -LiteralPath $openclawDest) {
         Write-Ok ("Pruned {0} non-runtime OpenClaw files (~{1} MB)" -f $ocPruned, [math]::Round($ocPruneBytes / 1MB, 1))
     }
 
-    # Re-enumerate and fail if anything still exceeds MAX_PATH.
+    # Re-enumerate. Any remaining path >= 260 cannot be packed by NSIS --
+    # delete it (preferred packages like @mistralai should already be scrubbed
+    # above; this is the safety net for the next long-name SDK).
     $tooLong = New-Object System.Collections.Generic.List[string]
     try {
         $enumRoot = ConvertTo-OcLongPath $openclawDest
@@ -2355,8 +2345,29 @@ if (Test-Path -LiteralPath $openclawDest) {
         }
     } catch { }
     if ($tooLong.Count -gt 0) {
-        Write-Fail ("OpenClaw bundle still has {0} path(s) >= 260 chars (NSIS will fail). Example:`n  {1}`nRe-run with -ForceOpenClaw after syncing this script." -f $tooLong.Count, $tooLong[0])
-        exit 1
+        $droppedLong = 0
+        $droppedLongBytes = 0L
+        foreach ($p in $tooLong) {
+            $sz = Remove-OcLongPathFile $p
+            if ($sz -gt 0 -or -not [System.IO.File]::Exists((ConvertTo-OcLongPath $p))) {
+                $droppedLong++
+                $droppedLongBytes += $sz
+            }
+        }
+        Write-Warn ("Dropped {0} over-long path(s) (>=260 chars, ~{1} MB) that NSIS cannot pack. Example:`n    {2}" -f $droppedLong, [math]::Round($droppedLongBytes / 1MB, 1), $tooLong[0])
+        # Confirm none remain.
+        $stillLong = New-Object System.Collections.Generic.List[string]
+        try {
+            $enumRoot = ConvertTo-OcLongPath $openclawDest
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($enumRoot, "*", [System.IO.SearchOption]::AllDirectories)) {
+                $normal = ConvertFrom-OcLongPath $f
+                if ($normal.Length -ge 260) { [void]$stillLong.Add($normal) }
+            }
+        } catch { }
+        if ($stillLong.Count -gt 0) {
+            Write-Fail ("OpenClaw bundle still has {0} path(s) >= 260 chars after delete. Example:`n  {1}" -f $stillLong.Count, $stillLong[0])
+            exit 1
+        }
     }
 }
 
