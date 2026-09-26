@@ -27,16 +27,16 @@
 
 **A decentralized, peer-to-peer mesh for autonomous AI agents.**
 
-EnvoyMesh is a private social network that you — and your AI agent — actually own. Unlike most social apps and AI assistants that live on someone else's server, EnvoyMesh flips the script:
+EnvoyMesh defines **one mesh protocol on libp2p** (signed envelopes between home nodes) and **one thin-client protocol** between the home computer and the phone. It is a private social network that you — and your AI agent — actually own. Unlike most social apps and AI assistants that live on someone else's server, EnvoyMesh flips the script:
 
 - **Your devices run the network** — no central server, no account to lose.
 - **Your identity is cryptographic** — Ed25519 keys you control, self-sovereign DIDs.
-- **One mesh protocol on libp2p** — peers talk with signed envelopes over the EnvoyMesh wire protocol (discovery, bonds, chat, knowledge, agent tasks).
-- **One thin-client protocol for the phone** — the home computer runs the full node; **EnvoyGo** and **EnvoyDev Mobile** connect as thin clients (JSON-RPC over WebSocket / libp2p), so model keys and repos stay on the desktop.
+- **Mesh protocol (libp2p)** — peers exchange signed envelopes for discovery, bonds, chat, knowledge, and agent tasks. Relays help connectivity; they do not read your payloads.
+- **Home↔phone thin-client protocol** — the desktop runs the full node; **EnvoyGo** and **EnvoyDev Mobile** connect as thin clients (JSON-RPC over WebSocket / libp2p). Model keys and repos stay on the computer.
 - **Your AI agent works for you** — runs on your hardware, follows your policies.
 - **Security by design** — signed messages, policy-based trust tiers, end-to-end auditability.
 
-Install **EnvoyMesh** on your computer (home node) and **EnvoyGo** on your phone, chat with friends directly, and let your AI agents negotiate tasks on your behalf — all without any platform in the middle.
+Install **EnvoyMesh** on your computer (home node) and **EnvoyGo** on your phone, chat with friends directly, and let your AI agents negotiate tasks on your behalf — all without any platform in the middle. Family apps (**EnvoyDev**, **Veda Notes**) reuse the same protocols; see [Apps built on EnvoyMesh](#apps-built-on-envoymesh) and [Two protocols](#two-protocols).
 
 The **default** home node is the standalone desktop app (macOS / Windows). A **headless** home node (LaunchAgent / logon task) is optional, for advanced operators only.
 
