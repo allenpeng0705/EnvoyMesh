@@ -567,6 +567,42 @@ if ($needsPrFix) {
         Write-Host "  WARN: protons-runtime@6/@7 not found -- @envoymesh/network may fail streamMessage"
     }
 }
+# 3) ajv-formats peers ajv@^8 (`ajv/dist/compile/codegen`). Copy-TreeWindowsSafe
+# strips nested node_modules, so ajv-formats loses its nested ajv@8 and resolves
+# to the hoisted ajv@6 — home node then crashes at startup with MODULE_NOT_FOUND
+# and the UI stays on "Connecting to EnvoyMesh".
+$ajvFormatsDest = Join-Path $Dest "node_modules\ajv-formats"
+if (Test-Path $ajvFormatsDest) {
+    $ajvNest = Join-Path $ajvFormatsDest "node_modules\ajv"
+    $ajvNestOk = $false
+    if (Test-Path (Join-Path $ajvNest "dist\compile\codegen")) {
+        $ajvNestOk = $true
+    }
+    if (-not $ajvNestOk) {
+        $ajv8Src = Find-PkgDirByVersionPrefix "ajv" "8."
+        # Prefer the nested copy that npm already laid under source ajv-formats.
+        $srcNested = Join-Path $Root "node_modules\ajv-formats\node_modules\ajv"
+        if ((Test-Path (Join-Path $srcNested "package.json"))) {
+            try {
+                $sv = (Get-Content (Join-Path $srcNested "package.json") -Raw | ConvertFrom-Json).version
+                if ($sv -like "8.*") { $ajv8Src = $srcNested }
+            } catch { }
+        }
+        if ($ajv8Src) {
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ajvNest) | Out-Null
+            if (Test-Path $ajvNest) { Remove-TreeWindowsSafe $ajvNest | Out-Null }
+            try {
+                Copy-TreeWindowsSafe -Src $ajv8Src -Dst $ajvNest -ExcludeDirs @() -ExcludeFiles @() | Out-Null
+                $ver = (Get-Content (Join-Path $ajvNest "package.json") -Raw | ConvertFrom-Json).version
+                Write-Host "  OK nested ajv@$ver under ajv-formats/node_modules (ajv/dist/compile/codegen)"
+            } catch {
+                Write-Host "  WARN: could not nest ajv@8 under ajv-formats: $($_.Exception.Message)"
+            }
+        } else {
+            Write-Host "  WARN: ajv@8 not found -- home node may crash: Cannot find module 'ajv/dist/compile/codegen'"
+        }
+    }
+}
 
 # Sanity check: verify a handful of known-critical runtime deps are present.
 # If any are missing, fail loudly rather than shipping a broken bundle.
@@ -745,6 +781,8 @@ const mods = [
   "zod", "ws", "yaml", "psl", "nat-upnp", "sharp",
   // Deep transitive deps
   "main-event", "@libp2p/interface", "@multiformats/multiaddr",
+  // Schema stack (ajv-formats needs nested ajv@8; hoisted ajv@6 lacks codegen)
+  "ajv-formats",
   // Workspace packages
   "@envoymesh/protocol", "@envoymesh/api", "@envoymesh/identity",
   "@envoymesh/bonds", "@envoymesh/network", "@envoymesh/vault",

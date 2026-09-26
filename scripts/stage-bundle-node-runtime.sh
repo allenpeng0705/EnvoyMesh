@@ -463,6 +463,93 @@ if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
   echo "  + envoy-harness packages + smol-toml present"
 fi
 
+# --- Version skew fixups (parity with stage-bundle-node-runtime.ps1) ---------
+# Hoisting / partial copies can leave request without uuid@3, protons-runtime
+# without streamMessage, and ajv-formats resolving to ajv@6 (no codegen).
+find_pkg_by_version_prefix() {
+  local name="$1" prefix="$2" cand="" ver=""
+  if [ -d "$ROOT/node_modules/.pnpm" ]; then
+    cand="$(find "$ROOT/node_modules/.pnpm" -maxdepth 1 -type d -name "${name}@${prefix}*" 2>/dev/null | head -n 1 || true)"
+    if [ -n "$cand" ] && [ -f "$cand/node_modules/$name/package.json" ]; then
+      echo "$cand/node_modules/$name"
+      return 0
+    fi
+  fi
+  for nm_root in "${dep_search_roots[@]}"; do
+    [ -d "$nm_root" ] || continue
+    while IFS= read -r cand; do
+      [ -f "$cand/package.json" ] || continue
+      ver="$(node -e "const p=require(process.argv[1]); process.stdout.write(String(p.version||''))" "$cand/package.json" 2>/dev/null || true)"
+      case "$ver" in
+        ${prefix}*) echo "$cand"; return 0 ;;
+      esac
+    done < <(find "$nm_root" -type d -name "$name" 2>/dev/null | head -n 40 || true)
+  done
+  return 1
+}
+
+echo "  Repairing known version skews in staged node_modules..."
+# 1) request needs uuid@3 (uuid/v4 subpath).
+if [ -d "$DEST/node_modules/request" ]; then
+  uuid3_src="$(find_pkg_by_version_prefix uuid 3. || true)"
+  if [ -n "$uuid3_src" ]; then
+    mkdir -p "$DEST/node_modules/request/node_modules"
+    rm -rf "$DEST/node_modules/request/node_modules/uuid"
+    cp -R "$uuid3_src" "$DEST/node_modules/request/node_modules/uuid"
+    echo "  ✓ nested uuid@3 under request/node_modules (nat-upnp / uuid/v4)"
+  else
+    echo "  WARN: uuid@3 not found — nat-upnp may fail uuid/v4" >&2
+  fi
+fi
+# 2) protons-runtime must export streamMessage (@6/@7, not @5).
+pr_dest="$DEST/node_modules/protons-runtime"
+needs_pr_fix=1
+if [ -f "$pr_dest/package.json" ]; then
+  for pr_index in "$pr_dest/dist/src/index.js" "$pr_dest/dist/index.js"; do
+    if [ -f "$pr_index" ] && grep -q streamMessage "$pr_index" 2>/dev/null; then
+      needs_pr_fix=0
+      break
+    fi
+  done
+fi
+if [ "$needs_pr_fix" = "1" ]; then
+  pr_src="$(find_pkg_by_version_prefix protons-runtime 6. || true)"
+  [ -n "$pr_src" ] || pr_src="$(find_pkg_by_version_prefix protons-runtime 7. || true)"
+  if [ -n "$pr_src" ]; then
+    rm -rf "$pr_dest"
+    mkdir -p "$(dirname "$pr_dest")"
+    cp -R "$pr_src" "$pr_dest"
+    pr_ver="$(node -e "const p=require(process.argv[1]); process.stdout.write(p.version||'')" "$pr_dest/package.json")"
+    echo "  ✓ replaced staged protons-runtime with @$pr_ver (streamMessage)"
+  else
+    echo "  WARN: protons-runtime@6/@7 not found — @envoymesh/network may fail streamMessage" >&2
+  fi
+fi
+# 3) ajv-formats peers ajv@^8 (`ajv/dist/compile/codegen`). Hoisted ajv@6
+# lacks that path → home node MODULE_NOT_FOUND and UI stuck on Connecting.
+ajv_formats_dest="$DEST/node_modules/ajv-formats"
+if [ -d "$ajv_formats_dest" ]; then
+  ajv_nest="$ajv_formats_dest/node_modules/ajv"
+  if [ ! -e "$ajv_nest/dist/compile/codegen" ] && [ ! -e "$ajv_nest/dist/compile/codegen.js" ] && [ ! -d "$ajv_nest/dist/compile/codegen" ]; then
+    ajv8_src=""
+    src_nested="$ROOT/node_modules/ajv-formats/node_modules/ajv"
+    if [ -f "$src_nested/package.json" ]; then
+      sv="$(node -e "const p=require(process.argv[1]); process.stdout.write(String(p.version||''))" "$src_nested/package.json" 2>/dev/null || true)"
+      case "$sv" in 8.*) ajv8_src="$src_nested" ;; esac
+    fi
+    [ -n "$ajv8_src" ] || ajv8_src="$(find_pkg_by_version_prefix ajv 8. || true)"
+    if [ -n "$ajv8_src" ]; then
+      mkdir -p "$(dirname "$ajv_nest")"
+      rm -rf "$ajv_nest"
+      cp -R "$ajv8_src" "$ajv_nest"
+      ajv_ver="$(node -e "const p=require(process.argv[1]); process.stdout.write(p.version||'')" "$ajv_nest/package.json")"
+      echo "  ✓ nested ajv@$ajv_ver under ajv-formats/node_modules (ajv/dist/compile/codegen)"
+    else
+      echo "  WARN: ajv@8 not found — home node may crash: Cannot find module 'ajv/dist/compile/codegen'" >&2
+    fi
+  fi
+fi
+
 # End-to-end import check: actually run Node's module resolver against
 # every module the runtime entry imports. This catches missing modules
 # that the file-existence check above can't — e.g. transitive deps of
@@ -487,6 +574,8 @@ cat > "$DEST/__import_probe.mjs" <<PROBE
 const mods = [
   // Direct npm deps
   "zod", "ws", "yaml", "psl", "nat-upnp", "sharp",
+  // Schema stack (ajv-formats needs nested ajv@8; hoisted ajv@6 lacks codegen)
+  "ajv-formats",
   // Deep transitive deps
   "main-event", "@libp2p/interface", "@multiformats/multiaddr",
   // Workspace packages
