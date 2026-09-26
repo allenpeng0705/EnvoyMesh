@@ -201,6 +201,23 @@ _openclaw_scrub_dev_tooling() {
         leftover="$leftover  $pkg (${sz}MB top-level)"$'\n'
       fi
     fi
+    # Also catch pnpm virtual-store leftovers (top-level may be absent after /XJD copy).
+    if [ -d "$DEST/node_modules/.pnpm" ]; then
+      local pattern d psz
+      case "$pkg" in
+        @*/*) pattern="${pkg%%/*}+${pkg#*/}@" ;;
+        @*)   pattern="${pkg}+" ;;
+        *)    pattern="${pkg}@" ;;
+      esac
+      for d in "$DEST/node_modules/.pnpm"/${pattern}*; do
+        [ -e "$d" ] || continue
+        psz=$(du -sm "$d" 2>/dev/null | awk '{print $1}')
+        if [ "${psz:-0}" -gt 5 ]; then
+          leftover="$leftover  $pkg (${psz}MB under .pnpm/$(basename "$d"))"$'\n'
+          break
+        fi
+      done
+    fi
   done < <(echo "$_openclaw_orphaned_native_pkgs_with_deps")
   if [ -n "$leftover" ]; then
     echo "error: OpenClaw scrub left heavy orphans behind:" >&2
