@@ -527,10 +527,17 @@ if [ "$needs_pr_fix" = "1" ]; then
 fi
 # 3) ajv-formats peers ajv@^8 (`ajv/dist/compile/codegen`). Hoisted ajv@6
 # lacks that path → home node MODULE_NOT_FOUND and UI stuck on Connecting.
+# Nesting ajv@8 alone is not enough: ajv@8 deps (fast-uri, …) are hoisted at
+# the monorepo root while staged top-level keeps ajv@6 — nest those deps under
+# ajv-formats/node_modules/ajv/node_modules/.
 ajv_formats_dest="$DEST/node_modules/ajv-formats"
 if [ -d "$ajv_formats_dest" ]; then
   ajv_nest="$ajv_formats_dest/node_modules/ajv"
-  if [ ! -e "$ajv_nest/dist/compile/codegen" ] && [ ! -e "$ajv_nest/dist/compile/codegen.js" ] && [ ! -d "$ajv_nest/dist/compile/codegen" ]; then
+  ajv_nest_ok=0
+  if [ -e "$ajv_nest/dist/compile/codegen" ] || [ -e "$ajv_nest/dist/compile/codegen.js" ] || [ -d "$ajv_nest/dist/compile/codegen" ]; then
+    ajv_nest_ok=1
+  fi
+  if [ "$ajv_nest_ok" != "1" ]; then
     ajv8_src=""
     src_nested="$ROOT/node_modules/ajv-formats/node_modules/ajv"
     if [ -f "$src_nested/package.json" ]; then
@@ -544,8 +551,46 @@ if [ -d "$ajv_formats_dest" ]; then
       cp -R "$ajv8_src" "$ajv_nest"
       ajv_ver="$(node -e "const p=require(process.argv[1]); process.stdout.write(p.version||'')" "$ajv_nest/package.json")"
       echo "  ✓ nested ajv@$ajv_ver under ajv-formats/node_modules (ajv/dist/compile/codegen)"
+      ajv_nest_ok=1
     else
       echo "  WARN: ajv@8 not found — home node may crash: Cannot find module 'ajv/dist/compile/codegen'" >&2
+    fi
+  fi
+  if [ "$ajv_nest_ok" = "1" ] && [ -f "$ajv_nest/package.json" ]; then
+    nested_deps=0
+    while IFS= read -r dep_name; do
+      [ -n "$dep_name" ] || continue
+      dep_dest="$ajv_nest/node_modules/$dep_name"
+      [ -f "$dep_dest/package.json" ] && continue
+      dep_src=""
+      for cand in \
+        "$ROOT/node_modules/ajv-formats/node_modules/ajv/node_modules/$dep_name" \
+        "$ROOT/node_modules/ajv-formats/node_modules/$dep_name" \
+        "$ROOT/node_modules/$dep_name"
+      do
+        if [ -f "$cand/package.json" ]; then dep_src="$cand"; break; fi
+      done
+      if [ -z "$dep_src" ]; then
+        for nm_root in "${dep_search_roots[@]}"; do
+          if [ -f "$nm_root/$dep_name/package.json" ]; then dep_src="$nm_root/$dep_name"; break; fi
+        done
+      fi
+      if [ -z "$dep_src" ]; then
+        echo "  WARN: ajv@8 dep '$dep_name' not found — may crash: Cannot find module '$dep_name'" >&2
+        continue
+      fi
+      mkdir -p "$(dirname "$dep_dest")"
+      rm -rf "$dep_dest"
+      cp -R "$dep_src" "$dep_dest"
+      # Drop nested nm inside the dep to keep the stage lean (deps are shallow).
+      rm -rf "$dep_dest/node_modules"
+      nested_deps=$((nested_deps + 1))
+    done < <(node -e "
+      const p=require(process.argv[1]);
+      for (const k of Object.keys(p.dependencies||{})) console.log(k);
+    " "$ajv_nest/package.json")
+    if [ "$nested_deps" -gt 0 ]; then
+      echo "  ✓ nested $nested_deps ajv@8 deps under ajv-formats/node_modules/ajv/node_modules"
     fi
   fi
 fi
@@ -571,10 +616,12 @@ if [ "$STAGE_ENVOY_HARNESS_INTO_NODE" = "1" ]; then
   "@envoymesh/envoy-harness-peer", "@envoymesh/agent-adapter", "smol-toml",'
 fi
 cat > "$DEST/__import_probe.mjs" <<PROBE
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 const mods = [
   // Direct npm deps
   "zod", "ws", "yaml", "psl", "nat-upnp", "sharp",
-  // Schema stack (ajv-formats needs nested ajv@8; hoisted ajv@6 lacks codegen)
+  // Schema stack (ajv-formats needs nested ajv@8 + deps e.g. fast-uri)
   "ajv-formats",
   // Deep transitive deps
   "main-event", "@libp2p/interface", "@multiformats/multiaddr",
@@ -588,7 +635,10 @@ const mods = [
 let failed = 0;
 for (const m of mods) {
   try {
-    await import(m);
+    // Prefer CJS require for packages the home node loads via require()
+    // (ajv-formats -> nested ajv@8 -> fast-uri). ESM import can hide that.
+    if (m === "ajv-formats") require(m);
+    else await import(m);
   } catch (e) {
     // Fail on ANY import error — sharp throws a plain Error (not
     // ERR_MODULE_NOT_FOUND) when the platform binary is missing.

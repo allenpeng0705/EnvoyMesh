@@ -571,13 +571,15 @@ if ($needsPrFix) {
 # strips nested node_modules, so ajv-formats loses its nested ajv@8 and resolves
 # to the hoisted ajv@6 — home node then crashes at startup with MODULE_NOT_FOUND
 # and the UI stays on "Connecting to EnvoyMesh".
+# Nesting ajv@8 alone is not enough: npm hoists ajv@8's deps (e.g. fast-uri) to
+# the monorepo root, but the staged top-level still has ajv@6 (uri-js, not
+# fast-uri). Require from ajv-formats/node_modules/ajv then fails with
+# Cannot find module 'fast-uri'. Always nest ajv@8's own dependencies under
+# ajv-formats/node_modules/ajv/node_modules/.
 $ajvFormatsDest = Join-Path $Dest "node_modules\ajv-formats"
 if (Test-Path $ajvFormatsDest) {
     $ajvNest = Join-Path $ajvFormatsDest "node_modules\ajv"
-    $ajvNestOk = $false
-    if (Test-Path (Join-Path $ajvNest "dist\compile\codegen")) {
-        $ajvNestOk = $true
-    }
+    $ajvNestOk = Test-Path (Join-Path $ajvNest "dist\compile\codegen")
     if (-not $ajvNestOk) {
         $ajv8Src = Find-PkgDirByVersionPrefix "ajv" "8."
         # Prefer the nested copy that npm already laid under source ajv-formats.
@@ -595,11 +597,58 @@ if (Test-Path $ajvFormatsDest) {
                 Copy-TreeWindowsSafe -Src $ajv8Src -Dst $ajvNest -ExcludeDirs @() -ExcludeFiles @() | Out-Null
                 $ver = (Get-Content (Join-Path $ajvNest "package.json") -Raw | ConvertFrom-Json).version
                 Write-Host "  OK nested ajv@$ver under ajv-formats/node_modules (ajv/dist/compile/codegen)"
+                $ajvNestOk = $true
             } catch {
                 Write-Host "  WARN: could not nest ajv@8 under ajv-formats: $($_.Exception.Message)"
             }
         } else {
             Write-Host "  WARN: ajv@8 not found -- home node may crash: Cannot find module 'ajv/dist/compile/codegen'"
+        }
+    }
+    if ($ajvNestOk -and (Test-Path (Join-Path $ajvNest "package.json"))) {
+        try {
+            $ajvPkg = Get-Content (Join-Path $ajvNest "package.json") -Raw | ConvertFrom-Json
+            $ajvDepNames = @()
+            if ($ajvPkg.dependencies) {
+                $ajvDepNames = @($ajvPkg.dependencies.PSObject.Properties.Name)
+            }
+            $ajvNm = Join-Path $ajvNest "node_modules"
+            $nestedDeps = 0
+            foreach ($depName in $ajvDepNames) {
+                $depDest = Join-Path $ajvNm $depName
+                if (Test-Path (Join-Path $depDest "package.json")) { continue }
+                $depSrc = $null
+                # Prefer a copy already nested under source ajv@8 (correct major).
+                foreach ($cand in @(
+                    (Join-Path $Root "node_modules\ajv-formats\node_modules\ajv\node_modules\$depName"),
+                    (Join-Path $Root "node_modules\ajv-formats\node_modules\$depName"),
+                    (Join-Path $Root "node_modules\$depName")
+                )) {
+                    if (Test-Path (Join-Path $cand "package.json")) { $depSrc = $cand; break }
+                }
+                if (-not $depSrc) {
+                    foreach ($nmRoot in $depSearchRoots) {
+                        $cand = Join-Path $nmRoot $depName
+                        if (Test-Path (Join-Path $cand "package.json")) { $depSrc = $cand; break }
+                    }
+                }
+                if (-not $depSrc) {
+                    Write-Host "  WARN: ajv@8 dep '$depName' not found -- may crash: Cannot find module '$depName'"
+                    continue
+                }
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $depDest) | Out-Null
+                try {
+                    Copy-TreeWindowsSafe -Src $depSrc -Dst $depDest -ExcludeDirs @("node_modules") -ExcludeFiles @() | Out-Null
+                    $nestedDeps++
+                } catch {
+                    Write-Host "  WARN: could not nest ajv dep ${depName}: $($_.Exception.Message)"
+                }
+            }
+            if ($nestedDeps -gt 0) {
+                Write-Host "  OK nested $nestedDeps ajv@8 deps under ajv-formats/node_modules/ajv/node_modules"
+            }
+        } catch {
+            Write-Host "  WARN: could not nest ajv@8 dependencies: $($_.Exception.Message)"
         }
     }
 }
@@ -776,12 +825,14 @@ if ($stageEnvoyHarnessIntoNode) {
 "@
 }
 $probeScript = @"
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 const mods = [
   // Direct npm deps
   "zod", "ws", "yaml", "psl", "nat-upnp", "sharp",
   // Deep transitive deps
   "main-event", "@libp2p/interface", "@multiformats/multiaddr",
-  // Schema stack (ajv-formats needs nested ajv@8; hoisted ajv@6 lacks codegen)
+  // Schema stack (ajv-formats needs nested ajv@8 + its deps e.g. fast-uri)
   "ajv-formats",
   // Workspace packages
   "@envoymesh/protocol", "@envoymesh/api", "@envoymesh/identity",
@@ -793,7 +844,10 @@ const mods = [
 let failed = 0;
 for (const m of mods) {
   try {
-    await import(m);
+    // Prefer CJS require for packages the home node loads via require()
+    // (ajv-formats -> nested ajv@8 -> fast-uri). ESM import can hide that.
+    if (m === "ajv-formats") require(m);
+    else await import(m);
   } catch (e) {
     // Fail on ANY import error -- sharp throws a plain Error (not
     // ERR_MODULE_NOT_FOUND) when the platform binary is missing.
