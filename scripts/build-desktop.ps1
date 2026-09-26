@@ -310,15 +310,11 @@ function Copy-TreeWindowsSafe {
     return $true
 }
 
-# Link node_modules/openclaw/<dir> -> OpenClawRoot/<dir> without deep-copying.
-# Prefer directory junction (/J: no admin) over symlink (/D: needs Developer
-# Mode). Never fall back to Copy-Item for dist/extensions/skills -- that
-# doubles the staged OpenClaw tree (~250+ MB).
-#
-# CRITICAL: mklink /J treats a relative Target as relative to the *current
-# working directory*, not the link location. Always pass an absolute target
-# or Tauri later fails with: resource path
-# `resources\openclaw\node_modules\openclaw\dist` doesn't exist.
+# Materialize node_modules/openclaw/<dir> as a real copy of OpenClawRoot/<dir>.
+# Junctions/symlinks are NOT safe for Windows NSIS installers: absolute /J
+# targets point at the build machine, and relative /J targets resolve from
+# cwd. After install the Social UI stays on "Connecting to EnvoyMesh" because
+# OpenClaw's self-ref dist is missing. Real copies survive packaging.
 function Set-OpenClawNmDirLink {
     param(
         [Parameter(Mandatory = $true)][string]$LinkPath,
@@ -330,28 +326,18 @@ function Set-OpenClawNmDirLink {
         return $false
     }
     if (Test-Path -LiteralPath $LinkPath) {
-        $item = Get-Item -LiteralPath $LinkPath -Force
-        $isReparse = [bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint)
-        # Always recreate reparse points: older builds used relative /J targets
-        # (resolved from cwd, often broken). Absolute target is required.
         Remove-TreeWindowsSafe $LinkPath | Out-Null
-        if (-not $isReparse) {
-            # Was a real directory (deep-copy fallback) -- already removed.
-        }
     }
     $parent = Split-Path -Parent $LinkPath
     if (-not (Test-Path -LiteralPath $parent)) {
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
     }
     try {
-        & cmd.exe /c "mklink /J `"$LinkPath`" `"$TargetAbsolute`"" 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $LinkPath)) { return $true }
-    } catch { }
-    try {
-        & cmd.exe /c "mklink /D `"$LinkPath`" `"$TargetAbsolute`"" 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $LinkPath)) { return $true }
-    } catch { }
-    Write-Warn "Could not link $LinkPath -> $TargetAbsolute (enable Windows Developer Mode). Refusing deep copy."
+        Copy-TreeWindowsSafe -Src $TargetAbsolute -Dst $LinkPath | Out-Null
+        if (Test-Path -LiteralPath $LinkPath) { return $true }
+    } catch {
+        Write-Warn "Copy-TreeWindowsSafe failed for $LinkPath : $($_.Exception.Message)"
+    }
     return $false
 }
 
@@ -362,39 +348,42 @@ function Ensure-OpenClawSelfReference {
     $selfRefPath = Join-Path $selfRefDir "package.json"
     New-Item -ItemType Directory -Force -Path $selfRefDir | Out-Null
     $rootPkg = Join-Path $OpenClawRoot "package.json"
-    if ((Test-Path $rootPkg) -and -not (Test-Path $selfRefPath)) {
-        $symlinked = $false
-        try {
-            & cmd.exe /c "mklink `"$selfRefPath`" `"$rootPkg`"" 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) { $symlinked = $true }
-        } catch { }
-        if (-not $symlinked) { Copy-Item -Force $rootPkg $selfRefPath }
+    if ((Test-Path $rootPkg) -and -not (Test-Path -LiteralPath $selfRefPath -PathType Leaf)) {
+        if (Test-Path -LiteralPath $selfRefPath) { Remove-Item -Force -LiteralPath $selfRefPath -ErrorAction SilentlyContinue }
+        Copy-Item -Force $rootPkg $selfRefPath
     }
     $rootMjs = Join-Path $OpenClawRoot "openclaw.mjs"
     $selfRefMjs = Join-Path $selfRefDir "openclaw.mjs"
-    if ((Test-Path $rootMjs) -and -not (Test-Path $selfRefMjs)) {
-        $created = $false
-        try {
-            & cmd.exe /c "mklink `"$selfRefMjs`" `"$rootMjs`"" 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) { $created = $true }
-        } catch { }
-        if (-not $created) { Copy-Item -Force $rootMjs $selfRefMjs }
+    if ((Test-Path $rootMjs) -and -not (Test-Path -LiteralPath $selfRefMjs -PathType Leaf)) {
+        if (Test-Path -LiteralPath $selfRefMjs) { Remove-Item -Force -LiteralPath $selfRefMjs -ErrorAction SilentlyContinue }
+        Copy-Item -Force $rootMjs $selfRefMjs
     }
     foreach ($top in @("dist", "extensions", "skills")) {
         $rootTop = Join-Path $OpenClawRoot $top
         if (-not (Test-Path $rootTop)) { continue }
-        $ok = Set-OpenClawNmDirLink -LinkPath (Join-Path $selfRefDir $top) -TargetAbsolute $rootTop
+        $destTop = Join-Path $selfRefDir $top
+        # Re-materialize when missing or when a prior junction/symlink is present.
+        $needCopy = $true
+        if (Test-Path -LiteralPath $destTop) {
+            $item = Get-Item -LiteralPath $destTop -Force
+            $isReparse = [bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint)
+            if (-not $isReparse -and ($top -ne "dist" -or (Test-Path (Join-Path $destTop "entry.js")) -or (Test-Path (Join-Path $destTop "config\config.js")))) {
+                $needCopy = $false
+            }
+        }
+        if (-not $needCopy) { continue }
+        $ok = Set-OpenClawNmDirLink -LinkPath $destTop -TargetAbsolute $rootTop
         if (-not $ok) {
-            Write-Fail "OpenClaw self-ref link missing for $top (Tauri will fail: node_modules\openclaw\$top doesn't exist). Enable Developer Mode or re-run as admin for mklink."
+            Write-Fail "OpenClaw self-ref copy missing for $top (Tauri/NSIS need a real node_modules\openclaw\$top)."
             exit 1
         }
     }
-    # Verify Tauri can see the linked dist (same check cargo/tauri does).
     $distLink = Join-Path $selfRefDir "dist"
     if (-not (Test-Path -LiteralPath $distLink)) {
-        Write-Fail "node_modules\openclaw\dist is missing after link setup"
+        Write-Fail "node_modules\openclaw\dist is missing after materialize"
         exit 1
     }
+    Write-Info "OpenClaw node_modules\openclaw self-ref materialized (real copies for NSIS)"
 }
 
 # True when packages/openclaw/dist looks like a real gateway build (not our
