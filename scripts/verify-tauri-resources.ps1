@@ -87,6 +87,10 @@ if ($entryText -and ($entryText -match "EnvoyMesh bootstrap|from\s+[`"'].*src/cl
 
 $selfRef = Join-Path $Res "openclaw\node_modules\openclaw\package.json"
 Require-File $selfRef "OpenClaw node_modules/openclaw/package.json (self-reference)"
+$selfDist = Join-Path $Res "openclaw\node_modules\openclaw\dist"
+if (-not (Test-Path -LiteralPath $selfDist)) {
+    Write-Fail "missing OpenClaw node_modules/openclaw/dist (broken self-ref junction) -- re-run build-desktop.ps1 so Ensure-OpenClawSelfReference recreates absolute /J links"
+}
 Write-Host "  OpenClaw node_modules/openclaw/ self-reference OK"
 
 $piDir = Join-Path $Res "pi"

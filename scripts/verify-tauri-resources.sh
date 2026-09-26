@@ -82,6 +82,9 @@ SELF_REF="$RES/openclaw/node_modules/openclaw/package.json"
 if [ ! -f "$SELF_REF" ]; then
   fail "OpenClaw node_modules/openclaw/package.json is missing — gateway will refuse to start"
 fi
+if [ ! -e "$RES/openclaw/node_modules/openclaw/dist" ]; then
+  fail "OpenClaw node_modules/openclaw/dist is missing (broken self-ref) — re-stage OpenClaw"
+fi
 echo "  OpenClaw node_modules/openclaw/ self-reference OK"
 
 # Pi agent sidecar (Phase 49). Optional on slim builds — tauri.conf.slim.json
