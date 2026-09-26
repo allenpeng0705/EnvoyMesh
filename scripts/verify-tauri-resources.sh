@@ -54,10 +54,21 @@ require_file "$RES/openclaw-envoymesh/index.js" "EnvoyMesh extension seed (runti
 require_file "$RES/openclaw/dist/cli/run-main.js" "OpenClaw CLI runtime entry"
 require_dir_nonempty "$RES/openclaw/node_modules" "OpenClaw node_modules"
 
-# Sanity check: node_modules should have >500 packages (600+ is normal).
-nm_count="$(find "$RES/openclaw/node_modules" -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
-if [ "${nm_count:-0}" -lt 500 ]; then
-  warn "node_modules has only ${nm_count} directories (expected 600+) — may be incomplete"
+# Sanity check: hoisted layouts have 600+ top-level dirs; pnpm layouts keep
+# most packages under .pnpm/ (often <50 top-level entries).
+nm_root="$RES/openclaw/node_modules"
+if [ -d "$nm_root/.pnpm" ]; then
+  pnpm_count="$(find "$nm_root/.pnpm" -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${pnpm_count:-0}" -lt 100 ]; then
+    warn "node_modules/.pnpm has only ${pnpm_count} dirs (expected 100+) — may be incomplete"
+  else
+    echo "  OpenClaw node_modules: pnpm layout (${pnpm_count} .pnpm entries)"
+  fi
+else
+  nm_count="$(find "$nm_root" -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${nm_count:-0}" -lt 500 ]; then
+    warn "node_modules has only ${nm_count} directories (expected 600+) — may be incomplete"
+  fi
 fi
 
 # Reject broken stub entry.js that was written by the dev node at runtime

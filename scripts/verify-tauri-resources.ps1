@@ -65,8 +65,17 @@ Require-File (Join-Path $Res "openclaw-envoymesh\index.js") "EnvoyMesh extension
 Require-File (Join-Path $Res "openclaw\dist\cli\run-main.js") "OpenClaw CLI runtime entry"
 Require-DirNonEmpty (Join-Path $Res "openclaw\node_modules") "OpenClaw node_modules"
 
-$nmTop = @(Get-ChildItem -LiteralPath (Join-Path $Res "openclaw\node_modules") -Directory -Force -ErrorAction SilentlyContinue).Count
-if ($nmTop -lt 500) {
+$nmRoot = Join-Path $Res "openclaw\node_modules"
+$nmTop = @(Get-ChildItem -LiteralPath $nmRoot -Directory -Force -ErrorAction SilentlyContinue).Count
+$pnpmStore = Join-Path $nmRoot ".pnpm"
+if (Test-Path -LiteralPath $pnpmStore -PathType Container) {
+    $pnpmCount = @(Get-ChildItem -LiteralPath $pnpmStore -Directory -Force -ErrorAction SilentlyContinue).Count
+    if ($pnpmCount -lt 100) {
+        Write-WarnMsg "node_modules/.pnpm has only $pnpmCount dirs (expected 100+) -- may be incomplete"
+    } else {
+        Write-Host "  OpenClaw node_modules: pnpm layout ($nmTop top-level, $pnpmCount .pnpm entries)"
+    }
+} elseif ($nmTop -lt 500) {
     Write-WarnMsg "node_modules has only $nmTop directories (expected 600+) -- may be incomplete"
 }
 

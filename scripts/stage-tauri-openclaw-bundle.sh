@@ -82,6 +82,8 @@ _openclaw_orphaned_native_pkgs_with_deps="
   @larksuiteoapi|feishu
   @line|line
   @slack|slack
+  @aws-sdk|amazon-bedrock amazon-bedrock-mantle tlon
+  @smithy|amazon-bedrock amazon-bedrock-mantle tlon
 "
 
 _openclaw_extension_is_kept() {
@@ -205,6 +207,16 @@ _openclaw_scrub_dev_tooling() {
     echo "$leftover" >&2
     echo "  Re-stage with STAGE_OPENCLAW_BUNDLE=1 after fixing deletes." >&2
     exit 1
+  fi
+
+  # Drop type-only / map trees under node_modules (size + Windows MAX_PATH).
+  # Mirrors build-desktop.ps1 OpenClaw long-path prune.
+  if [ -d "$DEST/node_modules" ]; then
+    find "$DEST/node_modules" \( \
+      -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \
+      -o -name '*.tsbuildinfo' \
+    \) -type f -delete 2>/dev/null || true
+    find "$DEST/node_modules" -type d -name 'dist-types' -prune -exec rm -rf {} + 2>/dev/null || true
   fi
 }
 

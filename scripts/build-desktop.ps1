@@ -2090,7 +2090,11 @@ $script:OpenClawOrphanedNativesWithDeps = @(
     @{ Pkg = "@discordjs";        Deps = @("discord") },
     @{ Pkg = "@larksuiteoapi";    Deps = @("feishu") },
     @{ Pkg = "@line";             Deps = @("line") },
-    @{ Pkg = "@slack";            Deps = @("slack") }
+    @{ Pkg = "@slack";            Deps = @("slack") },
+    # Deep @aws-sdk/.pnpm paths routinely hit Windows MAX_PATH (260) and
+    # makensis fails with "failed opening file". Only needed by Bedrock/Tlon.
+    @{ Pkg = "@aws-sdk";          Deps = @("amazon-bedrock", "amazon-bedrock-mantle", "tlon") },
+    @{ Pkg = "@smithy";           Deps = @("amazon-bedrock", "amazon-bedrock-mantle", "tlon") }
 )
 
 function Test-ExtensionKept {
@@ -2258,6 +2262,101 @@ if (Test-Path $controlUiDir) {
     if ($mapCount -gt 0) {
         Get-ChildItem -Path $controlUiDir -Filter "*.map" |
             ForEach-Object { Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue }
+    }
+}
+
+# OpenClaw long-path prune (Windows / NSIS). Same failure mode as Pi:
+# makensis "failed opening file" on paths >= ~260 chars under
+# node_modules/.pnpm/@aws-sdk+.../dist-es/submodules/... . Drop type-only
+# and map files via \\?\ enumeration; then refuse to continue if any path
+# still exceeds MAX_PATH (NSIS cannot pack it).
+if (Test-Path -LiteralPath $openclawDest) {
+    Write-Info "Pruning non-runtime / over-long paths from OpenClaw bundle..."
+    function ConvertTo-OcLongPath([string]$Path) {
+        if ([string]::IsNullOrEmpty($Path)) { return $Path }
+        if ($Path.StartsWith("\\?\")) { return $Path }
+        if ($Path.StartsWith("\\")) { return "\\?\UNC\" + $Path.Substring(2) }
+        return "\\?\" + $Path
+    }
+    function ConvertFrom-OcLongPath([string]$Path) {
+        if ($Path.StartsWith("\\?\UNC\")) { return "\\" + $Path.Substring(8) }
+        if ($Path.StartsWith("\\?\")) { return $Path.Substring(4) }
+        return $Path
+    }
+    function Remove-OcLongPathFile([string]$Path) {
+        $long = ConvertTo-OcLongPath $Path
+        try {
+            if ([System.IO.File]::Exists($long)) {
+                $size = [long](New-Object System.IO.FileInfo $long).Length
+                [System.IO.File]::Delete($long)
+                return $size
+            }
+        } catch { }
+        return 0L
+    }
+
+    $ocFiles = New-Object System.Collections.Generic.List[string]
+    try {
+        $enumRoot = ConvertTo-OcLongPath $openclawDest
+        foreach ($f in [System.IO.Directory]::EnumerateFiles($enumRoot, "*", [System.IO.SearchOption]::AllDirectories)) {
+            [void]$ocFiles.Add((ConvertFrom-OcLongPath $f))
+        }
+    } catch {
+        Write-Warn "OpenClaw long-path enumerate failed ($($_.Exception.Message)); falling back to Get-ChildItem"
+        Get-ChildItem -LiteralPath $openclawDest -Recurse -File -Force -ErrorAction SilentlyContinue |
+            ForEach-Object { [void]$ocFiles.Add($_.FullName) }
+    }
+
+    $ocPruned = 0
+    $ocPruneBytes = 0L
+    foreach ($path in $ocFiles) {
+        $name = [System.IO.Path]::GetFileName($path)
+        $drop = $false
+        if ($name -like "*.map") { $drop = $true }
+        elseif ($name -like "*.d.ts" -or $name -like "*.d.mts" -or $name -like "*.d.cts") { $drop = $true }
+        elseif ($name -like "*.tsbuildinfo") { $drop = $true }
+        # Drop TypeScript sources under node_modules only (runtime uses .js).
+        elseif (($name -like "*.ts") -and ($path -match '[\\/]node_modules[\\/]')) { $drop = $true }
+        elseif ($name -match '\.(test|spec)\.(js|mjs|cjs)$') { $drop = $true }
+        # AWS/Smithy ship parallel dist-types trees that are never required at runtime
+        # and are the usual MAX_PATH offenders when nested under .pnpm.
+        elseif ($path -match '[\\/]dist-types[\\/]') { $drop = $true }
+        if ($drop) {
+            $sz = Remove-OcLongPathFile $path
+            if ($sz -gt 0 -or -not [System.IO.File]::Exists((ConvertTo-OcLongPath $path))) {
+                $ocPruned++
+                $ocPruneBytes += $sz
+            }
+        }
+    }
+    # Remove emptied dist-types directories (best-effort).
+    try {
+        $enumRoot = ConvertTo-OcLongPath $openclawDest
+        $distTypeDirs = New-Object System.Collections.Generic.List[string]
+        foreach ($d in [System.IO.Directory]::EnumerateDirectories($enumRoot, "dist-types", [System.IO.SearchOption]::AllDirectories)) {
+            [void]$distTypeDirs.Add((ConvertFrom-OcLongPath $d))
+        }
+        foreach ($d in ($distTypeDirs | Sort-Object { $_.Length } -Descending)) {
+            Remove-TreeWindowsSafe $d | Out-Null
+        }
+    } catch { }
+
+    if ($ocPruned -gt 0) {
+        Write-Ok ("Pruned {0} non-runtime OpenClaw files (~{1} MB)" -f $ocPruned, [math]::Round($ocPruneBytes / 1MB, 1))
+    }
+
+    # Re-enumerate and fail if anything still exceeds MAX_PATH.
+    $tooLong = New-Object System.Collections.Generic.List[string]
+    try {
+        $enumRoot = ConvertTo-OcLongPath $openclawDest
+        foreach ($f in [System.IO.Directory]::EnumerateFiles($enumRoot, "*", [System.IO.SearchOption]::AllDirectories)) {
+            $normal = ConvertFrom-OcLongPath $f
+            if ($normal.Length -ge 260) { [void]$tooLong.Add($normal) }
+        }
+    } catch { }
+    if ($tooLong.Count -gt 0) {
+        Write-Fail ("OpenClaw bundle still has {0} path(s) >= 260 chars (NSIS will fail). Example:`n  {1}`nRe-run with -ForceOpenClaw after syncing this script." -f $tooLong.Count, $tooLong[0])
+        exit 1
     }
 }
 
