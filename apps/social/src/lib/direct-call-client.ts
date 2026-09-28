@@ -994,6 +994,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.setEnvoyHarnessAutoRunPolicy(policy);
   }
 
+  async setEnvoyHarnessDecision(input: {
+    mode?: "off" | "shadow" | "enforce";
+    backend?: "null" | "laya-http" | "jev" | "onnx";
+    endpoint?: string;
+  }) {
+    return this._ns.setEnvoyHarnessDecision?.(input);
+  }
+
   async setEnvoyHarnessCollaborationMode(mode: string, chatId?: string) {
     return this._ns.setEnvoyHarnessCollaborationMode(mode, chatId);
   }

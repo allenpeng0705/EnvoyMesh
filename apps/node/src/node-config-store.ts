@@ -520,6 +520,15 @@ export interface PersistedNodeConfig {
    * - `off` / `never` — never ask (auto-allow everything)
    */
   envoyHarnessAutoRunPolicy?: "always-confirm" | "safe-only" | "off" | "never";
+  /**
+   * Optional System One decision gate (Laya / Jev). Default off.
+   * Secrets stay in env / secret store — not here.
+   */
+  envoyHarnessDecision?: {
+    mode?: "off" | "shadow" | "enforce";
+    backend?: "null" | "laya-http" | "jev" | "onnx";
+    endpoint?: string;
+  };
 }
 
 export interface NodeConfigStore {

@@ -319,6 +319,7 @@ export type ProductRpcMethods =
     | "startEnvoyHarnessTurn"
     | "getEnvoyHarnessTurnStatus"
     | "setEnvoyHarnessAutoRunPolicy"
+    | "setEnvoyHarnessDecision"
     | "setEnvoyHarnessCollaborationMode"
     | "getEnvoyHarnessChatHistory"
     | "listEnvoyHarnessChats"

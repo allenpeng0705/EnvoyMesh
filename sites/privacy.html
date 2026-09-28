@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacy Policy — EnvoyMesh &amp; EnvoyGo</title>
-  <meta name="description" content="Privacy Policy for EnvoyMesh (home node / desktop) and EnvoyGo (mobile companion). Local-first mesh: no central EnvoyMesh account.">
+  <title>Privacy Policy — EnvoyMesh, EnvoyGo &amp; EnvoyDev</title>
+  <meta name="description" content="Privacy Policy for EnvoyMesh (home node), EnvoyGo (social mobile), and EnvoyDev (coding-agent control plane + mobile). Local-first mesh: no central EnvoyMesh account.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -200,15 +200,15 @@
 </head>
 <body>
   <main class="wrap">
-    <p class="brand">EnvoyMesh · EnvoyGo</p>
+    <p class="brand">EnvoyMesh · EnvoyGo · EnvoyDev</p>
     <h1>Privacy Policy</h1>
-    <p class="meta">Last updated: 3 August 2026 · Effective for EnvoyMesh home/desktop software and the EnvoyGo mobile apps</p>
+    <p class="meta">Last updated: 26 September 2026 · Effective for EnvoyMesh home/desktop software, EnvoyGo, and EnvoyDev (desktop + mobile)</p>
 
     <article class="panel">
       <p class="lede">
-        EnvoyMesh and EnvoyGo are built <strong>local-first</strong>. There is
+        EnvoyMesh family apps are built <strong>local-first</strong>. There is
         <strong>no central EnvoyMesh account server</strong> that stores your chat
-        inbox, contacts, or vault. Identity is cryptographic (Ed25519 keys → DIDs)
+        inbox, coding transcripts, contacts, or vault. Identity is cryptographic (Ed25519 keys → DIDs)
         and lives on devices you control. This policy explains what data is
         processed, where it stays, and what third parties (if any) may see.
       </p>
@@ -221,6 +221,7 @@
           <li><a href="#principles">Core principles</a></li>
           <li><a href="#data">Data we process</a></li>
           <li><a href="#envoygo">EnvoyGo (mobile)</a></li>
+          <li><a href="#envoydev">EnvoyDev (desktop &amp; mobile)</a></li>
           <li><a href="#envoymesh">EnvoyMesh (home / desktop)</a></li>
           <li><a href="#relays">Relays &amp; network</a></li>
           <li><a href="#third">Third-party services</a></li>
@@ -235,7 +236,8 @@
       <h2 id="who">1. Who we are</h2>
       <p>
         This Privacy Policy covers the EnvoyMesh project software, including the
-        home node / desktop apps (EnvoyMesh) and the mobile companion (EnvoyGo).
+        home node / desktop apps (EnvoyMesh), the social mobile companion (EnvoyGo),
+        and the coding-agent control plane (EnvoyDev desktop and EnvoyDev Mobile).
         Product pages and review tools may be hosted at
         <a href="https://www.homeclaw.cn/envoy/qr_review">homeclaw.cn/envoy</a>.
       </p>
@@ -257,12 +259,16 @@
             <td><strong>EnvoyGo</strong></td>
             <td>Mobile thin client: pairs to <em>your</em> home node; chat, contacts, agent, calls, push alerts</td>
           </tr>
+          <tr>
+            <td><strong>EnvoyDev</strong></td>
+            <td>Coding-agent control plane (desktop) and thin-client companion (EnvoyDev Mobile): pairs to <em>your</em> EnvoyDev daemon; projects, transcripts, approvals</td>
+          </tr>
         </tbody>
       </table>
       <p>
-        When you pair EnvoyGo to a home node, that home’s operator (often you)
-        controls what is stored on the home device. We do not operate a shared
-        multi-tenant “Envoy cloud inbox.”
+        When you pair EnvoyGo or EnvoyDev Mobile to a machine you own, that
+        machine’s operator (often you) controls what is stored there. We do not operate a shared
+        multi-tenant “Envoy cloud inbox” or coding transcript store.
       </p>
 
       <h2 id="principles">3. Core principles</h2>
@@ -307,7 +313,23 @@
         database for mesh contacts — peer profiles come from the paired home node.
       </p>
 
-      <h2 id="envoymesh">6. EnvoyMesh (home / desktop)</h2>
+      <h2 id="envoydev">6. EnvoyDev (desktop &amp; mobile)</h2>
+      <p>
+        EnvoyDev is the coding-agent control plane. The <strong>desktop app and daemon</strong>
+        run on a machine you own; <strong>EnvoyDev Mobile</strong> is a thin client that pairs to
+        that daemon. Provider API keys and agent credentials stay with the coding agents on the
+        desktop — the phone never holds them.
+      </p>
+      <ul>
+        <li><strong>Pairing / session tokens</strong> — stored on the phone in the platform Keychain / Keystore; used only to authenticate to <em>your</em> EnvoyDev daemon.</li>
+        <li><strong>Camera</strong> — optional QR scan for pairing. Images are not uploaded to an EnvoyDev cloud.</li>
+        <li><strong>Photos / attachments</strong> — optional images you attach to a message; sent to your daemon over the pairing channel.</li>
+        <li><strong>SSH hop credentials</strong> — only if you paste them for a hop; stored in secure storage on the phone; never sent to an EnvoyDev cloud service.</li>
+        <li><strong>Transcripts &amp; projects</strong> — read from your desktop daemon’s local state. EnvoyDev does not operate a hosted coding inbox.</li>
+        <li><strong>No EnvoyDev account</strong> — there is no central EnvoyDev signup; reachability uses the same EnvoyMesh identity / discovery family as the other products.</li>
+      </ul>
+
+      <h2 id="envoymesh">7. EnvoyMesh (home / desktop)</h2>
       <ul>
         <li><strong>On-disk profile</strong> — keys, trust store, peer directory, chat/journal data, vault index, and audit logs typically live under the node profile directory you choose.</li>
         <li><strong>AI / models</strong> — local inference stays on your machine; remote providers only receive prompts/context you approve through configured tools and policy.</li>
@@ -315,7 +337,7 @@
         <li><strong>Family / pairing invites</strong> — tokens authorize a device to bond; treat invite QR codes like passwords and revoke or rotate when done.</li>
       </ul>
 
-      <h2 id="relays">7. Relays &amp; network</h2>
+      <h2 id="relays">8. Relays &amp; network</h2>
       <p>
         To connect when peers are behind NAT or on cellular, traffic may pass through
         <strong>relays or WebSocket bridges you (or your community) configure</strong>.
@@ -324,20 +346,21 @@
         assume a random relay is a confidential vault. Prefer direct / LAN paths when available.
       </p>
 
-      <h2 id="third">8. Third-party services</h2>
+      <h2 id="third">9. Third-party services</h2>
       <p>Depending on how you configure the products, third parties may include:</p>
       <ul>
         <li><strong>Apple / Google</strong> — app distribution, APNs / FCM push delivery.</li>
         <li><strong>Firebase</strong> (if used in your EnvoyGo build) — messaging / related Google services for push.</li>
-        <li><strong>Model providers</strong> (OpenAI-compatible APIs, local runners, external agents such as HomeClaw) — only if you enable them on the home node.</li>
+        <li><strong>Model providers</strong> (OpenAI-compatible APIs, local runners, external agents such as HomeClaw) — only if you enable them on the home node or on an EnvoyDev desktop agent.</li>
         <li><strong>Community or private relays</strong> — connectivity only; operators are independent unless you run them yourself.</li>
       </ul>
       <p>We do not control those parties’ independent privacy practices. Review their policies before enabling them.</p>
 
-      <h2 id="retention">9. Retention &amp; deletion</h2>
+      <h2 id="retention">10. Retention &amp; deletion</h2>
       <ul>
         <li><strong>On EnvoyGo</strong> — unpair and/or uninstall the app to remove local caches and session material from that device.</li>
-        <li><strong>On the home node</strong> — the home operator controls retention of chats, vault files, invites, and peer records. Deleting data for a family member or wiping a profile is done on the home (or by discarding the profile directory).</li>
+        <li><strong>On EnvoyDev Mobile</strong> — unpair and/or uninstall to remove pairing tokens and local caches; project and transcript data remain on the desktop daemon you paired with.</li>
+        <li><strong>On the home / EnvoyDev desktop</strong> — the machine’s operator controls retention of chats, vault files, coding projects, transcripts, invites, and peer records. Deleting data or wiping a profile is done on that machine.</li>
         <li><strong>Push tokens</strong> — become inactive when you revoke them on the home or uninstall; platform retention follows Apple/Google rules.</li>
       </ul>
       <p>
@@ -346,7 +369,7 @@
         home-local.
       </p>
 
-      <h2 id="children">10. Children</h2>
+      <h2 id="children">11. Children</h2>
       <p>
         The software is not directed at children under 13 (or the minimum age in your
         jurisdiction). Do not use EnvoyGo / EnvoyMesh to knowingly collect personal
@@ -354,7 +377,7 @@
         compliance with local law.
       </p>
 
-      <h2 id="rights">11. Your choices &amp; rights</h2>
+      <h2 id="rights">12. Your choices &amp; rights</h2>
       <ul>
         <li>Refuse camera / mic / notification permissions (pairing, calls, or push will be limited).</li>
         <li>Use LAN / direct paths and avoid third-party relays when possible.</li>
@@ -369,16 +392,16 @@
         software’s design.
       </p>
 
-      <h2 id="changes">12. Changes</h2>
+      <h2 id="changes">13. Changes</h2>
       <p>
         We may update this page when product behavior or store requirements change.
         The “Last updated” date at the top will change. Continued use after an update
         means you accept the revised policy for that software version.
       </p>
 
-      <h2 id="contact">13. Contact</h2>
+      <h2 id="contact">14. Contact</h2>
       <p>
-        Privacy questions about EnvoyMesh / EnvoyGo:
+        Privacy questions about EnvoyMesh / EnvoyGo / EnvoyDev:
       </p>
       <ul>
         <li>Web: <a href="https://www.homeclaw.cn/">https://www.homeclaw.cn/</a></li>
@@ -393,7 +416,7 @@
     <footer>
       <p>
         <a href="https://www.homeclaw.cn/envoy/qr_review">Review pairing QR</a>
-        · EnvoyMesh &amp; EnvoyGo Privacy Policy
+        · EnvoyMesh, EnvoyGo &amp; EnvoyDev Privacy Policy
       </p>
     </footer>
   </main>

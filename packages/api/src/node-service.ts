@@ -2401,6 +2401,16 @@ export interface NodeService extends CoreNodeService {
     policy: string,
   ): Promise<import("./pi-agent.js").EnvoyHarnessStatus>;
 
+  /**
+   * Optional System One decision gate (Laya / Jev). Off by default.
+   * Does not accept API keys — configure those via host env.
+   */
+  setEnvoyHarnessDecision?(input: {
+    mode?: "off" | "shadow" | "enforce";
+    backend?: "null" | "laya-http" | "jev" | "onnx";
+    endpoint?: string;
+  }): Promise<import("./pi-agent.js").EnvoyHarnessStatus>;
+
   /** Native EH Mode — Default / Plan / Review (`session/set_mode`). */
   setEnvoyHarnessCollaborationMode(
     mode: string,

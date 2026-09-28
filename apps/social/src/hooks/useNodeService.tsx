@@ -522,6 +522,11 @@ export interface NodeServiceClient {
   setEnvoyHarnessAutoRunPolicy(
     policy: string,
   ): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+  setEnvoyHarnessDecision(input: {
+    mode?: "off" | "shadow" | "enforce";
+    backend?: "null" | "laya-http" | "jev" | "onnx";
+    endpoint?: string;
+  }): Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
   setEnvoyHarnessCollaborationMode(
     mode: string,
     chatId?: string,
@@ -2072,6 +2077,17 @@ function createWsNodeServiceClient(
       return wsClient.rpc(
         "setEnvoyHarnessAutoRunPolicy",
         { policy },
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
+    },
+    async setEnvoyHarnessDecision(input: {
+      mode?: "off" | "shadow" | "enforce";
+      backend?: "null" | "laya-http" | "jev" | "onnx";
+      endpoint?: string;
+    }) {
+      return wsClient.rpc(
+        "setEnvoyHarnessDecision",
+        input,
         { timeoutMs: 30_000 },
       ) as Promise<import("@envoymesh/api").EnvoyHarnessStatus>;
     },

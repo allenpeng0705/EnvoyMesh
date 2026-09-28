@@ -115,6 +115,7 @@ describe("isOwnerOnlyRpcMethod", () => {
       "resetEnvoyHarnessChat",
       "resumeEnvoyHarnessSession",
       "setEnvoyHarnessAutoRunPolicy",
+      "setEnvoyHarnessDecision",
       "listEnvoyHarnessPeers",
       "setEnvoyHarnessProjectPath",
       "setEnvoyHarnessCollaborationMode",

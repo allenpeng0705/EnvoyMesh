@@ -195,6 +195,7 @@ export const CODING_GATED_RPC = new Set<string>([
   "getEnvoyHarnessStatus",
   "setEnvoyHarnessProjectPath",
   "setEnvoyHarnessAutoRunPolicy",
+  "setEnvoyHarnessDecision",
   "setEnvoyHarnessCollaborationMode",
   "listEnvoyHarnessPeers",
   "invokeEnvoyHarnessEhui",
@@ -1635,6 +1636,16 @@ export async function routeRpcMethod(
       return ns.setEnvoyHarnessAutoRunPolicy(
         String(params.policy ?? ""),
       );
+    case "setEnvoyHarnessDecision":
+      return ns.setEnvoyHarnessDecision?.({
+        ...(typeof params.mode === "string" ? { mode: params.mode } : {}),
+        ...(typeof params.backend === "string"
+          ? { backend: params.backend }
+          : {}),
+        ...(typeof params.endpoint === "string"
+          ? { endpoint: params.endpoint }
+          : {}),
+      }) ?? Promise.reject(new Error("setEnvoyHarnessDecision not supported"));
     case "setEnvoyHarnessCollaborationMode":
       return ns.setEnvoyHarnessCollaborationMode(
         String(params.mode ?? ""),

@@ -457,6 +457,7 @@ import {
   createSkillRegistry,
   createUserQuestionService,
   loadConfigStack,
+  mergeDecisionConfig,
   resolveAgentRuntimeConfig,
   systemPromptOptionsFromConfig,
   type ConfigLayer,
@@ -6904,11 +6905,19 @@ class NodeServiceImpl implements NodeService {
       | "off"
       | "never"
       | undefined;
+    let decision:
+      | {
+          mode?: "off" | "shadow" | "enforce";
+          backend?: "null" | "laya-http" | "jev" | "onnx";
+          endpoint?: string;
+        }
+      | undefined;
     try {
       const cfg = await this._configStore.load().catch(() => undefined);
       autoRunPolicy =
         cfg?.envoyHarnessAutoRunPolicy ??
         "safe-only";
+      decision = cfg?.envoyHarnessDecision ?? { mode: "off" };
       const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
       const resolved = await resolveEhSessionIdForCwd({
         cwd,
@@ -6937,6 +6946,7 @@ class NodeServiceImpl implements NodeService {
       ...(sessionId !== undefined ? { sessionId } : {}),
       ...(messageCount !== undefined ? { messageCount } : {}),
       ...(autoRunPolicy !== undefined ? { autoRunPolicy } : {}),
+      ...(decision !== undefined ? { decision } : {}),
       ...(!eh.ready
         ? { error: eh.reason ?? "envoy-harness not ready" }
         : {}),
@@ -6974,6 +6984,64 @@ class NodeServiceImpl implements NodeService {
     // it started with). Nothing ongoing is interrupted. The runtime
     // itself does not depend on the policy — only the per-host
     // `shouldAskTool` closure does — so we never reset it here.
+    this._ehChatRuntime.closeAll();
+    return this.getEnvoyHarnessStatus();
+  }
+
+  /**
+   * Optional System One decision gate (Laya / Jev). Off by default.
+   * Rebuilds idle per-chat hosts on the next turn.
+   */
+  async setEnvoyHarnessDecision(input: {
+    mode?: "off" | "shadow" | "enforce";
+    backend?: "null" | "laya-http" | "jev" | "onnx";
+    endpoint?: string;
+  }): Promise<import("@envoymesh/api").EnvoyHarnessStatus> {
+    const mode = input.mode?.trim().toLowerCase();
+    const backend = input.backend?.trim().toLowerCase();
+    if (
+      mode !== undefined &&
+      mode !== "off" &&
+      mode !== "shadow" &&
+      mode !== "enforce"
+    ) {
+      throw new Error(
+        `invalid decision mode: ${input.mode} (use off | shadow | enforce)`,
+      );
+    }
+    if (
+      backend !== undefined &&
+      backend !== "null" &&
+      backend !== "laya-http" &&
+      backend !== "jev" &&
+      backend !== "onnx"
+    ) {
+      throw new Error(
+        `invalid decision backend: ${input.backend} (use null | laya-http | jev | onnx)`,
+      );
+    }
+    const cfg = await this._configStore.load().catch(() => undefined);
+    const prev = cfg?.envoyHarnessDecision ?? {};
+    const endpoint =
+      typeof input.endpoint === "string" ? input.endpoint.trim() : undefined;
+    const next: {
+      mode?: "off" | "shadow" | "enforce";
+      backend?: "null" | "laya-http" | "jev" | "onnx";
+      endpoint?: string;
+    } = { ...prev };
+    if (mode !== undefined) {
+      next.mode = mode as "off" | "shadow" | "enforce";
+    }
+    if (backend !== undefined) {
+      next.backend = backend as "null" | "laya-http" | "jev" | "onnx";
+    }
+    if (endpoint !== undefined) {
+      if (endpoint.length > 0) next.endpoint = endpoint;
+      else delete next.endpoint;
+    }
+    await this.updateNodeConfig({
+      envoyHarnessDecision: next,
+    });
     this._ehChatRuntime.closeAll();
     return this.getEnvoyHarnessStatus();
   }
@@ -8074,6 +8142,18 @@ class NodeServiceImpl implements NodeService {
     } catch {
       configLayer = {};
     }
+    const nodeCfg = await this._configStore.load().catch(() => undefined);
+    const nodeDecision = nodeCfg?.envoyHarnessDecision;
+    const decision = mergeDecisionConfig({
+      ...(configLayer.decision ?? {}),
+      ...(nodeDecision?.mode !== undefined ? { mode: nodeDecision.mode } : {}),
+      ...(nodeDecision?.backend !== undefined
+        ? { backend: nodeDecision.backend }
+        : {}),
+      ...(nodeDecision?.endpoint !== undefined
+        ? { endpoint: nodeDecision.endpoint }
+        : {}),
+    });
     const runtimeCfg = resolveAgentRuntimeConfig(cwd, configLayer);
     const skills = createSkillRegistry();
     skills.registerProvider(createFilesystemSkillProvider());
@@ -8095,6 +8175,7 @@ class NodeServiceImpl implements NodeService {
       defaultCwd: cwd,
       memoryStore,
       sessionStore,
+      decision,
       shouldAskTool: (toolName, args) =>
         shouldAskAcpTool(toolName, autoRun, args),
       getConfig: () => ({

@@ -4077,10 +4077,44 @@ export function SettingsAITab() {
     }
   }, [nodeService, refreshNodeConfig]);
 
+  const [ehDecisionSaving, setEhDecisionSaving] = useState(false);
+  const handleChangeEhDecision = useCallback(
+    async (partial: {
+      mode?: "off" | "shadow" | "enforce";
+      backend?: "null" | "laya-http" | "jev" | "onnx";
+      endpoint?: string;
+    }) => {
+      setEhDecisionSaving(true);
+      try {
+        const s = await nodeService.setEnvoyHarnessDecision(partial);
+        setEhStatus(s);
+        await refreshNodeConfig();
+      } catch (e) {
+        console.warn("[SettingsAITab] failed to update Envoy Harness decision gate", e);
+      } finally {
+        setEhDecisionSaving(false);
+      }
+    },
+    [nodeService, refreshNodeConfig],
+  );
+
   const ehAutoRunPolicy =
     ehStatus?.autoRunPolicy ??
     nodeConfig?.envoyHarnessAutoRunPolicy ??
     "safe-only";
+
+  const ehDecisionMode =
+    ehStatus?.decision?.mode ??
+    nodeConfig?.envoyHarnessDecision?.mode ??
+    "off";
+  const ehDecisionBackend =
+    ehStatus?.decision?.backend ??
+    nodeConfig?.envoyHarnessDecision?.backend ??
+    "null";
+  const ehDecisionEndpoint =
+    ehStatus?.decision?.endpoint ??
+    nodeConfig?.envoyHarnessDecision?.endpoint ??
+    "";
 
   // ---- AI Character Bots ----
   const [botDraft, setBotDraft] = useState({ name: "", systemPrompt: "", description: "", avatarColor: "#6366f1" });
@@ -4410,6 +4444,84 @@ export function SettingsAITab() {
                       ? t("settings.ai.aiEngine.ehAutoRunNeverDesc")
                       : t("settings.ai.aiEngine.piAutoRunTrustDesc")}
               </p>
+            </div>
+
+            <div className="agent-field">
+              <label className="agent-field-label">
+                {t("settings.ai.aiEngine.ehDecisionGate")}
+              </label>
+              <p className="agent-field-hint">
+                {t("settings.ai.aiEngine.ehDecisionGateDesc")}
+              </p>
+              <label className="agent-field-label">
+                {t("settings.ai.aiEngine.ehDecisionMode")}
+              </label>
+              <select
+                className="agent-field-input"
+                value={ehDecisionMode}
+                disabled={ehDecisionSaving}
+                onChange={(e) => {
+                  void handleChangeEhDecision({
+                    mode: e.target.value as "off" | "shadow" | "enforce",
+                  });
+                }}
+              >
+                <option value="off">{t("settings.ai.aiEngine.ehDecisionModeOff")}</option>
+                <option value="shadow">{t("settings.ai.aiEngine.ehDecisionModeShadow")}</option>
+                <option value="enforce">{t("settings.ai.aiEngine.ehDecisionModeEnforce")}</option>
+              </select>
+              <label className="agent-field-label">
+                {t("settings.ai.aiEngine.ehDecisionBackend")}
+              </label>
+              <select
+                className="agent-field-input"
+                value={ehDecisionBackend}
+                disabled={ehDecisionSaving || ehDecisionMode === "off"}
+                onChange={(e) => {
+                  void handleChangeEhDecision({
+                    backend: e.target.value as
+                      | "null"
+                      | "laya-http"
+                      | "jev"
+                      | "onnx",
+                  });
+                }}
+              >
+                <option value="null">null</option>
+                <option value="laya-http">laya-http</option>
+                <option value="jev">jev</option>
+                <option value="onnx">onnx (reserved)</option>
+              </select>
+              <label className="agent-field-label">
+                {t("settings.ai.aiEngine.ehDecisionEndpoint")}
+              </label>
+              <input
+                className="agent-field-input"
+                type="text"
+                value={ehDecisionEndpoint}
+                disabled={ehDecisionSaving || ehDecisionMode === "off"}
+                placeholder={t("settings.ai.aiEngine.ehDecisionEndpointPlaceholder")}
+                onBlur={(e) => {
+                  const next = e.target.value.trim();
+                  if (next === ehDecisionEndpoint) return;
+                  void handleChangeEhDecision({ endpoint: next });
+                }}
+                onChange={(e) => {
+                  // Optimistic local mirror via nodeConfig refresh after save;
+                  // keep typed value until blur by patching status.
+                  setEhStatus((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          decision: {
+                            ...(prev.decision ?? {}),
+                            endpoint: e.target.value,
+                          },
+                        }
+                      : prev,
+                  );
+                }}
+              />
             </div>
 
             {ehStatus?.cwd ? (

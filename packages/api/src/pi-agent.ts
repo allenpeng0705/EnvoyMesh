@@ -226,6 +226,15 @@ export interface EnvoyHarnessStatus {
   messageCount?: number
   /** Permission policy for chat/terminal tool calls (`always-confirm` | `safe-only` | `off` | `never`). */
   autoRunPolicy?: string
+  /**
+   * Optional System One decision gate (Laya / Jev). Default off.
+   * Non-secret fields only — keys stay in host env.
+   */
+  decision?: {
+    mode?: "off" | "shadow" | "enforce"
+    backend?: "null" | "laya-http" | "jev" | "onnx"
+    endpoint?: string
+  }
   /** The configured standalone peer cluster (Pattern A execution pool). */
   peers: { connected: number; failed: number }
 }
