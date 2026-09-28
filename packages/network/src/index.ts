@@ -3056,9 +3056,20 @@ export class EnvoyMesh {
    * connection from a home node behind NAT; when the relay later dials that home
    * node, it must open a new stream on the *existing* connection — a fresh dial
    * to the home node's private IP would fail from a cloud relay.
+   *
+   * Pass {@link MeshOutboundOptions.signal} (and optionally `dialTimeoutMs`) so
+   * callers like the community-relay client-proxy can cancel an abandoned dial
+   * instead of racing a timer that leaves `dialProtocol` running.
    */
-  async dialProtocol(target: string, protocol: string): Promise<any> {
-    const { stream } = await this.openOutboundStream(target, protocol);
+  async dialProtocol(
+    target: string,
+    protocol: string,
+    options?: Pick<
+      MeshOutboundOptions,
+      "signal" | "dialTimeoutMs" | "preferCircuitHints" | "forceFreshDial" | "dialHints"
+    >,
+  ): Promise<any> {
+    const { stream } = await this.openOutboundStream(target, protocol, options);
     return stream;
   }
 
@@ -3728,6 +3739,9 @@ export class EnvoyMesh {
     protocol: string,
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ stream: any; remotePeerId?: string }> {
+    if (sendOptions?.signal?.aborted) {
+      throw new Error("outbound dial aborted");
+    }
     const node = this.requireNode();
     const peerIdStr = parsePeerIdFromDialTarget(target);
     const hintList = filterDialHintsForOutboundSend(

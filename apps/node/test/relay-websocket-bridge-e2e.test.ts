@@ -158,8 +158,18 @@ function createRelayBridge(
         // or if we haven't dialed before. The actual proxy dial below is what matters.
       }
 
-      // Now dial using JUST the peer ID — this is exactly what production does
-      libp2pStream = await mesh.dialProtocol(target, CLIENT_PROXY_PROTOCOL);
+      // Now dial using JUST the peer ID — this is exactly what production does.
+      // Pass AbortSignal so an abandoned phone closes the dial (mirrors relay index).
+      const dialAbort = new AbortController();
+      const dialTimer = setTimeout(() => dialAbort.abort(), 8_000);
+      try {
+        libp2pStream = await mesh.dialProtocol(target, CLIENT_PROXY_PROTOCOL, {
+          signal: dialAbort.signal,
+          dialTimeoutMs: 8_000,
+        });
+      } finally {
+        clearTimeout(dialTimer);
+      }
       streamIo = byteStream(libp2pStream);
 
       // Send handshake

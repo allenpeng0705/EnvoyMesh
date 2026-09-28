@@ -29,6 +29,7 @@ import {
   readProxyResponse,
   writeProxyConnect,
 } from "./client-proxy-handshake.js";
+import { ProxyConnectionSlots } from "./proxy-connection-slots.js";
 import {
   createInitialStandaloneRelayHealthState,
   evaluateStandaloneRelayHealth,
@@ -1151,13 +1152,20 @@ try {
     _wss.on("error", (err) => {
       console.warn("[relay] proxyWss error:", err instanceof Error ? err.message : String(err));
     });
-    const proxyConnByTarget = new Map<string, Set<WebSocket>>();
-    let proxyConnTotal = 0;
+    const proxySlots = new ProxyConnectionSlots({
+      maxTotal: MAX_PROXY_CONNECTIONS,
+      maxPerTarget: MAX_PROXY_CONNS_PER_TARGET,
+    });
     /** Live client-proxy callers tagged by `?product=` (Veda / EnvoyDev mobile / …). */
     const proxyClientMeta = new Map<
       WebSocket,
       { product?: string; kind: string; targetPeerId: string }
     >();
+    /** Admin `/peers` polls often; Identify peerStore reads for ~280 peers are expensive. */
+    const PEERS_DESCRIBE_CACHE_TTL_MS = 5_000;
+    let peersDescribeCache:
+      | { atMs: number; peers: Awaited<ReturnType<EnvoyMesh["describeConnectedPeers"]>> }
+      | undefined;
 
     function wsProxyProductSummary(): Record<string, number> {
       const counts: Record<string, number> = {};
@@ -1211,7 +1219,7 @@ try {
           maxReservations: circuitRelayServerConfig.maxReservations ?? 15,
           rosterSize: relayRoster.size(),
           connectionStats: conn,
-          wsProxyConnections: proxyConnTotal,
+          wsProxyConnections: proxySlots.totalConnections,
           wsProxyByProduct: wsProxyProductSummary(),
           homeTunnels: tunnelStats.homeTunnels,
           directClients: directClients.size,
@@ -1241,7 +1249,15 @@ try {
       buildPeers: async () => {
         const conn = mesh.getConnectionStats();
         const tunnelStats = _homeTunnelProxy.stats();
-        const peers = await mesh.describeConnectedPeers();
+        const now = Date.now();
+        let peers = peersDescribeCache?.peers;
+        if (
+          !peersDescribeCache ||
+          now - peersDescribeCache.atMs >= PEERS_DESCRIBE_CACHE_TTL_MS
+        ) {
+          peers = await mesh.describeConnectedPeers();
+          peersDescribeCache = { atMs: now, peers };
+        }
         const byKind = summarizePeerKinds(peers.map((p) => p.kind));
         return {
           connectedPeerIds: conn.connectedPeerIds,
@@ -1250,7 +1266,7 @@ try {
           circuitPeerCount: conn.circuitPeerIds.length,
           totalConnections: conn.totalConnections,
           rosterSize: relayRoster.size(),
-          wsProxyConnections: proxyConnTotal,
+          wsProxyConnections: proxySlots.totalConnections,
           wsProxyByProduct: wsProxyProductSummary(),
           homeTunnels: tunnelStats.homeTunnels,
           directClients: directClients.size,
@@ -1696,37 +1712,18 @@ try {
       token: string,
       productQuery = "",
     ): Promise<void> {
-      // Rate limit — first drop dead sockets so a leaked 'close' cannot keep the
-      // per-target set at the cap forever (see release slot registration below).
-      const pruneDeadProxies = (set: Set<WebSocket> | undefined): void => {
-        if (!set) return;
-        for (const sock of [...set]) {
-          // Only CLOSED — CLOSING may still fire 'close' and release once.
-          if (sock.readyState === WebSocket.CLOSED && set.delete(sock)) {
-            proxyClientMeta.delete(sock);
-            proxyConnTotal = Math.max(0, proxyConnTotal - 1);
-          }
+      const acquired = proxySlots.tryAcquire(ws, targetPeerId);
+      if (!acquired.ok) {
+        if (acquired.reason === "full") {
+          console.warn(`[relay] client-proxy: rejected — max total connections ${MAX_PROXY_CONNECTIONS}`);
+          ws.close(1013, "relay proxy connections full");
+        } else {
+          console.warn(`[relay] client-proxy: rejected — max connections per target ${MAX_PROXY_CONNS_PER_TARGET}`);
+          ws.close(1013, "too many connections to target");
         }
-        if (set.size === 0) proxyConnByTarget.delete(targetPeerId);
-      };
-      pruneDeadProxies(proxyConnByTarget.get(targetPeerId));
-
-      if (proxyConnTotal >= MAX_PROXY_CONNECTIONS) {
-        console.warn(`[relay] client-proxy: rejected — max total connections ${MAX_PROXY_CONNECTIONS}`);
-        ws.close(1013, "relay proxy connections full");
-        return;
-      }
-      const targetSet = proxyConnByTarget.get(targetPeerId);
-      if (targetSet && targetSet.size >= MAX_PROXY_CONNS_PER_TARGET) {
-        console.warn(`[relay] client-proxy: rejected — max connections per target ${MAX_PROXY_CONNS_PER_TARGET}`);
-        ws.close(1013, "too many connections to target");
         return;
       }
 
-      proxyConnTotal++;
-      const conns = proxyConnByTarget.get(targetPeerId) ?? new Set();
-      conns.add(ws);
-      proxyConnByTarget.set(targetPeerId, conns);
       const classified = classifyWsProxyProduct(productQuery);
       proxyClientMeta.set(ws, {
         ...(classified.product ? { product: classified.product } : {}),
@@ -1734,10 +1731,14 @@ try {
         targetPeerId,
       });
       console.log(
-        `[relay] client-proxy: connecting to ${targetPeerId.slice(0, 12)}… (total=${proxyConnTotal}` +
+        `[relay] client-proxy: connecting to ${targetPeerId.slice(0, 12)}… (total=${proxySlots.totalConnections}` +
           `${classified.product ? `, product=${classified.product}` : ", product=unknown"})`,
       );
       let libp2pStream: any = null;
+      // AbortController cancels the in-flight libp2p dial when the phone hangs up
+      // or the wall-clock budget elapses — Promise.race alone left dialProtocol
+      // running and holding relay resources after we already closed the WS.
+      const dialAbort = new AbortController();
       // Slot must be released exactly once. The close listener used to be
       // registered *after* dialProtocol + handshake — if the phone hung up (or
       // we called ws.close) during that await, 'close' fired with no listener
@@ -1747,12 +1748,9 @@ try {
       const releaseProxySlot = (reason: string): void => {
         if (slotReleased) return;
         slotReleased = true;
-        const s = proxyConnByTarget.get(targetPeerId);
-        if (s?.delete(ws)) {
-          proxyConnTotal = Math.max(0, proxyConnTotal - 1);
-        }
+        dialAbort.abort();
+        proxySlots.release(ws);
         proxyClientMeta.delete(ws);
-        if (s && s.size === 0) proxyConnByTarget.delete(targetPeerId);
         if (libp2pStream) {
           try {
             libp2pStream.close();
@@ -1762,7 +1760,7 @@ try {
           libp2pStream = null;
         }
         console.log(
-          `[relay] client-proxy: released ${targetPeerId.slice(0, 12)}… (${reason}) (total=${proxyConnTotal})`,
+          `[relay] client-proxy: released ${targetPeerId.slice(0, 12)}… (${reason}) (total=${proxySlots.totalConnections})`,
         );
       };
       ws.on("close", () => releaseProxySlot("ws-close"));
@@ -1823,18 +1821,27 @@ try {
 
         // Bound the libp2p dial: the connection-manager dialTimeout is 45s, which
         // would hold a capped proxy slot for almost a minute per abandoned phone
-        // attempt. Keep this under the phone's per-candidate budget (~8s) plus
+        // attempt. Keep this at/under the phone's per-candidate budget (~6s) plus
         // a little slack so a slow home still wins when the phone is waiting.
-        const PROXY_DIAL_TIMEOUT_MS = 12_000;
-        libp2pStream = await Promise.race([
-          mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL),
-          new Promise<never>((_, reject) => {
-            setTimeout(
-              () => reject(new Error(`client-proxy dial timed out after ${PROXY_DIAL_TIMEOUT_MS} ms`)),
-              PROXY_DIAL_TIMEOUT_MS,
-            );
-          }),
-        ]);
+        const PROXY_DIAL_TIMEOUT_MS = 8_000;
+        const dialTimer = setTimeout(() => dialAbort.abort(), PROXY_DIAL_TIMEOUT_MS);
+        try {
+          libp2pStream = await mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL, {
+            signal: dialAbort.signal,
+            dialTimeoutMs: PROXY_DIAL_TIMEOUT_MS,
+          });
+        } finally {
+          clearTimeout(dialTimer);
+        }
+        if (dialAbort.signal.aborted) {
+          try {
+            libp2pStream?.close?.();
+          } catch {
+            /* ignore */
+          }
+          libp2pStream = null;
+          throw new Error(`client-proxy dial timed out after ${PROXY_DIAL_TIMEOUT_MS} ms`);
+        }
         streamIo = byteStream(libp2pStream);
 
         // C1: Attach an error handler on the raw libp2p stream. Without it, a

@@ -278,10 +278,6 @@ class CandidateResolver {
   static const _communityRelayLibp2pMultiaddr =
       '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo';
 
-  /// The US community relay's libp2p multiaddr.
-  static const _communityUsRelayLibp2pMultiaddr =
-      '/ip4/47.251.91.97/tcp/4001/p2p/12D3KooWAWiVSpsCjpjauz83ijLugxwScRJi89N4PA1VQ1Czsncb';
-
   /// Build libp2p candidates: a **direct** dial to the home when the payload carried the home's own
   /// addresses, and a **circuit-relay** hop for every relay that can reach it.
   ///

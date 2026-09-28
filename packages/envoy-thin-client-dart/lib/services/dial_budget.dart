@@ -21,7 +21,8 @@
 ///      dialling in one pass (a QR with a relay roster, several P2P hops and a community relay).
 ///      At most [DialBudget.maxAttemptsPerWalk] of the highest-priority candidates are tried per
 ///      walk (default 6: LAN + circuits + CN and US community-relay WS); the tail waits for the
-///      next walk rather than keeping the phone's radio busy.
+///      next walk rather than keeping the phone's radio busy. With the default 6s per candidate,
+///      a full walk is ~36s wall-clock at worst.
 ///   3. **Deferral under pressure.** After [DialBudget.pressureThreshold] candidate dials fail
 ///      inside a rolling [DialBudget.pressureWindow], the meter defers the **whole walk** for
 ///      [DialBudget.deferFor] from the most recent failure: `plan` returns no candidates at all, so
@@ -45,9 +46,14 @@ import 'package:envoy_thin_client/services/home_remote_client.dart';
 
 /// The three limits one candidate walk is held to. Immutable; see the library doc for what each
 /// one enforces.
+///
+/// Worst-case wall clock for a full walk is roughly
+/// [maxAttemptsPerWalk] × [perCandidateTimeout] (default 6 × 6s ≈ 36s). Keep that
+/// under a minute so a phone on cellular fails visibly rather than sitting on
+/// "Connecting" through every dead rung.
 class DialBudget {
   const DialBudget({
-    this.perCandidateTimeout = const Duration(seconds: 8),
+    this.perCandidateTimeout = const Duration(seconds: 6),
     this.maxAttemptsPerWalk = 6,
     this.pressureWindow = const Duration(seconds: 30),
     this.pressureThreshold = 3,

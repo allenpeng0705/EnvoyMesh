@@ -107,7 +107,7 @@ class HomeRemoteClientOptions {
   /// Use this to resync data after network recovery.
   final void Function()? onReconnect;
 
-  /// Per-candidate connect timeout in ms. Default: 8000.
+  /// Per-candidate connect timeout in ms. Default: 6000.
   final int perCandidateTimeoutMs;
 
   /// Background upgrade sweep interval in ms. Default: 30000. 0 to disable.
@@ -123,7 +123,7 @@ class HomeRemoteClientOptions {
     this.onActiveTransportChange,
     this.onCandidateTrying,
     this.onReconnect,
-    this.perCandidateTimeoutMs = 8000,
+    this.perCandidateTimeoutMs = 6000,
     this.upgradeSweepMs = 30000,
     this.initialReconnectDelayMs = 1000,
   });
