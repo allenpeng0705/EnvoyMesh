@@ -670,6 +670,15 @@ export interface NodeConfig {
    */
   envoyHarnessAutoRunPolicy?: string;
   /**
+   * Optional System One decision gate (Laya / Jev). Default off.
+   * Secrets stay in env / secret store — not here.
+   */
+  envoyHarnessDecision?: {
+    mode?: "off" | "shadow" | "enforce";
+    backend?: "null" | "laya-http" | "jev" | "onnx";
+    endpoint?: string;
+  };
+  /**
    * Anonymous discovery mode — controls how the node responds to unknown/public peers.
    * Default: "off" (anonymous discovery disabled).
    */

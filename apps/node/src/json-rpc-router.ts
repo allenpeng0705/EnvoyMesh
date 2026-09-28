@@ -1636,16 +1636,30 @@ export async function routeRpcMethod(
       return ns.setEnvoyHarnessAutoRunPolicy(
         String(params.policy ?? ""),
       );
-    case "setEnvoyHarnessDecision":
-      return ns.setEnvoyHarnessDecision?.({
-        ...(typeof params.mode === "string" ? { mode: params.mode } : {}),
+    case "setEnvoyHarnessDecision": {
+      if (!ns.setEnvoyHarnessDecision) {
+        return Promise.reject(new Error("setEnvoyHarnessDecision not supported"));
+      }
+      // JSON-RPC params are untyped strings; narrow / cast here so the service's
+      // literal unions typecheck, then let setEnvoyHarnessDecision validate values.
+      return ns.setEnvoyHarnessDecision({
+        ...(typeof params.mode === "string"
+          ? { mode: params.mode as "off" | "shadow" | "enforce" }
+          : {}),
         ...(typeof params.backend === "string"
-          ? { backend: params.backend }
+          ? {
+              backend: params.backend as
+                | "null"
+                | "laya-http"
+                | "jev"
+                | "onnx",
+            }
           : {}),
         ...(typeof params.endpoint === "string"
           ? { endpoint: params.endpoint }
           : {}),
-      }) ?? Promise.reject(new Error("setEnvoyHarnessDecision not supported"));
+      });
+    }
     case "setEnvoyHarnessCollaborationMode":
       return ns.setEnvoyHarnessCollaborationMode(
         String(params.mode ?? ""),

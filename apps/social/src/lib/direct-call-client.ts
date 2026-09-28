@@ -999,7 +999,10 @@ export class DirectCallClient implements NodeServiceClient {
     backend?: "null" | "laya-http" | "jev" | "onnx";
     endpoint?: string;
   }) {
-    return this._ns.setEnvoyHarnessDecision?.(input);
+    if (!this._ns.setEnvoyHarnessDecision) {
+      throw new Error("setEnvoyHarnessDecision not supported");
+    }
+    return this._ns.setEnvoyHarnessDecision(input);
   }
 
   async setEnvoyHarnessCollaborationMode(mode: string, chatId?: string) {
