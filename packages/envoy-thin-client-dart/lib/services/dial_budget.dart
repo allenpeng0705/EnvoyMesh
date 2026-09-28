@@ -20,7 +20,8 @@
 ///   2. **A bounded number of attempts per walk.** A store can hold more addresses than are worth
 ///      dialling in one pass (a QR with a relay roster, several P2P hops and a community relay).
 ///      At most [DialBudget.maxAttemptsPerWalk] of the highest-priority candidates are tried per
-///      walk; the tail waits for the next walk rather than keeping the phone's radio busy.
+///      walk (default 6: LAN + circuits + CN and US community-relay WS); the tail waits for the
+///      next walk rather than keeping the phone's radio busy.
 ///   3. **Deferral under pressure.** After [DialBudget.pressureThreshold] candidate dials fail
 ///      inside a rolling [DialBudget.pressureWindow], the meter defers the **whole walk** for
 ///      [DialBudget.deferFor] from the most recent failure: `plan` returns no candidates at all, so
@@ -47,7 +48,7 @@ import 'package:envoy_thin_client/services/home_remote_client.dart';
 class DialBudget {
   const DialBudget({
     this.perCandidateTimeout = const Duration(seconds: 8),
-    this.maxAttemptsPerWalk = 4,
+    this.maxAttemptsPerWalk = 6,
     this.pressureWindow = const Duration(seconds: 30),
     this.pressureThreshold = 3,
     this.deferFor = const Duration(seconds: 10),

@@ -15,7 +15,12 @@ import { byteStream } from "@libp2p/utils";
 import { KEEP_ALIVE, FaultTolerance, type RoutingOptions, type TopologyFilter, type PeerId as Libp2pPeerId } from "@libp2p/interface";
 import { peerIdFromString } from "@libp2p/peer-id";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
-import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
+import { CHAT_DELIVERY_ACK_TIMEOUT_MS, ENVOYMESH_VERSION } from "@envoymesh/protocol";
+import {
+  classifyLibp2pPeer,
+  defaultEnvoyUserAgent,
+  type EnvoyPeerKind,
+} from "./peer-product.js";
 import { multiaddr as ma, type Multiaddr } from "@multiformats/multiaddr";
 import type { CID } from "multiformats/cid";
 import { createLibp2p, type Libp2p } from "libp2p";
@@ -502,6 +507,13 @@ export interface EnvoyMeshOptions {
    * peer id changes on every process start.
    */
   libp2pPrivateKey?: import("@libp2p/interface").PrivateKey;
+  /**
+   * libp2p Identify `userAgent` (NodeInfo.userAgent). Prefer
+   * {@link buildEnvoyUserAgent} so community relays can classify homes vs
+   * anonymous swarm peers. When omitted, defaults to `envoymesh/node/…` or
+   * `envoymesh/relay/…` from {@link defaultEnvoyUserAgent}.
+   */
+  userAgent?: string;
   enableP2pDebug?: boolean;
   /**
    * Log `[reachability] …` on `peer:disconnect` (peer store tags, reconnect-queue eligibility) and
@@ -849,8 +861,18 @@ export class EnvoyMesh {
       console.log(`[p2p] connectionManager.maxConnections=${maxConnections}`);
     }
 
+    const userAgent =
+      this.options.userAgent?.trim() ||
+      defaultEnvoyUserAgent({ enableRelayServer: this.options.enableRelayServer });
     this.node = await createLibp2p({
       ...(libp2pPrivateKey != null ? { privateKey: libp2pPrivateKey } : {}),
+      // Identify label for community-relay ops (see peer-product.ts). Spoofable;
+      // used for classification, not auth.
+      nodeInfo: {
+        name: "envoymesh",
+        version: ENVOYMESH_VERSION,
+        userAgent,
+      },
       // Configured `/p2p-circuit` listen addrs dial the relay at startup. A
       // transient ECONNRESET / EncryptionFailedError on cn-relay must not
       // abort the whole node — reservation health re-warms afterward.
@@ -1371,6 +1393,64 @@ export class EnvoyMesh {
         connectedPeerIds: [],
       };
     }
+  }
+
+  /**
+   * Connected peers with Identify labels + protocol hints, for relay/admin ops.
+   *
+   * Reads peerstore `AgentVersion` metadata (written by `@libp2p/identify`) and
+   * advertised protocols, then {@link classifyLibp2pPeer}. Peers that never
+   * completed Identify show as `unknown` unless they already speak `/envoymesh/…`.
+   */
+  async describeConnectedPeers(): Promise<
+    Array<{
+      peerId: string;
+      path: "circuit" | "direct";
+      agentVersion?: string;
+      protocols: string[];
+      kind: EnvoyPeerKind;
+      product?: string;
+      version?: string;
+    }>
+  > {
+    const stats = this.getConnectionStats();
+    if (!this.node || stats.connectedPeerIds.length === 0) return [];
+    const circuit = new Set(stats.circuitPeerIds);
+    const out: Array<{
+      peerId: string;
+      path: "circuit" | "direct";
+      agentVersion?: string;
+      protocols: string[];
+      kind: EnvoyPeerKind;
+      product?: string;
+      version?: string;
+    }> = [];
+    const decoder = new TextDecoder();
+    for (const peerId of stats.connectedPeerIds) {
+      let agentVersion: string | undefined;
+      let protocols: string[] = [];
+      try {
+        const peerData = await this.requireNode().peerStore.get(peerIdFromString(peerId));
+        protocols = [...(peerData.protocols ?? [])].map(String);
+        const raw = peerData.metadata?.get("AgentVersion");
+        if (raw && raw.byteLength > 0) {
+          agentVersion = decoder.decode(raw);
+        }
+      } catch {
+        // Identify may not have run yet; classify from empty metadata.
+      }
+      const classified = classifyLibp2pPeer({ agentVersion, protocols });
+      out.push({
+        peerId,
+        path: circuit.has(peerId) ? "circuit" : "direct",
+        ...(agentVersion ? { agentVersion } : {}),
+        protocols,
+        kind: classified.kind,
+        ...(classified.product ? { product: classified.product } : {}),
+        ...(classified.version ? { version: classified.version } : {}),
+      });
+    }
+    return out;
   }
 
   /**
@@ -5076,6 +5156,17 @@ export {
   ENVOY_DATA_PROTOCOL,
   ENVOY_MESSAGE_PROTOCOL,
 } from "./protocols.js";
+export {
+  buildEnvoyUserAgent,
+  classifyLibp2pPeer,
+  classifyWsProxyProduct,
+  defaultEnvoyUserAgent,
+  parseEnvoyUserAgent,
+  speaksEnvoyProtocol,
+  summarizePeerKinds,
+  type EnvoyPeerKind,
+  type EnvoyPeerProductId,
+} from "./peer-product.js";
 export { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "./capability-topic-cid.js";
 export { expandListenAddressesWithQuic, quicListenFromTcpListen } from "./quic-listen.js";
 export {

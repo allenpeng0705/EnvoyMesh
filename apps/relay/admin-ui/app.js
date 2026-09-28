@@ -164,25 +164,48 @@ async function refreshFleet() {
 
 async function refreshPeers() {
   const p = await api("/admin/api/peers");
+  const byKind = p.byKind || {};
+  const kindSummary = Object.entries(byKind)
+    .filter(([, n]) => Number(n) > 0)
+    .map(([k, n]) => `${k}:${n}`)
+    .join(" · ") || "—";
+  const wsByProduct = p.wsProxyByProduct || {};
+  const wsSummary = Object.entries(wsByProduct)
+    .map(([k, n]) => `${k}:${n}`)
+    .join(" · ") || "—";
   fillDl(el.peersGrid, [
     ["Connected peers", p.connectedPeerCount],
     ["Circuit peers", p.circuitPeerCount],
     ["Direct connections", p.totalConnections],
     ["Roster size", p.rosterSize],
     ["WS proxy", p.wsProxyConnections],
+    ["Libp2p by kind", kindSummary],
+    ["WS proxy by product", wsSummary],
     ["Home tunnels", p.homeTunnels],
     ["Direct WS clients", p.directClients],
   ]);
   el.peersBody.innerHTML = "";
+  const rows = Array.isArray(p.peers) && p.peers.length > 0
+    ? p.peers
+    : (p.connectedPeerIds || []).map((id) => ({ peerId: id, path: "direct", kind: "—" }));
   const circuit = new Set(p.circuitPeerIds || []);
-  for (const id of p.connectedPeerIds || []) {
+  for (const row of rows) {
+    const id = row.peerId || row;
     const tr = document.createElement("tr");
     const tdId = document.createElement("td");
-    tdId.textContent = shortPeer(id);
-    tdId.title = id;
+    tdId.textContent = shortPeer(typeof id === "string" ? id : String(id));
+    tdId.title = typeof id === "string" ? id : String(id);
     const tdPath = document.createElement("td");
-    tdPath.textContent = circuit.has(id) ? "circuit" : "direct";
-    tr.append(tdId, tdPath);
+    const path =
+      row.path ||
+      (circuit.has(typeof id === "string" ? id : "") ? "circuit" : "direct");
+    tdPath.textContent = path;
+    const tdKind = document.createElement("td");
+    tdKind.textContent = row.kind || "—";
+    const tdAgent = document.createElement("td");
+    tdAgent.textContent = row.agentVersion || "—";
+    tdAgent.title = row.agentVersion || "";
+    tr.append(tdId, tdPath, tdKind, tdAgent);
     el.peersBody.append(tr);
   }
 }

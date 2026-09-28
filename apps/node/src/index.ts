@@ -58,6 +58,7 @@ import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
   type EnvoyMeshOptions,
+  buildEnvoyUserAgent,
   filterBootstrapMultiaddrs,
   capBootstrapPeersForCircuitHoppability,
   filterUsableOutboundPeerDialHints,
@@ -1309,6 +1310,10 @@ const mesh = new EnvoyMesh({
   enableQuic: args.enableQuic,
   enableP2pDebug: args.p2pDebug,
   enableRelayDebugSummary: args.relayDebugSummary,
+  userAgent: buildEnvoyUserAgent(
+    args.enableRelayServer ? "relay" : "node",
+    ENVOYMESH_VERSION,
+  ),
   ...(connectivityRuntime.maxConnections != null ? { maxConnections: connectivityRuntime.maxConnections } : {}),
   libp2pPrivateKey,
   onP2pDebug: (event) => {

@@ -27,7 +27,7 @@ export interface AdminHttpDeps {
   adminUiRoot: string;
   buildStatus: () => Record<string, unknown> | Promise<Record<string, unknown>>;
   buildReservations: () => Record<string, unknown>;
-  buildPeers: () => Record<string, unknown>;
+  buildPeers: () => Record<string, unknown> | Promise<Record<string, unknown>>;
   buildRoster?: () => Record<string, unknown>;
   buildFleet?: () => RelayAdminFleetSnapshot | Promise<RelayAdminFleetSnapshot>;
   buildMetrics?: () => Record<string, unknown>;
@@ -150,7 +150,7 @@ export async function handleAdminRequest(
 
   if (pathname === "/admin/api/peers" && req.method === "GET") {
     try {
-      sendJson(res, 200, deps.buildPeers());
+      sendJson(res, 200, await deps.buildPeers());
     } catch (err) {
       sendJson(res, 500, {
         error: err instanceof Error ? err.message : String(err),

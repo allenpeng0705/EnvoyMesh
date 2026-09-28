@@ -1109,6 +1109,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
         relayWsUrl: relayWsUrl,
         homePeerId: candidate.homePeerId!,
         sessionToken: candidate.sessionToken ?? '',
+        // Ops label for community-relay admin (WS proxy by product). Spoofable.
+        product: 'envoygo-mobile',
       );
     }
     // Libp2p circuit relay transport: uses Libp2pNode to dial through

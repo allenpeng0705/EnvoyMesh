@@ -42,12 +42,15 @@ class ClientProxyTransport implements WebSocketLike {
   /// [relayWsUrl] is the relay WebSocket URL (e.g. ws://relay:15432/ws).
   /// [homePeerId] is the home node's libp2p peer ID.
   /// [sessionToken] is the thin-client session token for authentication.
+  /// [product] is an ops label (`envoydev-mobile`, `veda`, …) the relay admin
+  /// uses to attribute WS proxy load — spoofable, not authentication.
   /// [handshakeTimeout] bounds the wait for `proxy-accept` **after** the socket is open; see the
   /// note on the timeout below for why the transport owns it rather than borrowing the caller's.
   static Future<ClientProxyTransport> connect({
     required String relayWsUrl,
     required String homePeerId,
     required String sessionToken,
+    String? product,
     Duration handshakeTimeout = const Duration(seconds: 20),
   }) async {
     // Connect to the relay WebSocket with peer routing.
@@ -62,9 +65,13 @@ class ClientProxyTransport implements WebSocketLike {
         ? relayWsUrl.substring(0, relayWsUrl.indexOf('?'))
         : relayWsUrl;
     final encodedPeerId = Uri.encodeComponent(homePeerId);
+    final productTrimmed = product?.trim() ?? '';
+    final productQuery = productTrimmed.isEmpty
+        ? ''
+        : '&product=${Uri.encodeComponent(productTrimmed)}';
     final url = sessionToken.isNotEmpty
-        ? '$baseUrl?target=$encodedPeerId&token=$sessionToken'
-        : '$baseUrl?target=$encodedPeerId';
+        ? '$baseUrl?target=$encodedPeerId&token=$sessionToken$productQuery'
+        : '$baseUrl?target=$encodedPeerId$productQuery';
     final uri = Uri.parse(url);
     final channel = WebSocketChannel.connect(uri);
     final transport = ClientProxyTransport._(channel);

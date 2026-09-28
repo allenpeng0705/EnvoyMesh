@@ -53,6 +53,10 @@ class CandidateResolver {
           result.add(
               '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo');
           break;
+        case 'us-relay':
+          result.add(
+              '/ip4/47.251.91.97/tcp/4001/p2p/12D3KooWAWiVSpsCjpjauz83ijLugxwScRJi89N4PA1VQ1Czsncb');
+          break;
         default:
           print(
               '[CandidateResolver] Unknown bootstrap preset: $preset');
@@ -220,8 +224,9 @@ class CandidateResolver {
       if (raw == null || raw.isEmpty) return;
       final base = _stripTokenParam(raw);
       if (base.isEmpty) return;
-      // Skip built-in community here — added last as community-relay.
+      // Skip built-in community relays here — added last as community-relay*.
       if (base.contains(_communityRelayHost)) return;
+      if (base.contains(_communityUsRelayHost)) return;
       if (lanBase.isNotEmpty && base == lanBase) return;
       if (!bases.contains(base)) bases.add(base);
     }
@@ -259,16 +264,23 @@ class CandidateResolver {
     return result;
   }
 
-  /// The community relay's public IP (well-known).
+  /// The community relays' public IPs (CN + US). Both are well-known; the walk
+  /// offers a WebSocket client-proxy rung through each so a saturated CN
+  /// (`1013 too many connections to target`) does not strand a phone that can
+  /// still reach the home via US.
   static const _communityRelayHost = '47.93.11.212';
+  static const _communityUsRelayHost = '47.251.91.97';
 
   /// The community relay's WebSocket port.
   static const _communityRelayWsPort = 15432;
 
-  /// The community relay's libp2p multiaddr prefix (for circuit relay dialing).
-  /// Used to build libp2p candidates when WebSocket relay is unavailable.
+  /// The CN community relay's libp2p multiaddr (always seeded as a circuit hop).
   static const _communityRelayLibp2pMultiaddr =
       '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo';
+
+  /// The US community relay's libp2p multiaddr.
+  static const _communityUsRelayLibp2pMultiaddr =
+      '/ip4/47.251.91.97/tcp/4001/p2p/12D3KooWAWiVSpsCjpjauz83ijLugxwScRJi89N4PA1VQ1Czsncb';
 
   /// Build libp2p candidates: a **direct** dial to the home when the payload carried the home's own
   /// addresses, and a **circuit-relay** hop for every relay that can reach it.
@@ -306,7 +318,10 @@ class CandidateResolver {
     // Build circuit relay candidates for ALL bootstrap relays (not just cn-relay).
     // Each candidate tries a different relay hop.
     final relayMultiaddrs = <String, String>{
-      // cn-relay (community relay) — always available as fallback
+      // cn-relay — always available as a libp2p circuit fallback. US is offered
+      // via the QR's bootstrapPeers when the home reserved there, and as a
+      // WebSocket `community-relay-us` rung (not seeded here): seeding both
+      // would fill the off-LAN P2P cap and drop the home's direct address.
       'cn-relay': _communityRelayLibp2pMultiaddr,
     };
 
@@ -453,7 +468,7 @@ class CandidateResolver {
     if (multiaddr.contains('am7.bootstrap')) return 'am7';
     if (multiaddr.contains('bootstrap.libp2p.io')) return 'bootstrap-libp2p';
     if (multiaddr.contains('47.93.11.212')) return 'cn-relay';
-    // Extract from peer ID suffix
+    if (multiaddr.contains('47.251.91.97')) return 'us-relay';    // Extract from peer ID suffix
     final p2pIdx = multiaddr.lastIndexOf('/p2p/');
     if (p2pIdx >= 0) {
       final peerId = multiaddr.substring(p2pIdx + 5);
@@ -495,60 +510,51 @@ class CandidateResolver {
     return result;
   }
 
-  /// Build candidates for the community relay.
+  /// Build candidates for the community relays (CN + US).
   ///
-  /// The community relay has two purposes:
-  /// 1. As a circuit-relay v2 hop: mobile dials
-  ///    `ws://47.93.11.212:15432/ws?target=<homePeerId>`
-  ///    — requires knowing the home's peer ID (from pairing). Used when
-  ///    `homePeerId` is available.
-  /// 2. As a DHT bootstrap peer: mobile connects to the relay's WebSocket
-  ///    (`ws://47.93.11.212:15432/ws`) and uses its DHT server to find
-  ///    the home node's advertised addresses. Used when `homePeerId` is
-  ///    unknown or all other candidates failed.
+  /// Each relay exposes client-proxy on port 15432. Offering **both** means a
+  /// phone that hits CN's per-target proxy cap can still reach the home through
+  /// US on the same walk (see DialBudget.maxAttemptsPerWalk). CN stays first
+  /// for Asia latency; US is `community-relay-us`.
   List<HomeRemoteCandidate> _buildCommunityRelayCandidates(
       String? sessionToken) {
     final result = <HomeRemoteCandidate>[];
-    // A product whose daemon is reachable through the community relay only as a peer: with no peer
-    // id there is nothing for the relay to route to, so the token-only fallback below would be a
-    // candidate that cannot dial. Omitted rather than offered (see the constructor).
     if (communityRelayRequiresPeerId &&
         (_communityHomePeerId == null || _communityHomePeerId!.isEmpty)) {
       return result;
     }
-    // Port 15432 is plain HTTP WebSocket, not TLS. Using wss:// causes
-    // "WRONG_VERSION_NUMBER" TLS handshake errors.
-    final wsUrl = 'ws://$_communityRelayHost:$_communityRelayWsPort/ws';
-    // Community relay with peer routing (requires homePeerId — from QR
-    // code pairing). The relay's WebSocket accepts ?target=<homePeerId>
-    // for circuit-relay routing.
-    if (_communityHomePeerId != null && _communityHomePeerId!.isNotEmpty) {
-      var url = '$wsUrl?target=$_communityHomePeerId';
-      if (sessionToken != null) {
-        url += '&token=$sessionToken';
+
+    void addRelay(String host, String name) {
+      // Port 15432 is plain HTTP WebSocket, not TLS.
+      final wsUrl = 'ws://$host:$_communityRelayWsPort/ws';
+      if (_communityHomePeerId != null && _communityHomePeerId!.isNotEmpty) {
+        var url = '$wsUrl?target=$_communityHomePeerId';
+        if (sessionToken != null) {
+          url += '&token=$sessionToken';
+        }
+        result.add(HomeRemoteCandidate(
+          name: name,
+          url: url,
+          homePeerId: _communityHomePeerId,
+          sessionToken: sessionToken,
+        ));
+        return;
       }
-      result.add(HomeRemoteCandidate(
-        name: 'community-relay',
-        url: url,
-        homePeerId: _communityHomePeerId,
-        sessionToken: sessionToken,
-      ));
-    }
-    // Only add the non-peer-routed fallback when homePeerId is unknown.
-    // When homePeerId IS known, the peer-routed candidate above is
-    // strictly better (specific routing vs token-only fallback).
-    if (_communityHomePeerId == null || _communityHomePeerId!.isEmpty) {
+      // Token-only fallback only when homePeerId is unknown (EnvoyGo default).
       var relayUrl = wsUrl;
       if (sessionToken != null) {
         relayUrl += '?token=$sessionToken';
       }
       result.add(HomeRemoteCandidate(
-        name: 'community-relay',
+        name: name,
         url: relayUrl,
         homePeerId: _communityHomePeerId,
         sessionToken: sessionToken,
       ));
     }
+
+    addRelay(_communityRelayHost, 'community-relay');
+    addRelay(_communityUsRelayHost, 'community-relay-us');
     return result;
   }
 

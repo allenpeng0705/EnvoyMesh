@@ -18,9 +18,10 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { byteStream } from "@libp2p/utils";
-import { CapabilityRegistry, CLIENT_PROXY_PROTOCOL, EnvoyMesh } from "@envoymesh/network";
+import { CapabilityRegistry, CLIENT_PROXY_PROTOCOL, EnvoyMesh, buildEnvoyUserAgent, classifyWsProxyProduct, summarizePeerKinds } from "@envoymesh/network";
 import { parseRelayArgs, PUBLIC_RELAY_V2_DEFAULTS } from "./args.js";
 import type { CircuitRelayServerConfig } from "@envoymesh/network";
+import { ENVOYMESH_VERSION } from "@envoymesh/protocol";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createHomeTunnelProxy } from "./home-tunnel-proxy.js";
 import {
@@ -340,6 +341,9 @@ const mesh = new EnvoyMesh({
   libp2pPrivateKey,
   circuitRelayServer: circuitRelayServerConfig,
   maxConnections: resolvedMaxConnections,
+  // So peer tables on sibling relays (and Identify consumers) can tell this
+  // process apart from anonymous swarm fill.
+  userAgent: buildEnvoyUserAgent("relay", ENVOYMESH_VERSION),
 });
 
 // Log the active v2 server config so operators can verify the redeploy
@@ -1149,6 +1153,20 @@ try {
     });
     const proxyConnByTarget = new Map<string, Set<WebSocket>>();
     let proxyConnTotal = 0;
+    /** Live client-proxy callers tagged by `?product=` (Veda / EnvoyDev mobile / …). */
+    const proxyClientMeta = new Map<
+      WebSocket,
+      { product?: string; kind: string; targetPeerId: string }
+    >();
+
+    function wsProxyProductSummary(): Record<string, number> {
+      const counts: Record<string, number> = {};
+      for (const meta of proxyClientMeta.values()) {
+        const key = meta.product ?? meta.kind;
+        counts[key] = (counts[key] ?? 0) + 1;
+      }
+      return counts;
+    }
 
     // ------------------------------------------------------------------------
     // Home-tunnel-proxy (TURN-like, for NAT-traversing pairing)
@@ -1194,6 +1212,7 @@ try {
           rosterSize: relayRoster.size(),
           connectionStats: conn,
           wsProxyConnections: proxyConnTotal,
+          wsProxyByProduct: wsProxyProductSummary(),
           homeTunnels: tunnelStats.homeTunnels,
           directClients: directClients.size,
           versions,
@@ -1219,9 +1238,11 @@ try {
           checkedAt: new Date().toISOString(),
         };
       },
-      buildPeers: () => {
+      buildPeers: async () => {
         const conn = mesh.getConnectionStats();
         const tunnelStats = _homeTunnelProxy.stats();
+        const peers = await mesh.describeConnectedPeers();
+        const byKind = summarizePeerKinds(peers.map((p) => p.kind));
         return {
           connectedPeerIds: conn.connectedPeerIds,
           connectedPeerCount: conn.connectedPeerIds.length,
@@ -1230,8 +1251,13 @@ try {
           totalConnections: conn.totalConnections,
           rosterSize: relayRoster.size(),
           wsProxyConnections: proxyConnTotal,
+          wsProxyByProduct: wsProxyProductSummary(),
           homeTunnels: tunnelStats.homeTunnels,
           directClients: directClients.size,
+          /** Per-peer Identify classification (ops label; spoofable). */
+          peers,
+          /** Counts of libp2p peer kinds for the admin strip. */
+          byKind,
         };
       },
       buildRoster: () => {
@@ -1638,6 +1664,15 @@ try {
         hdr("sec-websocket-protocol") ??
         ""
       ).trim();
+      // Ops label only (spoofable): which family app opened this client-proxy.
+      // Phones without libp2p (Veda, EnvoyDev mobile) never appear in the peer
+      // table — this is how the admin console attributes WS proxy load.
+      const productQuery = (
+        url.searchParams.get("product") ??
+        url.searchParams.get("client") ??
+        hdr("x-envoy-product") ??
+        ""
+      ).trim();
 
       _wss.handleUpgrade(req, socket, head, (ws) => {
         // SECURITY: /ws?target=<peerId> is unauthenticated at the relay
@@ -1650,13 +1685,32 @@ try {
         // (which gates /ws/client but not /ws?target= today — a future
         // hardening item is to extend the token gate to /ws?target=).
         _homeTunnelProxy.attachMobileProxy(ws, targetPeerId, token, (fallbackWs) => {
-          void handleProxyConnection(fallbackWs, targetPeerId, token);
+          void handleProxyConnection(fallbackWs, targetPeerId, token, productQuery);
         });
       });
     });
 
-    async function handleProxyConnection(ws: WebSocket, targetPeerId: string, token: string): Promise<void> {
-      // Rate limit
+    async function handleProxyConnection(
+      ws: WebSocket,
+      targetPeerId: string,
+      token: string,
+      productQuery = "",
+    ): Promise<void> {
+      // Rate limit — first drop dead sockets so a leaked 'close' cannot keep the
+      // per-target set at the cap forever (see release slot registration below).
+      const pruneDeadProxies = (set: Set<WebSocket> | undefined): void => {
+        if (!set) return;
+        for (const sock of [...set]) {
+          // Only CLOSED — CLOSING may still fire 'close' and release once.
+          if (sock.readyState === WebSocket.CLOSED && set.delete(sock)) {
+            proxyClientMeta.delete(sock);
+            proxyConnTotal = Math.max(0, proxyConnTotal - 1);
+          }
+        }
+        if (set.size === 0) proxyConnByTarget.delete(targetPeerId);
+      };
+      pruneDeadProxies(proxyConnByTarget.get(targetPeerId));
+
       if (proxyConnTotal >= MAX_PROXY_CONNECTIONS) {
         console.warn(`[relay] client-proxy: rejected — max total connections ${MAX_PROXY_CONNECTIONS}`);
         ws.close(1013, "relay proxy connections full");
@@ -1673,9 +1727,52 @@ try {
       const conns = proxyConnByTarget.get(targetPeerId) ?? new Set();
       conns.add(ws);
       proxyConnByTarget.set(targetPeerId, conns);
-      console.log(`[relay] client-proxy: connecting to ${targetPeerId.slice(0, 12)}… (total=${proxyConnTotal})`);
-
+      const classified = classifyWsProxyProduct(productQuery);
+      proxyClientMeta.set(ws, {
+        ...(classified.product ? { product: classified.product } : {}),
+        kind: classified.kind,
+        targetPeerId,
+      });
+      console.log(
+        `[relay] client-proxy: connecting to ${targetPeerId.slice(0, 12)}… (total=${proxyConnTotal}` +
+          `${classified.product ? `, product=${classified.product}` : ", product=unknown"})`,
+      );
       let libp2pStream: any = null;
+      // Slot must be released exactly once. The close listener used to be
+      // registered *after* dialProtocol + handshake — if the phone hung up (or
+      // we called ws.close) during that await, 'close' fired with no listener
+      // and the per-target count leaked until the relay restarted. That is why
+      // a single phone's retry storm could fill MAX_PROXY_CONNS_PER_TARGET=10.
+      let slotReleased = false;
+      const releaseProxySlot = (reason: string): void => {
+        if (slotReleased) return;
+        slotReleased = true;
+        const s = proxyConnByTarget.get(targetPeerId);
+        if (s?.delete(ws)) {
+          proxyConnTotal = Math.max(0, proxyConnTotal - 1);
+        }
+        proxyClientMeta.delete(ws);
+        if (s && s.size === 0) proxyConnByTarget.delete(targetPeerId);
+        if (libp2pStream) {
+          try {
+            libp2pStream.close();
+          } catch {
+            /* ignore */
+          }
+          libp2pStream = null;
+        }
+        console.log(
+          `[relay] client-proxy: released ${targetPeerId.slice(0, 12)}… (${reason}) (total=${proxyConnTotal})`,
+        );
+      };
+      ws.on("close", () => releaseProxySlot("ws-close"));
+      ws.on("error", () => {
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+      });
 
       // C2: Cap early-buffer to prevent OOM when dialProtocol + handshake stalls
       // but the mobile keeps sending. Mirrors home-tunnel-proxy's MAX_EARLY_BUFFER_FRAMES.
@@ -1724,7 +1821,20 @@ try {
       try {
         console.log(`[relay] client-proxy: dialing ${targetPeerId.slice(0, 12)}… protocol=${CLIENT_PROXY_PROTOCOL}`);
 
-        libp2pStream = await mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL);
+        // Bound the libp2p dial: the connection-manager dialTimeout is 45s, which
+        // would hold a capped proxy slot for almost a minute per abandoned phone
+        // attempt. Keep this under the phone's per-candidate budget (~8s) plus
+        // a little slack so a slow home still wins when the phone is waiting.
+        const PROXY_DIAL_TIMEOUT_MS = 12_000;
+        libp2pStream = await Promise.race([
+          mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL),
+          new Promise<never>((_, reject) => {
+            setTimeout(
+              () => reject(new Error(`client-proxy dial timed out after ${PROXY_DIAL_TIMEOUT_MS} ms`)),
+              PROXY_DIAL_TIMEOUT_MS,
+            );
+          }),
+        ]);
         streamIo = byteStream(libp2pStream);
 
         // C1: Attach an error handler on the raw libp2p stream. Without it, a
@@ -1825,25 +1935,12 @@ try {
         console.error(`[relay] client-proxy: failed to connect to ${targetPeerId.slice(0, 12)}…: ${msg}`);
         if (ws.readyState === WebSocket.OPEN) {
           ws.close(1011, "unable to reach home node");
+        } else {
+          // Phone already gone — close may have been missed before the listener
+          // existed on older builds; release explicitly.
+          releaseProxySlot("dial-failed");
         }
       }
-
-      ws.on("close", () => {
-        proxyConnTotal--;
-        const s = proxyConnByTarget.get(targetPeerId);
-        if (s) {
-          s.delete(ws);
-          if (s.size === 0) proxyConnByTarget.delete(targetPeerId);
-        }
-        if (libp2pStream) {
-          try { libp2pStream.close(); } catch { /* ignore */ }
-        }
-        console.log(`[relay] client-proxy: disconnected from ${targetPeerId.slice(0, 12)}… (total=${proxyConnTotal})`);
-      });
-
-      ws.on("error", () => {
-        ws.close();
-      });
     }
 
     /**

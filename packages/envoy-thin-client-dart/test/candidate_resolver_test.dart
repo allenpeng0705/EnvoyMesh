@@ -67,6 +67,7 @@ void main() {
       // roster rides in that list for historical reasons, and `_buildRelayWsCandidates` owns it.
       'relay-1',
       'community-relay',
+      'community-relay-us',
     ]);
   });
 
@@ -258,13 +259,13 @@ void main() {
       isEmpty,
     );
 
-    // Without the flag the token-only fallback stays, which is what EnvoyGo relies on.
+    // Without the flag the token-only fallback stays (CN + US), which is what EnvoyGo relies on.
     const lenient = CandidateResolver();
     expect(
       lenient
           .resolve(node(homePeerId: '', bootstrapPeers: const []), sessionToken: 'tok')
-          .where((c) => c.name == 'community-relay'),
-      hasLength(1),
+          .where((c) => c.name.startsWith('community-relay')),
+      hasLength(2),
     );
   });
 
