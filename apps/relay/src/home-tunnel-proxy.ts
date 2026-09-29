@@ -67,12 +67,16 @@ export interface HomeTunnelProxyOptions {
   /** Maximum concurrent home tunnels. Beyond this, /ws/home upgrades
    *  are rejected with 503. */
   maxHomeTunnels: number;
-  /** Maximum concurrent mobile-proxy connections. Beyond this, mobile
-   *  upgrades are closed with 1013. */
+  /**
+   * Shared with the libp2p client-proxy path so total / per-home caps are
+   * one budget. When omitted (unit tests), a private slot set is created
+   * from {@link maxProxyConnections} / {@link maxProxyConnectionsPerTarget}.
+   */
+  proxySlots?: ProxyConnectionSlots;
+  /** Maximum concurrent mobile-proxy connections (used when proxySlots omitted). */
   maxProxyConnections: number;
   /**
-   * Max mobile proxies per home peer (same posture as the libp2p fallback
-   * path). Defaults to 10.
+   * Max mobile proxies per home peer (used when proxySlots omitted). Defaults to 10.
    */
   maxProxyConnectionsPerTarget?: number;
   /** Per-frame data size cap (bytes). The home chunks PTY output to
@@ -241,10 +245,15 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
   const homeTunnels = new Map<string, WebSocket>();
   const proxyChannels = new Map<string, ProxyChannelState>();
   const proxyClaimResolvers = new Map<string, () => void>();
-  const proxySlots = new ProxyConnectionSlots({
-    maxTotal: maxProxyConnections,
-    maxPerTarget: maxProxyConnectionsPerTarget,
-  });
+  // Prefer the shared budget from the relay process; tests omit it.
+  const proxySlots =
+    opts.proxySlots ??
+    new ProxyConnectionSlots({
+      maxTotal: maxProxyConnections,
+      maxPerTarget: maxProxyConnectionsPerTarget,
+    });
+  /** Mobiles currently held on the *tunnel* path (for admin breakdown). */
+  const tunnelMobileSockets = new Set<WebSocket>();
   const pendingHttp = new Map<string, {
     resolve: (result: { status: number; body: string; contentType?: string } | null) => void;
     timer: ReturnType<typeof setTimeout>;
@@ -658,6 +667,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       }
       return;
     }
+    tunnelMobileSockets.add(ws);
     log(
       `home-tunnel-proxy: connecting to ${targetPeerId.slice(0, 12)}… via tunnel channel=${channelId.slice(0, 8)}… (total=${proxySlots.totalConnections})`,
     );
@@ -706,6 +716,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       clearTimeout(claimTimer);
       proxyChannels.delete(proxyKey);
       proxyClaimResolvers.delete(channelId);
+      tunnelMobileSockets.delete(ws);
       proxySlots.release(ws);
       // Tell the current tunnel (if any) to close the channel.
       const t = homeTunnels.get(targetPeerId);
@@ -871,7 +882,8 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
         homeTunnels: homeTunnels.size,
         channels: proxyChannels.size,
         orphans,
-        mobileProxyConnections: proxySlots.totalConnections,
+        // Tunnel-path mobiles only (shared slot total is owned by the relay).
+        mobileProxyConnections: tunnelMobileSockets.size,
       };
     },
 
@@ -890,7 +902,15 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       }
       proxyChannels.clear();
       proxyClaimResolvers.clear();
-      proxySlots.clear();
+      // Release only sockets this module held — never clear a shared budget
+      // (that would wipe libp2p client-proxy slots mid-flight).
+      for (const sock of [...tunnelMobileSockets]) {
+        proxySlots.release(sock);
+      }
+      tunnelMobileSockets.clear();
+      if (!opts.proxySlots) {
+        proxySlots.clear();
+      }
       // Close all home tunnels.
       for (const t of homeTunnels.values()) {
         if (t.readyState === WebSocket.OPEN) {

@@ -1248,6 +1248,8 @@ try {
     const MAX_HOME_TUNNELS = 200;
     homeTunnelProxy = createHomeTunnelProxy({
       maxHomeTunnels: MAX_HOME_TUNNELS,
+      // One budget with libp2p client-proxy (no 10+10 double cap).
+      proxySlots,
       maxProxyConnections: MAX_PROXY_CONNECTIONS,
       maxProxyConnectionsPerTarget: MAX_PROXY_CONNS_PER_TARGET,
       maxHomeTunnelDataBytes: MAX_HOME_TUNNEL_DATA_BYTES,
@@ -1265,8 +1267,9 @@ try {
         const versions = buildRelayVersionReport(new Date(startedAtMs).toISOString());
         const tunnelStats = _homeTunnelProxy.stats();
         const metrics = relayMetrics.snapshot();
-        const wsProxyLibp2p = proxySlots.totalConnections;
         const wsProxyHomeTunnel = tunnelStats.mobileProxyConnections;
+        const wsProxyConnections = proxySlots.totalConnections;
+        const wsProxyLibp2p = Math.max(0, wsProxyConnections - wsProxyHomeTunnel);
         return {
           uptimeMs: Date.now() - startedAtMs,
           health,
@@ -1278,8 +1281,8 @@ try {
           maxReservations: circuitRelayServerConfig.maxReservations ?? 15,
           rosterSize: relayRoster.size(),
           connectionStats: conn,
-          /** Libp2p-fallback + home-tunnel mobile proxies (live sockets). */
-          wsProxyConnections: wsProxyLibp2p + wsProxyHomeTunnel,
+          /** Shared slot budget (libp2p fallback + home-tunnel). */
+          wsProxyConnections,
           wsProxyLibp2p,
           wsProxyHomeTunnel,
           wsProxyByProduct: wsProxyProductSummary(),
@@ -1322,8 +1325,9 @@ try {
                 return fresh;
               })();
         const byKind = summarizePeerKinds(peers.map((p) => p.kind));
-        const wsProxyLibp2p = proxySlots.totalConnections;
         const wsProxyHomeTunnel = tunnelStats.mobileProxyConnections;
+        const wsProxyConnections = proxySlots.totalConnections;
+        const wsProxyLibp2p = Math.max(0, wsProxyConnections - wsProxyHomeTunnel);
         return {
           connectedPeerIds: conn.connectedPeerIds,
           connectedPeerCount: conn.connectedPeerIds.length,
@@ -1331,7 +1335,7 @@ try {
           circuitPeerCount: conn.circuitPeerIds.length,
           totalConnections: conn.totalConnections,
           rosterSize: relayRoster.size(),
-          wsProxyConnections: wsProxyLibp2p + wsProxyHomeTunnel,
+          wsProxyConnections,
           wsProxyLibp2p,
           wsProxyHomeTunnel,
           wsProxyByProduct: wsProxyProductSummary(),
@@ -1764,9 +1768,39 @@ try {
         // arbitrary peerId via CLIENT_PROXY_PROTOCOL. Mitigations:
         //   - MAX_PROXY_CONNECTIONS = 50 (total)
         //   - MAX_PROXY_CONNS_PER_TARGET = 10
+        //   - family product= gate (below) on *both* tunnel and libp2p paths
         // Operators who want stricter control should set --ws-auth-token
         // (which gates /ws/client but not /ws?target= today — a future
         // hardening item is to extend the token gate to /ws?target=).
+        //
+        // Gate *before* attachMobileProxy so home-tunnel cannot bypass
+        // REQUIRE_FAMILY_PRODUCT / allowlist.
+        const productGate = evaluateWsProductGate(productQuery, wsProductPolicy);
+        if (!productGate.ok) {
+          console.warn(
+            `[relay] client-proxy: rejected — ${productGate.closeMessage} (policy=${wsProductPolicy})`,
+          );
+          try {
+            ws.close(1008, productGate.closeMessage);
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+        proxyClientMeta.set(ws, {
+          ...(productGate.product ? { product: productGate.product } : {}),
+          kind: productGate.kind,
+          targetPeerId,
+        });
+        ws.on("close", () => {
+          proxyClientMeta.delete(ws);
+        });
+        if (productGate.legacyMissingProduct) {
+          console.log(
+            `[relay] client-proxy: legacy thin client without product= ` +
+              `(compat until apps ship; policy=${wsProductPolicy})`,
+          );
+        }
         _homeTunnelProxy.attachMobileProxy(ws, targetPeerId, token, (fallbackWs) => {
           void handleProxyConnection(fallbackWs, targetPeerId, token, productQuery);
         });
@@ -1779,7 +1813,7 @@ try {
       token: string,
       productQuery = "",
     ): Promise<void> {
-      // Family product gate before taking a capped proxy slot.
+      // Defense in depth — upgrade handler already gated; keep for direct calls.
       const productGate = evaluateWsProductGate(productQuery, wsProductPolicy);
       if (!productGate.ok) {
         console.warn(
@@ -1804,17 +1838,12 @@ try {
         return;
       }
 
+      // Meta was set on upgrade (covers tunnel + libp2p); refresh if needed.
       proxyClientMeta.set(ws, {
         ...(productGate.product ? { product: productGate.product } : {}),
         kind: productGate.kind,
         targetPeerId,
       });
-      if (productGate.legacyMissingProduct) {
-        console.log(
-          `[relay] client-proxy: legacy thin client without product= ` +
-            `(compat until aiNotes/Veda release; policy=${wsProductPolicy})`,
-        );
-      }
       console.log(
         `[relay] client-proxy: connecting to ${targetPeerId.slice(0, 12)}… (total=${proxySlots.totalConnections}` +
           `${productGate.product ? `, product=${productGate.product}` : ", product=unknown"})`,
