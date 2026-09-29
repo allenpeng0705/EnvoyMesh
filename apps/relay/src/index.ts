@@ -18,7 +18,16 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { byteStream } from "@libp2p/utils";
-import { CapabilityRegistry, CLIENT_PROXY_PROTOCOL, EnvoyMesh, buildEnvoyUserAgent, classifyWsProxyProduct, summarizePeerKinds } from "@envoymesh/network";
+import {
+  CapabilityRegistry,
+  CLIENT_PROXY_PROTOCOL,
+  EnvoyMesh,
+  ENVOYMESH_KAD_DHT_PROTOCOL,
+  buildEnvoyUserAgent,
+  classifyWsProxyProduct,
+  summarizePeerKinds,
+} from "@envoymesh/network";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_PEER_IDS } from "@envoymesh/api/core";
 import { parseRelayArgs, PUBLIC_RELAY_V2_DEFAULTS } from "./args.js";
 import type { CircuitRelayServerConfig } from "@envoymesh/network";
 import { ENVOYMESH_VERSION } from "@envoymesh/protocol";
@@ -338,6 +347,9 @@ const mesh = new EnvoyMesh({
   enableDcutr: true,
   enableDht: args.enableDht,
   dhtClientMode: args.dhtClientMode,
+  // Private EnvoyMesh DHT — do not join the public IPFS/kubo swarm.
+  // Override with ENVOYMESH_DHT_PROTOCOL if an operator needs the public kad.
+  dhtProtocol: process.env.ENVOYMESH_DHT_PROTOCOL?.trim() || ENVOYMESH_KAD_DHT_PROTOCOL,
   bootstrapPeers: args.bootstrapPeers,
   libp2pPrivateKey,
   circuitRelayServer: circuitRelayServerConfig,
@@ -352,6 +364,16 @@ const mesh = new EnvoyMesh({
 // object is also surfaced on /version, so the log line and the endpoint
 // payload are guaranteed to agree (they're built from the same source).
 console.log(`[relay] libp2p maxConnections=${resolvedMaxConnections}`);
+if (args.enableDht) {
+  const dhtProto =
+    process.env.ENVOYMESH_DHT_PROTOCOL?.trim() || ENVOYMESH_KAD_DHT_PROTOCOL;
+  console.log(
+    `[relay] DHT protocol=${dhtProto}` +
+      (dhtProto === ENVOYMESH_KAD_DHT_PROTOCOL
+        ? " (private — not public IPFS/kubo swarm)"
+        : ""),
+  );
+}
 
 if (Object.keys(circuitRelayServerConfig).length > 0) {
   const parts: string[] = [];
@@ -2238,7 +2260,26 @@ try {
           `[relay-stats] WARNING: dialQueue=${conn.dialQueueLength} (>50) — event-loop wedge risk`,
         );
       }
-      // Protect live reservation holders; drop anonymous DHT/bootstrap churn.
+      // Always drop Identify-classified `unknown` peers (kubo / go-ipfs / …).
+      // Protect live reservation holders + shipped community sibling peer ids.
+      // This runs under the peer-count cap — maxConnections alone was letting
+      // hundreds of public-swarm dials sit forever.
+      const protectPeerIds = [
+        ...reservationPeerIds,
+        ...DEFAULT_ENVOY_COMMUNITY_RELAY_PEER_IDS,
+      ];
+      void mesh
+        .pruneNonFamilySwarmConnections({
+          protectPeerIds,
+          maxClosePerTick: 96,
+        })
+        .catch((err) => {
+          console.warn(
+            "[relay-stats] pruneNonFamilySwarmConnections failed:",
+            err instanceof Error ? err.message : err,
+          );
+        });
+      // Protect live reservation holders; drop remaining excess under pressure.
       const pruneTriggerPeers = relayCapacitySnapshot.autoCapacityEnabled
         ? relayCapacityPruneTriggerPeers(
             relayCapacityRuntimeState.effectiveMaxPeers,
@@ -2256,7 +2297,7 @@ try {
           .pruneExcessSwarmConnections({
             maxPeers: pruneTargetPeers,
             dialQueueThreshold: 20,
-            protectPeerIds: reservationPeerIds,
+            protectPeerIds,
           })
           .catch((err) => {
             console.warn(

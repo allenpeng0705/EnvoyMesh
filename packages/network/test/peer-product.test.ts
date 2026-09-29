@@ -4,7 +4,10 @@ import {
   classifyLibp2pPeer,
   classifyWsProxyProduct,
   defaultEnvoyUserAgent,
+  ENVOYMESH_KAD_DHT_PROTOCOL,
+  isPublicIpfsSwarmAgent,
   parseEnvoyUserAgent,
+  shouldRetainOnCommunityRelay,
   summarizePeerKinds,
 } from "../src/peer-product.js";
 
@@ -53,5 +56,19 @@ describe("peer-product identity", () => {
     expect(summary.envoydev).toBe(1);
     expect(summary.veda).toBe(1);
     expect(summary["envoymesh-node"]).toBe(0);
+  });
+
+  it("recognizes public IPFS swarm agents and retain policy for community relays", () => {
+    expect(isPublicIpfsSwarmAgent("kubo/0.39.0/docker")).toBe(true);
+    expect(isPublicIpfsSwarmAgent("go-ipfs/0.8.0/")).toBe(true);
+    expect(isPublicIpfsSwarmAgent("edgevpn")).toBe(true);
+    expect(isPublicIpfsSwarmAgent("envoymesh/envoydev/0.2.0")).toBe(false);
+    expect(isPublicIpfsSwarmAgent("js-libp2p/3.2.3 node/22.19.0")).toBe(false);
+
+    expect(shouldRetainOnCommunityRelay({ kind: "unknown" })).toBe(false);
+    expect(shouldRetainOnCommunityRelay({ kind: "unknown", protected: true })).toBe(true);
+    expect(shouldRetainOnCommunityRelay({ kind: "family-unlabeled" })).toBe(true);
+    expect(shouldRetainOnCommunityRelay({ kind: "envoydev" })).toBe(true);
+    expect(ENVOYMESH_KAD_DHT_PROTOCOL).toBe("/envoymesh/kad/1.0.0");
   });
 });

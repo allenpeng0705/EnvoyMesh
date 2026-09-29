@@ -19,6 +19,7 @@ import { CHAT_DELIVERY_ACK_TIMEOUT_MS, ENVOYMESH_VERSION } from "@envoymesh/prot
 import {
   classifyLibp2pPeer,
   defaultEnvoyUserAgent,
+  ENVOYMESH_KAD_DHT_PROTOCOL,
   type EnvoyPeerKind,
 } from "./peer-product.js";
 import { multiaddr as ma, type Multiaddr } from "@multiformats/multiaddr";
@@ -954,7 +955,15 @@ export class EnvoyMesh {
               ? {
                   dht: kadDHT({
                     clientMode: this.options.dhtClientMode,
-                    protocol: this.options.dhtProtocol,
+                    // Relay-servers default to the private EnvoyMesh DHT so
+                    // community relays are not public IPFS swarm participants.
+                    // Homes keep libp2p's default (`/ipfs/kad/1.0.0`) unless
+                    // they set dhtProtocol explicitly.
+                    protocol:
+                      this.options.dhtProtocol ??
+                      (this.options.enableRelayServer
+                        ? ENVOYMESH_KAD_DHT_PROTOCOL
+                        : undefined),
                   }),
                 }
               : {}),
@@ -3438,6 +3447,67 @@ export class EnvoyMesh {
   }
 
   /**
+   * Close libp2p peers that Identify classifies as `unknown` (public IPFS /
+   * kubo swarm fill). Keeps family-labeled peers, peers that speak
+   * `/envoymesh/…`, and any id in {@link protectPeerIds} (live reservation
+   * holders, sibling community relays).
+   *
+   * Unlike {@link pruneExcessSwarmConnections}, this runs **even when under
+   * the peer-count cap** — community relays must not spend FD/RSS on kubo
+   * just because `maxConnections` is large.
+   */
+  async pruneNonFamilySwarmConnections(options?: {
+    protectPeerIds?: readonly string[];
+    /** Cap closes per call so a 300-peer table drains across ticks. Default 96. */
+    maxClosePerTick?: number;
+  }): Promise<{ closedPeers: number; examined: number }> {
+    const stats = this.getConnectionStats();
+    if (!this.node || stats.connectedPeerIds.length === 0) {
+      return { closedPeers: 0, examined: 0 };
+    }
+    const protect = new Set<string>();
+    for (const id of options?.protectPeerIds ?? []) {
+      const t = id?.trim();
+      if (t) protect.add(t);
+    }
+    for (const id of this.preferredRelayPeerIds ?? []) {
+      if (id) protect.add(id);
+    }
+    const maxClose = options?.maxClosePerTick ?? 96;
+    const decoder = new TextDecoder();
+    let closedPeers = 0;
+    let examined = 0;
+    for (const peerId of stats.connectedPeerIds) {
+      if (closedPeers >= maxClose) break;
+      examined++;
+      if (protect.has(peerId)) continue;
+      let agentVersion: string | undefined;
+      let protocols: string[] = [];
+      try {
+        const peerData = await this.requireNode().peerStore.get(peerIdFromString(peerId));
+        protocols = [...(peerData.protocols ?? [])].map(String);
+        const raw = peerData.metadata?.get("AgentVersion");
+        if (raw && raw.byteLength > 0) {
+          agentVersion = decoder.decode(raw);
+        }
+      } catch {
+        // No Identify yet — leave connected; a later tick will classify.
+        continue;
+      }
+      const { kind } = classifyLibp2pPeer({ agentVersion, protocols });
+      if (kind !== "unknown") continue;
+      const n = await this.closeConnectionsToPeer(peerId);
+      if (n > 0) closedPeers += 1;
+    }
+    if (closedPeers > 0) {
+      console.warn(
+        `[p2p] pruned ${closedPeers} non-family swarm peer(s) (examined=${examined}, remaining≈${Math.max(0, stats.totalPeerIds - closedPeers)})`,
+      );
+    }
+    return { closedPeers, examined };
+  }
+
+  /**
    * Best-effort dial to establish or reuse a libp2p connection before chat/file sends.
    * Opens and closes one stream on `protocol` (default chat) using the same dial-hint path as {@link sendChat}.
    */
@@ -5175,7 +5245,10 @@ export {
   classifyLibp2pPeer,
   classifyWsProxyProduct,
   defaultEnvoyUserAgent,
+  ENVOYMESH_KAD_DHT_PROTOCOL,
+  isPublicIpfsSwarmAgent,
   parseEnvoyUserAgent,
+  shouldRetainOnCommunityRelay,
   speaksEnvoyProtocol,
   summarizePeerKinds,
   type EnvoyPeerKind,

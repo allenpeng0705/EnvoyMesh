@@ -164,3 +164,53 @@ export function summarizePeerKinds(
   }
   return out;
 }
+
+/**
+ * True when Identify AgentVersion is a well-known public IPFS / third-party
+ * swarm stack (kubo, go-ipfs, edgevpn, …). Used for ops messaging; the
+ * community-relay prune key is still {@link EnvoyPeerKind} `unknown`.
+ */
+export function isPublicIpfsSwarmAgent(
+  agentVersion: string | undefined | null,
+): boolean {
+  const a = (agentVersion ?? "").trim().toLowerCase();
+  if (!a) return false;
+  return (
+    a.startsWith("kubo/") ||
+    a.startsWith("go-ipfs/") ||
+    a.startsWith("edgevpn") ||
+    a.startsWith("chatp2p") ||
+    a.startsWith("storm") ||
+    a.startsWith("someguy/") ||
+    a.startsWith("myjoypin/") ||
+    a.includes("gala.games") ||
+    a.startsWith("github.com/dcnetio/") ||
+    a.startsWith("github.com/harmony-one/") ||
+    a.startsWith("github.com/xtruder/") ||
+    a.startsWith("github.com/libp2p/go-libp2p")
+  );
+}
+
+/**
+ * Whether a classified peer should stay on a community relay's connection
+ * table. Reservation holders and sibling relays are passed as `protected`.
+ * Family kinds (labeled or `/envoymesh/…` protocol) stay; `unknown` (kubo
+ * swarm fill) does not.
+ */
+export function shouldRetainOnCommunityRelay(input: {
+  kind: EnvoyPeerKind;
+  protected?: boolean;
+}): boolean {
+  if (input.protected) return true;
+  return input.kind !== "unknown";
+}
+
+/**
+ * Private kad-dht protocol for EnvoyMesh relay-servers. Using the public
+ * `/ipfs/kad/1.0.0` makes a community relay a DHT participant for the whole
+ * kubo/IPFS swarm — hundreds of anonymous dials that burn FDs and RSS without
+ * helping EnvoyMesh pairing. Homes still dial the relay by known multiaddr;
+ * family discovery among EnvoyMesh nodes can use this protocol when they set
+ * the same {@link EnvoyMeshOptions.dhtProtocol}.
+ */
+export const ENVOYMESH_KAD_DHT_PROTOCOL = "/envoymesh/kad/1.0.0";
