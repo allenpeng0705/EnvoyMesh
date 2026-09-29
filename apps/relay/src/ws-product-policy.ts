@@ -34,6 +34,28 @@ export const FAMILY_WS_PRODUCT_ALLOWLIST = new Set([
 
 export type WsProductPolicy = "legacy" | "allowlist" | "require";
 
+/**
+ * Resolve the WS product policy from env.
+ *
+ * Precedence:
+ *   1. `ENVOYMESH_RELAY_WS_PRODUCT_POLICY` = legacy | allowlist | require
+ *   2. Else `ENVOYMESH_RELAY_REQUIRE_FAMILY_PRODUCT` = 1|true → **require**
+ *      (the post-release flip the operator turns on after all EnvoyXX apps ship)
+ *   3. Else **allowlist** (safe while store builds catch up: missing product= OK)
+ */
+export function resolveWsProductPolicyFromEnv(env: {
+  ENVOYMESH_RELAY_WS_PRODUCT_POLICY?: string;
+  ENVOYMESH_RELAY_REQUIRE_FAMILY_PRODUCT?: string;
+} = process.env): WsProductPolicy {
+  const explicit = env.ENVOYMESH_RELAY_WS_PRODUCT_POLICY?.trim();
+  if (explicit) return parseWsProductPolicy(explicit);
+  const requireFlag = (env.ENVOYMESH_RELAY_REQUIRE_FAMILY_PRODUCT ?? "").trim().toLowerCase();
+  if (requireFlag === "1" || requireFlag === "true" || requireFlag === "yes" || requireFlag === "on") {
+    return "require";
+  }
+  return "allowlist";
+}
+
 export function parseWsProductPolicy(raw: string | undefined | null): WsProductPolicy {
   const v = (raw ?? "allowlist").trim().toLowerCase();
   if (v === "legacy" || v === "off" || v === "0") return "legacy";

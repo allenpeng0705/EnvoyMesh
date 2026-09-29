@@ -100,10 +100,10 @@ while [[ $# -gt 0 ]]; do
             echo "                             Also locks /info, /version, /reservations"
             echo "  ENVOYMESH_RELAY_JOIN_TOKEN  Shared secret for gated community relay join"
             echo "                             (≥ 8 chars; same on cn-relay, us-relay, new fleet relays)"
-            echo "  ENVOYMESH_RELAY_WS_PRODUCT_POLICY  Client-proxy ?product= gate:"
-            echo "                             allowlist (default) = missing OK (old Veda), unknown rejected;"
-            echo "                             require = must send family product= (after aiNotes ships);"
-            echo "                             legacy = no gate"
+            echo "  ENVOYMESH_RELAY_REQUIRE_FAMILY_PRODUCT  1 = require client-proxy product="
+            echo "                             (turn on after all EnvoyXX apps ship; restart relay)."
+            echo "  ENVOYMESH_RELAY_WS_PRODUCT_POLICY  Override: legacy|allowlist|require"
+            echo "                             (default allowlist if REQUIRE_FAMILY_PRODUCT unset)"
             exit 0
             ;;
         *)

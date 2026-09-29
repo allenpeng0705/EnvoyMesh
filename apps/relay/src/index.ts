@@ -40,7 +40,7 @@ import {
 import { armProxySlotRelease, ProxyConnectionSlots } from "./proxy-connection-slots.js";
 import {
   evaluateWsProductGate,
-  parseWsProductPolicy,
+  resolveWsProductPolicyFromEnv,
 } from "./ws-product-policy.js";
 import {
   createInitialStandaloneRelayHealthState,
@@ -379,13 +379,13 @@ if (args.enableDht) {
 }
 
 /** Staged family gate for thin-client `?product=` (see ws-product-policy.ts). */
-const wsProductPolicy = parseWsProductPolicy(process.env.ENVOYMESH_RELAY_WS_PRODUCT_POLICY);
+const wsProductPolicy = resolveWsProductPolicyFromEnv();
 console.log(
   `[relay] WS product policy=${wsProductPolicy}` +
     (wsProductPolicy === "require"
-      ? " (thin clients must send product=; flip after aiNotes/Veda store release)"
+      ? " (REQUIRE_FAMILY_PRODUCT on — thin clients must send product=)"
       : wsProductPolicy === "allowlist"
-        ? " (missing product= allowed for pre-label Veda; unknown product= rejected)"
+        ? " (default until apps ship; set ENVOYMESH_RELAY_REQUIRE_FAMILY_PRODUCT=1 later)"
         : " (no product gate)"),
 );
 

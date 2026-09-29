@@ -2,12 +2,23 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateWsProductGate,
   parseWsProductPolicy,
+  resolveWsProductPolicyFromEnv,
 } from "../src/ws-product-policy.js";
 
 describe("ws product policy (aiNotes compat)", () => {
-  it("defaults to allowlist", () => {
+  it("defaults to allowlist; REQUIRE_FAMILY_PRODUCT=1 flips to require", () => {
     expect(parseWsProductPolicy(undefined)).toBe("allowlist");
     expect(parseWsProductPolicy("")).toBe("allowlist");
+    expect(resolveWsProductPolicyFromEnv({})).toBe("allowlist");
+    expect(
+      resolveWsProductPolicyFromEnv({ ENVOYMESH_RELAY_REQUIRE_FAMILY_PRODUCT: "1" }),
+    ).toBe("require");
+    expect(
+      resolveWsProductPolicyFromEnv({
+        ENVOYMESH_RELAY_WS_PRODUCT_POLICY: "legacy",
+        ENVOYMESH_RELAY_REQUIRE_FAMILY_PRODUCT: "1",
+      }),
+    ).toBe("legacy");
   });
 
   it("allowlist accepts missing product (pre-release Veda) and known products", () => {
