@@ -1256,14 +1256,15 @@ try {
         const conn = mesh.getConnectionStats();
         const tunnelStats = _homeTunnelProxy.stats();
         const now = Date.now();
-        let peers = peersDescribeCache?.peers;
-        if (
-          !peersDescribeCache ||
-          now - peersDescribeCache.atMs >= PEERS_DESCRIBE_CACHE_TTL_MS
-        ) {
-          peers = await mesh.describeConnectedPeers();
-          peersDescribeCache = { atMs: now, peers };
-        }
+        const cached = peersDescribeCache;
+        const peers =
+          cached != null && now - cached.atMs < PEERS_DESCRIBE_CACHE_TTL_MS
+            ? cached.peers
+            : await (async () => {
+                const fresh = await mesh.describeConnectedPeers();
+                peersDescribeCache = { atMs: now, peers: fresh };
+                return fresh;
+              })();
         const byKind = summarizePeerKinds(peers.map((p) => p.kind));
         const wsProxyLibp2p = proxySlots.totalConnections;
         const wsProxyHomeTunnel = tunnelStats.mobileProxyConnections;
