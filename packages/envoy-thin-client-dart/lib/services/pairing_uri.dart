@@ -183,7 +183,12 @@ String? _stripRelayQuery(String? url) {
 
 List<int>? _gzipDecompress(String base64url) {
   try {
-    String base64 = base64url.replaceAll('-', '+').replaceAll('_', '/');
+    // Pastes (chat, mail) often insert newlines/spaces inside the blob; those corrupt
+    // base64 and fail gzip CRC. Strip whitespace before decode.
+    String base64 = base64url
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll('-', '+')
+        .replaceAll('_', '/');
     while (base64.length % 4 != 0) {
       base64 += '=';
     }

@@ -308,13 +308,12 @@ class HomeRemoteClient {
       }
     }
 
-    // Close any existing transport.
-    if (_ws != null) {
-      try {
-        _ws!.close();
-      } catch (_) {}
-      _ws = null;
-    }
+    // Close any existing transport (detach handlers first — same stale-onClose
+    // race as transport upgrade). In-flight RPCs on that socket can never
+    // complete — fail them now instead of waiting for method timeouts.
+    _retireActiveTransport(
+      Exception('homeRemote.disconnected'),
+    );
 
     final perTimeout = _options.perCandidateTimeoutMs;
     Object? lastError;
@@ -465,25 +464,35 @@ class HomeRemoteClient {
     };
 
     ws.onClose = () {
+      // Ignore closes from a socket we already replaced (transport upgrade /
+      // redial). Otherwise a late onClose from the old relay rung sets
+      // offline + nulls `_ws` after LAN already won — UI stuck pulsing
+      // "connecting" while projects still load on the live socket.
+      if (!identical(_ws, ws)) {
+        if (!ready && !completer.isCompleted) {
+          fail(Exception('homeRemote.connectFailed'));
+        }
+        return;
+      }
       if (!ready) {
         fail(Exception('homeRemote.connectFailed'));
         return;
       }
       _setHomeOnline(false);
       _ws = null;
-      for (final entry in _pending.entries) {
-        if (!entry.value.completer.isCompleted) {
-          entry.value.completer
-              .completeError(Exception('homeRemote.disconnected'));
-        }
-      }
-      _pending.clear();
+      _failAllPending(Exception('homeRemote.disconnected'));
       // A revoked session must not be redialed — the token is provably dead
       // (see [sessionRevoked]). Everything else schedules a reconnect.
       if (!_sessionRevoked) _scheduleReconnect();
     };
 
     ws.onError = () {
+      if (!identical(_ws, ws)) {
+        if (!ready && !completer.isCompleted) {
+          fail(Exception('homeRemote.connectFailed'));
+        }
+        return;
+      }
       if (!ready) {
         fail(Exception('homeRemote.connectFailed'));
         return;
@@ -573,6 +582,36 @@ class HomeRemoteClient {
     _options.onHomeOnlineChange?.call(online);
   }
 
+  /// Detach and close the active socket; fail every in-flight RPC.
+  ///
+  /// Used when replacing the transport (upgrade / redial). Callers that only
+  /// want to tear down without a reason still pass a disconnect error so a
+  /// mid-flight `coder.listTasks` does not sit until the 15–30s method timer.
+  void _retireActiveTransport(Object error) {
+    final previous = _ws;
+    _ws = null;
+    if (previous != null) {
+      previous.onClose = null;
+      previous.onError = null;
+      previous.onMessage = null;
+      previous.onOpen = null;
+      try {
+        previous.close();
+      } catch (_) {}
+    }
+    _failAllPending(error);
+  }
+
+  void _failAllPending(Object error) {
+    for (final entry in _pending.entries) {
+      entry.value.timer.cancel();
+      if (!entry.value.completer.isCompleted) {
+        entry.value.completer.completeError(error);
+      }
+    }
+    _pending.clear();
+  }
+
   void _setActiveCandidate(HomeRemoteCandidate? candidate) {
     if (_activeCandidate?.name == candidate?.name &&
         _activeCandidate?.url == candidate?.url) {
@@ -658,14 +697,20 @@ class HomeRemoteClient {
         _probeCooldown.remove(candidate.name);
         _upgrading = true;
         try {
-          try {
-            _ws?.close();
-          } catch (_) {}
-          _ws = null;
+          // Retire the lower-priority socket: pending RPCs (e.g. listTasks mid
+          // refresh) would otherwise sit until homeRemote.*Timeout while the
+          // new LAN socket is already live — projects half-loaded, cell tower
+          // pulsing, then a Chinese "无法从这台电脑加载任务" toast.
+          _retireActiveTransport(
+            Exception('homeRemote.disconnected'),
+          );
           try {
             await _openSocket(candidate, perTimeout);
             _setActiveCandidate(candidate);
             _reconnectDelayMs = 1000;
+            // Re-subscribe / resync: online stayed true through the upgrade
+            // (offline suppressed), so onHomeOnlineChange will not fire.
+            _options.onReconnect?.call();
           } catch (_) {
             _recordProbeFailure(candidate.name);
             _upgrading = false;
