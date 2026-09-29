@@ -3456,6 +3456,51 @@ export class EnvoyMesh {
    * the peer-count cap** — community relays must not spend FD/RSS on kubo
    * just because `maxConnections` is large.
    */
+  /**
+   * After Identify, close one peer when it is classified `unknown` and not
+   * protected. Used on `peer:connect` so kubo dials do not wait for the
+   * stats-interval prune.
+   */
+  async closeIfNonFamilyPeer(
+    peerId: string,
+    options?: { protectPeerIds?: readonly string[] },
+  ): Promise<boolean> {
+    const id = peerId.trim();
+    if (!id || !this.node) return false;
+    for (const p of options?.protectPeerIds ?? []) {
+      if (p?.trim() === id) return false;
+    }
+    for (const p of this.preferredRelayPeerIds ?? []) {
+      if (p === id) return false;
+    }
+    let agentVersion: string | undefined;
+    let protocols: string[] = [];
+    try {
+      const peerData = await this.requireNode().peerStore.get(peerIdFromString(id));
+      protocols = [...(peerData.protocols ?? [])].map(String);
+      const raw = peerData.metadata?.get("AgentVersion");
+      if (raw && raw.byteLength > 0) {
+        agentVersion = new TextDecoder().decode(raw);
+      }
+    } catch {
+      return false;
+    }
+    if (protocols.length === 0 && !agentVersion) {
+      // Identify not written yet.
+      return false;
+    }
+    const { kind } = classifyLibp2pPeer({ agentVersion, protocols });
+    if (kind !== "unknown") return false;
+    const n = await this.closeConnectionsToPeer(id);
+    if (n > 0) {
+      console.warn(
+        `[p2p] closed non-family peer ${id.slice(0, 12)}… agent=${agentVersion ?? "—"}`,
+      );
+      return true;
+    }
+    return false;
+  }
+
   async pruneNonFamilySwarmConnections(options?: {
     protectPeerIds?: readonly string[];
     /** Cap closes per call so a 300-peer table drains across ticks. Default 96. */

@@ -24,7 +24,6 @@ import {
   EnvoyMesh,
   ENVOYMESH_KAD_DHT_PROTOCOL,
   buildEnvoyUserAgent,
-  classifyWsProxyProduct,
   summarizePeerKinds,
 } from "@envoymesh/network";
 import { DEFAULT_ENVOY_COMMUNITY_RELAY_PEER_IDS } from "@envoymesh/api/core";
@@ -39,6 +38,10 @@ import {
   writeProxyConnect,
 } from "./client-proxy-handshake.js";
 import { armProxySlotRelease, ProxyConnectionSlots } from "./proxy-connection-slots.js";
+import {
+  evaluateWsProductGate,
+  parseWsProductPolicy,
+} from "./ws-product-policy.js";
 import {
   createInitialStandaloneRelayHealthState,
   evaluateStandaloneRelayHealth,
@@ -374,6 +377,17 @@ if (args.enableDht) {
         : ""),
   );
 }
+
+/** Staged family gate for thin-client `?product=` (see ws-product-policy.ts). */
+const wsProductPolicy = parseWsProductPolicy(process.env.ENVOYMESH_RELAY_WS_PRODUCT_POLICY);
+console.log(
+  `[relay] WS product policy=${wsProductPolicy}` +
+    (wsProductPolicy === "require"
+      ? " (thin clients must send product=; flip after aiNotes/Veda store release)"
+      : wsProductPolicy === "allowlist"
+        ? " (missing product= allowed for pre-label Veda; unknown product= rejected)"
+        : " (no product gate)"),
+);
 
 if (Object.keys(circuitRelayServerConfig).length > 0) {
   const parts: string[] = [];
@@ -1001,6 +1015,26 @@ try {
   console.log(`[relay] Peer ID: ${mesh.peerId}`);
   console.log(`[relay] Control identity: ${relayControlIdentity.peerId}`);
   console.log(`[relay] Ready to accept relay connections.`);
+
+  // Drop non-family libp2p peers soon after Identify (do not wait for stats tick).
+  mesh.onPeerConnect(({ peerId }) => {
+    void (async () => {
+      await new Promise((r) => setTimeout(r, 2_500));
+      const protect = [
+        ...mesh
+          .inspectCircuitRelayReservations()
+          .map((r) => r.peerId)
+          .filter((id): id is string => Boolean(id)),
+        ...DEFAULT_ENVOY_COMMUNITY_RELAY_PEER_IDS,
+      ];
+      await mesh.closeIfNonFamilyPeer(peerId, { protectPeerIds: protect });
+    })().catch((err) => {
+      console.warn(
+        "[relay] closeIfNonFamilyPeer failed:",
+        err instanceof Error ? err.message : err,
+      );
+    });
+  });
 
   relayRoster.setSelfPeerId(mesh.peerId);
   seedRelayBookFromBootstrap(mesh.peerId);
@@ -1745,6 +1779,16 @@ try {
       token: string,
       productQuery = "",
     ): Promise<void> {
+      // Family product gate before taking a capped proxy slot.
+      const productGate = evaluateWsProductGate(productQuery, wsProductPolicy);
+      if (!productGate.ok) {
+        console.warn(
+          `[relay] client-proxy: rejected — ${productGate.closeMessage} (policy=${wsProductPolicy})`,
+        );
+        ws.close(1008, productGate.closeMessage);
+        return;
+      }
+
       const acquired = proxySlots.tryAcquire(ws, targetPeerId);
       if (!acquired.ok) {
         if (acquired.reason === "gone") {
@@ -1760,15 +1804,20 @@ try {
         return;
       }
 
-      const classified = classifyWsProxyProduct(productQuery);
       proxyClientMeta.set(ws, {
-        ...(classified.product ? { product: classified.product } : {}),
-        kind: classified.kind,
+        ...(productGate.product ? { product: productGate.product } : {}),
+        kind: productGate.kind,
         targetPeerId,
       });
+      if (productGate.legacyMissingProduct) {
+        console.log(
+          `[relay] client-proxy: legacy thin client without product= ` +
+            `(compat until aiNotes/Veda release; policy=${wsProductPolicy})`,
+        );
+      }
       console.log(
         `[relay] client-proxy: connecting to ${targetPeerId.slice(0, 12)}… (total=${proxySlots.totalConnections}` +
-          `${classified.product ? `, product=${classified.product}` : ", product=unknown"})`,
+          `${productGate.product ? `, product=${productGate.product}` : ", product=unknown"})`,
       );
       let libp2pStream: any = null;
       // AbortController cancels the in-flight libp2p dial when the phone hangs up

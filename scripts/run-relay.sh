@@ -100,6 +100,10 @@ while [[ $# -gt 0 ]]; do
             echo "                             Also locks /info, /version, /reservations"
             echo "  ENVOYMESH_RELAY_JOIN_TOKEN  Shared secret for gated community relay join"
             echo "                             (≥ 8 chars; same on cn-relay, us-relay, new fleet relays)"
+            echo "  ENVOYMESH_RELAY_WS_PRODUCT_POLICY  Client-proxy ?product= gate:"
+            echo "                             allowlist (default) = missing OK (old Veda), unknown rejected;"
+            echo "                             require = must send family product= (after aiNotes ships);"
+            echo "                             legacy = no gate"
             exit 0
             ;;
         *)
