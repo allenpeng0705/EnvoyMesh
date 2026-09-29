@@ -35,6 +35,7 @@
 import type { IncomingMessage } from "http";
 import type { Duplex } from "stream";
 import { WebSocketServer, WebSocket } from "ws";
+import { armProxySlotRelease, ProxyConnectionSlots } from "./proxy-connection-slots.js";
 
 // ============================================================================
 // Public types
@@ -69,6 +70,11 @@ export interface HomeTunnelProxyOptions {
   /** Maximum concurrent mobile-proxy connections. Beyond this, mobile
    *  upgrades are closed with 1013. */
   maxProxyConnections: number;
+  /**
+   * Max mobile proxies per home peer (same posture as the libp2p fallback
+   * path). Defaults to 10.
+   */
+  maxProxyConnectionsPerTarget?: number;
   /** Per-frame data size cap (bytes). The home chunks PTY output to
    *  64KB so 128KB is plenty of headroom for base64 inflation. */
   maxHomeTunnelDataBytes: number;
@@ -139,7 +145,13 @@ export interface HomeTunnelProxy {
   ): Promise<{ status: number; body: string; contentType?: string } | null>;
 
   /** Snapshot for monitoring / tests. */
-  stats(): { homeTunnels: number; channels: number; orphans: number };
+  stats(): {
+    homeTunnels: number;
+    channels: number;
+    orphans: number;
+    /** Live mobile proxy sockets routed through home tunnels. */
+    mobileProxyConnections: number;
+  };
 
   /**
    * Stop the proxy: close all client sockets and the internal
@@ -210,6 +222,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
   const {
     maxHomeTunnels,
     maxProxyConnections,
+    maxProxyConnectionsPerTarget = 10,
     maxHomeTunnelDataBytes,
     logPrefix = "[relay]",
   } = opts;
@@ -228,7 +241,10 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
   const homeTunnels = new Map<string, WebSocket>();
   const proxyChannels = new Map<string, ProxyChannelState>();
   const proxyClaimResolvers = new Map<string, () => void>();
-  const proxyConnByTarget = new Map<string, Set<WebSocket>>();
+  const proxySlots = new ProxyConnectionSlots({
+    maxTotal: maxProxyConnections,
+    maxPerTarget: maxProxyConnectionsPerTarget,
+  });
   const pendingHttp = new Map<string, {
     resolve: (result: { status: number; body: string; contentType?: string } | null) => void;
     timer: ReturnType<typeof setTimeout>;
@@ -242,7 +258,6 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
     bufferedBytes: number;
     aborted?: boolean;
   }>();
-  let proxyConnTotal = 0;
   let stopped = false;
   let orphanSweeper: ReturnType<typeof setInterval> | undefined;
 
@@ -633,16 +648,18 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       try { ws.close(1011, "home tunnel not available"); } catch { /* ignore */ }
       return;
     }
-    if (proxyConnTotal >= maxProxyConnections) {
-      try { ws.close(1013, "relay proxy connections full"); } catch { /* ignore */ }
+    const acquired = proxySlots.tryAcquire(ws, targetPeerId);
+    if (!acquired.ok) {
+      if (acquired.reason === "gone") return;
+      if (acquired.reason === "full") {
+        try { ws.close(1013, "relay proxy connections full"); } catch { /* ignore */ }
+      } else {
+        try { ws.close(1013, "too many connections to target"); } catch { /* ignore */ }
+      }
       return;
     }
-    proxyConnTotal++;
-    const conns = proxyConnByTarget.get(targetPeerId) ?? new Set();
-    conns.add(ws);
-    proxyConnByTarget.set(targetPeerId, conns);
     log(
-      `home-tunnel-proxy: connecting to ${targetPeerId.slice(0, 12)}… via tunnel channel=${channelId.slice(0, 8)}… (total=${proxyConnTotal})`,
+      `home-tunnel-proxy: connecting to ${targetPeerId.slice(0, 12)}… via tunnel channel=${channelId.slice(0, 8)}… (total=${proxySlots.totalConnections})`,
     );
 
     const proxyKey = channelKey(targetPeerId, channelId);
@@ -668,17 +685,6 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
     const firstClaim = new Promise<void>((resolve) => { firstResolver = resolve; });
     proxyClaimResolvers.set(channelId, firstResolver);
 
-    // Ask the home to open a local ws-server connection for us on
-    // the current tunnel. (We already verified the tunnel is OPEN
-    // above, and registered state in `proxyChannels`, so this is
-    // always safe.)
-    sendToHome(targetPeerId, {
-      type: "open",
-      channelId,
-      token,
-      targetPeerId,
-    });
-
     const claimTimer = setTimeout(() => {
       if (state.active) return;
       // If currently orphaned, the claim timeout applies to a
@@ -692,6 +698,38 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
         `home-tunnel-proxy: home did not claim channel ${channelId.slice(0, 8)}… within 10s`,
       );
     }, HOME_CLAIM_TIMEOUT_MS);
+
+    let slotReleased = false;
+    const releaseMobileSlot = (): void => {
+      if (slotReleased) return;
+      slotReleased = true;
+      clearTimeout(claimTimer);
+      proxyChannels.delete(proxyKey);
+      proxyClaimResolvers.delete(channelId);
+      proxySlots.release(ws);
+      // Tell the current tunnel (if any) to close the channel.
+      const t = homeTunnels.get(targetPeerId);
+      if (t && t.readyState === WebSocket.OPEN) {
+        try { t.send(JSON.stringify({ type: "close", channelId })); } catch { /* ignore */ }
+      }
+      log(
+        `home-tunnel-proxy: mobile disconnected from ${targetPeerId.slice(0, 12)}… (total=${proxySlots.totalConnections})`,
+      );
+    };
+    // Arm before any further work; sync-release if close already fired.
+    armProxySlotRelease(ws, releaseMobileSlot);
+    if (slotReleased) return;
+
+    // Ask the home to open a local ws-server connection for us on
+    // the current tunnel. (We already verified the tunnel is OPEN
+    // above, and registered state in `proxyChannels`, so this is
+    // always safe.)
+    sendToHome(targetPeerId, {
+      type: "open",
+      channelId,
+      token,
+      targetPeerId,
+    });
 
     // The claim promise is mainly used to drive the 10s timeout. The
     // actual early-buffer flush happens inside `handleHomeTunnel`'s
@@ -726,26 +764,6 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       try {
         t.send(JSON.stringify({ type: "data", channelId, data: text }));
       } catch { /* ignore */ }
-    });
-
-    ws.on("close", () => {
-      clearTimeout(claimTimer);
-      proxyChannels.delete(proxyKey);
-      proxyClaimResolvers.delete(channelId);
-      const s = proxyConnByTarget.get(targetPeerId);
-      if (s) {
-        s.delete(ws);
-        if (s.size === 0) proxyConnByTarget.delete(targetPeerId);
-      }
-      proxyConnTotal--;
-      // Tell the current tunnel (if any) to close the channel.
-      const t = homeTunnels.get(targetPeerId);
-      if (t && t.readyState === WebSocket.OPEN) {
-        try { t.send(JSON.stringify({ type: "close", channelId })); } catch { /* ignore */ }
-      }
-      log(
-        `home-tunnel-proxy: mobile disconnected from ${targetPeerId.slice(0, 12)}… (total=${proxyConnTotal})`,
-      );
     });
 
     ws.on("error", () => {
@@ -853,6 +871,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
         homeTunnels: homeTunnels.size,
         channels: proxyChannels.size,
         orphans,
+        mobileProxyConnections: proxySlots.totalConnections,
       };
     },
 
@@ -871,8 +890,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       }
       proxyChannels.clear();
       proxyClaimResolvers.clear();
-      proxyConnByTarget.clear();
-      proxyConnTotal = 0;
+      proxySlots.clear();
       // Close all home tunnels.
       for (const t of homeTunnels.values()) {
         if (t.readyState === WebSocket.OPEN) {

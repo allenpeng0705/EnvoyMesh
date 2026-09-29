@@ -29,7 +29,7 @@ import {
   readProxyResponse,
   writeProxyConnect,
 } from "./client-proxy-handshake.js";
-import { ProxyConnectionSlots } from "./proxy-connection-slots.js";
+import { armProxySlotRelease, ProxyConnectionSlots } from "./proxy-connection-slots.js";
 import {
   createInitialStandaloneRelayHealthState,
   evaluateStandaloneRelayHealth,
@@ -1193,6 +1193,7 @@ try {
     homeTunnelProxy = createHomeTunnelProxy({
       maxHomeTunnels: MAX_HOME_TUNNELS,
       maxProxyConnections: MAX_PROXY_CONNECTIONS,
+      maxProxyConnectionsPerTarget: MAX_PROXY_CONNS_PER_TARGET,
       maxHomeTunnelDataBytes: MAX_HOME_TUNNEL_DATA_BYTES,
       logPrefix: "[relay]",
     });
@@ -1208,6 +1209,8 @@ try {
         const versions = buildRelayVersionReport(new Date(startedAtMs).toISOString());
         const tunnelStats = _homeTunnelProxy.stats();
         const metrics = relayMetrics.snapshot();
+        const wsProxyLibp2p = proxySlots.totalConnections;
+        const wsProxyHomeTunnel = tunnelStats.mobileProxyConnections;
         return {
           uptimeMs: Date.now() - startedAtMs,
           health,
@@ -1219,7 +1222,10 @@ try {
           maxReservations: circuitRelayServerConfig.maxReservations ?? 15,
           rosterSize: relayRoster.size(),
           connectionStats: conn,
-          wsProxyConnections: proxySlots.totalConnections,
+          /** Libp2p-fallback + home-tunnel mobile proxies (live sockets). */
+          wsProxyConnections: wsProxyLibp2p + wsProxyHomeTunnel,
+          wsProxyLibp2p,
+          wsProxyHomeTunnel,
           wsProxyByProduct: wsProxyProductSummary(),
           homeTunnels: tunnelStats.homeTunnels,
           directClients: directClients.size,
@@ -1259,6 +1265,8 @@ try {
           peersDescribeCache = { atMs: now, peers };
         }
         const byKind = summarizePeerKinds(peers.map((p) => p.kind));
+        const wsProxyLibp2p = proxySlots.totalConnections;
+        const wsProxyHomeTunnel = tunnelStats.mobileProxyConnections;
         return {
           connectedPeerIds: conn.connectedPeerIds,
           connectedPeerCount: conn.connectedPeerIds.length,
@@ -1266,7 +1274,9 @@ try {
           circuitPeerCount: conn.circuitPeerIds.length,
           totalConnections: conn.totalConnections,
           rosterSize: relayRoster.size(),
-          wsProxyConnections: proxySlots.totalConnections,
+          wsProxyConnections: wsProxyLibp2p + wsProxyHomeTunnel,
+          wsProxyLibp2p,
+          wsProxyHomeTunnel,
           wsProxyByProduct: wsProxyProductSummary(),
           homeTunnels: tunnelStats.homeTunnels,
           directClients: directClients.size,
@@ -1714,6 +1724,9 @@ try {
     ): Promise<void> {
       const acquired = proxySlots.tryAcquire(ws, targetPeerId);
       if (!acquired.ok) {
+        if (acquired.reason === "gone") {
+          return;
+        }
         if (acquired.reason === "full") {
           console.warn(`[relay] client-proxy: rejected — max total connections ${MAX_PROXY_CONNECTIONS}`);
           ws.close(1013, "relay proxy connections full");
@@ -1763,7 +1776,9 @@ try {
           `[relay] client-proxy: released ${targetPeerId.slice(0, 12)}… (${reason}) (total=${proxySlots.totalConnections})`,
         );
       };
-      ws.on("close", () => releaseProxySlot("ws-close"));
+      // Arm before any await; sync-release if `close` already fired (acquire race).
+      armProxySlotRelease(ws, () => releaseProxySlot("ws-close"));
+      if (slotReleased) return;
       ws.on("error", () => {
         try {
           ws.close();
