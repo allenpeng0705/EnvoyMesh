@@ -3,7 +3,7 @@
 Long-form article for **everyday users** and **developers**.  
 Social short posts + posters: [`product_promote.md`](product_promote.md).
 
-Website: https://www.homeclaw.cn/envoy · GitHub: https://github.com/allenpeng0705/EnvoyMesh
+Website: https://www.envoymesh.cn · GitHub: https://github.com/allenpeng0705/EnvoyMesh
 
 > **Envoy** = an agent that **represents you** (acts on your requests and intents).  
 > **EnvoyMesh** = the private P2P mesh those envoys live on.  
@@ -76,7 +76,7 @@ Most “remote AI” setups force you into one of these:
 Download EnvoyGo: [App Store](https://apps.apple.com/app/id6795717774) · [Google Play](https://play.google.com/store/apps/details?id=com.envoymesh.envoygo)
 
 **Download EnvoyMesh desktop** (Mac / Windows / Linux) from the product site — same page has EnvoyGo store links and QR codes:  
-**https://www.homeclaw.cn/envoy**
+**https://www.envoymesh.cn**
 
 ---
 
@@ -191,7 +191,7 @@ Beyond one home and one family, EnvoyMesh supports an **Agent Network**: agents 
 
 ### Everyday users
 
-1. Open **https://www.homeclaw.cn/envoy** and download **EnvoyMesh desktop** (Mac / Windows / Linux).  
+1. Open **https://www.envoymesh.cn** and download **EnvoyMesh desktop** (Mac / Windows / Linux).  
 2. Install **EnvoyGo** from App Store / Google Play (or use the QR codes on that same page).  
 3. Pair the phone to the home node (QR).  
 4. Chat with **EnvoyAI**, invite family, optionally add Ext Agents.
@@ -271,7 +271,7 @@ Beyond one home and one family, EnvoyMesh supports an **Agent Network**: agents 
 下载 EnvoyGo：[App Store](https://apps.apple.com/app/id6795717774) · [Google Play](https://play.google.com/store/apps/details?id=com.envoymesh.envoygo)
 
 **下载 EnvoyMesh 桌面端**（Mac / Windows / Linux）请打开产品站——同一页也有 EnvoyGo 商店链接与二维码：  
-**https://www.homeclaw.cn/envoy**
+**https://www.envoymesh.cn**
 
 ---
 
@@ -386,7 +386,7 @@ EnvoyMesh 在家里节点提供 **终端** 能力，可以：
 
 ### 普通用户
 
-1. 打开 **https://www.homeclaw.cn/envoy**，下载 **EnvoyMesh 桌面端**（Mac / Windows / Linux）。  
+1. 打开 **https://www.envoymesh.cn**，下载 **EnvoyMesh 桌面端**（Mac / Windows / Linux）。  
 2. 从 App Store / Google Play 安装 **EnvoyGo**（或扫同一页上的二维码）。  
 3. 扫码把手机配对到家里节点。  
 4. 与 **EnvoyAI** 对话、邀请家人，需要时再加 Ext Agent。

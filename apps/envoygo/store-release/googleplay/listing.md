@@ -285,7 +285,7 @@ Critical before production:
 1. Create upload keystore + `android/key.properties` (above)
 2. Bump `version: 1.0.0+N` in `pubspec.yaml` for each Play upload (`versionCode` = N)
 3. Leave Play App Signing enabled
-4. Complete Data safety + Privacy policy URL (e.g. `https://www.homeclaw.cn/envoy/privacy`)
+4. Complete Data safety + Privacy policy URL (e.g. `https://www.envoymesh.cn/privacy`)
 
 Current IDs:
 

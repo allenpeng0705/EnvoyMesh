@@ -32,7 +32,7 @@ QR sources: `sites/screens/app-store-qr.png`, `sites/screens/google-play-qr.png`
 
 Links on the image:
 
-- Website (top, cyan pill): https://www.homeclaw.cn/envoy  
+- Website (top, cyan pill): https://www.envoymesh.cn  
 - Mac / Windows / Android APK (download block; labels muted, URLs cyan)  
 - EnvoyGo QR (App Store / Google Play)
 
@@ -61,7 +61,7 @@ Terminal and coding agents are for developers — you can connect to coding agen
 
 This is the first version of EnvoyMesh. EnvoyGo is already out — from anywhere, pair to the Envoy on your computer and work together.
 
-https://www.homeclaw.cn/envoy
+https://www.envoymesh.cn
 ```
 
 ### 中文 — 完整粘贴（润色版）
@@ -81,7 +81,7 @@ Terminal 与 coding agent 面向开发者——可对接 Codex、Claude Code、M
 
 这是 EnvoyMesh 的第一个版本。EnvoyGo 已经发布——无论你在哪里，都能接入电脑上的 Envoy，一起协作。
 
-https://www.homeclaw.cn/envoy
+https://www.envoymesh.cn
 ```
 
 ---
@@ -94,7 +94,7 @@ Attach: `envoymesh-social-share-long-en.png`
 EnvoyMesh — an Envoy that stands for you.
 Home AI + EnvoyGo anywhere. No public IP. Your data stays on your computer.
 
-https://www.homeclaw.cn/envoy
+https://www.envoymesh.cn
 ```
 
 ---
@@ -107,5 +107,5 @@ https://www.homeclaw.cn/envoy
 EnvoyMesh — 代表你的 Envoy（特使）。
 家里跑 AI，EnvoyGo 随时连回——无需公网 IP，数据留在你的电脑上。
 
-https://www.homeclaw.cn/envoy
+https://www.envoymesh.cn
 ```

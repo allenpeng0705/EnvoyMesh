@@ -139,7 +139,7 @@ def compose(locale: str) -> Path:
       "Social over the P2P mesh — meet people and share info; your data stays on your computer, always under your control.",
     ]
   )
-  site_url = "https://www.homeclaw.cn/envoy"
+  site_url = "https://www.envoymesh.cn"
   dmg_url = "https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg"
   exe_url = "https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe"
   apk_url = "https://gpt4people.online/EnvoyMesh/envoygo-android.apk"

@@ -1,6 +1,6 @@
 {
   "name": "@envoymesh/host-connect",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -14,7 +14,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@envoymesh/protocol": "0.7.0",
+    "@envoymesh/protocol": "0.8.0",
     "ws": "^8.20.0"
   },
   "devDependencies": {

@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.homeclaw.cn/envoy/">🌐 Website</a>
+  <a href="https://www.envoymesh.cn/">🌐 Website</a>
   ·
   <a href="#download">⬇ Download</a>
   ·
@@ -57,7 +57,7 @@ Install the desktop app to run your private mesh (Social UI + node). Prefer the 
 | **Windows** (EXE) | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [Mirror EXE](https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe) |
 | **Linux** | Build from source (see [QuickStart.md](QuickStart.md)) |
 
-More options and screenshots: [Website downloads](https://www.homeclaw.cn/envoy/#downloads).
+More options and screenshots: [Website downloads](https://www.envoymesh.cn/#downloads).
 
 ### EnvoyGo (phone)
 
@@ -169,7 +169,7 @@ The desktop Social app’s **Coding** tab is where you drive coding agents on yo
 
 Coding agents do **not** get mesh contacts or vault knowledge — that stays with Built-in OpenClaw (EnvoyAI). Open Coding from the main nav, or from Terminals via the Coding shortcut.
 
-→ Full product for multi-agent coding workflows: **[EnvoyDev](#apps-built-on-envoymesh)** ([GitHub](https://github.com/allenpeng0705/EnvoyCoder)).
+→ Full product for multi-agent coding workflows: **[EnvoyDev](https://www.envoymesh.cn/envoydev)** ([GitHub](https://github.com/allenpeng0705/EnvoyCoder)).
 
 ---
 
@@ -184,10 +184,10 @@ EnvoyMesh defines the **shared protocols** the family runs on — not just a des
 
 | App | What it is | Link |
 |-----|------------|------|
-| **EnvoyMesh** | Desktop home node + Social UI — full mesh peer (this repo) | [Website](https://www.homeclaw.cn/envoy/) |
+| **EnvoyMesh** | Desktop home node + Social UI — full mesh peer (this repo) | [Website](https://www.envoymesh.cn/) |
 | **EnvoyGo** | Phone thin client → EnvoyMesh home (chat, AI, calls, family) | [Download](#download) |
-| **EnvoyDev** | Coding-agent control plane — desktop + **EnvoyDev Mobile** (same thin-client protocol) | [GitHub · EnvoyCoder](https://github.com/allenpeng0705/EnvoyCoder) |
-| **Veda Notes** | AI journal; pairs with EnvoyMesh Home for private sync, Home AI, family social | [Veda Notes](https://www.homeclaw.cn/veda-ai/) |
+| **EnvoyDev** | Coding-agent control plane — desktop + **EnvoyDev Mobile** (same thin-client protocol) | [Website](https://www.envoymesh.cn/envoydev) · [GitHub](https://github.com/allenpeng0705/EnvoyCoder) |
+| **Veda Notes** | AI journal; pairs with EnvoyMesh Home for private sync, Home AI, family social | [Website](https://www.envoymesh.cn/veda-ai) |
 
 ### EnvoyDev
 
@@ -206,6 +206,7 @@ EnvoyMesh defines the **shared protocols** the family runs on — not just a des
 - **Desktop** shares mesh identity and pairing with EnvoyMesh; project/task state lives under EnvoyDev’s own home path.
 - **EnvoyDev Mobile** is a thin client to the EnvoyDev / home desktop — same home↔phone protocol family as **EnvoyGo** (pair via QR, `host:port`, or SSH hop). The phone never runs the coding agent or holds provider keys.
 
+- Product site: [envoymesh.cn/envoydev](https://www.envoymesh.cn/envoydev)
 - Source and docs: [github.com/allenpeng0705/EnvoyCoder](https://github.com/allenpeng0705/EnvoyCoder)
 - Built-in agent runtime: [envoy-harness](https://github.com/allenpeng0705/envoy-harness)
 
@@ -219,7 +220,7 @@ The **Coding** tab in EnvoyMesh Social is the mesh-integrated coding surface ins
 - **Home AI chat** — ask about your notes using models on your computer
 - **Family social** — feed, blog, and messaging through your private mesh
 
-Product page: [homeclaw.cn/veda-ai](https://www.homeclaw.cn/veda-ai/).
+Product page: [envoymesh.cn/veda-ai](https://www.envoymesh.cn/veda-ai).
 
 ---
 
@@ -311,7 +312,7 @@ Every home node is a full peer on the mesh. Phones are thin clients to *your* ho
 
 <p align="center"><em>Primary Envoy (desktop) · EnvoyGo (phone) · Friend Envoy · External agents · Obsidian vault</em></p>
 
-Interactive version on the [website](https://www.homeclaw.cn/envoy/).
+Interactive version on the [website](https://www.envoymesh.cn/).
 
 ### Two protocols
 
@@ -984,7 +985,7 @@ It speaks the **home↔phone thin-client protocol** (not a full mesh peer on the
 
 **Install:** [Download EnvoyGo](#download) (App Store / Google Play + QR codes).  
 **Pairing:** Scan a QR code from your desktop Social UI → instant connection.  
-**Same thin-client idea:** [EnvoyDev Mobile](https://github.com/allenpeng0705/EnvoyCoder) pairs to the coding desktop the same way — UI on the phone, agents and keys on the computer.  
+**Same thin-client idea:** [EnvoyDev Mobile](https://www.envoymesh.cn/envoydev) pairs to the coding desktop the same way — UI on the phone, agents and keys on the computer.  
 Design: [`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md).
 
 > The old Capacitor full-node stack (`apps/mobile/`) was removed. Do not recreate it unless explicitly requested.
@@ -1012,7 +1013,7 @@ EnvoyMesh/
 
 ## Current Status
 
-**Active product surfaces:** Social (desktop, including the **Coding** tab) + **EnvoyGo** (mobile), with **Envoy Harness** for coding chat / Terminal and **Pi** for Terminal + Ext Agent. Family apps: **[EnvoyDev](https://github.com/allenpeng0705/EnvoyCoder)** (coding control plane) and **[Veda Notes](https://www.homeclaw.cn/veda-ai/)**. Dynamic relay roster (CN + US community hubs) ships in the desktop package seed.
+**Active product surfaces:** Social (desktop, including the **Coding** tab) + **EnvoyGo** (mobile), with **Envoy Harness** for coding chat / Terminal and **Pi** for Terminal + Ext Agent. Family apps: **[EnvoyDev](https://www.envoymesh.cn/envoydev)** (coding control plane) and **[Veda Notes](https://www.envoymesh.cn/veda-ai)**. Dynamic relay roster (CN + US community hubs) ships in the desktop package seed.
 
 Recent milestones (see [`docs/implementation-plan.md`](docs/implementation-plan.md) for the full list):
 
@@ -1034,14 +1035,14 @@ Earlier phases (trust modes, Agent Network / Team jobs, fleet onboarding, termin
 - **Start here:** [**`QuickStart.md`**](QuickStart.md) — install, run, mobile, multi-machine, bridge
 - **Headless home node (advanced):** [docs/headless-home-node.md](docs/headless-home-node.md)
 - **End-user guidebook:** [EnvoyMesh Guidebook 0.4.0](EnvoyMesh_GuideBook_0.4.0.md) ([简体中文](EnvoyMesh_GuideBook_0.4.0.zh-CN.md) · [HTML](sites/EnvoyMesh_GuideBook_0.4.0.html))
-- **Downloads / screenshots:** [Website](https://www.homeclaw.cn/envoy/) · [Download section](#download)
+- **Downloads / screenshots:** [Website](https://www.envoymesh.cn/) · [Download section](#download)
 - **Core concepts:** [Architecture reference](AGENTS.md) · [High-level design](docs/high-level-design.md) · [Security model](docs/security.md) · [Two protocols](#two-protocols) · [Protocol reference](docs/protocol-standard.md)
 - **AI Agent:** [Bridge guide](docs/agent_bridge_guide.md) · [OpenClaw setup](docs/openclaw-extension.md) · [AI Engine config](docs/agent-network-config.md)
 - **Agent Network:** [Operator guide](docs/agent-network-guide.md) ([中文](docs/agent-network-guide.zh-CN.md)) · [Fleet onboarding](docs/fleet-onboarding.md) · [Team jobs protocol](docs/agent_network.md)
 - **Knowledge base:** [Knowledge base & RAG](docs/knowledge-base-and-rag.md) · [Obsidian integration](#obsidian-integration)
 - **Voice & calls:** [Audio messages](docs/audio-message-support.md) · [Voice calls (desktop; video planned)](docs/voice-video-call-support.md) · [Native WebRTC on EnvoyGo](docs/voice-video-call-envoygo.md)
 - **Mobile:** [EnvoyGo design](docs/flutter-thin-client-design.md)
-- **Coding / family apps:** [Coding](#coding) · [EnvoyDev (EnvoyCoder)](https://github.com/allenpeng0705/EnvoyCoder) · [Veda Notes](https://www.homeclaw.cn/veda-ai/) · [envoy-harness](https://github.com/allenpeng0705/envoy-harness)
+- **Coding / family apps:** [Coding](#coding) · [EnvoyDev](https://www.envoymesh.cn/envoydev) ([GitHub](https://github.com/allenpeng0705/EnvoyCoder)) · [Veda Notes](https://www.envoymesh.cn/veda-ai) · [envoy-harness](https://github.com/allenpeng0705/envoy-harness)
 - **For developers:** [Protocol reference](docs/protocol-standard.md) · [Roadmap](docs/implementation-plan.md)
 
 ---
