@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — EnvoyDev</title>
+  <meta name="description" content="Privacy Policy for EnvoyDev (desktop) and EnvoyDev Mobile. Local-first coding-agent control plane: no central account, model keys stay with the agents on your machine, the phone is a thin client.">
+  <link rel="icon" type="image/png" href="screens/envoydev-logo.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --secondary-color: #06b6d4;
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: #334155;
+      --gradient-primary: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    ::selection { background-color: var(--primary-color); color: white; }
+
+    /* Header — same as marketing site */
+    header {
+      position: sticky; top: 0; left: 0; right: 0; z-index: 100;
+      background-color: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+    }
+    header nav { display: flex; align-items: center; justify-content: space-between; height: 64px; max-width: 760px; margin: 0 auto; padding: 0 24px; }
+    .logo { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text-primary); font-weight: 600; font-size: 1.15rem; }
+    .logo img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav-actions { display: flex; align-items: center; gap: 16px; }
+    .nav-util { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-util:hover { color: var(--text-primary); }
+
+    .wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; }
+
+    .brand {
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--primary-light); margin-bottom: 10px;
+    }
+
+    h1 { font-size: clamp(1.8rem, 4vw, 2.4rem); font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 8px; }
+    .meta { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 28px; }
+
+    .panel {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 32px 28px 36px;
+    }
+
+    .lede { color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 20px; }
+    .lede strong { color: var(--text-primary); }
+
+    .toc {
+      margin: 0 0 28px; padding: 16px 18px;
+      background-color: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 10px;
+    }
+    .toc strong {
+      display: block; font-size: 0.75rem; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;
+    }
+    .toc ol { margin: 0; padding-left: 1.25rem; font-size: 0.9rem; }
+    .toc li { margin-bottom: 6px; }
+    .toc a { color: var(--primary-light); text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+
+    h2 {
+      font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em;
+      margin: 28px 0 10px; padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+      scroll-margin-top: 84px;
+    }
+    h2:first-of-type { border-top: none; padding-top: 0; margin-top: 8px; }
+
+    p, li { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 10px; }
+    ul { margin: 0 0 14px; padding-left: 1.35rem; }
+    li + li { margin-top: 4px; }
+    strong { color: var(--text-primary); font-weight: 600; }
+
+    a { color: var(--primary-light); text-underline-offset: 2px; }
+
+    code {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 0.85em; background: var(--bg-dark);
+      padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-color);
+      color: var(--text-primary);
+    }
+
+    .callout {
+      margin: 16px 0; padding: 14px 16px;
+      background-color: rgba(99, 102, 241, 0.08);
+      border-left: 3px solid var(--primary-color);
+      border-radius: 0 10px 10px 0; font-size: 0.925rem; color: var(--text-secondary);
+    }
+    .callout strong { color: var(--text-primary); }
+
+    .back-row { margin-top: 28px; display: flex; gap: 16px; flex-wrap: wrap; }
+    .back-row a { font-size: 0.9rem; text-decoration: none; }
+
+    footer {
+      max-width: 760px; margin: 0 auto; padding: 0 24px 40px;
+      color: var(--text-muted); font-size: 0.82rem; text-align: center;
+    }
+    footer a { color: var(--primary-light); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    @media (max-width: 640px) {
+      .panel { padding: 24px 20px 28px; }
+      .wrap { padding: 32px 16px 48px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index.html" class="logo">
+        <img src="screens/envoydev-logo.png" alt="EnvoyDev Logo">
+        EnvoyDev
+      </a>
+      <div class="nav-actions">
+        <a href="privacy-zh.html" class="nav-util">中文</a>
+        <a href="index.html" class="nav-util">Home</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <p class="brand">EnvoyDev · Privacy</p>
+    <h1>Privacy Policy</h1>
+    <p class="meta">Last updated: 30 September 2026 · Effective for EnvoyDev desktop and EnvoyDev Mobile</p>
+
+    <article class="panel">
+      <p class="lede">
+        EnvoyDev is built <strong>local-first</strong>. Your code never leaves your
+        machine, there is <strong>no central EnvoyDev account</strong>, and your
+        model keys stay with the coding agents on your desktop — the phone is a thin
+        client that never holds them. This policy explains what data the software
+        processes, where it stays, and what third parties (if any) may see.
+      </p>
+
+      <nav class="toc" aria-label="Contents">
+        <strong>Contents</strong>
+        <ol>
+          <li><a href="#storage">Data storage</a></li>
+          <li><a href="#account">No account</a></li>
+          <li><a href="#agents">Coding agents &amp; model keys</a></li>
+          <li><a href="#mobile">EnvoyDev Mobile</a></li>
+          <li><a href="#network">Pairing &amp; network</a></li>
+          <li><a href="#third">Third-party services</a></li>
+          <li><a href="#security">Data security</a></li>
+          <li><a href="#retention">Retention &amp; deletion</a></li>
+          <li><a href="#children">Children</a></li>
+          <li><a href="#rights">Your choices &amp; rights</a></li>
+          <li><a href="#changes">Changes</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="storage">1. Data storage</h2>
+      <p>
+        Projects, tasks, transcripts, approval records, and agent configuration are
+        stored locally on the computer where the EnvoyDev desktop daemon runs, under
+        the EnvoyMesh home directory (typically <code>&lt;home&gt;/EnvoyDev/</code>).
+        EnvoyDev does not operate a hosted coding inbox or a cloud transcript store.
+      </p>
+      <ul>
+        <li>Your code and agent transcripts remain on your own machine.</li>
+        <li>Nothing is automatically synced to an EnvoyDev cloud — no such cloud exists.</li>
+        <li>When you join another machine as a thin client (Paired homes), data stays on that home machine.</li>
+      </ul>
+
+      <h2 id="account">2. No account</h2>
+      <p>
+        EnvoyDev never asks you to register or sign in. Identity is cryptographic
+        (Ed25519 keys) generated and stored on your devices, using the same identity
+        and pairing system as the rest of the EnvoyMesh apps family. There is no
+        email address, phone number, or password held by EnvoyDev.
+      </p>
+
+      <h2 id="agents">3. Coding agents &amp; model keys</h2>
+      <p>
+        EnvoyDev does not try to <em>be</em> an agent — it is the control plane that
+        drives coding agents (Envoy Harness, Claude Code, Codex, OpenCode, Cursor,
+        DeepSeek Harness, and more) on your machine.
+      </p>
+      <ul>
+        <li><strong>Provider API keys and agent credentials stay with the agent that uses them</strong>, on your desktop. EnvoyDev never proxies them and never uploads them.</li>
+        <li>AI prompts, files, and tool outputs go only to the model provider or local runner you configured for that agent — subject to that provider's own terms.</li>
+        <li>Local model inference stays entirely on your machine.</li>
+        <li>Risky tool calls require your approval in the permission dock before they run.</li>
+      </ul>
+
+      <div class="callout">
+        <strong>EnvoyDev is not an advertising platform.</strong> We do not sell
+        personal data, and we do not use your code, transcripts, or prompts for
+        cross-app tracking or ad profiling.
+      </div>
+
+      <h2 id="mobile">4. EnvoyDev Mobile</h2>
+      <p>
+        EnvoyDev Mobile (iOS and Android) is a thin client. It pairs to <em>your</em>
+        EnvoyDev desktop daemon and never runs an agent itself.
+      </p>
+      <ul>
+        <li><strong>Pairing / session tokens</strong> — stored in the platform Keychain (iOS) / Keystore (Android); used only to authenticate to your own daemon.</li>
+        <li><strong>Camera</strong> — optional, used only to scan a desktop pairing QR code. Frames are not uploaded anywhere.</li>
+        <li><strong>Attachments</strong> — optional images you attach to a message are sent to your daemon over the pairing channel.</li>
+        <li><strong>SSH hop credentials</strong> — only if you paste them; held in secure storage on the phone and never sent to an EnvoyDev cloud service.</li>
+        <li><strong>Projects &amp; transcripts</strong> — read live from your desktop daemon; the phone keeps at most a local cache until you clear app data or uninstall.</li>
+        <li><strong>No provider keys</strong> — model credentials never leave the desktop; the phone never holds them.</li>
+      </ul>
+
+      <h2 id="network">5. Pairing &amp; network</h2>
+      <p>
+        The desktop and phone connect using the EnvoyMesh family discovery ladder:
+        LAN → public address → peer-to-peer → bootstrap → community relay, in that
+        order. Pairing codes and links stay valid until you revoke them on the
+        desktop (Settings → This machine) or Forget the host on the phone.
+      </p>
+      <ul>
+        <li>Mesh envelopes are Ed25519-signed; recipients verify sender identity.</li>
+        <li>When a direct path is unavailable, traffic may pass through a community relay. Relay operators can see connection metadata (addressing, timing) but message payloads are intended for the end peers — do not treat an arbitrary relay as a confidential vault.</li>
+        <li>For SSH pairing, EnvoyDev opens a local-forward through your SSH hop; it does not dial loopback remotely.</li>
+      </ul>
+
+      <h2 id="third">6. Third-party services</h2>
+      <p>Depending on how you configure EnvoyDev, third parties may include:</p>
+      <ul>
+        <li><strong>Apple / Google</strong> — app distribution and, on mobile, APNs / FCM push delivery (device tokens are registered with your own daemon).</li>
+        <li><strong>Model providers</strong> (OpenAI-compatible APIs, local runners, external agents) — only if you enable them for an agent on your desktop; review that provider's own privacy policy.</li>
+        <li><strong>Community or private relays</strong> — connectivity only; relay operators are independent of EnvoyDev.</li>
+        <li><strong>Git remotes</strong> — Team jobs share work through Git (e.g. your origin remote), not through the mesh.</li>
+      </ul>
+      <p>We do not control those parties' independent privacy practices.</p>
+
+      <h2 id="security">7. Data security</h2>
+      <ul>
+        <li>Cryptographic identity with Ed25519 keys and signed mesh messages.</li>
+        <li>Pairing tokens held in platform secure storage (Keychain / Keystore).</li>
+        <li>Policy-gated tool execution: scope and risk are shown before approval.</li>
+        <li>Pairings are revocable at any time from either side.</li>
+      </ul>
+
+      <h2 id="retention">8. Retention &amp; deletion</h2>
+      <ul>
+        <li><strong>On the phone</strong> — Forget the host and/or uninstall EnvoyDev Mobile to remove pairing tokens and local caches from that device. Projects and transcripts remain on the desktop you paired with.</li>
+        <li><strong>On the desktop</strong> — the machine's operator controls retention of projects, transcripts, agent configuration, and issued pairing codes. Delete them on that machine (or wipe the <code>&lt;home&gt;/EnvoyDev/</code> directory).</li>
+        <li><strong>Paired devices</strong> — revoke a phone or thin client under Settings → This machine; its codes stop working immediately.</li>
+      </ul>
+      <p>
+        Because there is no central EnvoyDev account or cloud mailbox, there is no
+        “delete my data with EnvoyDev HQ” button — deletion is device- and
+        home-local, and entirely under your control.
+      </p>
+
+      <h2 id="children">9. Children</h2>
+      <p>
+        EnvoyDev is not directed at children under 13 (or the minimum age in your
+        jurisdiction). We do not knowingly collect personal information from
+        children. The software has no account system and collects no registration
+        data.
+      </p>
+
+      <h2 id="rights">10. Your choices &amp; rights</h2>
+      <ul>
+        <li>Refuse camera or notification permissions on the phone (QR pairing and push will be limited; address/SSH pairing still works).</li>
+        <li>Prefer LAN / direct connections or your own SSH hop; avoid community relays when possible.</li>
+        <li>Use only local model runners, or disable remote providers you do not trust.</li>
+        <li>Revoke or rotate pairing codes; Forget hosts on the phone.</li>
+        <li>Delete local project, transcript, and profile data on the desktop whenever you like.</li>
+      </ul>
+      <p>
+        If applicable law (e.g. GDPR / CCPA) grants you rights regarding data
+        processed by a machine operator or a service you configured, exercise those
+        rights with that operator or provider. Contact us for questions about the
+        software's design.
+      </p>
+
+      <h2 id="changes">11. Changes to this policy</h2>
+      <p>
+        We may update this page when product behavior or store requirements change.
+        The “Last updated” date at the top will change. Continued use after an
+        update means you accept the revised policy for that software version.
+      </p>
+
+      <h2 id="contact">12. Contact us</h2>
+      <p>Privacy questions about EnvoyDev:</p>
+      <ul>
+        <li>Email: <a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> · <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a></li>
+        <li>Source / issues: <a href="https://github.com/allenpeng0705/EnvoyCoder">github.com/allenpeng0705/EnvoyCoder</a></li>
+        <li>Family project: <a href="https://github.com/allenpeng0705/EnvoyMesh">github.com/allenpeng0705/EnvoyMesh</a></li>
+      </ul>
+      <p>By using EnvoyDev, you consent to this Privacy Policy.</p>
+
+      <div class="back-row">
+        <a href="index.html">← Back to EnvoyDev home</a>
+        <a href="index.html#downloads">Download EnvoyDev →</a>
+      </div>
+    </article>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 EnvoyDev · open source, self-hosted, local-first · <a href="privacy-zh.html">中文</a></p>
+  </footer>
+</body>
+</html>

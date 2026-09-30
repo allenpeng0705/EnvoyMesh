@@ -63,14 +63,14 @@ EnvoyGo remains a thin client — no store-listing changes required unless marke
 
 ### Deployment (operator)
 
-Upload to `gpt4people.online/EnvoyMesh/` when binaries exist.
+Upload to `download.envoymesh.cn/EnvoyMesh/` when binaries exist.
 
 **Stable mirror URLs** (sites link to these fixed paths — overwrite on each release; no HTML change when VERSION bumps):
 
 | File on server | Public URL |
 |----------------|------------|
-| `envoymesh-desktop.dmg` | https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg |
-| `envoymesh-desktop.exe` | https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe |
+| `envoymesh-desktop.dmg` | https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.dmg |
+| `envoymesh-desktop.exe` | https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.exe |
 
 Build scripts also write versioned archives under `release/envoymesh-desktop-{version}-…` for GitHub Releases. Copy the **stable** filenames above to the mirror (or upload both).
 

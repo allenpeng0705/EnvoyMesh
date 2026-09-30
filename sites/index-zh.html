@@ -71,6 +71,11 @@
       border-bottom: 1px solid var(--border-color);
     }
 
+    /* Anchor targets clear the fixed header */
+    section[id] {
+      scroll-margin-top: 76px;
+    }
+
     nav {
       display: flex;
       align-items: center;
@@ -278,6 +283,17 @@
       z-index: 110;
     }
 
+    /* Invisible hover bridge: keeps the menu open while the cursor
+       crosses the 14px visual gap between trigger and panel. */
+    .nav-dropdown-menu::before {
+      content: "";
+      position: absolute;
+      left: -8px;
+      right: -8px;
+      top: -14px;
+      height: 14px;
+    }
+
     .nav-dropdown:hover .nav-dropdown-menu,
     .nav-dropdown:focus-within .nav-dropdown-menu,
     .nav-dropdown.open .nav-dropdown-menu {
@@ -297,6 +313,18 @@
     .nav-dropdown-menu a:hover {
       background: rgba(99, 102, 241, 0.12);
       color: var(--text-primary);
+    }
+
+    .nav-dropdown-sep {
+      margin: 4px 2px 2px;
+      padding: 8px 10px 4px;
+      border-top: 1px solid var(--border-color);
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      white-space: nowrap;
     }
 
     .nav-actions {
@@ -1264,6 +1292,57 @@
       line-height: 1.5;
     }
 
+    /* Family Apps —— 构建在 EnvoyMesh 之上的姊妹应用（家族壮大时在此增加卡片） */
+    .family-apps {
+      padding: 80px 0;
+    }
+    .family-apps-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+    .family-app-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 28px 32px;
+      border-radius: 16px;
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-card);
+    }
+    .family-app-card:hover {
+      border-color: rgba(99, 102, 241, 0.45);
+    }
+    .family-app-head {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .family-app-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 13px;
+      object-fit: cover;
+      flex-shrink: 0;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .family-app-card h3 {
+      font-size: 1.35rem;
+      margin: 0;
+    }
+    .family-app-card p {
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin: 0;
+      flex: 1;
+    }
+    @media (max-width: 768px) {
+      .family-apps-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     /* Download section */
     .downloads {
       padding: 80px 0;
@@ -1929,19 +2008,29 @@
         EnvoyMesh
       </a>
       <ul class="nav-links">
-        <li><a href="#features">特性</a></li>
         <li class="nav-dropdown">
           <button type="button" class="nav-dropdown-trigger" aria-expanded="false" aria-haspopup="true">
             产品 <span class="nav-dropdown-chevron" aria-hidden="true"></span>
           </button>
           <ul class="nav-dropdown-menu">
             <li><a href="#envoygo">EnvoyGo</a></li>
+            <li class="nav-dropdown-sep">家族应用</li>
+            <li><a href="envoydev/index-zh.html">EnvoyDev</a></li>
+            <li><a href="veda-ai/index_zh.html">Veda Notes</a></li>
+          </ul>
+        </li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-trigger" aria-expanded="false" aria-haspopup="true">
+            特性 <span class="nav-dropdown-chevron" aria-hidden="true"></span>
+          </button>
+          <ul class="nav-dropdown-menu">
+            <li><a href="#features">概览</a></li>
+            <li><a href="#envoygo">EnvoyGo</a></li>
             <li><a href="#knowledge">知识库</a></li>
             <li><a href="#family">家庭网络</a></li>
             <li><a href="#agents">智能体网络</a></li>
             <li><a href="#harness">Envoy Harness</a></li>
             <li><a href="#coding-tab">编程（Coding）</a></li>
-            <li><a href="envoydev/">EnvoyDev</a></li>
             <li><a href="#market">Envoy Market</a></li>
           </ul>
         </li>
@@ -1966,15 +2055,18 @@
 
   <!-- 移动端导航覆盖层 -->
   <div class="mobile-nav-overlay" id="mobileNavOverlay">
-    <a href="#features">特性</a>
     <div class="mobile-nav-label">产品</div>
+    <a href="#envoygo">EnvoyGo</a>
+    <a href="envoydev/index-zh.html">EnvoyDev</a>
+    <a href="veda-ai/index_zh.html">Veda Notes</a>
+    <div class="mobile-nav-label">特性</div>
+    <a href="#features">概览</a>
     <a href="#envoygo">EnvoyGo 移动端</a>
     <a href="#knowledge">知识库</a>
     <a href="#family">家庭网络</a>
     <a href="#agents">智能体网络</a>
     <a href="#harness">Envoy Harness</a>
     <a href="#coding-tab">编程（Coding）</a>
-    <a href="envoydev/">EnvoyDev</a>
     <a href="#market">Envoy Market（市集）</a>
     <a href="#architecture">架构</a>
     <a href="#security">安全</a>
@@ -2013,8 +2105,42 @@
     </div>
   </section>
 
+  <!-- Family Apps Section —— 构建在 EnvoyMesh 之上的姊妹应用 -->
+  <section class="family-apps" id="family-apps">
+    <div class="container">
+      <div class="section-header">
+        <h2>EnvoyMesh 家族应用</h2>
+        <p>构建在同一套 mesh 之上的独立应用。它们都与你的主节点配对，共享配对与身份体验，并保留各自的状态。未来会有更多应用加入这个家族。</p>
+      </div>
+      <div class="family-apps-grid">
+        <div class="family-app-card">
+          <div class="family-app-head">
+            <img src="envoydev/screens/envoydev-logo.png" alt="" class="family-app-icon" loading="lazy">
+            <h3>EnvoyDev</h3>
+          </div>
+          <span class="harness-badge" style="background-color: rgba(99, 102, 241, 0.15); color: #818cf8;">桌面端 · macOS · Windows · Linux</span>
+          <p>编程智能体的控制平面——在专属窗口中提供项目栏、任务树与内联审批。在你自己的机器上驱动 Claude Code、Codex、Cursor 等 47 个智能体，并可在手机上跟进运行。</p>
+          <div>
+            <a href="envoydev/index-zh.html" class="btn btn-secondary">打开 EnvoyDev →</a>
+          </div>
+        </div>
+        <div class="family-app-card">
+          <div class="family-app-head">
+            <img src="veda-ai/images/app-icon.png" alt="" class="family-app-icon" loading="lazy">
+            <h3>Veda Notes</h3>
+          </div>
+          <span class="harness-badge" style="background-color: rgba(34, 211, 238, 0.15); color: #22d3ee;">移动端 · iOS · Android</span>
+          <p>与主节点配对的 AI 私人日记——以私密 Markdown 同步笔记、与 Home AI 对话、和家人互发消息，并阅读主节点的动态与博客。你的笔记不会经过你不拥有的云端。</p>
+          <div>
+            <a href="veda-ai/index_zh.html" class="btn btn-secondary">打开 Veda Notes →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- System Architecture Section -->
-  <section class="architecture" style="padding: 60px 0;">
+  <section class="architecture" id="architecture" style="padding: 60px 0;">
     <div class="container">
       <div class="section-header">
         <h2>系统架构</h2>
@@ -2660,7 +2786,7 @@
           <p>EnvoyDev 是编程智能体的控制平面——独立窗口中的项目栏、任务树与内联审批。与 EnvoyMesh 配对同一台主节点。</p>
         </div>
         <div style="text-align: center;">
-          <a href="envoydev/" class="btn btn-secondary">EnvoyDev →</a>
+          <a href="envoydev/index-zh.html" class="btn btn-secondary">EnvoyDev →</a>
         </div>
       </div>
     </div>
@@ -2876,7 +3002,7 @@
   </section>
 
   <!-- Architecture Section -->
-  <section class="architecture" id="architecture">
+  <section class="architecture" id="how-it-works">
     <div class="container">
       <div class="section-header">
         <h2>工作原理</h2>
@@ -3008,7 +3134,7 @@
             <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
               下载 DMG <span class="tag">GitHub</span>
             </a>
-            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg" class="download-link alt" target="_blank">
+            <a href="https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.dmg" class="download-link alt" target="_blank">
               下载 DMG <span class="tag">镜像</span>
             </a>
           </div>
@@ -3021,7 +3147,7 @@
             <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
               下载 EXE <span class="tag">GitHub</span>
             </a>
-            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe" class="download-link alt" target="_blank">
+            <a href="https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.exe" class="download-link alt" target="_blank">
               下载 EXE <span class="tag">镜像</span>
             </a>
           </div>
@@ -3040,7 +3166,7 @@
                   <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link alt" target="_blank" rel="noopener noreferrer">
                     下载 APK <span class="tag">GitHub</span>
                   </a>
-                  <a href="https://gpt4people.online/EnvoyMesh/envoygo-android.apk" class="download-link alt" target="_blank" rel="noopener noreferrer">
+                  <a href="https://download.envoymesh.cn/EnvoyMesh/envoygo-android.apk" class="download-link alt" target="_blank" rel="noopener noreferrer">
                     下载 APK <span class="tag">镜像</span>
                   </a>
                 </div>
@@ -3101,7 +3227,8 @@
         <li><a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank">GitHub</a></li>
         <li><a href="EnvoyMesh_GuideBook_0.4.0.zh-CN.html">使用指南</a></li>
         <li><a href="#coding-tab">编程</a></li>
-        <li><a href="envoydev/">EnvoyDev</a></li>
+        <li><a href="envoydev/index-zh.html">EnvoyDev</a></li>
+        <li><a href="veda-ai/index_zh.html">Veda Notes</a></li>
         <li><a href="security-zh.html">安全</a></li>
         <li><a href="privacy.html">隐私政策</a></li>
         <li><a href="high-level-design-zh.html">设计</a></li>

@@ -52,14 +52,14 @@ EnvoyGo store listings were **not** updated (separate app version).
 
 ### Deployment (operator)
 
-Upload to `gpt4people.online/EnvoyMesh/` when binaries exist.
+Upload to `download.envoymesh.cn/EnvoyMesh/` when binaries exist.
 
 **Stable mirror URLs** (unchanged — overwrite on each release):
 
 | File on server | Public URL |
 |----------------|------------|
-| `envoymesh-desktop.dmg` | https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg |
-| `envoymesh-desktop.exe` | https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe |
+| `envoymesh-desktop.dmg` | https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.dmg |
+| `envoymesh-desktop.exe` | https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.exe |
 
 Optional: `EnvoyMesh_GuideBook_0.4.0.pdf` / `.zh-CN.pdf`
 

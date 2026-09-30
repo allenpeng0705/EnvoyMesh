@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>隐私政策 — EnvoyDev</title>
+  <meta name="description" content="EnvoyDev（桌面端）与 EnvoyDev Mobile 的隐私政策。本地优先的编程智能体控制平面：无中心账号，模型密钥留在你机器上的智能体处，手机是瘦客户端。">
+  <link rel="icon" type="image/png" href="screens/envoydev-logo.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --secondary-color: #06b6d4;
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: #334155;
+      --gradient-primary: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    ::selection { background-color: var(--primary-color); color: white; }
+
+    /* Header */
+    header {
+      position: sticky; top: 0; left: 0; right: 0; z-index: 100;
+      background-color: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+    }
+    header nav { display: flex; align-items: center; justify-content: space-between; height: 64px; max-width: 760px; margin: 0 auto; padding: 0 24px; }
+    .logo { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text-primary); font-weight: 600; font-size: 1.15rem; }
+    .logo img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav-actions { display: flex; align-items: center; gap: 16px; }
+    .nav-util { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-util:hover { color: var(--text-primary); }
+
+    .wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; }
+
+    .brand {
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--primary-light); margin-bottom: 10px;
+    }
+
+    h1 { font-size: clamp(1.8rem, 4vw, 2.4rem); font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 8px; }
+    .meta { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 28px; }
+
+    .panel {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 32px 28px 36px;
+    }
+
+    .lede { color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 20px; }
+    .lede strong { color: var(--text-primary); }
+
+    .toc {
+      margin: 0 0 28px; padding: 16px 18px;
+      background-color: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 10px;
+    }
+    .toc strong {
+      display: block; font-size: 0.75rem; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;
+    }
+    .toc ol { margin: 0; padding-left: 1.25rem; font-size: 0.9rem; }
+    .toc li { margin-bottom: 6px; }
+    .toc a { color: var(--primary-light); text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+
+    h2 {
+      font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em;
+      margin: 28px 0 10px; padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+      scroll-margin-top: 84px;
+    }
+    h2:first-of-type { border-top: none; padding-top: 0; margin-top: 8px; }
+
+    p, li { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 10px; }
+    ul { margin: 0 0 14px; padding-left: 1.35rem; }
+    li + li { margin-top: 4px; }
+    strong { color: var(--text-primary); font-weight: 600; }
+
+    a { color: var(--primary-light); text-underline-offset: 2px; }
+
+    code {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 0.85em; background: var(--bg-dark);
+      padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-color);
+      color: var(--text-primary);
+    }
+
+    .callout {
+      margin: 16px 0; padding: 14px 16px;
+      background-color: rgba(99, 102, 241, 0.08);
+      border-left: 3px solid var(--primary-color);
+      border-radius: 0 10px 10px 0; font-size: 0.925rem; color: var(--text-secondary);
+    }
+    .callout strong { color: var(--text-primary); }
+
+    .back-row { margin-top: 28px; display: flex; gap: 16px; flex-wrap: wrap; }
+    .back-row a { font-size: 0.9rem; text-decoration: none; }
+
+    footer {
+      max-width: 760px; margin: 0 auto; padding: 0 24px 40px;
+      color: var(--text-muted); font-size: 0.82rem; text-align: center;
+    }
+    footer a { color: var(--primary-light); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    @media (max-width: 640px) {
+      .panel { padding: 24px 20px 28px; }
+      .wrap { padding: 32px 16px 48px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index-zh.html" class="logo">
+        <img src="screens/envoydev-logo.png" alt="EnvoyDev Logo">
+        EnvoyDev
+      </a>
+      <div class="nav-actions">
+        <a href="privacy.html" class="nav-util">EN</a>
+        <a href="index-zh.html" class="nav-util">首页</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <p class="brand">EnvoyDev · 隐私</p>
+    <h1>隐私政策</h1>
+    <p class="meta">最近更新：2026 年 9 月 30 日 · 适用于 EnvoyDev 桌面端与 EnvoyDev Mobile</p>
+
+    <article class="panel">
+      <p class="lede">
+        EnvoyDev 以<strong>本地优先</strong>方式构建。你的代码从不离开你的机器，
+        <strong>没有中心化的 EnvoyDev 账号</strong>，你的模型密钥留在桌面端使用它的
+        编程智能体那里——手机是瘦客户端，从不持有密钥。本政策说明软件处理哪些数据、
+        数据存放在哪里，以及（如有）哪些第三方可能看到数据。
+      </p>
+
+      <nav class="toc" aria-label="目录">
+        <strong>目录</strong>
+        <ol>
+          <li><a href="#storage">数据存储</a></li>
+          <li><a href="#account">无账号</a></li>
+          <li><a href="#agents">编程智能体与模型密钥</a></li>
+          <li><a href="#mobile">EnvoyDev Mobile</a></li>
+          <li><a href="#network">配对与网络</a></li>
+          <li><a href="#third">第三方服务</a></li>
+          <li><a href="#security">数据安全</a></li>
+          <li><a href="#retention">保留与删除</a></li>
+          <li><a href="#children">儿童</a></li>
+          <li><a href="#rights">你的选择与权利</a></li>
+          <li><a href="#changes">政策变更</a></li>
+          <li><a href="#contact">联系我们</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="storage">1. 数据存储</h2>
+      <p>
+        项目、任务、执行记录、审批记录与智能体配置都本地存储在运行 EnvoyDev
+        桌面守护进程的电脑上，位于 EnvoyMesh 主目录下（通常为
+        <code>&lt;home&gt;/EnvoyDev/</code>）。EnvoyDev 不运营托管的编程收件箱或云端执行记录存储。
+      </p>
+      <ul>
+        <li>你的代码和智能体执行记录始终留在你自己的机器上。</li>
+        <li>不会有任何内容自动同步到 EnvoyDev 云端——因为这样的云端并不存在。</li>
+        <li>当你以瘦客户端身份加入另一台机器（已配对主机）时，数据仍留在那台主机上。</li>
+      </ul>
+
+      <h2 id="account">2. 无账号</h2>
+      <p>
+        EnvoyDev 从不要求你注册或登录。身份是加密的（Ed25519 密钥），在你的设备上
+        生成并存储，使用与 EnvoyMesh 应用族其他成员相同的身份与配对体系。
+        EnvoyDev 不持有你的邮箱、手机号或密码。
+      </p>
+
+      <h2 id="agents">3. 编程智能体与模型密钥</h2>
+      <p>
+        EnvoyDev 不试图<em>成为</em>智能体——它是在你机器上驱动编程智能体
+        （Envoy Harness、Claude Code、Codex、OpenCode、Cursor、DeepSeek Harness 等）
+        的控制平面。
+      </p>
+      <ul>
+        <li><strong>提供商 API 密钥与智能体凭证留在桌面端使用它的智能体处</strong>。EnvoyDev 从不代理它们，也从不上传它们。</li>
+        <li>AI 提示词、文件与工具输出只发送给你为该智能体配置的模型提供商或本地运行器——并受该提供商自身条款约束。</li>
+        <li>本地模型推理完全在你的机器上进行。</li>
+        <li>有风险的工具调用在运行前需要你在权限面板中批准。</li>
+      </ul>
+
+      <div class="callout">
+        <strong>EnvoyDev 不是广告平台。</strong>我们不出售个人数据，也不将你的代码、
+        执行记录或提示词用于跨应用跟踪或广告画像。
+      </div>
+
+      <h2 id="mobile">4. EnvoyDev Mobile</h2>
+      <p>
+        EnvoyDev Mobile（iOS 与 Android）是瘦客户端。它配对到<em>你的</em>
+        EnvoyDev 桌面守护进程，自身从不运行智能体。
+      </p>
+      <ul>
+        <li><strong>配对 / 会话令牌</strong>——存放在平台钥匙串（iOS）/ Keystore（Android）中，仅用于向你自己的守护进程认证。</li>
+        <li><strong>相机</strong>——可选，仅用于扫描桌面配对二维码。画面不会上传到任何地方。</li>
+        <li><strong>附件</strong>——你在消息中可选附加的图片会通过配对通道发送给你的守护进程。</li>
+        <li><strong>SSH 跳板凭证</strong>——仅在你粘贴时使用；保存在手机安全存储中，从不发送给 EnvoyDev 云服务。</li>
+        <li><strong>项目与执行记录</strong>——从你的桌面守护进程实时读取；手机最多保留本地缓存，直到你清除应用数据或卸载。</li>
+        <li><strong>无提供商密钥</strong>——模型凭证从不离开桌面端；手机从不持有它们。</li>
+      </ul>
+
+      <h2 id="network">5. 配对与网络</h2>
+      <p>
+        桌面端与手机使用 EnvoyMesh 家族的发现阶梯连接：LAN → 公网地址 →
+        点对点 → bootstrap → 社区中继，按此顺序。配对码和链接在你于桌面端
+        （设置 → 本机）撤销或在手机上 Forget 主机之前一直有效。
+      </p>
+      <ul>
+        <li>网格消息信封经 Ed25519 签名；接收方验证发送者身份。</li>
+        <li>当直连路径不可用时，流量可能经过社区中继。中继运营者可以看到连接元数据（寻址、时间），但消息负载的目标是端节点——不要把任意中继当作保密保险库。</li>
+        <li>使用 SSH 配对时，EnvoyDev 会通过你的 SSH 跳板打开本地转发；它不会远程拨号 loopback。</li>
+      </ul>
+
+      <h2 id="third">6. 第三方服务</h2>
+      <p>根据你的配置方式，第三方可能包括：</p>
+      <ul>
+        <li><strong>Apple / Google</strong>——应用分发，以及手机端的 APNs / FCM 推送投递（设备令牌注册到你自己的守护进程）。</li>
+        <li><strong>模型提供商</strong>（OpenAI 兼容 API、本地运行器、外部智能体）——仅当你在桌面端为智能体启用时；请查阅该提供商自己的隐私政策。</li>
+        <li><strong>社区或私有中继</strong>——仅提供连接；中继运营者独立于 EnvoyDev。</li>
+        <li><strong>Git 远程仓库</strong>——团队任务通过 Git（如你的 origin 远程）共享工作，不走网格。</li>
+      </ul>
+      <p>我们无法控制这些方独立的隐私做法。</p>
+
+      <h2 id="security">7. 数据安全</h2>
+      <ul>
+        <li>基于 Ed25519 密钥的加密身份与签名网格消息。</li>
+        <li>配对令牌存放在平台安全存储（钥匙串 / Keystore）中。</li>
+        <li>策略门控的工具执行：批准前显示范围与风险。</li>
+        <li>配对可随时从任一侧撤销。</li>
+      </ul>
+
+      <h2 id="retention">8. 保留与删除</h2>
+      <ul>
+        <li><strong>手机端</strong>——Forget 主机和/或卸载 EnvoyDev Mobile 即可移除该设备上的配对令牌与本地缓存。项目和执行记录仍留在你配对的桌面端。</li>
+        <li><strong>桌面端</strong>——机器的操作者控制项目、执行记录、智能体配置与已签发配对码的保留。在该机器上删除它们（或清除 <code>&lt;home&gt;/EnvoyDev/</code> 目录）。</li>
+        <li><strong>已配对设备</strong>——在「设置 → 本机」撤销某台手机或瘦客户端；其配对码立即失效。</li>
+      </ul>
+      <p>
+        因为没有中心化的 EnvoyDev 账号或云端邮箱，所以不存在「向 EnvoyDev 总部
+        删除我的数据」按钮——删除在设备和主机本地进行，完全由你掌控。
+      </p>
+
+      <h2 id="children">9. 儿童</h2>
+      <p>
+        EnvoyDev 不面向 13 岁以下（或你所在司法辖区最低年龄）的儿童。我们不会
+        故意收集儿童的个人信息。本软件没有账号体系，也不收集注册数据。
+      </p>
+
+      <h2 id="rights">10. 你的选择与权利</h2>
+      <ul>
+        <li>拒绝手机的相机或通知权限（二维码配对和推送会受限；地址/SSH 配对仍可用）。</li>
+        <li>优先使用 LAN / 直连或你自己的 SSH 跳板；尽量避免社区中继。</li>
+        <li>仅使用本地模型运行器，或禁用你不信任的远程提供商。</li>
+        <li>撤销或轮换配对码；在手机上 Forget 主机。</li>
+        <li>随时删除桌面端本地的项目、执行记录与配置数据。</li>
+      </ul>
+      <p>
+        如适用法律（如 GDPR / CCPA）就机器操作者或你配置的服务所处理的数据
+        授予你相关权利，请向该操作者或提供商行使这些权利。关于软件设计的问题
+        可与我们联系。
+      </p>
+
+      <h2 id="changes">11. 政策变更</h2>
+      <p>
+        当产品行为或商店要求变化时，我们可能更新本页面。页面顶部的「最近更新」
+        日期会随之改变。更新后继续使用即表示你接受该软件版本适用的修订后政策。
+      </p>
+
+      <h2 id="contact">12. 联系我们</h2>
+      <p>关于 EnvoyDev 的隐私问题：</p>
+      <ul>
+        <li>邮箱：<a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> · <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a></li>
+        <li>源码 / 问题：<a href="https://github.com/allenpeng0705/EnvoyCoder">github.com/allenpeng0705/EnvoyCoder</a></li>
+        <li>家族项目：<a href="https://github.com/allenpeng0705/EnvoyMesh">github.com/allenpeng0705/EnvoyMesh</a></li>
+      </ul>
+      <p>使用 EnvoyDev 即表示你同意本隐私政策。</p>
+
+      <div class="back-row">
+        <a href="index-zh.html">← 返回 EnvoyDev 首页</a>
+        <a href="index-zh.html#downloads">下载 EnvoyDev →</a>
+      </div>
+    </article>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 EnvoyDev · 开源、自托管、本地优先 · <a href="privacy.html">EN</a></p>
+  </footer>
+</body>
+</html>

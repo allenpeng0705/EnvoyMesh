@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyDev — 编程智能体的控制平面</title>
+  <meta name="description" content="EnvoyDev 是编程智能体的控制平面。在你自己的机器上运行 Claude Code、Codex、OpenCode、Cursor 等——从窗口或手机访问它们。开源、自托管、本地优先。基于 EnvoyMesh 构建。">
+  <link rel="icon" type="image/png" href="screens/envoydev-logo.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --secondary-color: #06b6d4;
+      --accent-color: #f59e0b;
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --bg-card-hover: #334155;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: #334155;
+      --gradient-primary: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+      --gradient-secondary: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+    }
+
+    /* Clip the off-canvas mobile menu so it cannot widen the layout viewport on phones */
+    html { scroll-behavior: smooth; overflow-x: hidden; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    ::selection { background-color: var(--primary-color); color: white; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+    /* Header */
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background-color: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      transition: all 0.3s ease;
+    }
+    header.scrolled { background-color: rgba(15, 23, 42, 0.95); }
+
+    nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+      text-decoration: none; color: var(--text-primary);
+      font-weight: 600; font-size: 1.25rem;
+    }
+    .logo img { width: 36px; height: 36px; border-radius: 8px; }
+
+    .nav-links { display: flex; list-style: none; gap: 32px; align-items: center; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.95rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+
+    .nav-actions { display: flex; align-items: center; gap: 12px; justify-content: center; }
+    .nav-util { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; padding: 6px 8px; transition: color 0.2s; }
+    .nav-util:hover { color: var(--text-primary); }
+    .nav-github { display: flex; align-items: center; justify-content: center; }
+
+    .btn {
+      padding: 10px 20px; border-radius: 8px; font-weight: 500; font-size: 0.9rem;
+      text-decoration: none; transition: all 0.2s ease; border: none; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .btn-primary { background: var(--gradient-primary); color: white; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3); }
+    .btn-secondary { background-color: transparent; color: var(--text-secondary); border: 1px solid var(--border-color); }
+    .btn-secondary:hover { background-color: var(--bg-card); color: var(--text-primary); }
+    .btn-nav-cta { padding: 8px 16px; font-size: 0.875rem; }
+
+    .mobile-menu-btn { display: none; background: none; border: none; cursor: pointer; padding: 8px; }
+    .mobile-menu-btn span { display: block; width: 22px; height: 2px; background-color: var(--text-primary); margin: 5px 0; transition: 0.3s; }
+    .mobile-menu-btn.active span:nth-child(1) { transform: rotate(45deg) translate(5px, 5px); }
+    .mobile-menu-btn.active span:nth-child(2) { opacity: 0; }
+    .mobile-menu-btn.active span:nth-child(3) { transform: rotate(-45deg) translate(7px, -7px); }
+
+    .mobile-nav-overlay {
+      position: fixed; top: 64px; left: 0; right: 0; bottom: 0;
+      background-color: var(--bg-dark); z-index: 99;
+      display: flex; flex-direction: column; padding: 24px; gap: 8px;
+      transform: translateX(100%); transition: transform 0.3s ease, visibility 0s linear 0.3s;
+      visibility: hidden; overflow-y: auto;
+    }
+    .mobile-nav-overlay.active { transform: translateX(0); visibility: visible; transition: transform 0.3s ease; }
+    .mobile-nav-overlay a { color: var(--text-primary); text-decoration: none; font-size: 1.05rem; padding: 10px 0; }
+    .mobile-nav-overlay .mobile-nav-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
+    /* Hero */
+    .hero { padding: 140px 0 80px; text-align: center; position: relative; overflow: hidden; }
+    .hero::before {
+      content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+      background: radial-gradient(circle at 30% 30%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 70%, rgba(6, 182, 212, 0.1) 0%, transparent 50%);
+      animation: float 20s ease-in-out infinite; z-index: 0;
+    }
+    @keyframes float { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(20px, -20px); } }
+
+    .hero-content { position: relative; z-index: 1; }
+    /* Hero logo lockup — EnvoyDev built on EnvoyMesh */
+    .hero-logos { display: inline-flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 24px; }
+    .hero-logo-item { display: flex; flex-direction: column; align-items: center; gap: 8px; text-decoration: none; }
+    .hero-logo-item-link { transition: transform 0.2s ease; }
+    .hero-logo-item-link:hover { transform: translateY(-2px); }
+    .hero-logo-main,
+    .hero-logo-mesh {
+      width: 88px; height: 88px; border-radius: 18px; display: block;
+    }
+    .hero-logo-main { box-shadow: 0 8px 32px rgba(99, 102, 241, 0.35); }
+    .hero-logo-mesh { box-shadow: 0 8px 32px rgba(168, 85, 247, 0.3); }
+    .hero-logo-name { font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); line-height: 1.2; }
+    .hero-logo-connector {
+      /* Sit between the marks, not the labels — same logo height for both. */
+      align-self: flex-start; margin-top: 36px;
+      font-size: 0.7rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--text-muted); white-space: nowrap;
+    }
+
+    .agent-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 680px; margin: 0 auto 28px; }
+    .agent-chip {
+      font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;
+      background-color: rgba(148, 163, 184, 0.08); border: 1px solid var(--border-color);
+      padding: 5px 12px; border-radius: 999px;
+    }
+    .agent-chip.chip-more { color: var(--primary-light); background-color: rgba(99, 102, 241, 0.12); border-color: rgba(99, 102, 241, 0.35); }
+    .hero h1 {
+      font-size: 3.5rem; font-weight: 700; margin-bottom: 16px;
+      background: var(--gradient-primary); -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: -0.02em;
+    }
+    .hero p { font-size: 1.25rem; color: var(--text-secondary); max-width: 640px; margin: 0 auto 24px; line-height: 1.7; }
+
+    .hero-stats { display: flex; justify-content: center; gap: 48px; margin-top: 48px; flex-wrap: wrap; }
+    .stat-item { text-align: center; }
+    .stat-value { font-size: 2rem; font-weight: 700; color: var(--primary-light); }
+    .stat-label { font-size: 0.9rem; color: var(--text-muted); margin-top: 4px; }
+
+    .hero-shot {
+      max-width: 920px; margin: 56px auto 0; border-radius: 12px; overflow: hidden;
+      border: 1px solid var(--border-color); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+      background-color: #0b1120;
+    }
+    .hero-shot img { display: block; width: 100%; height: auto; }
+
+    /* Sections */
+    .section { padding: 80px 0; }
+    .section-header { text-align: center; margin-bottom: 64px; }
+    .section-header h2 { font-size: 2.5rem; font-weight: 700; margin-bottom: 16px; letter-spacing: -0.01em; }
+    .section-header p { font-size: 1.1rem; color: var(--text-secondary); max-width: 560px; margin: 0 auto; }
+
+    .intro-text { max-width: 760px; margin: 0 auto; color: var(--text-secondary); font-size: 1.05rem; line-height: 1.8; text-align: center; }
+    .intro-text p + p { margin-top: 16px; }
+    .intro-text strong { color: var(--text-primary); }
+
+    /* Feature grid */
+    .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+    .feature-card {
+      background-color: var(--bg-card); border-radius: 16px; padding: 28px;
+      border: 1px solid var(--border-color); transition: all 0.3s ease;
+    }
+    .feature-card:hover { transform: translateY(-4px); border-color: var(--primary-color); box-shadow: 0 8px 32px rgba(99, 102, 241, 0.1); }
+    .feature-icon {
+      width: 44px; height: 44px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 16px; font-size: 1.4rem;
+    }
+    .feature-icon.purple { background-color: rgba(168, 85, 247, 0.12); color: #a855f7; }
+    .feature-icon.cyan { background-color: rgba(6, 182, 212, 0.12); color: #06b6d4; }
+    .feature-icon.blue { background-color: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+    .feature-icon.green { background-color: rgba(34, 197, 94, 0.12); color: #22c55e; }
+    .feature-icon.orange { background-color: rgba(249, 115, 22, 0.12); color: #f97316; }
+    .feature-icon.pink { background-color: rgba(236, 72, 153, 0.12); color: #ec4899; }
+    .feature-card h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; }
+    .feature-card p { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.65; }
+
+    /* Agents section — two-column */
+    .agents-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+    .agent-tier { margin-bottom: 20px; }
+    .agent-tier:last-child { margin-bottom: 0; }
+    .agent-tier-label {
+      display: inline-block; font-size: 0.75rem; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 4px 10px; border-radius: 999px; margin-bottom: 8px;
+    }
+    .agent-tier-label.builtin { background-color: rgba(99, 102, 241, 0.15); color: var(--primary-light); }
+    .agent-tier-label.catalogued { background-color: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+    .agent-tier-label.acp { background-color: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .agent-tier-list { color: var(--text-secondary); font-size: 0.95rem; line-height: 1.7; }
+    .agent-tier-list strong { color: var(--text-primary); font-weight: 500; }
+    .agents-note { color: var(--text-muted); font-size: 0.88rem; margin-top: 20px; font-style: italic; }
+
+    .agents-shot {
+      border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3); background-color: #0b1120;
+    }
+    .agents-shot img { display: block; width: 100%; height: auto; }
+
+    /* Mobile gallery */
+    .mobile-gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 900px; margin: 0 auto 48px; }
+    .phone-shot {
+      border-radius: 24px; overflow: hidden; border: 1px solid var(--border-color);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3); background-color: #0b1120;
+      aspect-ratio: 9 / 16;
+    }
+    .phone-shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .phone-caption { text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 12px; }
+
+    .pair-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 900px; margin: 0 auto; }
+    .pair-card {
+      background-color: var(--bg-card); border-radius: 16px; padding: 24px;
+      border: 1px solid var(--border-color); text-align: center;
+    }
+    .pair-icon { font-size: 1.8rem; margin-bottom: 12px; }
+    .pair-card h4 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+    .pair-card p { color: var(--text-secondary); font-size: 0.88rem; line-height: 1.6; }
+
+    /* Built on EnvoyMesh card */
+    .family-card {
+      padding: 32px; border-radius: 16px;
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(6, 182, 212, 0.08) 100%);
+      display: grid; grid-template-columns: auto 1fr auto; gap: 24px; align-items: center;
+    }
+    .family-card img { width: 56px; height: 56px; border-radius: 12px; }
+    .family-card h3 { font-size: 1.2rem; margin-bottom: 4px; }
+    .family-card p { color: var(--text-secondary); font-size: 0.95rem; line-height: 1.6; margin: 0; }
+
+    /* Downloads */
+    .downloads { padding: 80px 0; }
+    .download-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 1100px; margin: 0 auto 24px; }
+    .download-card {
+      background-color: var(--bg-card); border-radius: 16px; padding: 32px 28px;
+      border: 1px solid var(--border-color); text-align: center; transition: all 0.3s ease;
+      display: flex; flex-direction: column;
+    }
+    .download-card:hover { transform: translateY(-4px); border-color: var(--primary-color); box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15); }
+    .download-icon {
+      width: 56px; height: 56px; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 16px; font-size: 1.8rem;
+    }
+    .download-icon.mac { background-color: rgba(99, 102, 241, 0.12); color: var(--primary-light); }
+    .download-icon.windows { background-color: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+    .download-icon.android { background-color: rgba(34, 197, 94, 0.12); color: #22c55e; }
+    .download-icon.ios { background-color: rgba(168, 85, 247, 0.12); color: #a855f7; }
+    .download-card h3 { font-size: 1.15rem; font-weight: 600; margin-bottom: 4px; }
+    .download-card .platform-sub { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 20px; }
+    .download-links { display: flex; flex-direction: column; gap: 10px; margin-top: auto; }
+
+    .download-link {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 11px 16px; border-radius: 10px; text-decoration: none;
+      font-size: 0.88rem; font-weight: 500; transition: all 0.2s ease;
+    }
+    .download-link.primary { background-color: var(--primary-color); color: white; white-space: nowrap; }
+    .download-link.primary:hover { background-color: var(--primary-dark); }
+    .download-link.alt { background-color: var(--bg-dark); color: var(--text-secondary); border: 1px solid var(--border-color); }
+    .download-link.alt:hover { color: var(--text-primary); border-color: var(--primary-color); }
+    .download-link .tag {
+      font-size: 0.68rem; padding: 2px 7px; border-radius: 999px;
+      background-color: rgba(255, 255, 255, 0.15);
+    }
+    .download-link.alt .tag { background-color: rgba(99, 102, 241, 0.15); color: var(--primary-light); }
+
+    /* QR */
+    .qr-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 0 auto 14px; }
+    .qr-host {
+      width: 192px; height: 192px; padding: 12px; background: #fff; border-radius: 12px; line-height: 0;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+      display: flex; align-items: center; justify-content: center;
+      color: #0f172a; font-size: 0.78rem; font-weight: 500;
+    }
+    .qr-host canvas { display: block; width: 168px !important; height: 168px !important; }
+    .qr-host.qr-error { line-height: 1.4; text-align: center; padding: 16px; }
+    .qr-store-name { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); }
+    .qr-caption { font-size: 0.78rem; color: var(--text-muted); }
+
+    .download-note { text-align: center; color: var(--text-muted); font-size: 0.85rem; max-width: 640px; margin: 0 auto; line-height: 1.6; }
+
+    /* Footer */
+    footer { padding: 48px 0 32px; border-top: 1px solid var(--border-color); }
+    .footer-content { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 24px; }
+    .footer-links { display: flex; gap: 24px; list-style: none; flex-wrap: wrap; }
+    .footer-links a { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--text-secondary); }
+    .footer-contact { color: var(--text-muted); font-size: 0.85rem; }
+    .footer-contact a { color: var(--text-secondary); text-decoration: none; }
+    .footer-contact a:hover { color: var(--text-primary); }
+    .footer-bottom { text-align: center; color: var(--text-muted); font-size: 0.8rem; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-color); }
+
+    /* Lightbox */
+    .lightbox {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.92); z-index: 200;
+      display: none; align-items: center; justify-content: center; padding: 40px;
+    }
+    .lightbox.active { display: flex; }
+    .lightbox img { max-width: 95%; max-height: 88vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+    .lightbox-close { position: absolute; top: 24px; right: 24px; background: none; border: none; color: white; font-size: 2.2rem; cursor: pointer; line-height: 1; }
+    .lightbox-caption { position: absolute; bottom: 24px; left: 0; right: 0; text-align: center; color: var(--text-secondary); font-size: 0.9rem; }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .nav-links, header .nav-actions { display: none; }
+      .mobile-menu-btn { display: block; }
+      .features-grid, .download-grid { grid-template-columns: repeat(2, 1fr); }
+      .agents-grid { grid-template-columns: 1fr; }
+      .mobile-gallery, .pair-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 768px) {
+      .container { padding: 0 16px; }
+      nav { height: 56px; }
+      .hero { padding: 100px 0 60px; }
+      .hero h1 { font-size: 2.2rem; }
+      .hero p { font-size: 1.05rem; }
+      .hero-logos { gap: 12px; margin-bottom: 20px; }
+      .hero-logo-main,
+      .hero-logo-mesh { width: 72px; height: 72px; border-radius: 15px; }
+      .hero-logo-connector { margin-top: 28px; font-size: 0.62rem; }
+      .hero-logo-name { font-size: 0.78rem; }
+      .hero-stats { gap: 28px; }
+      .stat-value { font-size: 1.5rem; }
+      .section { padding: 60px 0; }
+      .section-header { margin-bottom: 40px; }
+      .section-header h2 { font-size: 1.8rem; }
+      .features-grid, .download-grid, .mobile-gallery, .pair-grid { grid-template-columns: 1fr; }
+      .family-card { grid-template-columns: 1fr; text-align: center; }
+      .family-card img { margin: 0 auto; }
+      .footer-content { flex-direction: column; text-align: center; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hero::before { animation: none; }
+      .feature-card, .download-card, .btn, .hero-logo-item-link { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <nav class="container">
+      <a href="#" class="logo">
+        <img src="screens/envoydev-logo.png" alt="EnvoyDev Logo">
+        EnvoyDev
+      </a>
+      <ul class="nav-links">
+        <li><a href="#what-is">概览</a></li>
+        <li><a href="#features">桌面端</a></li>
+        <li><a href="#agents">智能体</a></li>
+        <li><a href="#mobile">手机端</a></li>
+        <li><a href="#downloads">下载</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="index.html" class="nav-util">EN</a>
+        <a href="https://github.com/allenpeng0705/EnvoyCoder" target="_blank" rel="noopener noreferrer" class="nav-util nav-github" aria-label="GitHub">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        </a>
+        <a href="#downloads" class="btn btn-primary btn-nav-cta">安装</a>
+      </div>
+      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="切换菜单">
+        <span></span><span></span><span></span>
+      </button>
+    </nav>
+  </header>
+
+  <!-- Mobile Navigation Overlay -->
+  <div class="mobile-nav-overlay" id="mobileNavOverlay">
+    <a href="#what-is">概览</a>
+    <a href="#features">桌面端</a>
+    <a href="#agents">智能体</a>
+    <a href="#mobile">手机端</a>
+    <a href="#downloads">下载</a>
+    <div class="mobile-nav-actions">
+      <a href="index.html" class="btn btn-secondary">EN</a>
+      <a href="https://github.com/allenpeng0705/EnvoyCoder" target="_blank" class="btn btn-primary">在 GitHub 查看</a>
+    </div>
+  </div>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container hero-content">
+      <div class="hero-logos">
+        <div class="hero-logo-item">
+          <img src="screens/envoydev-logo.png" alt="EnvoyDev logo" class="hero-logo-main">
+          <span class="hero-logo-name">EnvoyDev</span>
+        </div>
+        <span class="hero-logo-connector">构建于</span>
+        <a href="../index-zh.html" class="hero-logo-item hero-logo-item-link" aria-label="基于 EnvoyMesh 构建——打开 EnvoyMesh 首页">
+          <img src="screens/envoymesh-logo.png" alt="EnvoyMesh logo" class="hero-logo-mesh">
+          <span class="hero-logo-name">EnvoyMesh</span>
+        </a>
+      </div>
+      <h1>编程智能体的控制平面</h1>
+      <p>在你自己的机器上运行 Claude Code、Codex、OpenCode、Cursor 等——从窗口或手机访问它们。开源、自托管、本地优先。</p>
+      <div class="agent-chips" aria-label="已支持的热门编程智能体">
+        <span class="agent-chip">Claude Code</span>
+        <span class="agent-chip">Codex</span>
+        <span class="agent-chip">DeepSeek Harness</span>
+        <span class="agent-chip">Cursor</span>
+        <span class="agent-chip">GitHub Copilot</span>
+        <span class="agent-chip">OpenCode</span>
+        <span class="agent-chip">Pi</span>
+        <span class="agent-chip">OMP</span>
+        <span class="agent-chip">Envoy Harness</span>
+        <span class="agent-chip chip-more">另有 38 个 ACP 配方</span>
+      </div>
+      <div class="nav-actions" style="justify-content: center;">
+        <a href="#downloads" class="btn btn-primary">下载</a>
+        <a href="https://github.com/allenpeng0705/EnvoyCoder/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">在 GitHub 查看</a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat-item">
+          <div class="stat-value">47</div>
+          <div class="stat-label">支持的编程智能体</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">3</div>
+          <div class="stat-label">桌面 OS · mac · win · linux</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">iOS + Android</div>
+          <div class="stat-label">EnvoyDev Mobile</div>
+        </div>
+      </div>
+      <div class="hero-shot">
+        <img src="screens/project.png" alt="EnvoyDev 桌面端——一个任务、一份记录、所有智能体" loading="lazy">
+      </div>
+    </div>
+  </section>
+
+  <!-- What is EnvoyDev -->
+  <section class="section" id="what-is">
+    <div class="container">
+      <div class="section-header">
+        <h2>EnvoyDev 是什么？</h2>
+        <p>一个在你代码所在的电脑上驱动编程智能体的桌面应用。</p>
+      </div>
+      <div class="intro-text">
+        <p>EnvoyDev 是一个在你代码所在的电脑上驱动编程智能体的桌面应用。它不试图<em>成为</em>智能体——而是为 Claude Code、Codex、OpenCode、Cursor、DeepSeek 的 CLI 等提供<strong>一个统一的窗口</strong>：相同的执行记录、相同的审批流程、相同的差异审查，适用于每一个智能体。</p>
+        <p>你的代码从不离开你的机器。你的模型密钥留在使用它的智能体那里。EnvoyDev 永远不要求账号。</p>
+        <p>EnvoyDev 基于 <strong>EnvoyMesh</strong> 构建——是 EnvoyMesh 应用族的一员，与家族其他成员共享网格（身份、发现、中继）和配对体验，同时保留自己的项目和任务状态。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features (Desktop) -->
+  <section class="section" id="features" style="background-color: var(--bg-dark);">
+    <div class="container">
+      <div class="section-header">
+        <h2>一个窗口，所有智能体</h2>
+        <p>EnvoyDev 的桌面端——项目、任务、执行记录与审批都在一起。</p>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon purple">🪟</div>
+          <h3>一个窗口，所有智能体</h3>
+          <p>按任务选择编程智能体——来自 9 个 EnvoyDev 测试过的 harness 或更大的 ACP 目录。切换模型和 CLI 不必学新界面。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon cyan">📂</div>
+          <h3>左侧项目，中间任务</h3>
+          <p>项目是你工作的文件夹；任务是其中的一件工作——有自己的分支、智能体和模型。拖动侧栏和资源管理器可调整宽度，宽度会被记住。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon blue">👁</div>
+          <h3>看清智能体在做什么</h3>
+          <p>实时执行记录含消息、工具调用、文件改动与审批卡——你始终知道智能体接下来要做什么。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon green">🛡</div>
+          <h3>风险步骤先审批</h3>
+          <p>权限面板在每个工具运行前显示范围与风险。你点头之前，什么都不会发生。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon orange">🎛</div>
+          <h3>取消、排队或引导</h3>
+          <p>队列等本轮结束；引导中断本轮。执行记录会记下用的是哪一种。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon pink">🌿</div>
+          <h3>Git 就在工作所在地</h3>
+          <p>分支、拉取、合并、暂存——遇到冲突的合并时，可交给智能体帮你解决。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon purple">⚙</div>
+          <h3>让守护进程随时可达</h3>
+          <p>默认由应用管理；也可作为系统服务运行，让手机能连接没有打开窗口的机器。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon cyan">🔑</div>
+          <h3>配对一次，长期保持</h3>
+          <p>配对码和链接在「本机」下撤销之前一直有效（或在瘦客户端上 Forget）——重启后无需按日历续期。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon blue">💻</div>
+          <h3>从笔记本连接另一台主机</h3>
+          <p>「设置 → 已配对主机」可把一台服务器或办公电脑作为瘦客户端加入。智能体与提供商密钥都留在那台主机上。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon green">👥</div>
+          <h3>跨机器团队任务</h3>
+          <p>托管一个团队，邀请另一个 EnvoyDev，在同一个 Git 项目上跑协同步骤——工作通过 Git 共享，不走网格。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon orange">⏯</div>
+          <h3>断线后继续</h3>
+          <p>你的工作在你机器上——从你上次中断的地方继续。窗口在重启后会自动重连，直到你 Forget 或撤销。</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon pink">🌐</div>
+          <h3>macOS、Windows 与 Linux</h3>
+          <p>三大平台同为一等公民。桌面版本是仓库根目录一行的 VERSION 文件——「设置 → 关于」会对比窗口与服务的版本。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Coding agents supported -->
+  <section class="section" id="agents">
+    <div class="container">
+      <div class="section-header">
+        <h2>支持的编程智能体</h2>
+        <p>为所有一等编程 harness 提供统一 UI。只装你实际使用的 CLI——EnvoyDev 运行时自动发现其余。</p>
+      </div>
+      <div class="agents-grid">
+        <div>
+          <div class="agent-tier">
+            <span class="agent-tier-label builtin">内置</span>
+            <div class="agent-tier-list"><strong>Envoy Harness</strong>（ACP）</div>
+          </div>
+          <div class="agent-tier">
+            <span class="agent-tier-label catalogued">已编目 · EnvoyDev 测试</span>
+            <div class="agent-tier-list"><strong>DeepSeek Harness、Claude Code、Codex、GitHub Copilot、OpenCode、Cursor、OMP、Pi</strong></div>
+          </div>
+          <div class="agent-tier">
+            <span class="agent-tier-label acp">ACP 目录 · 第三方配方</span>
+            <div class="agent-tier-list">另有 38 个——含 Gemini、Grok、Kiro、Kimi、Qwen Code、CodeWhale、MiniMax Code、TraeCLI、Qoder、Cline、Hermes、Goose、Junie、Nova、Poolside、Kilo、Stakpak 等——运行时探测，按需安装。</div>
+          </div>
+          <p class="agents-note">你的模型凭证留在使用它的智能体那里——EnvoyDev 从不代理凭证，从不要求账号。</p>
+        </div>
+        <div class="agents-shot">
+          <img src="screens/agents.png" alt="EnvoyDev 编程智能体设置页——每个已编目 harness 的就绪状态" loading="lazy">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EnvoyDev Mobile -->
+  <section class="section" id="mobile" style="background-color: var(--bg-dark);">
+    <div class="container">
+      <div class="section-header">
+        <h2>出门在外也能继续</h2>
+        <p>EnvoyDev Mobile 是桌面端的手机端伴侣。配对、观看、审批、引导——随时随地。</p>
+      </div>
+      <div class="mobile-gallery">
+        <div>
+          <div class="phone-shot"><img src="screens/mobile-projects.jpg" alt="EnvoyDev Mobile——项目" loading="lazy"></div>
+          <p class="phone-caption">手机上的项目与任务。</p>
+        </div>
+        <div>
+          <div class="phone-shot"><img src="screens/mobile-chats.jpg" alt="EnvoyDev Mobile——任务执行记录" loading="lazy"></div>
+          <p class="phone-caption">在外也能看实时执行。</p>
+        </div>
+        <div>
+          <div class="phone-shot"><img src="screens/mobile-connection.jpg" alt="EnvoyDev Mobile——连接" loading="lazy"></div>
+          <p class="phone-caption">手机如何连接到桌面。</p>
+        </div>
+      </div>
+      <div class="section-header" style="margin-top: 56px; margin-bottom: 32px;">
+        <h3 style="font-size: 1.5rem;">手机配对的三种方式</h3>
+      </div>
+      <div class="pair-grid">
+        <div class="pair-card">
+          <div class="pair-icon">📷</div>
+          <h4>扫描二维码</h4>
+          <p>最快的路径。打开桌面端「设置 → 配对设备」，展示二维码，手机扫一下即可。</p>
+        </div>
+        <div class="pair-card">
+          <div class="pair-icon">🔌</div>
+          <h4>粘贴 host:port</h4>
+          <p>输入类似 <code>devbox.local:4770</code> 的地址并粘贴令牌。适合同网或 VPN 下的直连 TCP。</p>
+        </div>
+        <div class="pair-card">
+          <div class="pair-icon">🔐</div>
+          <h4>用 SSH 跳板</h4>
+          <p>把手机指向任何能 SSH 到达、且能看到桌面端的机器。隧道终止于守护进程的 loopback——无需公网 IP。</p>
+        </div>
+      </div>
+      <p class="intro-text" style="margin-top: 40px; font-size: 0.95rem;">
+        手机是<strong>瘦客户端</strong>——从不运行智能体，从不持有提供商密钥。你的桌面端干活；手机只是窗口。配对会一直保留，直到你在手机上 Forget 主机或在桌面端「设置 → 本机」撤销设备。
+      </p>
+    </div>
+  </section>
+
+  <!-- Built on EnvoyMesh -->
+  <section class="section" id="family">
+    <div class="container">
+      <div class="section-header">
+        <h2>基于 EnvoyMesh 构建</h2>
+      </div>
+      <div class="family-card">
+        <img src="screens/envoymesh-logo.png" alt="EnvoyMesh Logo">
+        <div>
+          <h3>EnvoyMesh 应用族的一员</h3>
+          <p>EnvoyDev 与家族其他成员共享同一身份（Ed25519 密钥、加密配对）、同一发现（LAN → 公网 → P2P → bootstrap → 中继，按此顺序）、以及相同的网格与配对 UX。状态按产品隔离：EnvoyDev 把项目与任务树放在 <code>&lt;home&gt;/EnvoyDev/</code>，而 EnvoyMesh 的网格、节点列表与身份是共享的。</p>
+        </div>
+        <a href="../index-zh.html" class="btn btn-secondary">了解 EnvoyMesh →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Downloads -->
+  <section class="downloads" id="downloads">
+    <div class="container">
+      <div class="section-header">
+        <h2>获取 EnvoyDev</h2>
+        <p>macOS 与 Windows 桌面安装包、Android APK，以及 App Store / Google Play 上架页。</p>
+      </div>
+      <div class="download-grid">
+        <!-- Desktop -->
+        <div class="download-card">
+          <div class="download-icon mac">💻</div>
+          <h3>桌面端</h3>
+          <p class="platform-sub">macOS · Windows · Linux</p>
+          <div class="download-links">
+            <a href="https://download.envoymesh.cn/EnvoyMesh/envoydev-desktop.dmg" target="_blank" rel="noopener noreferrer" class="download-link primary">
+              macOS <span class="tag">.dmg</span>
+            </a>
+            <a href="https://download.envoymesh.cn/EnvoyMesh/envoydev-desktop.exe" target="_blank" rel="noopener noreferrer" class="download-link alt">
+              Windows <span class="tag">.exe</span>
+            </a>
+            <a href="https://github.com/allenpeng0705/EnvoyCoder/releases" target="_blank" rel="noopener noreferrer" class="download-link alt">
+              GitHub Releases <span class="tag">Linux · 源码</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Android -->
+        <div class="download-card">
+          <div class="download-icon android">🤖</div>
+          <h3>Android</h3>
+          <p class="platform-sub">EnvoyDev Mobile</p>
+          <div class="qr-box">
+            <div id="qr-google-play" class="qr-host" role="img" aria-label="Google Play 上架二维码"></div>
+            <div class="qr-store-name">Google Play</div>
+            <div class="qr-caption">扫码打开上架页</div>
+          </div>
+          <div class="download-links">
+            <a href="https://play.google.com/store/apps/details?id=com.envoymesh.envoydev" target="_blank" rel="noopener noreferrer" class="download-link primary">
+              Google Play <span class="tag">商店</span>
+            </a>
+            <a href="https://download.envoymesh.cn/EnvoyMesh/envoydev_mobile.apk" target="_blank" rel="noopener noreferrer" class="download-link alt">
+              直接下载 APK <span class="tag">.apk</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- iOS -->
+        <div class="download-card">
+          <div class="download-icon ios">🍎</div>
+          <h3>iOS</h3>
+          <p class="platform-sub">EnvoyDev Mobile</p>
+          <div class="qr-box">
+            <div id="qr-app-store" class="qr-host" role="img" aria-label="App Store 上架二维码"></div>
+            <div class="qr-store-name">App Store</div>
+            <div class="qr-caption">扫码打开上架页</div>
+          </div>
+          <div class="download-links">
+            <a href="https://apps.apple.com/app/envoydev/id000000000" target="_blank" rel="noopener noreferrer" class="download-link primary">
+              App Store <span class="tag">商店</span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <p class="download-note">
+        扫码或点击商店链接获取 EnvoyDev Mobile。上方也可直接下载 Android APK。Linux tarball 与源码请见 GitHub Releases。
+      </p>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-content">
+        <a href="#" class="logo" style="font-size: 1rem;">
+          <img src="screens/envoydev-logo.png" alt="EnvoyDev Logo" style="width: 28px; height: 28px;">
+          EnvoyDev
+        </a>
+        <ul class="footer-links">
+          <li><a href="#what-is">概览</a></li>
+          <li><a href="#features">桌面端</a></li>
+          <li><a href="#agents">智能体</a></li>
+          <li><a href="#mobile">手机端</a></li>
+          <li><a href="#downloads">下载</a></li>
+          <li><a href="../index-zh.html">EnvoyMesh</a></li>
+          <li><a href="https://github.com/allenpeng0705/EnvoyCoder" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+          <li><a href="https://github.com/allenpeng0705/EnvoyCoder/releases" target="_blank" rel="noopener noreferrer">Releases</a></li>
+          <li><a href="privacy-zh.html">隐私政策</a></li>
+        </ul>
+        <div class="footer-contact">
+          联系：<a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> · <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        基于 <a href="../index-zh.html" style="color: var(--primary-light); text-decoration: none;">EnvoyMesh</a> 构建 · 开源、自托管、本地优先 · &copy; 2026 EnvoyDev
+      </div>
+    </div>
+  </footer>
+
+  <!-- Lightbox -->
+  <div class="lightbox" id="lightbox">
+    <button class="lightbox-close" id="lightboxClose" aria-label="关闭">&times;</button>
+    <img id="lightboxImg" src="" alt="截图">
+    <p class="lightbox-caption" id="lightboxCaption"></p>
+  </div>
+
+  <script src="vendor/qrcode.min.js"></script>
+  <script>
+    // === 应用商店上架 URL —— 上架通过后替换为真实 URL ===
+    const APP_STORE_URL  = "https://apps.apple.com/app/envoydev/id000000000";
+    const GOOGLE_PLAY_URL = "https://play.google.com/store/apps/details?id=com.envoymesh.envoydev";
+    // === 结束 ===
+
+    function qrUnavailable(host) {
+      host.classList.add("qr-error");
+      host.textContent = "上架后此处显示二维码";
+    }
+
+    function renderQR(hostId, url) {
+      const host = document.getElementById(hostId);
+      if (!host) return;
+      if (typeof QRCode === "undefined") { qrUnavailable(host); return; }
+      QRCode.toCanvas(
+        document.createElement("canvas"),
+        url,
+        { errorCorrectionLevel: "M", margin: 1, width: 200, color: { dark: "#0f172a", light: "#ffffff" } },
+        function (err, canvas) {
+          if (err) { qrUnavailable(host); return; }
+          host.appendChild(canvas);
+        }
+      );
+    }
+    renderQR("qr-app-store", APP_STORE_URL);
+    renderQR("qr-google-play", GOOGLE_PLAY_URL);
+
+    // Header scroll effect
+    window.addEventListener("scroll", function () {
+      const header = document.querySelector("header");
+      if (header) header.classList.toggle("scrolled", window.scrollY > 20);
+    });
+
+    // Mobile menu toggle
+    const mobileMenuBtn = document.getElementById("mobileMenuBtn");
+    const mobileNavOverlay = document.getElementById("mobileNavOverlay");
+    function toggleMobileMenu() {
+      mobileMenuBtn.classList.toggle("active");
+      mobileNavOverlay.classList.toggle("active");
+      document.body.style.overflow = mobileNavOverlay.classList.contains("active") ? "hidden" : "";
+    }
+    if (mobileMenuBtn) mobileMenuBtn.addEventListener("click", toggleMobileMenu);
+    if (mobileNavOverlay) {
+      mobileNavOverlay.querySelectorAll("a").forEach(function (link) {
+        link.addEventListener("click", function () {
+          mobileMenuBtn.classList.remove("active");
+          mobileNavOverlay.classList.remove("active");
+          document.body.style.overflow = "";
+        });
+      });
+    }
+    window.addEventListener("resize", function () {
+      if (window.innerWidth > 1024 && mobileNavOverlay.classList.contains("active")) {
+        mobileMenuBtn.classList.remove("active");
+        mobileNavOverlay.classList.remove("active");
+        document.body.style.overflow = "";
+      }
+    });
+
+    // Lightbox — click any screenshot to view full size
+    const lightbox = document.getElementById("lightbox");
+    const lightboxImg = document.getElementById("lightboxImg");
+    const lightboxCaption = document.getElementById("lightboxCaption");
+    const lightboxClose = document.getElementById("lightboxClose");
+    function openLightbox(src, alt, caption) {
+      lightboxImg.src = src;
+      lightboxImg.alt = alt;
+      lightboxCaption.textContent = caption || alt;
+      lightbox.classList.add("active");
+      document.body.style.overflow = "hidden";
+    }
+    if (lightboxClose) lightboxClose.addEventListener("click", function () {
+      lightbox.classList.remove("active");
+      document.body.style.overflow = "";
+    });
+    lightbox.addEventListener("click", function (e) {
+      if (e.target === lightbox) {
+        lightbox.classList.remove("active");
+        document.body.style.overflow = "";
+      }
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && lightbox.classList.contains("active")) {
+        lightbox.classList.remove("active");
+        document.body.style.overflow = "";
+      }
+    });
+
+    document.querySelectorAll(".hero-shot img, .agents-shot img, .phone-shot img").forEach(function (img) {
+      img.style.cursor = "zoom-in";
+      img.addEventListener("click", function () {
+        openLightbox(img.src, img.alt, img.alt);
+      });
+    });
+  </script>
+</body>
+</html>

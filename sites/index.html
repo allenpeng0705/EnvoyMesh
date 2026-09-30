@@ -71,6 +71,11 @@
       border-bottom: 1px solid var(--border-color);
     }
 
+    /* Anchor targets clear the fixed header */
+    section[id] {
+      scroll-margin-top: 76px;
+    }
+
     nav {
       display: flex;
       align-items: center;
@@ -278,6 +283,17 @@
       z-index: 110;
     }
 
+    /* Invisible hover bridge: keeps the menu open while the cursor
+       crosses the 14px visual gap between trigger and panel. */
+    .nav-dropdown-menu::before {
+      content: "";
+      position: absolute;
+      left: -8px;
+      right: -8px;
+      top: -14px;
+      height: 14px;
+    }
+
     .nav-dropdown:hover .nav-dropdown-menu,
     .nav-dropdown:focus-within .nav-dropdown-menu,
     .nav-dropdown.open .nav-dropdown-menu {
@@ -297,6 +313,18 @@
     .nav-dropdown-menu a:hover {
       background: rgba(99, 102, 241, 0.12);
       color: var(--text-primary);
+    }
+
+    .nav-dropdown-sep {
+      margin: 4px 2px 2px;
+      padding: 8px 10px 4px;
+      border-top: 1px solid var(--border-color);
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      white-space: nowrap;
     }
 
     .nav-actions {
@@ -1264,6 +1292,57 @@
       line-height: 1.5;
     }
 
+    /* Family Apps — sibling products built on EnvoyMesh (add cards here as the family grows) */
+    .family-apps {
+      padding: 80px 0;
+    }
+    .family-apps-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+    .family-app-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 28px 32px;
+      border-radius: 16px;
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-card);
+    }
+    .family-app-card:hover {
+      border-color: rgba(99, 102, 241, 0.45);
+    }
+    .family-app-head {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .family-app-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 13px;
+      object-fit: cover;
+      flex-shrink: 0;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .family-app-card h3 {
+      font-size: 1.35rem;
+      margin: 0;
+    }
+    .family-app-card p {
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin: 0;
+      flex: 1;
+    }
+    @media (max-width: 768px) {
+      .family-apps-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     /* Download section */
     .downloads {
       padding: 80px 0;
@@ -1929,19 +2008,29 @@
         EnvoyMesh
       </a>
       <ul class="nav-links">
-        <li><a href="#features">Features</a></li>
         <li class="nav-dropdown">
           <button type="button" class="nav-dropdown-trigger" aria-expanded="false" aria-haspopup="true">
-            Product <span class="nav-dropdown-chevron" aria-hidden="true"></span>
+            Products <span class="nav-dropdown-chevron" aria-hidden="true"></span>
           </button>
           <ul class="nav-dropdown-menu">
+            <li><a href="#envoygo">EnvoyGo</a></li>
+            <li class="nav-dropdown-sep">Family Apps</li>
+            <li><a href="envoydev/">EnvoyDev</a></li>
+            <li><a href="veda-ai/">Veda Notes</a></li>
+          </ul>
+        </li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-trigger" aria-expanded="false" aria-haspopup="true">
+            Features <span class="nav-dropdown-chevron" aria-hidden="true"></span>
+          </button>
+          <ul class="nav-dropdown-menu">
+            <li><a href="#features">Overview</a></li>
             <li><a href="#envoygo">EnvoyGo</a></li>
             <li><a href="#knowledge">Knowledge</a></li>
             <li><a href="#family">Family Network</a></li>
             <li><a href="#agents">Agent Network</a></li>
             <li><a href="#harness">Envoy Harness</a></li>
             <li><a href="#coding-tab">Coding</a></li>
-            <li><a href="envoydev/">EnvoyDev</a></li>
             <li><a href="#market">Envoy Market</a></li>
           </ul>
         </li>
@@ -1966,15 +2055,18 @@
 
   <!-- Mobile Navigation Overlay -->
   <div class="mobile-nav-overlay" id="mobileNavOverlay">
-    <a href="#features">Features</a>
-    <div class="mobile-nav-label">Product</div>
+    <div class="mobile-nav-label">Products</div>
+    <a href="#envoygo">EnvoyGo</a>
+    <a href="envoydev/">EnvoyDev</a>
+    <a href="veda-ai/">Veda Notes</a>
+    <div class="mobile-nav-label">Features</div>
+    <a href="#features">Overview</a>
     <a href="#envoygo">EnvoyGo Mobile</a>
     <a href="#knowledge">Knowledge Base</a>
     <a href="#family">Family Network</a>
     <a href="#agents">Agent Network</a>
     <a href="#harness">Envoy Harness</a>
     <a href="#coding-tab">Coding</a>
-    <a href="envoydev/">EnvoyDev</a>
     <a href="#market">Envoy Market</a>
     <a href="#architecture">Architecture</a>
     <a href="#security">Security</a>
@@ -2013,8 +2105,42 @@
     </div>
   </section>
 
+  <!-- Family Apps Section — sibling products built on EnvoyMesh -->
+  <section class="family-apps" id="family-apps">
+    <div class="container">
+      <div class="section-header">
+        <h2>EnvoyMesh Family Apps</h2>
+        <p>Standalone apps built on the same mesh. Each pairs with your home node, shares the pairing and identity experience, and keeps its own state. More apps join the family over time.</p>
+      </div>
+      <div class="family-apps-grid">
+        <div class="family-app-card">
+          <div class="family-app-head">
+            <img src="envoydev/screens/envoydev-logo.png" alt="" class="family-app-icon" loading="lazy">
+            <h3>EnvoyDev</h3>
+          </div>
+          <span class="harness-badge" style="background-color: rgba(99, 102, 241, 0.15); color: #818cf8;">Desktop · macOS · Windows · Linux</span>
+          <p>The control plane for coding agents — a project rail, task tree, and inline approvals in one dedicated window. Drive Claude Code, Codex, Cursor, and 40+ other agents on your own machines, and follow runs from your phone.</p>
+          <div>
+            <a href="envoydev/" class="btn btn-secondary">Open EnvoyDev →</a>
+          </div>
+        </div>
+        <div class="family-app-card">
+          <div class="family-app-head">
+            <img src="veda-ai/images/app-icon.png" alt="" class="family-app-icon" loading="lazy">
+            <h3>Veda Notes</h3>
+          </div>
+          <span class="harness-badge" style="background-color: rgba(34, 211, 238, 0.15); color: #22d3ee;">Mobile · iOS · Android</span>
+          <p>An AI-powered personal journal that pairs with your home node — sync notes as private Markdown, chat with Home AI, message family members, and read your node's feed and blog. Your notes never pass through a cloud you don't own.</p>
+          <div>
+            <a href="veda-ai/" class="btn btn-secondary">Open Veda Notes →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- System Architecture Section -->
-  <section class="architecture" style="padding: 60px 0;">
+  <section class="architecture" id="architecture" style="padding: 60px 0;">
     <div class="container">
       <div class="section-header">
         <h2>System Architecture</h2>
@@ -2899,7 +3025,7 @@
   </section>
 
   <!-- Architecture Section -->
-  <section class="architecture" id="architecture">
+  <section class="architecture" id="how-it-works">
     <div class="container">
       <div class="section-header">
         <h2>How It Works</h2>
@@ -3031,7 +3157,7 @@
             <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
               Download DMG <span class="tag">GitHub</span>
             </a>
-            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg" class="download-link alt" target="_blank">
+            <a href="https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.dmg" class="download-link alt" target="_blank">
               Download DMG <span class="tag">Mirror</span>
             </a>
           </div>
@@ -3044,7 +3170,7 @@
             <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link primary" target="_blank">
               Download EXE <span class="tag">GitHub</span>
             </a>
-            <a href="https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe" class="download-link alt" target="_blank">
+            <a href="https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.exe" class="download-link alt" target="_blank">
               Download EXE <span class="tag">Mirror</span>
             </a>
           </div>
@@ -3063,7 +3189,7 @@
                   <a href="https://github.com/allenpeng0705/EnvoyMesh/releases" class="download-link alt" target="_blank" rel="noopener noreferrer">
                     Download APK <span class="tag">GitHub</span>
                   </a>
-                  <a href="https://gpt4people.online/EnvoyMesh/envoygo-android.apk" class="download-link alt" target="_blank" rel="noopener noreferrer">
+                  <a href="https://download.envoymesh.cn/EnvoyMesh/envoygo-android.apk" class="download-link alt" target="_blank" rel="noopener noreferrer">
                     Download APK <span class="tag">Mirror</span>
                   </a>
                 </div>
@@ -3125,6 +3251,7 @@
         <li><a href="EnvoyMesh_GuideBook_0.4.0.html">Guidebook</a></li>
         <li><a href="#coding-tab">Coding</a></li>
         <li><a href="envoydev/">EnvoyDev</a></li>
+        <li><a href="veda-ai/">Veda Notes</a></li>
         <li><a href="security.html">Security</a></li>
         <li><a href="privacy.html">Privacy</a></li>
         <li><a href="high-level-design.html">Design</a></li>
