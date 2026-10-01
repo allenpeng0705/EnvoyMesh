@@ -44,18 +44,18 @@ The privacy policy URLs for the App Store / Google Play listings are
 `https://www.envoymesh.cn/envoydev/privacy.html` (English) and
 `.../privacy-zh.html` (Chinese).
 
-## Swap the store URLs after release
+## Store URLs (QR codes)
 
 The App Store and Google Play QR codes are rendered client-side from two
-constants at the top of each page's `<script>` block. Edit both files:
+constants in each page's `<script>` block:
 
 ```js
 // index.html and index-zh.html
-const APP_STORE_URL  = "https://apps.apple.com/app/envoydev/id000000000";        // ← replace
-const GOOGLE_PLAY_URL = "https://play.google.com/store/apps/details?id=com.envoymesh.envoydev"; // ← replace
+const APP_STORE_URL  = "https://apps.apple.com/app/id6814046753";
+const GOOGLE_PLAY_URL = "https://play.google.com/store/apps/details?id=com.envoymesh.envoydev";
 ```
 
-Next page load, both QRs regenerate from the new URLs. No PNG files to swap.
+Change those strings if a listing URL moves; next page load regenerates both QRs.
 
 ## Other links (real, no swap needed)
 
