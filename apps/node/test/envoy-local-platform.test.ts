@@ -25,10 +25,17 @@ describe("envoy-local-platform", () => {
     expect(names.cudartName).toBe("cudart-llama-bin-win-cuda-12.4-x64.zip");
   });
 
-  it("maps Linux x64 to ubuntu CPU build in v1", () => {
+  it("maps Linux x64 CPU to ubuntu CPU build", () => {
     const platform = { os: "linux" as const, arch: "x64" as const, accel: "cpu" as const };
     expect(buildLlamaCppAssetNames("b10331", platform).runtimeName).toBe(
       "llama-b10331-bin-ubuntu-x64.tar.gz",
+    );
+  });
+
+  it("maps Linux x64 NVIDIA to ubuntu Vulkan GPU build", () => {
+    const platform = { os: "linux" as const, arch: "x64" as const, accel: "cuda" as const };
+    expect(buildLlamaCppAssetNames("b10331", platform).runtimeName).toBe(
+      "llama-b10331-bin-ubuntu-vulkan-x64.tar.gz",
     );
   });
 
@@ -60,6 +67,7 @@ describe("envoy-local-platform", () => {
       { os: "darwin" as const, arch: "arm64" as const, accel: "metal" as const },
       { os: "darwin" as const, arch: "x64" as const, accel: "metal" as const },
       { os: "linux" as const, arch: "x64" as const, accel: "cpu" as const },
+      { os: "linux" as const, arch: "x64" as const, accel: "cuda" as const },
       { os: "linux" as const, arch: "arm64" as const, accel: "cpu" as const },
       { os: "win32" as const, arch: "x64" as const, accel: "cpu" as const },
       { os: "win32" as const, arch: "x64" as const, accel: "cuda" as const },

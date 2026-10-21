@@ -844,11 +844,39 @@ class Libp2pStreamTransport implements WebSocketLike {
   @override
   int readyState = wsConnecting;
 
-  @override
-  void Function()? onOpen;
+  void Function()? _onOpen;
 
   @override
-  void Function(WsMessageEvent event)? onMessage;
+  void Function()? get onOpen => _onOpen;
+
+  /// When the handshake finishes before [HomeRemoteClient] installs handlers (any `await`
+  /// between `dial` returning and `onOpen = …`, including a process-wide dial mutex), a
+  /// microtask `onOpen` is lost and the client fast-fails as `homeRemote.unreachable`.
+  /// Re-fire when the handler is attached if we are already open — same seam as
+  /// [onMessage] buffering early frames.
+  @override
+  set onOpen(void Function()? handler) {
+    _onOpen = handler;
+    if (handler != null && readyState == wsOpen) {
+      scheduleMicrotask(handler);
+    }
+  }
+
+  void Function(WsMessageEvent event)? _onMessage;
+
+  @override
+  void Function(WsMessageEvent event)? get onMessage => _onMessage;
+
+  @override
+  set onMessage(void Function(WsMessageEvent event)? handler) {
+    _onMessage = handler;
+    if (handler == null || _pendingMessages.isEmpty) return;
+    final pending = List<String>.from(_pendingMessages);
+    _pendingMessages.clear();
+    for (final text in pending) {
+      handler(WsMessageEvent(text));
+    }
+  }
 
   @override
   void Function()? onClose;
@@ -927,26 +955,29 @@ class Libp2pStreamTransport implements WebSocketLike {
       }
     }
 
-    // Handshake succeeded. Mark as open and dispatch buffered messages.
+    // Handshake succeeded. Mark as open; keep early frames (including the synthetic
+    // `connected` below) until [onMessage] is assigned — see the [onOpen]/[onMessage] setters.
     readyState = wsOpen;
     _messageMode = true;
 
-    // Deliver any messages that arrived before we entered message mode.
-    for (final pending in _pendingMessages) {
-      onMessage?.call(WsMessageEvent(pending));
-    }
-    _pendingMessages.clear();
+    // Re-emit `connected` so HomeRemoteClient can gate RPCs (handshake already consumed
+    // the home/relay ready signal). Buffered until the client attaches handlers.
+    _pendingMessages.add(jsonEncode({
+      'event': 'connected',
+      'data': {'libp2pProxied': true},
+    }));
 
     _handshakeCompleter!.complete();
-    // Fire onOpen, then re-emit `connected` so HomeRemoteClient can gate
-    // RPCs (handshake already consumed the home/relay ready signal).
-    Future.microtask(() {
-      onOpen?.call();
-      onMessage?.call(WsMessageEvent(jsonEncode({
-        'event': 'connected',
-        'data': {'libp2pProxied': true},
-      })));
-    });
+    if (_onOpen != null) {
+      scheduleMicrotask(() => _onOpen?.call());
+    }
+    if (_onMessage != null && _pendingMessages.isNotEmpty) {
+      final pending = List<String>.from(_pendingMessages);
+      _pendingMessages.clear();
+      for (final text in pending) {
+        _onMessage!(WsMessageEvent(text));
+      }
+    }
 
     // Start the normal message dispatch loop.
     _readLoop();

@@ -38,6 +38,18 @@ describe("envoy-local-manifest", () => {
     );
   });
 
+  it("pins sha256 for Linux NVIDIA → Vulkan GPU runtime", () => {
+    const assets = resolveEnvoyLocalRuntimeAssets({
+      os: "linux",
+      arch: "x64",
+      accel: "cuda",
+    });
+    expect(assets.runtimeName).toBe("llama-b10331-bin-ubuntu-vulkan-x64.tar.gz");
+    expect(assets.runtimeSha256).toBe(
+      ENVOY_LOCAL_ASSET_SHA256[assets.runtimeName],
+    );
+  });
+
   describe("resolveStartupTimeoutMs", () => {
     it("uses 30s for tiny models (0.8B Q4_K_M ≈ 500 MB)", () => {
       expect(resolveStartupTimeoutMs(undefined, 532_000_000)).toBe(30_000);

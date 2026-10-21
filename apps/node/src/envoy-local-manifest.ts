@@ -22,6 +22,8 @@ export const ENVOY_LOCAL_ASSET_SHA256: Record<string, string> = {
     "4974283f41924d66b98b9f3a877b1b283aef007d185cccf524a4a1f22cacba3e",
   "llama-b10331-bin-ubuntu-x64.tar.gz":
     "9984060517edf7c2436991d8f635804586530b4642490fd4afc61ffad1d9f638",
+  "llama-b10331-bin-ubuntu-vulkan-x64.tar.gz":
+    "eb63e47bdd562ccb4a1cfd6e4dbfd334ba494948ffe9d2e801bd6ed2301913be",
   "llama-b10331-bin-ubuntu-arm64.tar.gz":
     "b4330d32023f721fa290d80f48c56b9f4691674af8712fd0ef4c93ab2e81d71b",
   "llama-b10331-bin-win-cpu-x64.zip":

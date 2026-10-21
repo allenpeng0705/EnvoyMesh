@@ -78,8 +78,11 @@ export function llamaCppAssetSuffix(platform: EnvoyLocalPlatform): {
   if (os === "win32" && arch === "arm64") {
     return { runtime: "win-cpu-arm64.zip" };
   }
+  if (os === "linux" && arch === "x64" && accel === "cuda") {
+    // No official ubuntu-cuda zip for the pinned tag — Vulkan build uses the GPU.
+    return { runtime: "ubuntu-vulkan-x64.tar.gz" };
+  }
   if (os === "linux" && arch === "x64") {
-    // Official CUDA linux zips vary; ship CPU ubuntu build for v1 (reliable).
     return { runtime: "ubuntu-x64.tar.gz" };
   }
   if (os === "linux" && arch === "arm64") {

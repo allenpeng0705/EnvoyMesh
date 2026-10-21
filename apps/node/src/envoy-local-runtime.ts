@@ -198,6 +198,54 @@ function runtimeDir(profileDir: string): string {
   return join(rootDir(profileDir), "runtime", ENVOY_LOCAL_LLAMA_CPP_TAG);
 }
 
+const RUNTIME_ASSET_MARKER = "runtime-asset.json";
+
+async function readRuntimeAssetMarker(
+  destRoot: string,
+): Promise<{ runtimeName: string; accel: string } | null> {
+  try {
+    const raw = await readFile(join(destRoot, RUNTIME_ASSET_MARKER), "utf8");
+    const parsed = JSON.parse(raw) as { runtimeName?: unknown; accel?: unknown };
+    if (
+      typeof parsed.runtimeName === "string" &&
+      parsed.runtimeName.length > 0 &&
+      typeof parsed.accel === "string"
+    ) {
+      return { runtimeName: parsed.runtimeName, accel: parsed.accel };
+    }
+  } catch {
+    /* missing or corrupt — treat as unknown */
+  }
+  return null;
+}
+
+async function writeRuntimeAssetMarker(
+  destRoot: string,
+  platform: EnvoyLocalPlatform,
+  runtimeName: string,
+): Promise<void> {
+  await writeFile(
+    join(destRoot, RUNTIME_ASSET_MARKER),
+    JSON.stringify({ runtimeName, accel: platform.accel, tag: ENVOY_LOCAL_LLAMA_CPP_TAG }, null, 2),
+    "utf8",
+  );
+}
+
+/**
+ * True when on-disk runtime was built for a different asset / accel (e.g. CPU → Vulkan).
+ * Missing marker on NVIDIA (`accel === "cuda"`) is treated as mismatch so pre-marker
+ * Linux CPU archives upgrade once to Vulkan. Metal/CPU unmarked installs are kept.
+ * Exported for unit tests.
+ */
+export function runtimeAssetMismatch(
+  platform: EnvoyLocalPlatform,
+  marker: { runtimeName: string; accel: string } | null,
+): boolean {
+  if (!marker) return platform.accel === "cuda";
+  const want = resolveEnvoyLocalRuntimeAssets(platform);
+  return marker.runtimeName !== want.runtimeName || marker.accel !== platform.accel;
+}
+
 function modelsDir(profileDir: string): string {
   return join(rootDir(profileDir), "models");
 }
@@ -604,17 +652,21 @@ async function ensureRuntimeInstalled(
 ): Promise<string> {
   const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
   const destRoot = runtimeDir(profileDir);
+  const assets = resolveEnvoyLocalRuntimeAssets(platform);
   if (opts?.force) {
     await rm(destRoot, { recursive: true, force: true });
   } else {
-    const existing = await findExecutable(destRoot, [exeName]);
-    if (existing) return existing;
+    const marker = await readRuntimeAssetMarker(destRoot);
+    if (runtimeAssetMismatch(platform, marker)) {
+      await rm(destRoot, { recursive: true, force: true });
+    } else {
+      const existing = await findExecutable(destRoot, [exeName]);
+      if (existing) return existing;
+    }
   }
 
   await mkdir(rootDir(profileDir), { recursive: true });
   await ensureMinFreeBytes(rootDir(profileDir), ENVOY_LOCAL_MIN_FREE_BYTES);
-
-  const assets = resolveEnvoyLocalRuntimeAssets(platform);
   const region = opts?.region ?? detectEnvoyLocalModelRegion();
   const archivesDir = join(rootDir(profileDir), "archives");
   await mkdir(archivesDir, { recursive: true });
@@ -725,6 +777,7 @@ async function ensureRuntimeInstalled(
   if (process.platform !== "win32") {
     await chmod(exe, 0o755);
   }
+  await writeRuntimeAssetMarker(destRoot, platform, assets.runtimeName);
   return exe;
 }
 
@@ -743,9 +796,13 @@ export async function ensureEnvoyLocalSharedRuntimeBinary(
   opts?: { force?: boolean; region?: EnvoyLocalModelRegion },
 ): Promise<string> {
   const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
+  const destRoot = runtimeDir(profileDir);
   if (!opts?.force) {
-    const existing = await findExecutable(runtimeDir(profileDir), [exeName]);
-    if (existing) return existing;
+    const marker = await readRuntimeAssetMarker(destRoot);
+    if (!runtimeAssetMismatch(platform, marker)) {
+      const existing = await findExecutable(destRoot, [exeName]);
+      if (existing) return existing;
+    }
   }
 
   if (sharedRuntimeInstallPromise) {
