@@ -215,6 +215,16 @@ export interface ReuseHostOptions {
   displayName?: string;
   /** Called with the live connection count. */
   onConnectionChange?: (connectedCount: number) => void;
+  /**
+   * Fired when an authenticated thin-client WebSocket closes.
+   * Products clear live-presence / push-suppress bits here (kill-app must not
+   * stay "recently active" for the idle window).
+   */
+  onAuthenticatedClose?: (info: {
+    deviceId: string;
+    ownerId: string;
+    scopeKey: string;
+  }) => void;
 }
 
 /**
@@ -278,6 +288,9 @@ export function createReuseHost(options: ReuseHostOptions): ReuseHost {
   const path = options.path ?? "/ws";
   const server = new WsServer(options.port, path, {
     onConnectionChange: options.onConnectionChange,
+    ...(options.onAuthenticatedClose
+      ? { onAuthenticatedClose: options.onAuthenticatedClose }
+      : {}),
   });
   let started = false;
 

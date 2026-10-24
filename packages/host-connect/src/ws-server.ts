@@ -321,12 +321,31 @@ export class WsServer<TCaller = unknown> {
    */
   private readonly deferredDeviceClose = new Map<WebSocket, RpcInvocation>();
 
+  /**
+   * Fired when an authenticated thin-client socket closes (kill-app, revoke, network).
+   * Products use this to clear "recently active" bits so interactive push is not
+   * suppressed for the full idle window after force-quit.
+   */
+  private onAuthenticatedClose?: (info: {
+    deviceId: string;
+    ownerId: string;
+    scopeKey: string;
+  }) => void;
+
   constructor(
     private readonly port: number = 3030,
     private readonly path: string = "/ws",
-    opts?: { onConnectionChange?: (connectedCount: number) => void },
+    opts?: {
+      onConnectionChange?: (connectedCount: number) => void;
+      onAuthenticatedClose?: (info: {
+        deviceId: string;
+        ownerId: string;
+        scopeKey: string;
+      }) => void;
+    },
   ) {
     this.onConnectionChange = opts?.onConnectionChange;
+    this.onAuthenticatedClose = opts?.onAuthenticatedClose;
   }
 
   /** Bind /readyz semantics (call after mesh identity is known). */
@@ -896,6 +915,13 @@ export class WsServer<TCaller = unknown> {
         this.clientSubscriptions.delete(ws);
       }
       this._socketMethods?.closed?.(ws);
+      if (session?.deviceId) {
+        this.onAuthenticatedClose?.({
+          deviceId: session.deviceId,
+          ownerId: session.ownerId,
+          scopeKey: session.scopeKey,
+        });
+      }
       // Notify connection change (after cleanup, count does not include this client)
       this.onConnectionChange?.(this.wss.clients.size);
     });
