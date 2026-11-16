@@ -69,11 +69,15 @@ and email addresses; they are never loaded as page resources.
 Copy is drawn from `README.md`, `README.zh-CN.md`, `QuickStart.md`, `design_doc/*.md`,
 `docs/privacy-policy.md`, `docs/smart-home.md`, `docs/store-listing.md`, and the channel /
 Home Assistant / MQTT setup guides. Claims are limited to what those documents support;
-the preview posture (no `v1.0.0` tag yet; store submit uses
+the preview posture (**0.2.0**; no `v1.0.0` tag yet; store submit uses
 `apps/mobile/store-release/`; live IM verification in progress) is stated on the pages.
 
 **Store privacy URL after deploy:** `https://www.envoymesh.cn/envoyhome/privacy.html`  
+(Interim HTML preview is fine until Cloudflare hosts this folder.)  
 Release guide: [`docs/mobile-store-release.md`](../../docs/mobile-store-release.md) · listing pack: [`apps/mobile/store-release/`](../../apps/mobile/store-release/).
 
-When the product ships a public release, update the "Get started" section and the
-`Last updated` date on both privacy pages.
+Desktop release installers land under `release/envoyhome-desktop-0.2.0-*` via
+`./scripts/build-desktop.sh` / `build-desktop.ps1` (macOS requires Developer ID + notarization).
+
+When bumping a product version, update the badge + “Get started” commands on both
+landing pages and the `Last updated` line on both privacy pages.
