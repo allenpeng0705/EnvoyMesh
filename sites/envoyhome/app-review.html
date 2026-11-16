@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyHome — App Store / Play Review Pairing</title>
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="Pairing QR for Apple App Store and Google Play reviewers to connect EnvoyHome Mobile to the demo home daemon.">
+  <link rel="icon" type="image/png" href="screens/envoyhome-logo-128.png">
+  <style>
+    :root {
+      --ink: #0c0f1d;
+      --ink-soft: #161a2e;
+      --paper: #f4f6fb;
+      --paper-2: #e8ecf6;
+      --accent: #6366f1;
+      --accent-deep: #4f46e5;
+      --cyan: #0891b2;
+      --text: #0c0f1d;
+      --muted: #5a6578;
+      --line: #c8d0e4;
+      --warn: #b45309;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99, 102, 241, 0.14), transparent 55%),
+        linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%);
+      line-height: 1.55;
+      padding: 32px 20px 48px;
+    }
+
+    .wrap { max-width: 520px; margin: 0 auto; }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .brand-row img {
+      width: 36px; height: 36px; border-radius: 9px;
+    }
+    .brand {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent-deep);
+    }
+
+    h1 {
+      font-size: clamp(1.55rem, 4vw, 1.95rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      margin-bottom: 8px;
+    }
+
+    .lede {
+      color: var(--muted);
+      font-size: 1rem;
+      margin-bottom: 28px;
+    }
+
+    .qr-panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 28px 24px 24px;
+      text-align: center;
+      box-shadow: 0 12px 40px rgba(12, 15, 29, 0.07);
+    }
+
+    #qr {
+      display: inline-block;
+      padding: 12px;
+      background: #fff;
+      border-radius: 8px;
+      min-height: 120px;
+    }
+
+    #qr canvas,
+    #qr img {
+      display: block;
+      width: min(300px, 74vw);
+      height: auto;
+      margin: 0 auto;
+    }
+
+    #qr.qr-error {
+      color: var(--warn);
+      font-size: 0.9rem;
+      padding: 24px 12px;
+      max-width: 320px;
+    }
+
+    .qr-caption {
+      margin-top: 16px;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 18px;
+    }
+
+    button {
+      font-family: inherit;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 18px;
+      min-height: 44px;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    button:active { transform: scale(0.98); }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-deep); }
+    .btn-ghost {
+      background: transparent;
+      color: var(--ink-soft);
+      border: 1px solid var(--line);
+    }
+    .btn-ghost:hover { background: var(--paper-2); }
+
+    .steps {
+      margin-top: 28px;
+      padding: 20px 22px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+    .steps h2 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .steps ol {
+      padding-left: 1.25rem;
+      color: var(--ink-soft);
+      font-size: 0.95rem;
+    }
+    .steps li + li { margin-top: 8px; }
+
+    .note {
+      margin-top: 16px;
+      font-size: 0.8125rem;
+      color: var(--warn);
+    }
+
+    details {
+      margin-top: 20px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.55);
+      overflow: hidden;
+    }
+    summary {
+      cursor: pointer;
+      padding: 14px 16px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      list-style: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: "▸ "; color: var(--accent); }
+    details[open] summary::before { content: "▾ "; }
+
+    #uri {
+      display: block;
+      margin: 0 16px 16px;
+      padding: 12px;
+      max-height: 160px;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.68rem;
+      line-height: 1.45;
+      word-break: break-all;
+      background: var(--ink);
+      color: #d8e0ec;
+      border-radius: 8px;
+    }
+
+    .howto {
+      margin-top: 16px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .howto code {
+      font-size: 0.75rem;
+      background: rgba(99, 102, 241, 0.1);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: var(--ink);
+      color: #fff;
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 10px 18px;
+      border-radius: 999px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      z-index: 20;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      button, .toast { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="brand-row">
+      <img src="screens/envoyhome-logo-128.png" alt="" width="36" height="36">
+      <p class="brand">EnvoyHome · Store review</p>
+    </div>
+    <h1>Scan to pair with the demo home</h1>
+    <p class="lede">
+      Apple App Store and Google Play reviewers: open <strong>EnvoyHome</strong>,
+      tap <strong>Pair</strong> / <strong>Scan pairing QR</strong>, then scan this code
+      (or paste the URI below).
+    </p>
+
+    <section class="qr-panel" aria-label="Review pairing QR code">
+      <div id="qr" role="img" aria-label="QR code encoding the EnvoyHome pairing URI"></div>
+      <p class="qr-caption" id="qrCaption">Demo home pairing · for store review only</p>
+      <div class="actions">
+        <button type="button" class="btn-primary" id="copyUri">Copy pairing URI</button>
+        <button type="button" class="btn-ghost" id="copyPage">Copy this page link</button>
+      </div>
+    </section>
+
+    <section class="steps">
+      <h2>Review steps</h2>
+      <ol>
+        <li>Install EnvoyHome from TestFlight / App Store or Play Console.</li>
+        <li>Open the app → <strong>Pair</strong> → scan the QR above (or paste the URI).</li>
+        <li>Allow <strong>Camera</strong> (and on iOS, <strong>Local Network</strong> if prompted).</li>
+        <li>After pair: open <strong>Chat</strong> → send “hello” → read the reply.</li>
+        <li>If an Approval card appears, tap <strong>Deny</strong> (or Allow) — that only answers the home daemon.</li>
+      </ol>
+      <p class="note">
+        This pairing is for the store-review demo home only. EnvoyHome Mobile is a thin client:
+        the agent runs on the paired computer, not on the phone (Guideline 2.5.2).
+      </p>
+    </section>
+
+    <details>
+      <summary>Pairing URI (paste fallback)</summary>
+      <code id="uri"></code>
+    </details>
+
+    <p class="howto">
+      Operator: override the QR with
+      <code>?uri=</code><em>encodeURIComponent(envoy://pair?…)</em>
+      or <code>?pairing=</code><em>payload</em>
+      (or put the full URI in the URL hash).
+      Default below is the current demo mint — rotate by editing
+      <code>DEFAULT_PAIRING_URI</code> or passing a query param.
+    </p>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Offline: same vendored library as index.html (no CDN). -->
+  <script src="vendor/qrcode.min.js"></script>
+  <script>
+    /**
+     * Fallback when the page is opened with no ?uri= / ?pairing= / #…
+     * Replace when you mint a fresh demo pairing for a new review cycle.
+     * Do not use a production household token here.
+     */
+    const DEFAULT_PAIRING_URI =
+      "envoy://pair?pairing=H4sIAAAAAAAAE7WTSY_aQBBG_8qozqbtbq9tKQfAHtaYbcCgTA5u4wztMe4evIGj_PcIcsmMIkWKSB1LqlevSvq-Qw0uVqApwIWmcFUVU4Kw5SAdOaZr2I6mNgUoUIpXcGF1CNPqXBzf1n7JX-OMRIP20aO9drYIaOZRUEDwPbiQ5LW4uKLJk5ObiTjKOsSJbMwcDRPC9papgwJZlP9t6w2GiadPhAjpaS3qx2HF6XL90lTVYfJmG7URb1m8ptNDMQnokG19tt14G1CASXC_gMqloWJiIw1pCKtlLFWLaNRWJZHqP5J_MX9TviPWsBHVEcaIYHLDGpqG31GnwdIId-GwVzSJU53NNiwuVlwNLk2-m4_ZnkVdxuRx_Dll4jrYifkprnh5DzViYkQxovaf1boh36xk0U9lGlWto_N0Wr2cm1W8HHOHBsa8izcL3G-LPGb3Vrvj1_7PwfBVgUhKcMG_pmMojsk1L_IarM61ev5gFDzM173pqP8w8Xe35nP-bTp-ynTBhxsRWhYfnC-Zl4-yWls9JabWLdtFvZzPDuNZ2v30nN-G_MD7yIEfPwFPllrK7AMAAA";
+
+    function resolvePairingUri() {
+      const params = new URLSearchParams(window.location.search);
+      const fromUri = params.get("uri") || params.get("u");
+      if (fromUri && fromUri.trim()) {
+        try {
+          return decodeURIComponent(fromUri.trim());
+        } catch (_) {
+          return fromUri.trim();
+        }
+      }
+      const pairing = params.get("pairing");
+      if (pairing && pairing.trim()) {
+        const p = pairing.trim();
+        if (p.indexOf("envoy://") === 0) return p;
+        return "envoy://pair?pairing=" + p;
+      }
+      const hash = (window.location.hash || "").replace(/^#/, "").trim();
+      if (hash.indexOf("envoy://") === 0) {
+        try {
+          return decodeURIComponent(hash);
+        } catch (_) {
+          return hash;
+        }
+      }
+      return DEFAULT_PAIRING_URI;
+    }
+
+    const PAIRING_URI = resolvePairingUri();
+    const uriEl = document.getElementById("uri");
+    const qrHost = document.getElementById("qr");
+    const caption = document.getElementById("qrCaption");
+
+    function showError(msg) {
+      qrHost.classList.add("qr-error");
+      qrHost.textContent = msg;
+    }
+
+    if (!PAIRING_URI || PAIRING_URI.indexOf("envoy://pair") !== 0) {
+      uriEl.textContent =
+        "No pairing URI. Open with ?uri=… or ?pairing=… or set DEFAULT_PAIRING_URI.";
+      showError("QR not configured");
+      caption.textContent = "Missing pairing string";
+    } else {
+      uriEl.textContent = PAIRING_URI;
+      if (typeof QRCode === "undefined") {
+        showError("QR library failed to load. Use the URI below.");
+      } else {
+        QRCode.toCanvas(
+          document.createElement("canvas"),
+          PAIRING_URI,
+          {
+            // Long gzipped pairing payloads need a large canvas + modest ECC.
+            errorCorrectionLevel: "M",
+            margin: 2,
+            width: 360,
+            color: { dark: "#0c0f1d", light: "#ffffff" },
+          },
+          function (err, canvas) {
+            if (err) {
+              showError("Could not render QR. Paste the URI in the app instead.");
+              console.error(err);
+              return;
+            }
+            qrHost.appendChild(canvas);
+          }
+        );
+      }
+    }
+
+    function toast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(function () {
+        el.classList.remove("show");
+      }, 1800);
+    }
+
+    async function copyText(text, okMsg) {
+      if (!text) {
+        toast("Nothing to copy");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        toast(okMsg);
+      } catch (_) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+        toast(okMsg);
+      }
+    }
+
+    document.getElementById("copyUri").addEventListener("click", function () {
+      if (!PAIRING_URI || PAIRING_URI.indexOf("envoy://") !== 0) {
+        toast("Configure a pairing URI first");
+        return;
+      }
+      copyText(PAIRING_URI, "Pairing URI copied");
+    });
+
+    document.getElementById("copyPage").addEventListener("click", function () {
+      copyText(window.location.href, "Page link copied");
+    });
+  </script>
+</body>
+</html>

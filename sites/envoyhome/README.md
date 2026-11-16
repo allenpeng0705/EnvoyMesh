@@ -12,6 +12,7 @@ external fonts, scripts or images.
 | `index-zh.html` | Simplified Chinese landing page (same sections, translated) |
 | `privacy.html` | English privacy policy |
 | `privacy-zh.html` | Simplified Chinese privacy policy |
+| `app-review.html` | Store-review pairing QR (noindex) — renders QR from `?uri=` / `?pairing=` or `DEFAULT_PAIRING_URI` |
 
 ## Assets
 
