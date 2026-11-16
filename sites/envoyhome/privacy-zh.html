@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>隐私政策 — EnvoyHome</title>
+  <meta name="description" content="EnvoyHome 如何处理家庭数据：自托管的对话、记忆、文档、推送令牌、可选的模型提供商，以及智能家居凭据。">
+  <link rel="icon" type="image/png" href="screens/envoyhome-logo-128.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary-color: #6366f1;
+      --primary-light: #a5b4fc;
+      --secondary-color: #22d3ee;
+      --bg-dark: #0c0f1d;
+      --bg-card: #161a2e;
+      --text-primary: #f8fafc;
+      --text-secondary: #a8b3c9;
+      --text-muted: #6b7691;
+      --border-color: #2a3050;
+      --gradient-primary: linear-gradient(135deg, #818cf8 0%, #a855f7 52%, #22d3ee 100%);
+    }
+    html { scroll-behavior: smooth; overflow-x: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', sans-serif;
+      background-color: var(--bg-dark); color: var(--text-primary); line-height: 1.75;
+    }
+    ::selection { background-color: var(--primary-color); color: white; }
+    a { color: var(--primary-light); }
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background-color: rgba(12, 15, 29, 0.92); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+    }
+    nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+    .logo { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text-primary); font-weight: 600; font-size: 1.2rem; }
+    .logo img { width: 34px; height: 34px; border-radius: 9px; }
+    .nav-links { display: flex; align-items: center; gap: 24px; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.92rem; }
+    .nav-links a:hover { color: var(--text-primary); }
+    .nav-links a.active { color: var(--text-primary); }
+
+    .page { padding: 130px 0 80px; }
+    .page-inner { max-width: 860px; margin: 0 auto; }
+    .eyebrow { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--secondary-color); margin-bottom: 14px; }
+    h1 { font-size: 2.6rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 14px; }
+    .updated { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 26px; }
+    .lede { color: var(--text-secondary); font-size: 1.08rem; line-height: 1.8; padding-bottom: 30px; border-bottom: 1px solid var(--border-color); margin-bottom: 10px; }
+    .lede strong { color: var(--text-primary); }
+
+    .policy h2 { font-size: 1.3rem; font-weight: 650; margin: 42px 0 12px; letter-spacing: -0.005em; }
+    .policy h3 { font-size: 1.02rem; font-weight: 600; margin: 24px 0 6px; }
+    .policy p { color: var(--text-secondary); font-size: 0.98rem; margin-bottom: 12px; }
+    .policy ul { margin: 6px 0 14px 22px; color: var(--text-secondary); font-size: 0.98rem; }
+    .policy li { margin-bottom: 8px; }
+    .policy strong { color: var(--text-primary); }
+    .policy code {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.86em;
+      background: rgba(99, 102, 241, 0.10); color: #c7d2fe; padding: 1px 5px; border-radius: 4px;
+    }
+
+    .note {
+      background-color: var(--bg-card); border: 1px solid var(--border-color);
+      border-left: 3px solid var(--primary-color);
+      border-radius: 0 10px 10px 0; padding: 16px 20px; margin: 22px 0;
+      color: var(--text-secondary); font-size: 0.92rem;
+    }
+    .note strong { color: var(--text-primary); }
+
+    table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+    th { color: var(--text-primary); font-weight: 600; background-color: rgba(22, 26, 46, 0.7); }
+    td { color: var(--text-secondary); }
+    tr:last-child td { border-bottom: none; }
+
+    .back { display: inline-flex; align-items: center; gap: 6px; margin-top: 44px; color: var(--text-secondary); text-decoration: none; font-size: 0.92rem; }
+    .back:hover { color: var(--text-primary); }
+
+    footer { border-top: 1px solid var(--border-color); padding: 28px 0; }
+    .footer-inner { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; color: var(--text-muted); font-size: 0.84rem; }
+    .footer-inner a { color: var(--text-secondary); text-decoration: none; }
+    .footer-inner a:hover { color: var(--text-primary); }
+
+    @media (max-width: 768px) {
+      .container { padding: 0 16px; }
+      .nav-links { gap: 14px; }
+      .nav-links a { font-size: 0.85rem; }
+      .nav-links a.hide-sm { display: none; }
+      nav { height: 56px; }
+      .page { padding: 100px 0 60px; }
+      h1 { font-size: 2rem; }
+      .lede { font-size: 1rem; }
+      table { display: block; overflow-x: auto; white-space: nowrap; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container">
+      <a href="index-zh.html" class="logo">
+        <img src="screens/envoyhome-logo.png" alt="EnvoyHome 标志">
+        EnvoyHome
+      </a>
+      <div class="nav-links">
+        <a href="index-zh.html" class="hide-sm">概览</a>
+        <a href="privacy-zh.html" class="active">隐私</a>
+        <a href="privacy.html">EN</a>
+        <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer" class="hide-sm">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="page">
+    <div class="container">
+      <div class="page-inner">
+        <div class="eyebrow">法律 · 隐私</div>
+        <h1>隐私政策</h1>
+        <p class="updated">最后更新：2026 年 11 月 16 日 · 适用于 EnvoyHome <strong>0.2.0</strong>（桌面设置外壳与手机轻客户端），以及你自行运行的守护进程。手机包名：<code>com.envoymesh.envoyhome</code>。</p>
+        <p class="lede"><strong>EnvoyHome 是自托管的。</strong>对话、记忆、文档与智能家居控制都运行在<strong>你的</strong>家庭守护进程上——而不是 EnvoyHome 的云端大脑。本页说明软件会处理哪些数据、数据流向何处，以及发布方不收集什么。</p>
+
+        <div class="policy">
+          <h2>1. 一句话说明模式</h2>
+          <p>智能体运行在你控制的电脑上。桌面和手机是轻客户端：它们通过 <code>home.*</code> 通道连接那台守护进程，并显示它返回的结果。没有 EnvoyHome 注册，也没有一个强制性的厂商云在接收你的家庭对话、Home Assistant 令牌或模型 API 密钥。</p>
+          <div class="note"><strong>谁负责？</strong>在自托管模式下，运行家庭机器的个人或家庭决定存储哪些数据、配置哪些可选提供商。发布方提供软件，但不运营你的守护进程。</div>
+
+          <h2>2. 留在你机器上的数据</h2>
+          <ul>
+            <li><strong>对话与会话。</strong>会话记录、工具调用和回合产物保存在家庭电脑上的守护进程状态目录中。</li>
+            <li><strong>记忆。</strong>档案事实、常驻笔记、每日记录、情景索引，以及你接受的学习提案，都按家庭账户保存在本地。</li>
+            <li><strong>文档。</strong>放进 <code>knowledge/</code> 的文件及其按账户建立的 SQLite 索引留在家庭机器上，不会上传到 EnvoyHome 服务。</li>
+            <li><strong>密钥。</strong>模型提供商密钥、渠道机器人令牌、智能家居凭据和设备私钥由守护进程保存。手机和桌面收到的是结果，而不是存储的密钥。</li>
+            <li><strong>审批与授权。</strong>待审批记录和授权按账户持久化为文件，重启不会让问题悄悄消失。</li>
+          </ul>
+
+          <h2>3. 手机可能处理的数据</h2>
+          <table>
+            <thead>
+              <tr><th>类别</th><th>示例</th><th>去向</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>配对与会话</td>
+                <td>配对 URI、设备凭据、WebSocket 端点</td>
+                <td>仅发送到你的守护进程 / EnvoyMesh 托管对端</td>
+              </tr>
+              <tr>
+                <td>账户 ID</td>
+                <td>你选择的家庭档案</td>
+                <td>同上</td>
+              </tr>
+              <tr>
+                <td>对话与媒体</td>
+                <td>消息、你选择的附件、语音输入音频</td>
+                <td>对话/媒体发送到你的守护进程。设备端语音识别留在手机上，除非你使用操作系统自带的云端听写</td>
+              </tr>
+              <tr>
+                <td>可选位置</td>
+                <td>开启“与家庭共享位置”且授予系统权限时的经纬度</td>
+                <td>仅临时注入当前回合——默认不进入常驻记忆</td>
+              </tr>
+              <tr>
+                <td>推送令牌</td>
+                <td>APNs / FCM 设备令牌</td>
+                <td>通过 <code>home.registerPushToken</code> 注册到你的守护进程</td>
+              </tr>
+              <tr>
+                <td>本地网络</td>
+                <td>局域网发现、连接家庭的 <code>ws://</code></td>
+                <td>仅本地网络</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h2>4. 推送通知</h2>
+          <p>如果你启用通知，守护进程可通过 iOS 的 <strong>Apple 推送通知服务（APNs）</strong>或 Android 的 <strong>Firebase Cloud Messaging（FCM）</strong>发送<strong>审批</strong>与<strong>计划任务</strong>类仅通知唤醒。这些平台会收到投递通知所需的推送内容和设备令牌。在 Android 上，只有构建包含 <code>google-services.json</code> 时才会使用 Firebase；此时 FCM 是消息服务。</p>
+
+          <h2>5. 配对与网络访问</h2>
+          <p>手机通过扫描桌面设置中生成的二维码配对，或手动输入守护进程端点。iOS 需要“本地网络”权限才能访问局域网地址。配对会把设备绑定到特定的家庭账户；设备不能代表未绑定的账户行动，绑定关系无法解析时守护进程会拒绝请求。</p>
+
+          <h2>6. 可选的模型与工具提供商</h2>
+          <p>EnvoyHome 可以运行本地模型（llama.cpp 或 Ollama），也可以调用你配置的提供商，例如 OpenAI 兼容或 Anthropic 兼容端点。<strong>当你使用云端提供商时，当前回合所需的提示与上下文会离开家庭机器，并按该提供商的条款处理。</strong>这可能包括为该回合检索到的文档或记忆片段。对话与会话可能发送给你选择的提供商；发布方不是该提供商。</p>
+          <p><strong>隐私模式</strong>是一个硬开关：它强制本地推理，并拒绝网页搜索、网页调研、浏览器、HTTP 抓取、页面提取、远程 MCP、图像生成和消息发送等云端工具。开启智能家居出网阻断后，它还会拒绝 Home Assistant / MQTT 的设备动作与事件源通知。</p>
+          <p>浏览或抓取网页的工具会从家庭机器访问第三方网站。这些网站会像收到普通浏览器请求一样收到该请求，并适用它们自己的隐私政策。</p>
+
+          <h2>7. 智能家居数据</h2>
+          <p>Hub 凭据和 broker 密码留在守护进程上。设备状态、摄像头、门锁与存在数据被视为<strong>敏感</strong>：敏感结果会强制该回合使用本地推理，而不是发送给云端提供商。设备状态不会自动进入常驻记忆。EnvoyHome 与你的 hub 集成，不运营自己的智能家居云。</p>
+
+          <h2>8. 发布方不收集什么</h2>
+          <ul>
+            <li>自托管产品不要求注册账户、邮箱或手机号。</li>
+            <li>没有厂商运营的家庭对话、记忆、文档或智能家居令牌存储。</li>
+          </ul>
+
+          <h2>9. 保留与删除</h2>
+          <ul>
+            <li><strong>撤销设备：</strong>在桌面或手机的 Owner 设置中撤销，凭据将无法再打开会话。</li>
+            <li><strong>删除本地历史：</strong>在应用中删除，或移除守护进程状态目录里相应的会话与记忆文件。</li>
+            <li><strong>卸载手机应用</strong>会移除手机本地数据，但不会删除家庭电脑上守护进程的数据。</li>
+            <li><strong>清空守护进程状态目录</strong>可移除本地记忆与已存令牌。操作前请先备份需要保留的内容。</li>
+          </ul>
+
+          <h2>10. 儿童隐私</h2>
+          <p>EnvoyHome 不面向 13 岁以下儿童，也不面向你所在司法辖区规定的最低年龄以下的用户。请勿在缺乏适当监督的情况下为儿童创建家庭档案。</p>
+
+          <h2>11. 你的选择</h2>
+          <ul>
+            <li>选择纯本地推理，或开启隐私模式以阻断云端工具，并可选地阻断智能家居出网。</li>
+            <li>决定哪些文档进入知识库，以及配置哪些可选的提供商、渠道和 MCP 服务器。</li>
+            <li>通过 PendingLearn 接受或拒绝记忆与技能变更，它们才会持久化。</li>
+            <li>撤销配对，收回某台设备的访问权限。</li>
+          </ul>
+
+          <h2>12. 政策变更</h2>
+          <p>随着预览版演进，本政策可能更新。页面顶部的日期是当前版本的有效日期。若提交公开商店上架，重大变更会先反映在本页。</p>
+
+          <h2>13. 联系我们</h2>
+          <p>关于本政策或预览版的问题：</p>
+          <ul>
+            <li><a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a></li>
+            <li><a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a></li>
+          </ul>
+          <p style="color: var(--text-muted); font-size: 0.88rem;">本页是产品隐私摘要，不构成法律意见。向应用商店提交的发布方必须提供该商店要求的法律实体与联系方式。</p>
+        </div>
+
+        <a href="index-zh.html" class="back">← 返回 EnvoyHome</a>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <span>&copy; 2026 EnvoyHome · 开源、自托管、本地优先</span>
+      <span><a href="index-zh.html">概览</a> · <a href="privacy.html">English</a> · <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer">GitHub</a></span>
+    </div>
+  </footer>
+</body>
+</html>

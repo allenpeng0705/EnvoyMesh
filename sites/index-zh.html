@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EnvoyMesh Network</title>
-  <meta name="description" content="去中心化 P2P 自主 AI 智能体网络 — 家用电脑上的编程（Coding）支持已就绪智能体（Envoy Harness、Claude Code、Codex、Cursor…）、Envoy Market、团队任务、知识库 RAG、EnvoyGo 移动端与 EnvoyDev。加密身份，安全设计。">
+  <meta name="description" content="去中心化 P2P 自主 AI 智能体网络 — 家用电脑上的编程（Coding）支持已就绪智能体（Envoy Harness、Claude Code、Codex、Cursor…）、Envoy Market、团队任务、知识库 RAG、EnvoyGo 移动端、EnvoyDev 与 EnvoyHome。加密身份，安全设计。">
 
   <style>
     * {
@@ -1298,8 +1298,13 @@
     }
     .family-apps-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 24px;
+    }
+    @media (max-width: 1024px) {
+      .family-apps-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
     }
     .family-app-card {
       display: flex;
@@ -2016,6 +2021,7 @@
             <li><a href="#envoygo">EnvoyGo</a></li>
             <li class="nav-dropdown-sep">家族应用</li>
             <li><a href="envoydev/index-zh.html">EnvoyDev</a></li>
+            <li><a href="envoyhome/index-zh.html">EnvoyHome</a></li>
             <li><a href="veda-ai/index_zh.html">Veda Notes</a></li>
           </ul>
         </li>
@@ -2058,6 +2064,7 @@
     <div class="mobile-nav-label">产品</div>
     <a href="#envoygo">EnvoyGo</a>
     <a href="envoydev/index-zh.html">EnvoyDev</a>
+    <a href="envoyhome/index-zh.html">EnvoyHome</a>
     <a href="veda-ai/index_zh.html">Veda Notes</a>
     <div class="mobile-nav-label">特性</div>
     <a href="#features">概览</a>
@@ -2122,6 +2129,17 @@
           <p>编程智能体的控制平面——在专属窗口中提供项目栏、任务树与内联审批。在你自己的机器上驱动 Claude Code、Codex、Cursor 等 47 个智能体，并可在手机上跟进运行。</p>
           <div>
             <a href="envoydev/index-zh.html" class="btn btn-secondary">打开 EnvoyDev →</a>
+          </div>
+        </div>
+        <div class="family-app-card">
+          <div class="family-app-head">
+            <img src="envoyhome/screens/envoyhome-logo.png" alt="" class="family-app-icon" loading="lazy">
+            <h3>EnvoyHome</h3>
+          </div>
+          <span class="harness-badge" style="background-color: rgba(52, 211, 153, 0.15); color: #34d399;">桌面端 · 移动端 · 预览 0.2.0</span>
+          <p>家庭智能体——对话、记忆、文档知识库、静态工作流、审批，以及可选的 Home Assistant / MQTT，全部运行在你自己的机器上。桌面和手机只是望向家庭守护进程的轻客户端。</p>
+          <div>
+            <a href="envoyhome/index-zh.html" class="btn btn-secondary">打开 EnvoyHome →</a>
           </div>
         </div>
         <div class="family-app-card">
@@ -3228,6 +3246,7 @@
         <li><a href="EnvoyMesh_GuideBook_0.4.0.zh-CN.html">使用指南</a></li>
         <li><a href="#coding-tab">编程</a></li>
         <li><a href="envoydev/index-zh.html">EnvoyDev</a></li>
+        <li><a href="envoyhome/index-zh.html">EnvoyHome</a></li>
         <li><a href="veda-ai/index_zh.html">Veda Notes</a></li>
         <li><a href="security-zh.html">安全</a></li>
         <li><a href="privacy.html">隐私政策</a></li>

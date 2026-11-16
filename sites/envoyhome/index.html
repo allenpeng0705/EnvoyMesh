@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyHome — A self-hosted home agent on your own computer</title>
+  <meta name="description" content="EnvoyHome is a self-hosted, security-first home agent: chat, memory, a document knowledge base, static workflows, approvals, and optional Home Assistant / MQTT control — all running on your own computer. Desktop and phone are thin clients.">
+  <link rel="icon" type="image/png" href="screens/envoyhome-logo-128.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #a5b4fc;
+      --secondary-color: #22d3ee;
+      --accent-color: #a855f7;
+      --bg-dark: #0c0f1d;
+      --bg-card: #161a2e;
+      --bg-card-hover: #1f2440;
+      --text-primary: #f8fafc;
+      --text-secondary: #a8b3c9;
+      --text-muted: #6b7691;
+      --border-color: #2a3050;
+      --gradient-primary: linear-gradient(135deg, #818cf8 0%, #a855f7 52%, #22d3ee 100%);
+      --gradient-soft: linear-gradient(135deg, rgba(99, 102, 241, 0.10) 0%, rgba(34, 211, 238, 0.08) 100%);
+    }
+
+    /* Clip the off-canvas mobile menu so it cannot widen the layout viewport on phones */
+    html { scroll-behavior: smooth; overflow-x: hidden; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    ::selection { background-color: var(--primary-color); color: white; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+    section[id] { scroll-margin-top: 80px; }
+
+    /* Header */
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background-color: rgba(12, 15, 29, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      transition: all 0.3s ease;
+    }
+    header.scrolled { background-color: rgba(12, 15, 29, 0.96); }
+
+    nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+      text-decoration: none; color: var(--text-primary);
+      font-weight: 600; font-size: 1.25rem;
+    }
+    .logo img { width: 36px; height: 36px; border-radius: 9px; }
+
+    .nav-links { display: flex; list-style: none; gap: 28px; align-items: center; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.95rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+
+    .nav-actions { display: flex; align-items: center; gap: 12px; justify-content: center; }
+    .nav-util { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; padding: 6px 8px; transition: color 0.2s; }
+    .nav-util:hover { color: var(--text-primary); }
+    .nav-github { display: flex; align-items: center; justify-content: center; }
+
+    .btn {
+      padding: 10px 20px; border-radius: 8px; font-weight: 500; font-size: 0.9rem;
+      text-decoration: none; transition: all 0.2s ease; border: none; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .btn-primary { background: var(--gradient-primary); color: white; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35); }
+    .btn-secondary { background-color: transparent; color: var(--text-secondary); border: 1px solid var(--border-color); }
+    .btn-secondary:hover { background-color: var(--bg-card); color: var(--text-primary); }
+    .btn-nav-cta { padding: 8px 16px; font-size: 0.875rem; }
+
+    .mobile-menu-btn { display: none; background: none; border: none; cursor: pointer; padding: 8px; }
+    .mobile-menu-btn span { display: block; width: 22px; height: 2px; background-color: var(--text-primary); margin: 5px 0; transition: 0.3s; }
+    .mobile-menu-btn.active span:nth-child(1) { transform: rotate(45deg) translate(5px, 5px); }
+    .mobile-menu-btn.active span:nth-child(2) { opacity: 0; }
+    .mobile-menu-btn.active span:nth-child(3) { transform: rotate(-45deg) translate(7px, -7px); }
+
+    .mobile-nav-overlay {
+      position: fixed; top: 64px; left: 0; right: 0; bottom: 0;
+      background-color: var(--bg-dark); z-index: 99;
+      display: flex; flex-direction: column; padding: 24px; gap: 8px;
+      transform: translateX(100%); transition: transform 0.3s ease, visibility 0s linear 0.3s;
+      visibility: hidden; overflow-y: auto;
+    }
+    .mobile-nav-overlay.active { transform: translateX(0); visibility: visible; transition: transform 0.3s ease; }
+    .mobile-nav-overlay a { color: var(--text-primary); text-decoration: none; font-size: 1.05rem; padding: 10px 0; }
+    .mobile-nav-overlay .mobile-nav-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
+    /* Hero */
+    .hero { padding: 140px 0 80px; text-align: center; position: relative; overflow: hidden; }
+    .hero::before {
+      content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+      background: radial-gradient(circle at 28% 32%, rgba(99, 102, 241, 0.18) 0%, transparent 50%),
+                  radial-gradient(circle at 72% 66%, rgba(34, 211, 238, 0.10) 0%, transparent 50%),
+                  radial-gradient(circle at 55% 20%, rgba(168, 85, 247, 0.10) 0%, transparent 45%);
+      animation: float 20s ease-in-out infinite; z-index: 0;
+    }
+    @keyframes float { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(20px, -20px); } }
+
+    .hero-content { position: relative; z-index: 1; }
+
+    .hero-logo {
+      width: 96px; height: 96px; border-radius: 22px; display: block; margin: 0 auto 20px;
+      box-shadow: 0 14px 44px rgba(99, 102, 241, 0.42), 0 4px 14px rgba(0, 0, 0, 0.35);
+    }
+
+    .preview-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+      color: #7dd3fc; background-color: rgba(14, 165, 233, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      padding: 4px 11px; border-radius: 999px; margin-bottom: 18px;
+    }
+    .preview-badge::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%; background-color: #38bdf8;
+      box-shadow: 0 0 8px #38bdf8;
+    }
+
+    .agent-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 640px; margin: 0 auto 28px; }
+    .agent-chip {
+      font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;
+      background-color: rgba(148, 163, 184, 0.07); border: 1px solid var(--border-color);
+      padding: 5px 12px; border-radius: 999px;
+    }
+    .agent-chip.chip-more { color: var(--primary-light); background-color: rgba(99, 102, 241, 0.12); border-color: rgba(99, 102, 241, 0.35); }
+
+    .hero h1 {
+      font-size: 3.4rem; font-weight: 700; margin-bottom: 16px;
+      background: var(--gradient-primary); -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: -0.025em;
+      line-height: 1.12;
+    }
+    .hero p { font-size: 1.22rem; color: var(--text-secondary); max-width: 680px; margin: 0 auto 24px; line-height: 1.7; }
+
+    .hero-stats { display: flex; justify-content: center; gap: 48px; margin-top: 48px; flex-wrap: wrap; }
+    .stat-item { text-align: center; }
+    .stat-value { font-size: 2rem; font-weight: 700; color: var(--primary-light); }
+    .stat-label { font-size: 0.9rem; color: var(--text-muted); margin-top: 4px; }
+
+    .hero-shot {
+      max-width: 980px; margin: 56px auto 0; border-radius: 14px; overflow: hidden;
+      border: 1px solid var(--border-color); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+      background-color: #0b0e1a;
+    }
+    .hero-shot img { display: block; width: 100%; height: auto; }
+    .figure-caption { text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 14px; }
+
+    /* Sections */
+    .section { padding: 80px 0; }
+    .section-header { text-align: center; margin-bottom: 64px; }
+    .section-header h2 { font-size: 2.5rem; font-weight: 700; margin-bottom: 16px; letter-spacing: -0.015em; }
+    .section-header p { font-size: 1.1rem; color: var(--text-secondary); max-width: 620px; margin: 0 auto; }
+
+    .intro-text { max-width: 780px; margin: 0 auto; color: var(--text-secondary); font-size: 1.05rem; line-height: 1.85; text-align: center; }
+    .intro-text p + p { margin-top: 16px; }
+    .intro-text strong { color: var(--text-primary); }
+
+    /* Feature grid */
+    .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+    .feature-card {
+      background-color: var(--bg-card); border-radius: 16px; padding: 28px;
+      border: 1px solid var(--border-color); transition: all 0.3s ease;
+    }
+    .feature-card:hover { transform: translateY(-4px); border-color: var(--primary-color); box-shadow: 0 8px 32px rgba(99, 102, 241, 0.12); }
+    .feature-icon {
+      width: 44px; height: 44px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 16px; font-size: 1.35rem;
+    }
+    .feature-icon.purple { background-color: rgba(168, 85, 247, 0.12); }
+    .feature-icon.cyan { background-color: rgba(34, 211, 238, 0.12); }
+    .feature-icon.blue { background-color: rgba(99, 102, 241, 0.14); }
+    .feature-icon.green { background-color: rgba(34, 197, 94, 0.12); }
+    .feature-icon.orange { background-color: rgba(249, 115, 22, 0.12); }
+    .feature-icon.pink { background-color: rgba(236, 72, 153, 0.12); }
+    .feature-card h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 8px; }
+    .feature-card p { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.65; }
+    .feature-card code, .intro-text code, .split-copy code, .channel-card code, .step-body code, .phone-caption code {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 0.84em; background: rgba(99, 102, 241, 0.10);
+      padding: 1px 5px; border-radius: 4px; color: #c7d2fe;
+    }
+
+    /* Screenshot gallery */
+    .shots-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+    .shot-card.featured { grid-column: 1 / -1; }
+    .shot-card {
+      border-radius: 14px; overflow: hidden; border: 1px solid var(--border-color);
+      background-color: #0b0e1a; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      transition: all 0.3s ease;
+    }
+    .shot-card:hover { transform: translateY(-3px); border-color: var(--primary-color); }
+    .shot-card img { display: block; width: 100%; height: auto; cursor: zoom-in; }
+    .shot-caption { padding: 16px 18px 18px; }
+    .shot-caption h4 { font-size: 0.98rem; font-weight: 600; margin-bottom: 4px; }
+    .shot-caption p { color: var(--text-muted); font-size: 0.85rem; line-height: 1.55; }
+
+    /* Mobile app */
+    .mobile-features { margin-bottom: 40px; }
+    .mobile-shots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-items: start; }
+    .phone-card { min-width: 0; text-align: center; }
+    .phone-frame {
+      width: min(100%, 252px); margin: 0 auto; padding: 6px;
+      border: 1px solid #414a70; border-radius: 34px; background-color: #101426;
+      box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);
+    }
+    .phone-frame img { display: block; width: 100%; height: auto; border-radius: 27px; cursor: zoom-in; }
+    .phone-caption { max-width: 290px; margin: 16px auto 0; }
+    .phone-caption h4 { font-size: 0.98rem; font-weight: 600; margin-bottom: 5px; }
+    .phone-caption p { color: var(--text-muted); font-size: 0.85rem; line-height: 1.55; }
+
+    /* Split sections */
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+    .split-copy h3 { font-size: 1.6rem; font-weight: 700; margin-bottom: 14px; letter-spacing: -0.01em; }
+    .split-copy p { color: var(--text-secondary); font-size: 1rem; line-height: 1.75; margin-bottom: 14px; }
+    .split-copy strong { color: var(--text-primary); }
+    .split-copy ul { list-style: none; margin: 18px 0 0; }
+    .split-copy li { position: relative; padding-left: 24px; color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 10px; line-height: 1.6; }
+    .split-copy li::before {
+      content: ''; position: absolute; left: 2px; top: 8px;
+      width: 9px; height: 9px; border-radius: 3px; background: var(--gradient-primary);
+    }
+
+    .split-shot {
+      border-radius: 14px; overflow: hidden; border: 1px solid var(--border-color);
+      box-shadow: 0 16px 50px rgba(0, 0, 0, 0.4); background-color: #0b0e1a;
+    }
+    .split-shot img { display: block; width: 100%; height: auto; }
+
+    /* Memory stack */
+    .memory-stack { display: flex; flex-direction: column; gap: 8px; }
+    .memory-row {
+      display: grid; grid-template-columns: 58px 1fr auto; gap: 14px; align-items: center;
+      background-color: var(--bg-card); border: 1px solid var(--border-color);
+      border-radius: 10px; padding: 12px 16px;
+    }
+    .memory-id {
+      font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
+      color: var(--primary-light); background-color: rgba(99, 102, 241, 0.12);
+      border-radius: 6px; text-align: center; padding: 3px 0;
+    }
+    .memory-name { font-size: 0.92rem; font-weight: 600; }
+    .memory-sub { display: block; font-size: 0.78rem; font-weight: 400; color: var(--text-muted); margin-top: 1px; }
+    .memory-desc { font-size: 0.8rem; color: var(--text-muted); text-align: right; }
+    .memory-note { color: var(--text-muted); font-size: 0.82rem; margin-top: 12px; }
+
+    /* Callout */
+    .callout {
+      margin-top: 32px; padding: 20px 24px;
+      background: var(--gradient-soft);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: 14px; color: var(--text-secondary); font-size: 0.94rem; line-height: 1.7;
+    }
+    .callout strong { color: var(--text-primary); }
+
+    /* Channel grid */
+    .channel-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .channel-card {
+      background-color: var(--bg-card); border: 1px solid var(--border-color);
+      border-radius: 12px; padding: 20px;
+    }
+    .channel-card h4 { font-size: 0.98rem; font-weight: 600; margin-bottom: 6px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .channel-card p { color: var(--text-muted); font-size: 0.82rem; line-height: 1.55; }
+    .channel-tag {
+      font-size: 0.62rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 999px; background-color: rgba(99, 102, 241, 0.14); color: var(--primary-light);
+      flex: 0 0 auto; white-space: nowrap; margin-top: 2px;
+    }
+    .channel-tag.primary { background-color: rgba(34, 211, 238, 0.12); color: #67e8f9; }
+
+    /* Security grid */
+    .security-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .security-card {
+      background-color: var(--bg-card); border: 1px solid var(--border-color);
+      border-radius: 14px; padding: 24px;
+    }
+    .security-card .kicker { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--secondary-color); margin-bottom: 8px; }
+    .security-card h4 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+    .security-card p { color: var(--text-secondary); font-size: 0.87rem; line-height: 1.6; }
+
+    /* Family */
+    .family-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+    .family-item {
+      display: flex; flex-direction: column; align-items: flex-start;
+      padding: 28px; border-radius: 16px;
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      background: var(--gradient-soft);
+    }
+    .family-item img { width: 56px; height: 56px; border-radius: 12px; margin-bottom: 16px; }
+    .family-item h3 { font-size: 1.15rem; margin-bottom: 8px; }
+    .family-item p { color: var(--text-secondary); font-size: 0.92rem; line-height: 1.65; margin: 0 0 18px; }
+    .family-link { margin-top: auto; color: var(--primary-light); font-size: 0.9rem; font-weight: 500; text-decoration: none; transition: color 0.2s; }
+    .family-link:hover { color: var(--text-primary); }
+
+    /* Get started */
+    .start-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr); gap: 28px; align-items: start; }
+    .steps { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    .step-row {
+      display: grid; grid-template-columns: 40px 1fr; gap: 16px;
+      background-color: var(--bg-card); border: 1px solid var(--border-color);
+      border-radius: 14px; padding: 20px 22px;
+    }
+    .step-num {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--gradient-primary); color: white; font-weight: 700; font-size: 0.9rem;
+    }
+    .step-body h4 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+    .step-body p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6; }
+    .step-body { min-width: 0; }
+    pre {
+      margin-top: 10px; padding: 12px 14px; overflow-x: auto; max-width: 100%;
+      background-color: #0a0d18; border: 1px solid var(--border-color); border-radius: 9px;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.82rem; line-height: 1.65;
+      color: #dbe3f5;
+    }
+    pre .cmt { color: #64748b; }
+
+    .endpoint-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 10px; font-size: 0.85rem; }
+    .endpoint-table td { padding: 5px 0; border-bottom: 1px solid rgba(42, 48, 80, 0.7); color: var(--text-secondary); }
+    .endpoint-table td:first-child { width: 38%; }
+    .endpoint-table td:last-child { text-align: right; font-family: ui-monospace, 'SF Mono', Menlo, monospace; color: #c7d2fe; overflow-wrap: anywhere; }
+    .endpoint-table tr:last-child td { border-bottom: none; }
+
+    .start-side { display: flex; flex-direction: column; gap: 20px; }
+    .qr-card {
+      background-color: var(--bg-card); border: 1px solid var(--border-color);
+      border-radius: 14px; padding: 26px; text-align: center;
+    }
+    .qr-host {
+      width: 180px; height: 180px; margin: 0 auto 14px; padding: 12px;
+      background: #fff; border-radius: 12px; line-height: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: #0c0f1d; font-size: 0.75rem; font-weight: 500;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+    .qr-host canvas { display: block; width: 156px !important; height: 156px !important; }
+    .qr-card h4 { font-size: 0.98rem; margin-bottom: 4px; }
+    .qr-card p { color: var(--text-muted); font-size: 0.82rem; margin-bottom: 14px; }
+    .platform-card {
+      background-color: var(--bg-card); border: 1px solid var(--border-color);
+      border-radius: 14px; padding: 22px 24px;
+    }
+    .platform-card h4 { font-size: 0.95rem; margin-bottom: 12px; }
+    .platform-row { display: flex; justify-content: space-between; gap: 12px; font-size: 0.86rem; padding: 6px 0; color: var(--text-secondary); }
+    .platform-row span:last-child { color: var(--text-muted); text-align: right; }
+    .preview-note { color: var(--text-muted); font-size: 0.8rem; line-height: 1.6; }
+
+    /* Developer path — secondary to the main get-started steps */
+    .dev-path {
+      margin-top: 28px; padding: 20px 22px;
+      border: 1px solid var(--border-color); border-radius: 14px;
+      background-color: rgba(22, 26, 46, 0.55);
+    }
+    .dev-path h4 { font-size: 0.92rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; }
+    .dev-path p { color: var(--text-secondary); font-size: 0.86rem; line-height: 1.7; margin: 0 0 12px; }
+    .dev-path p:last-child { margin-bottom: 0; }
+    .dev-path pre { margin: 0 0 14px; font-size: 0.8rem; }
+
+    /* Footer */
+    footer { padding: 48px 0 32px; border-top: 1px solid var(--border-color); }
+    .footer-content { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 24px; }
+    .footer-links { display: flex; gap: 24px; list-style: none; flex-wrap: wrap; }
+    .footer-links a { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--text-secondary); }
+    .footer-contact { color: var(--text-muted); font-size: 0.85rem; }
+    .footer-contact a { color: var(--text-secondary); text-decoration: none; }
+    .footer-contact a:hover { color: var(--text-primary); }
+    .footer-bottom { text-align: center; color: var(--text-muted); font-size: 0.8rem; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-color); }
+    .footer-bottom a { color: var(--primary-light); text-decoration: none; }
+
+    /* Lightbox */
+    .lightbox {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.93); z-index: 200;
+      display: none; align-items: center; justify-content: center; padding: 40px;
+    }
+    .lightbox.active { display: flex; }
+    .lightbox img { max-width: 95%; max-height: 88vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55); }
+    .lightbox-close { position: absolute; top: 24px; right: 24px; background: none; border: none; color: white; font-size: 2.2rem; cursor: pointer; line-height: 1; }
+    .lightbox-caption { position: absolute; bottom: 24px; left: 0; right: 0; text-align: center; color: var(--text-secondary); font-size: 0.9rem; }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .nav-links, header .nav-actions { display: none; }
+      .mobile-menu-btn { display: block; }
+      .features-grid, .shots-grid, .security-grid { grid-template-columns: repeat(2, 1fr); }
+      .channel-grid { grid-template-columns: repeat(2, 1fr); }
+      .split { grid-template-columns: 1fr; gap: 32px; }
+      .start-grid { grid-template-columns: 1fr; }
+      .hero-shot { margin-top: 40px; }
+      .hero-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 26px 20px; max-width: 480px; margin: 40px auto 0; }
+    }
+    @media (max-width: 768px) {
+      .container { padding: 0 16px; }
+      nav { height: 56px; }
+      .hero { padding: 104px 0 60px; }
+      .hero h1 { font-size: 2.15rem; }
+      .hero p { font-size: 1.02rem; }
+      .hero-logo { width: 76px; height: 76px; border-radius: 18px; margin-bottom: 16px; }
+      .hero-stats { gap: 26px; margin-top: 36px; }
+      .stat-value { font-size: 1.4rem; }
+      .stat-label { font-size: 0.78rem; }
+      .section { padding: 60px 0; }
+      .section-header { margin-bottom: 40px; }
+      .section-header h2 { font-size: 1.8rem; }
+      .features-grid, .shots-grid, .security-grid, .channel-grid { grid-template-columns: 1fr; }
+      .mobile-shots { grid-template-columns: 1fr; gap: 36px; }
+      .memory-row { grid-template-columns: 50px 1fr; }
+      .memory-desc { grid-column: 2; text-align: left; }
+      .family-grid { grid-template-columns: 1fr; }
+      .footer-content { flex-direction: column; text-align: center; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hero::before { animation: none; }
+      .feature-card, .shot-card, .btn { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <nav class="container">
+      <a href="#" class="logo">
+        <img src="screens/envoyhome-logo.png" alt="EnvoyHome logo">
+        EnvoyHome
+      </a>
+      <ul class="nav-links">
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#capabilities">Capabilities</a></li>
+        <li><a href="#product">Product</a></li>
+        <li><a href="#memory">Memory</a></li>
+        <li><a href="#home">Smart home</a></li>
+        <li><a href="#security">Security</a></li>
+        <li><a href="#get-started">Get started</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="index-zh.html" class="nav-util">中文</a>
+        <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer" class="nav-util nav-github" aria-label="GitHub">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        </a>
+        <a href="#get-started" class="btn btn-primary btn-nav-cta">Get started</a>
+      </div>
+      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">
+        <span></span><span></span><span></span>
+      </button>
+    </nav>
+  </header>
+
+  <!-- Mobile Navigation Overlay -->
+  <div class="mobile-nav-overlay" id="mobileNavOverlay">
+    <a href="#overview">Overview</a>
+    <a href="#capabilities">Capabilities</a>
+    <a href="#product">Product</a>
+    <a href="#memory">Memory</a>
+    <a href="#home">Smart home</a>
+    <a href="#security">Security</a>
+    <a href="#get-started">Get started</a>
+    <a href="privacy.html">Privacy</a>
+    <div class="mobile-nav-actions">
+      <a href="index-zh.html" class="btn btn-secondary">中文</a>
+      <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer" class="btn btn-primary">View on GitHub</a>
+    </div>
+  </div>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container hero-content">
+      <img src="screens/envoyhome-logo.png" alt="EnvoyHome" class="hero-logo">
+      <div><span class="preview-badge">0.2.0 preview</span></div>
+      <h1>A home agent that lives on your computer</h1>
+      <p>EnvoyHome is a self-hosted, security-first home agent: chat, memory, a document knowledge base, static workflows, approvals, and optional smart-home control — all running on your own machine. Your desktop and phone are just windows onto it.</p>
+      <div class="agent-chips" aria-label="What EnvoyHome ships with">
+        <span class="agent-chip">Agent loop</span>
+        <span class="agent-chip">Workflows</span>
+        <span class="agent-chip">Memory L0–L7</span>
+        <span class="agent-chip">Doc KB</span>
+        <span class="agent-chip">Approvals</span>
+        <span class="agent-chip">Home Assistant</span>
+        <span class="agent-chip">MQTT</span>
+        <span class="agent-chip">Skills</span>
+        <span class="agent-chip">MCP</span>
+        <span class="agent-chip chip-more">Schedules</span>
+      </div>
+      <div class="nav-actions" style="justify-content: center;">
+        <a href="#get-started" class="btn btn-primary">Run it at home</a>
+        <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">View on GitHub</a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat-item">
+          <div class="stat-value">8</div>
+          <div class="stat-label">Memory layers · L0–L7</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">6</div>
+          <div class="stat-label">First-party chat channels</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">2</div>
+          <div class="stat-label">Thin clients · desktop + phone</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">MIT</div>
+          <div class="stat-label">Open source · self-hosted</div>
+        </div>
+      </div>
+      <div class="hero-shot">
+        <img src="screens/envoyhome-architecture.svg" alt="EnvoyHome architecture — desktop and phone thin clients dial the home agent daemon over home.*; the core is envoy-harness, workflows, memory, approvals, and the tool catalogue; Home Assistant and MQTT hubs are optional" loading="eager">
+      </div>
+      <p class="figure-caption">Thin clients dial the home agent over <code>home.*</code>. The center is the agent loop, workflows, memory, and tools; hubs are optional.</p>
+    </div>
+  </section>
+
+  <!-- What is EnvoyHome -->
+  <section class="section" id="overview">
+    <div class="container">
+      <div class="section-header">
+        <h2>What is EnvoyHome?</h2>
+        <p>A household agent you own — not a cloud chatbot with a home-themed name.</p>
+      </div>
+      <div class="intro-text">
+        <p>EnvoyHome is the <strong>household agent</strong> in the EnvoyMesh apps family. The core is the <strong>agent loop itself</strong>: envoy-harness, static workflows, memory, approvals, and a rich tool catalogue the agent can use — files, web, browser, office documents, skills, schedules, MCP, and more.</p>
+        <p>The agent lives on the home computer. Keys, transcripts, sandboxes, and smart-home credentials stay there. Desktop and phone <strong>dial in</strong> over the <code>home.*</code> channel; they are windows, not brains.</p>
+        <p>Smart home is <strong>one tool surface</strong> among those capabilities — useful when you connect a hub, never the definition of the product. EnvoyHome enhances Home Assistant and MQTT with natural language, approvals, and workflows. It does not replace your hub, and it does not ship a social network.</p>
+      </div>
+
+      <div id="capabilities" style="scroll-margin-top: 80px;"></div>
+      <div class="features-grid" style="margin-top: 56px;">
+        <div class="feature-card">
+          <div class="feature-icon blue">🏠</div>
+          <h3>The agent stays home</h3>
+          <p>Every chat, workflow, and scheduled turn runs through the home daemon. Thin clients reconnect to it — they never hold the model keys or run the loop.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon cyan">🔁</div>
+          <h3>Workflows are not a second engine</h3>
+          <p>Static DAGs in a visual diagram or YAML, drafted from natural language. Workflow nodes call the same tools as chat, with the same approvals.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon purple">🛡️</div>
+          <h3>Approvals before consequences</h3>
+          <p>Durable pending approvals, a 600-second default TTL, fail-closed decisions, and grants bound to the resolved call — not a blanket “agent may do anything” switch.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon green">🧠</div>
+          <h3>Memory that learns carefully</h3>
+          <p>Profile, standing notes, daily logs, episodic search, KnowYou, a document knowledge base, and skills — with PendingLearn gating the durable writes.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon orange">👨‍👩‍👧</div>
+          <h3>One agent, many people</h3>
+          <p>Household profiles share the agent but keep isolated memory, files, and policy. Phones pair to the house, and each device is bound to the accounts it may act for.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon pink">🔀</div>
+          <h3>Cloud, local, or careful mix</h3>
+          <p>Bring an OpenAI-compatible or Anthropic-compatible provider, run llama.cpp locally, or connect Ollama. Privacy Mode forces local turns and can block smart-home egress.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon cyan">🧰</div>
+          <h3>A real tool catalogue</h3>
+          <p>Files behind a path jail, web search and reading, a browser with form cards, office document import/export, skills, sessions, MCP servers, and optional HA/MQTT tools.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon purple">🧩</div>
+          <h3>Skills pass a verify gate</h3>
+          <p>The on-disk format is a <code>SKILL.md</code> directory. Install from disk, a URL, or ClawHub — then verify capabilities before the skill can run. Agent-authored skills wait in PendingLearn.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon green">⏰</div>
+          <h3>Schedules, heartbeat, standing orders</h3>
+          <p>Repeating or one-shot jobs, natural-language “when” proposals you confirm, a heartbeat for periodic review, and standing orders that survive restarts.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Product screenshots -->
+  <section class="section" id="product" style="background-color: #0a0d19;">
+    <div class="container">
+      <div class="section-header">
+        <h2>A Settings-first product</h2>
+        <p>The desktop shell is where the household is configured, the agent is watched, and approvals are answered.</p>
+      </div>
+      <div class="shots-grid">
+        <div class="shot-card featured">
+          <img src="screens/desktop-workflows.png" alt="EnvoyHome desktop — Workflows with a sample DAG in the diagram editor" loading="lazy">
+          <div class="shot-caption">
+            <h4>Workflows</h4>
+            <p>Top-level Workflows (not buried under Skills). Build a DAG in the diagram or in YAML — same tool catalogue and approvals as chat.</p>
+          </div>
+        </div>
+        <div class="shot-card">
+          <img src="screens/desktop-home-assistant.png" alt="EnvoyHome desktop — Connections → Home Assistant with demo hub, device binding, and safety options" loading="lazy">
+          <div class="shot-caption">
+            <h4>Connections → Home Assistant</h4>
+            <p>Connect a hub or start the bundled demo. Devices must be bound before the agent can use them; safety locks always ask first.</p>
+          </div>
+        </div>
+        <div class="shot-card">
+          <img src="screens/desktop-chat.png" alt="EnvoyHome desktop — Chats with the session rail, profile switcher, and inline approval surface" loading="lazy">
+          <div class="shot-caption">
+            <h4>Chats</h4>
+            <p>A session rail per profile, a composer for the home agent, and approvals shown inline — Allow, Deny, or narrow to this exact call.</p>
+          </div>
+        </div>
+      </div>
+      <p class="figure-caption">Captured from the local desktop Settings shell against a demonstration profile. Click any screenshot to enlarge.</p>
+    </div>
+  </section>
+
+  <!-- Mobile app -->
+  <section class="section" id="mobile">
+    <div class="container">
+      <div class="section-header">
+        <h2>Your home agent, from your phone</h2>
+        <p>The EnvoyHome Flutter preview for iOS and Android is a thin client for a daemon you run. Pair once, then chat, answer approvals, and manage the same home setup over your own connection.</p>
+      </div>
+      <div class="features-grid mobile-features">
+        <div class="feature-card">
+          <div class="feature-icon blue">01</div>
+          <h3>Pair without a cloud account</h3>
+          <p>Scan the desktop QR, paste a pairing link, enter <code>host:port</code>, or connect over SSH. The phone dials your home daemon directly.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon purple">02</div>
+          <h3>Chat, approve, and share</h3>
+          <p>Profile-aware conversations, inline Allow / Deny approvals, attachments, and OS dictation. Shared files and artifacts use the same home connection.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon cyan">03</div>
+          <h3>One household control plane</h3>
+          <p>Chat, a Schedules hub (Jobs · Scenes · Histories), and Settings mirror the desktop. LLM, Connections, Skills (packs), and System stay in one Settings hub.</p>
+        </div>
+      </div>
+      <div class="mobile-shots">
+        <div class="phone-card">
+          <div class="phone-frame">
+            <img src="screens/mobile-pairing.png" alt="EnvoyHome mobile app — Connect screen with empty pairing link field and QR, host:port, and SSH options" loading="lazy">
+          </div>
+          <div class="phone-caption">
+            <h4>Pair your way</h4>
+            <p>The real Connect screen with Link, <code>host:port</code>, and SSH options. The pairing field is intentionally empty.</p>
+          </div>
+        </div>
+        <div class="phone-card">
+          <div class="phone-frame">
+            <img src="screens/mobile-chat.png" alt="EnvoyHome mobile app — a generic morning routine conversation with a real assistant reply" loading="lazy">
+          </div>
+          <div class="phone-caption">
+            <h4>Chat on the go</h4>
+            <p>A real, generic exchange over the paired daemon connection. The conversation contains no personal or household data.</p>
+          </div>
+        </div>
+        <div class="phone-card">
+          <div class="phone-frame">
+            <img src="screens/mobile-settings.png" alt="EnvoyHome mobile app — connected Settings hub with LLM, Connections, Skills, and System" loading="lazy">
+          </div>
+          <div class="phone-caption">
+            <h4>One connected Settings hub</h4>
+            <p>LLM, Connections, Skills, and System mirror the same desktop control plane over the paired home connection.</p>
+          </div>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>Preview thin client (0.2.0).</strong> A reachable EnvoyHome daemon is required; the phone app is not a standalone cloud chatbot. The optional Home tab appears only when Home Assistant is configured and enabled. APNs / FCM push is optional (approvals and schedule notifies) and configured on the daemon. Store listing pack is prepared; there is no App Store or Play listing live yet.
+      </div>
+      <p class="figure-caption">Captured from the actual Flutter app on an iOS simulator. Click any phone screenshot to enlarge.</p>
+    </div>
+  </section>
+
+  <!-- Memory -->
+  <section class="section" id="memory">
+    <div class="container">
+      <div class="split">
+        <div class="split-copy">
+          <h3>Eight layers, one honest memory</h3>
+          <p>EnvoyHome does not treat “everything is memory” as a design. Each layer has a job, a budget, and an injection rule — so the agent can remember without quietly rewriting who you are.</p>
+          <ul>
+            <li><strong>Working memory</strong> is the session transcript, flushed before compaction rather than silently truncated.</li>
+            <li><strong>Standing memory</strong> is small and capped: profile facts, <code>MEMORY.md</code>, and the last two days of notes.</li>
+            <li><strong>Lookup memory</strong> is a tool: episodic search, KnowYou, and your document knowledge base with citations.</li>
+            <li><strong>Durable writes go through PendingLearn</strong> — you accept or reject the proposed diff before L1, L2, or a skill changes.</li>
+          </ul>
+        </div>
+        <div>
+          <div class="memory-stack">
+            <div class="memory-row">
+              <div class="memory-id">L0</div>
+              <div class="memory-name">Working<span class="memory-sub">session transcript</span></div>
+              <div class="memory-desc">flushed</div>
+            </div>
+            <div class="memory-row">
+              <div class="memory-id">L1</div>
+              <div class="memory-name">Profile<span class="memory-sub">preferences, identity</span></div>
+              <div class="memory-desc">capped</div>
+            </div>
+            <div class="memory-row">
+              <div class="memory-id">L2</div>
+              <div class="memory-name">Standing notes<span class="memory-sub">MEMORY.md</span></div>
+              <div class="memory-desc">capped</div>
+            </div>
+            <div class="memory-row">
+              <div class="memory-id">L3</div>
+              <div class="memory-name">Daily<span class="memory-sub">dated observations</span></div>
+              <div class="memory-desc">today + yesterday</div>
+            </div>
+            <div class="memory-row">
+              <div class="memory-id">L4</div>
+              <div class="memory-name">Episodic search<span class="memory-sub">session FTS</span></div>
+              <div class="memory-desc">tool</div>
+            </div>
+            <div class="memory-row">
+              <div class="memory-id">L4′</div>
+              <div class="memory-name">KnowYou<span class="memory-sub">derived episodic facts</span></div>
+              <div class="memory-desc">budgeted</div>
+            </div>
+            <div class="memory-row">
+              <div class="memory-id">L6</div>
+              <div class="memory-name">Doc KB<span class="memory-sub">knowledge/ files + index</span></div>
+              <div class="memory-desc">budgeted or tool</div>
+            </div>
+            <div class="memory-row">
+              <div class="memory-id">L7</div>
+              <div class="memory-name">Skills<span class="memory-sub">procedural “how”</span></div>
+              <div class="memory-desc">progressive</div>
+            </div>
+          </div>
+          <p class="memory-note">L5 (deep store) is a slot: files by default, heavy RAG backends only as optional plugins. Files remain the source of truth.</p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>The document knowledge base is yours.</strong> Drop files under <code>knowledge/</code>; EnvoyHome indexes them per account in local SQLite and answers with citations. Hybrid search can use the Home embed engine on <code>:18793</code> — all on the home machine. Your documents are not uploaded to an EnvoyHome cloud, because there isn’t one.
+      </div>
+    </div>
+  </section>
+
+  <!-- Smart home -->
+  <section class="section" id="home" style="background-color: #0a0d19;">
+    <div class="container">
+      <div class="split">
+        <div class="split-copy">
+          <h3>Smart home, with a safety class</h3>
+          <p>Connect Home Assistant or an MQTT broker and the agent can read state and — with approval — call services. It integrates with your hub; it does not become one.</p>
+          <ul>
+            <li><strong>Actuation is <code>admin</code></strong>, not a file write. Unattended turns need a matching grant; script, scene, and button indirection is denied by default.</li>
+            <li><strong>Safety-class calls never ride a grant.</strong> Locks, alarms, garage doors, gates, valves, unlisted MQTT topics, and anything marked <code>neverUnattended</code> ask every single time.</li>
+            <li><strong>Unknown means safety-class.</strong> A new domain, a vendor extension, or a topic you did not allow-list fails closed instead of guessing.</li>
+            <li><strong>Bind before control.</strong> Objects are registered by the authenticated hub and resolved through a chokepoint — never from a plugin-asserted id.</li>
+          </ul>
+          <p style="margin-top: 18px; font-size: 0.9rem; color: var(--text-muted);">Preview posture: Home Assistant REST tools and MQTT publish work today, with bundled demo hubs for the full Chat → Approvals path. Live inbound event plumbing and a signed-off live household still follow the operator checklist.</p>
+        </div>
+        <div class="split-shot">
+          <img src="screens/desktop-home-assistant.png" alt="EnvoyHome Connections — Home Assistant tab with demo hub, device type picker, always-ask option, and per-home bindings" loading="lazy">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Channels -->
+  <section class="section" id="channels">
+    <div class="container">
+      <div class="section-header">
+        <h2>Reach it from where you already are</h2>
+        <p>The EnvoyMesh thin client is the primary path. First-party chat plugins cover six common platforms, and an HTTP hatch takes care of the rest.</p>
+      </div>
+      <div class="channel-grid">
+        <div class="channel-card">
+          <h4>EnvoyMesh thin clients <span class="channel-tag primary">Primary</span></h4>
+          <p>Desktop and phone dial the house directly over <code>home.*</code>, with full Settings and Chat. Pair once by QR, host:port, or SSH hop.</p>
+        </div>
+        <div class="channel-card">
+          <h4>Telegram <span class="channel-tag">Chat</span></h4>
+          <p>The reference bot plugin. Bind a sender to a household profile; replies stay on the same thread.</p>
+        </div>
+        <div class="channel-card">
+          <h4>Discord <span class="channel-tag">Chat</span></h4>
+          <p>DM-based chat through the official bot API. No guild-wide actuation.</p>
+        </div>
+        <div class="channel-card">
+          <h4>Slack <span class="channel-tag">Chat</span></h4>
+          <p>Socket Mode app with bot and app tokens. Direct messages only.</p>
+        </div>
+        <div class="channel-card">
+          <h4>Feishu / Lark <span class="channel-tag">Chat</span></h4>
+          <p>Long-connection events, p2p messages only — no public callback URL required.</p>
+        </div>
+        <div class="channel-card">
+          <h4>DingTalk <span class="channel-tag">Chat</span></h4>
+          <p>Stream Mode robot for 1:1 conversations.</p>
+        </div>
+        <div class="channel-card">
+          <h4>WeCom <span class="channel-tag">Chat</span></h4>
+          <p>WeChat Customer Service sync for 1:1 support threads.</p>
+        </div>
+        <div class="channel-card">
+          <h4>HTTP inbound hatch <span class="channel-tag">Escape hatch</span></h4>
+          <p>A minimal <code>/v1/inbound</code> endpoint for bots that never load as plugins.</p>
+        </div>
+      </div>
+      <p class="figure-caption" style="max-width: 760px; margin-left: auto; margin-right: auto;">
+        Chat plugins ship with setup guides and a shared sender → profile link. Live bot verification is still in progress for the IM set — for preview use, the phone thin client is the primary path.
+      </p>
+    </div>
+  </section>
+
+  <!-- Security -->
+  <section class="section" id="security" style="background-color: #0a0d19;">
+    <div class="container">
+      <div class="section-header">
+        <h2>Security is the product, not a page</h2>
+        <p>Shared-home defaults: sandbox on, approvals durable, unknown things fail closed.</p>
+      </div>
+      <div class="security-grid">
+        <div class="security-card">
+          <div class="kicker">Identity</div>
+          <h4>No account, no cloud mailbox</h4>
+          <p>Identity is an Ed25519 key pair on your devices. There is no EnvoyHome sign-up, no email address, and no hosted transcript store to breach.</p>
+        </div>
+        <div class="security-card">
+          <div class="kicker">Approvals</div>
+          <h4>Durable and fail-closed</h4>
+          <p>Pending approvals and grants are files per account. A restart keeps the question; a timeout resolves to deny; an unresolvable principal is denied.</p>
+        </div>
+        <div class="security-card">
+          <div class="kicker">Execution</div>
+          <h4>Path jail and risk tiers</h4>
+          <p>File tools resolve through one jail. Tools declare read, write, exec, network, admin, or sensitive — and can escalate, never de-escalate.</p>
+        </div>
+        <div class="security-card">
+          <div class="kicker">Privacy</div>
+          <h4>Privacy Mode</h4>
+          <p>A hard switch that forces local turns and refuses cloud tools. With smart-home egress blocking on, it also refuses actuation and event-source notifications.</p>
+        </div>
+        <div class="security-card">
+          <div class="kicker">Accounts</div>
+          <h4>Household isolation</h4>
+          <p>Memory, transcripts, files, grants, and policy are keyed by account. A paired device may only act for the accounts it is bound to.</p>
+        </div>
+        <div class="security-card">
+          <div class="kicker">Smart home</div>
+          <h4>The physical world is different</h4>
+          <p>Actuation is <code>admin</code>. Camera, lock, and presence data is <code>sensitive</code> and forces local inference. Device state never becomes standing memory automatically.</p>
+        </div>
+      </div>
+      <div style="text-align: center; margin-top: 40px;">
+        <a href="privacy.html" class="btn btn-secondary">Read the privacy policy →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Family -->
+  <section class="section" id="family">
+    <div class="container">
+      <div class="section-header">
+        <h2>EnvoyMesh Family</h2>
+        <p>Three apps sharing one mesh — identity, pairing, and transport — while each keeps its own brain and its own state.</p>
+      </div>
+      <div class="family-grid">
+        <div class="family-item">
+          <img src="screens/family-envoymesh.png" alt="EnvoyMesh logo" loading="lazy">
+          <h3>EnvoyMesh</h3>
+          <p>The desktop home node and peer-to-peer mesh that the rest of the family is built on.</p>
+          <a href="https://www.envoymesh.cn/" target="_blank" rel="noopener noreferrer" class="family-link">Visit envoymesh.cn →</a>
+        </div>
+        <div class="family-item">
+          <img src="screens/family-envoydev.png" alt="EnvoyDev logo" loading="lazy">
+          <h3>EnvoyDev</h3>
+          <p>The control plane for coding agents — reach your own machines from a window or a phone.</p>
+          <a href="https://www.envoymesh.cn/envoydev" target="_blank" rel="noopener noreferrer" class="family-link">Visit envoymesh.cn/envoydev →</a>
+        </div>
+        <div class="family-item">
+          <img src="screens/family-veda-notes.png" alt="Veda Notes logo" loading="lazy">
+          <h3>Veda Notes</h3>
+          <p>A local-first AI journal that pairs with the home node for private sync and home AI.</p>
+          <a href="https://www.envoymesh.cn/veda-ai" target="_blank" rel="noopener noreferrer" class="family-link">Visit envoymesh.cn/veda-ai →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Get started -->
+  <section class="section" id="get-started" style="background-color: #0a0d19;">
+    <div class="container">
+      <div class="section-header">
+        <h2>Run it at home</h2>
+        <p>Preview builds run from source. You need Node.js 22+, pnpm, and a sibling EnvoyMesh checkout.</p>
+      </div>
+      <div class="start-grid">
+        <div class="steps">
+          <div class="step-row">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <h4>Check the siblings</h4>
+              <p>EnvoyHome links <code>@envoymesh/*</code> with <code>link:</code> — they are not on npm. The peer check fails closed if a sibling is missing or on the wrong branch.</p>
+              <pre>./scripts/peers-check.sh
+<span class="cmt"># or set ENVOYHOME_PEERS_GIT_BASE and run ./scripts/fetch-peers.sh</span></pre>
+            </div>
+          </div>
+          <div class="step-row">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <h4>Install and build</h4>
+              <p>Never install with <code>CI=true</code> set — pnpm’s strict-mode trap is a documented convention in this repo.</p>
+              <pre>env -u CI pnpm install
+pnpm -r build</pre>
+            </div>
+          </div>
+          <div class="step-row">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <h4>Start the home agent</h4>
+              <p>Run the daemon alone, or let the desktop shell supervise it. Then create a profile, add a model, and pair a phone when you want one.</p>
+              <pre>pnpm run dev:daemon   <span class="cmt"># daemon only</span>
+pnpm desktop:dev      <span class="cmt"># Tauri Settings shell</span></pre>
+              <table class="endpoint-table">
+                <tr><td>WebSocket</td><td>ws://127.0.0.1:4780/ws</td></tr>
+                <tr><td>Health</td><td>http://127.0.0.1:4781/health</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="start-side">
+          <div class="qr-card">
+            <div id="qr-repo" class="qr-host" role="img" aria-label="QR code for the EnvoyHome GitHub repository"></div>
+            <h4>Source and issues</h4>
+            <p>Scan to open the repository, or use the link below.</p>
+            <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="width: 100%; justify-content: center;">GitHub repository</a>
+          </div>
+          <div class="platform-card">
+            <h4>Platforms</h4>
+            <div class="platform-row"><span>Desktop shell</span><span>macOS, Linux, Windows</span></div>
+            <div class="platform-row"><span>Phone</span><span>iOS + Android</span></div>
+            <div class="platform-row"><span>Local models</span><span>llama.cpp · Ollama</span></div>
+            <div class="platform-row"><span>Home embed</span><span>:18793</span></div>
+            <div class="platform-row"><span>License</span><span>MIT</span></div>
+            <p class="preview-note" style="margin-top: 10px;">macOS is the primary desktop target; Linux and Windows are best-effort. The phone app is a Flutter preview.</p>
+          </div>
+          <p class="preview-note">EnvoyHome <strong>0.2.0</strong> is an early-adopter preview. <code>v1.0.0</code> is not tagged yet, and there is no App Store or Play listing live — install from source or a locally built package under <code>release/</code>.</p>
+        </div>
+      </div>
+      <div class="dev-path">
+        <h4>Run the desktop app from source</h4>
+        <p>Node.js ≥ 22 and pnpm 10.33 (the root <code>packageManager</code>), a sibling <code>EnvoyMesh</code> checkout, and Rust plus the Tauri CLI prerequisites for the desktop shell.</p>
+        <pre>./scripts/peers-check.sh
+env -u CI pnpm install
+pnpm -r build
+pnpm desktop:dev        <span class="cmt"># daemon build if missing, then Tauri dev</span></pre>
+        <p><code>desktop:dev</code> runs <code>./scripts/desktop-dev.sh</code>: it builds <code>packages/daemon/dist/bin/envoyhome-daemon.js</code> only when that file is missing, then starts <code>tauri:dev</code>. Tauri supervises the daemon once the binary exists. No provider config file is needed before launch — first-run Settings asks for a profile and a model provider (preset + key, or Local / Ollama).</p>
+        <p>Release installers: <code>./scripts/build-desktop.sh macos</code> → <code>release/envoyhome-desktop-0.2.0-macos-*.dmg</code> (Developer ID + notarization required; push credentials staged unless <code>REQUIRE_PUSH_CREDENTIALS=0</code>). Windows: <code>.\scripts\build-desktop.ps1</code> on a Windows host.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-content">
+        <a href="#" class="logo" style="font-size: 1rem;">
+          <img src="screens/envoyhome-logo.png" alt="EnvoyHome logo" style="width: 28px; height: 28px;">
+          EnvoyHome
+        </a>
+        <ul class="footer-links">
+          <li><a href="#overview">Overview</a></li>
+          <li><a href="#capabilities">Capabilities</a></li>
+          <li><a href="#product">Product</a></li>
+          <li><a href="#memory">Memory</a></li>
+          <li><a href="#home">Smart home</a></li>
+          <li><a href="#security">Security</a></li>
+          <li><a href="#get-started">Get started</a></li>
+          <li><a href="privacy.html">Privacy</a></li>
+          <li><a href="index-zh.html">中文</a></li>
+        </ul>
+        <div class="footer-contact">
+          Contact: <a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> · <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        Open source, self-hosted, local-first · part of the <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" rel="noopener noreferrer">EnvoyMesh</a> apps family · &copy; 2026 EnvoyHome
+      </div>
+    </div>
+  </footer>
+
+  <!-- Lightbox -->
+  <div class="lightbox" id="lightbox">
+    <button class="lightbox-close" id="lightboxClose" aria-label="Close">&times;</button>
+    <img id="lightboxImg" src="" alt="Screenshot">
+    <p class="lightbox-caption" id="lightboxCaption"></p>
+  </div>
+
+  <script src="vendor/qrcode.min.js"></script>
+  <script>
+    // === Repository URL (also drives the QR code) ===
+    const REPO_URL = "https://github.com/allenpeng0705/EnvoyHome";
+
+    function qrUnavailable(host) {
+      host.textContent = "QR appears here when the qrcode library loads";
+    }
+
+    function renderQR(hostId, url) {
+      const host = document.getElementById(hostId);
+      if (!host) return;
+      if (typeof QRCode === "undefined") { qrUnavailable(host); return; }
+      QRCode.toCanvas(
+        document.createElement("canvas"),
+        url,
+        { errorCorrectionLevel: "M", margin: 1, width: 200, color: { dark: "#0c0f1d", light: "#ffffff" } },
+        function (err, canvas) {
+          if (err) { qrUnavailable(host); return; }
+          host.appendChild(canvas);
+        }
+      );
+    }
+    renderQR("qr-repo", REPO_URL);
+
+    // Header scroll effect
+    window.addEventListener("scroll", function () {
+      const header = document.querySelector("header");
+      if (header) header.classList.toggle("scrolled", window.scrollY > 20);
+    });
+
+    // Mobile menu toggle
+    const mobileMenuBtn = document.getElementById("mobileMenuBtn");
+    const mobileNavOverlay = document.getElementById("mobileNavOverlay");
+    function toggleMobileMenu() {
+      mobileMenuBtn.classList.toggle("active");
+      mobileNavOverlay.classList.toggle("active");
+      document.body.style.overflow = mobileNavOverlay.classList.contains("active") ? "hidden" : "";
+    }
+    if (mobileMenuBtn) mobileMenuBtn.addEventListener("click", toggleMobileMenu);
+    if (mobileNavOverlay) {
+      mobileNavOverlay.querySelectorAll("a").forEach(function (link) {
+        link.addEventListener("click", function () {
+          mobileMenuBtn.classList.remove("active");
+          mobileNavOverlay.classList.remove("active");
+          document.body.style.overflow = "";
+        });
+      });
+    }
+    window.addEventListener("resize", function () {
+      if (window.innerWidth > 1024 && mobileNavOverlay.classList.contains("active")) {
+        mobileMenuBtn.classList.remove("active");
+        mobileNavOverlay.classList.remove("active");
+        document.body.style.overflow = "";
+      }
+    });
+
+    // Lightbox — click a screenshot to view full size
+    const lightbox = document.getElementById("lightbox");
+    const lightboxImg = document.getElementById("lightboxImg");
+    const lightboxCaption = document.getElementById("lightboxCaption");
+    const lightboxClose = document.getElementById("lightboxClose");
+    function openLightbox(src, alt, caption) {
+      lightboxImg.src = src;
+      lightboxImg.alt = alt;
+      lightboxCaption.textContent = caption || alt;
+      lightbox.classList.add("active");
+      document.body.style.overflow = "hidden";
+    }
+    if (lightboxClose) lightboxClose.addEventListener("click", function () {
+      lightbox.classList.remove("active");
+      document.body.style.overflow = "";
+    });
+    lightbox.addEventListener("click", function (e) {
+      if (e.target === lightbox) {
+        lightbox.classList.remove("active");
+        document.body.style.overflow = "";
+      }
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && lightbox.classList.contains("active")) {
+        lightbox.classList.remove("active");
+        document.body.style.overflow = "";
+      }
+    });
+
+    document.querySelectorAll(".shot-card img, .phone-frame img, .split-shot img, .hero-shot img").forEach(function (img) {
+      img.addEventListener("click", function () {
+        openLightbox(img.src, img.alt, img.alt);
+      });
+    });
+  </script>
+</body>
+</html>

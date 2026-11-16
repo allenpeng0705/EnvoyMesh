@@ -225,16 +225,30 @@
     .pair-card h4 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
     .pair-card p { color: var(--text-secondary); font-size: 0.88rem; line-height: 1.6; }
 
-    /* Built on EnvoyMesh card */
+    /* Built on EnvoyMesh card + sibling apps */
     .family-card {
       padding: 32px; border-radius: 16px;
       border: 1px solid rgba(99, 102, 241, 0.35);
       background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(6, 182, 212, 0.08) 100%);
       display: grid; grid-template-columns: auto 1fr auto; gap: 24px; align-items: center;
+      margin-bottom: 28px;
     }
     .family-card img { width: 56px; height: 56px; border-radius: 12px; }
     .family-card h3 { font-size: 1.2rem; margin-bottom: 4px; }
     .family-card p { color: var(--text-secondary); font-size: 0.95rem; line-height: 1.6; margin: 0; }
+    .family-siblings {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px;
+    }
+    .family-sibling {
+      display: flex; flex-direction: column; gap: 12px;
+      padding: 24px; border-radius: 16px;
+      border: 1px solid var(--border-color); background-color: var(--bg-card);
+    }
+    .family-sibling img { width: 48px; height: 48px; border-radius: 12px; }
+    .family-sibling h3 { font-size: 1.1rem; margin: 0; }
+    .family-sibling p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6; margin: 0; flex: 1; }
+    .family-sibling a { color: var(--primary-light); font-size: 0.9rem; font-weight: 500; text-decoration: none; }
+    .family-sibling a:hover { color: var(--text-primary); }
 
     /* Downloads */
     .downloads { padding: 80px 0; }
@@ -336,6 +350,7 @@
       .features-grid, .download-grid, .mobile-gallery, .pair-grid { grid-template-columns: 1fr; }
       .family-card { grid-template-columns: 1fr; text-align: center; }
       .family-card img { margin: 0 auto; }
+      .family-siblings { grid-template-columns: 1fr; }
       .footer-content { flex-direction: column; text-align: center; }
     }
 
@@ -607,6 +622,7 @@
     <div class="container">
       <div class="section-header">
         <h2>基于 EnvoyMesh 构建</h2>
+        <p>同一套网格身份与配对——姊妹应用各自保留自己的“大脑”与状态。</p>
       </div>
       <div class="family-card">
         <img src="screens/envoymesh-logo.png" alt="EnvoyMesh Logo">
@@ -615,6 +631,20 @@
           <p>EnvoyDev 与家族其他成员共享同一身份（Ed25519 密钥、加密配对）、同一发现（LAN → 公网 → P2P → bootstrap → 中继，按此顺序）、以及相同的网格与配对 UX。状态按产品隔离：EnvoyDev 把项目与任务树放在 <code>&lt;home&gt;/EnvoyDev/</code>，而 EnvoyMesh 的网格、节点列表与身份是共享的。</p>
         </div>
         <a href="../index-zh.html" class="btn btn-secondary">了解 EnvoyMesh →</a>
+      </div>
+      <div class="family-siblings">
+        <div class="family-sibling">
+          <img src="screens/envoyhome-logo.png" alt="EnvoyHome 标志" loading="lazy">
+          <h3>EnvoyHome</h3>
+          <p>家庭智能体——对话、记忆、工作流、审批，以及可选的 Home Assistant / MQTT，运行在你自己的机器上。桌面和手机是望向家庭守护进程的轻客户端。</p>
+          <a href="../envoyhome/index-zh.html">访问 EnvoyHome →</a>
+        </div>
+        <div class="family-sibling">
+          <img src="screens/veda-notes-icon.png" alt="Veda Notes 标志" loading="lazy">
+          <h3>Veda Notes</h3>
+          <p>与主节点配对的本地优先 AI 日记——私密 Markdown 同步与 Home AI。</p>
+          <a href="../veda-ai/index_zh.html">访问 Veda Notes →</a>
+        </div>
       </div>
     </div>
   </section>

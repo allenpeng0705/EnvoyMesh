@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — EnvoyHome</title>
+  <meta name="description" content="How EnvoyHome handles household data: self-hosted chat, memory, documents, push tokens, optional model providers, and smart-home credentials.">
+  <link rel="icon" type="image/png" href="screens/envoyhome-logo-128.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary-color: #6366f1;
+      --primary-light: #a5b4fc;
+      --secondary-color: #22d3ee;
+      --bg-dark: #0c0f1d;
+      --bg-card: #161a2e;
+      --text-primary: #f8fafc;
+      --text-secondary: #a8b3c9;
+      --text-muted: #6b7691;
+      --border-color: #2a3050;
+      --gradient-primary: linear-gradient(135deg, #818cf8 0%, #a855f7 52%, #22d3ee 100%);
+    }
+    html { scroll-behavior: smooth; overflow-x: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', sans-serif;
+      background-color: var(--bg-dark); color: var(--text-primary); line-height: 1.75;
+    }
+    ::selection { background-color: var(--primary-color); color: white; }
+    a { color: var(--primary-light); }
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background-color: rgba(12, 15, 29, 0.92); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+    }
+    nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+    .logo { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text-primary); font-weight: 600; font-size: 1.2rem; }
+    .logo img { width: 34px; height: 34px; border-radius: 9px; }
+    .nav-links { display: flex; align-items: center; gap: 24px; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.92rem; }
+    .nav-links a:hover { color: var(--text-primary); }
+    .nav-links a.active { color: var(--text-primary); }
+
+    .page { padding: 130px 0 80px; }
+    .page-inner { max-width: 860px; margin: 0 auto; }
+    .eyebrow { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--secondary-color); margin-bottom: 14px; }
+    h1 { font-size: 2.6rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 14px; }
+    .updated { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 26px; }
+    .lede { color: var(--text-secondary); font-size: 1.08rem; line-height: 1.8; padding-bottom: 30px; border-bottom: 1px solid var(--border-color); margin-bottom: 10px; }
+    .lede strong { color: var(--text-primary); }
+
+    .policy h2 { font-size: 1.3rem; font-weight: 650; margin: 42px 0 12px; letter-spacing: -0.005em; }
+    .policy h3 { font-size: 1.02rem; font-weight: 600; margin: 24px 0 6px; }
+    .policy p { color: var(--text-secondary); font-size: 0.98rem; margin-bottom: 12px; }
+    .policy ul { margin: 6px 0 14px 22px; color: var(--text-secondary); font-size: 0.98rem; }
+    .policy li { margin-bottom: 8px; }
+    .policy strong { color: var(--text-primary); }
+    .policy code {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.86em;
+      background: rgba(99, 102, 241, 0.10); color: #c7d2fe; padding: 1px 5px; border-radius: 4px;
+    }
+
+    .note {
+      background-color: var(--bg-card); border: 1px solid var(--border-color);
+      border-left: 3px solid var(--primary-color);
+      border-radius: 0 10px 10px 0; padding: 16px 20px; margin: 22px 0;
+      color: var(--text-secondary); font-size: 0.92rem;
+    }
+    .note strong { color: var(--text-primary); }
+
+    table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+    th { color: var(--text-primary); font-weight: 600; background-color: rgba(22, 26, 46, 0.7); }
+    td { color: var(--text-secondary); }
+    tr:last-child td { border-bottom: none; }
+
+    .back { display: inline-flex; align-items: center; gap: 6px; margin-top: 44px; color: var(--text-secondary); text-decoration: none; font-size: 0.92rem; }
+    .back:hover { color: var(--text-primary); }
+
+    footer { border-top: 1px solid var(--border-color); padding: 28px 0; }
+    .footer-inner { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; color: var(--text-muted); font-size: 0.84rem; }
+    .footer-inner a { color: var(--text-secondary); text-decoration: none; }
+    .footer-inner a:hover { color: var(--text-primary); }
+
+    @media (max-width: 768px) {
+      .container { padding: 0 16px; }
+      .nav-links { gap: 14px; }
+      .nav-links a { font-size: 0.85rem; }
+      .nav-links a.hide-sm { display: none; }
+      nav { height: 56px; }
+      .page { padding: 100px 0 60px; }
+      h1 { font-size: 2rem; }
+      .lede { font-size: 1rem; }
+      table { display: block; overflow-x: auto; white-space: nowrap; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container">
+      <a href="index.html" class="logo">
+        <img src="screens/envoyhome-logo.png" alt="EnvoyHome logo">
+        EnvoyHome
+      </a>
+      <div class="nav-links">
+        <a href="index.html" class="hide-sm">Overview</a>
+        <a href="privacy.html" class="active">Privacy</a>
+        <a href="privacy-zh.html">中文</a>
+        <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer" class="hide-sm">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="page">
+    <div class="container">
+      <div class="page-inner">
+        <div class="eyebrow">Legal · Privacy</div>
+        <h1>Privacy Policy</h1>
+        <p class="updated">Last updated: 16 November 2026 · Applies to EnvoyHome <strong>0.2.0</strong> (desktop Settings shell and mobile thin client), and to any self-hosted daemon you run. Mobile bundle id: <code>com.envoymesh.envoyhome</code>.</p>
+        <p class="lede"><strong>EnvoyHome is self-hosted.</strong> Chat, memory, documents, and smart-home control run on <strong>your</strong> home daemon — not on an EnvoyHome cloud brain. This page explains what the software processes, where it goes, and what the publisher does not collect.</p>
+
+        <div class="policy">
+          <h2>1. The model in one paragraph</h2>
+          <p>You run the agent on a computer you control. The desktop and phone are thin clients: they connect to that daemon over the <code>home.*</code> channel and display what it returns. There is no EnvoyHome registration and no mandatory vendor cloud that receives your household chats, Home Assistant tokens, or model API keys.</p>
+          <div class="note"><strong>Who is responsible?</strong> When you self-host, the person or household operating the home machine decides what data is stored and which optional providers are configured. The publisher supplies software; it does not operate your daemon.</div>
+
+          <h2>2. Data that stays on your machine</h2>
+          <ul>
+            <li><strong>Chats and sessions.</strong> Transcripts, tool calls, and turn artifacts live in the daemon’s state directory on the home computer.</li>
+            <li><strong>Memory.</strong> Profile facts, standing notes, daily logs, episodic indexes, and accepted learn proposals are stored locally, keyed by household account.</li>
+            <li><strong>Documents.</strong> Files you place under <code>knowledge/</code> and their per-account SQLite index stay on the home machine. They are not uploaded to an EnvoyHome service.</li>
+            <li><strong>Secrets.</strong> Model provider keys, channel bot tokens, smart-home credentials, and device private keys are kept by the daemon. The phone and desktop receive results, not the stored keys.</li>
+            <li><strong>Approvals and grants.</strong> Pending approval records and grants are durable files per account so a restart cannot silently forget a question.</li>
+          </ul>
+
+          <h2>3. Data the phone may process</h2>
+          <table>
+            <thead>
+              <tr><th>Category</th><th>Examples</th><th>Where it goes</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Pairing &amp; session</td>
+                <td>Pair URI, device credential, WebSocket endpoint</td>
+                <td>To your daemon / EnvoyMesh hosting peer only</td>
+              </tr>
+              <tr>
+                <td>Account id</td>
+                <td>The household profile you select</td>
+                <td>Same</td>
+              </tr>
+              <tr>
+                <td>Chat &amp; media</td>
+                <td>Messages, attachments you pick, speech dictation audio</td>
+                <td>Chat/media to your daemon. On-device speech-to-text stays on the phone unless you use the operating system’s cloud dictation</td>
+              </tr>
+              <tr>
+                <td>Optional location</td>
+                <td>Latitude / longitude when “Share location with Home” is on and the OS permission is granted</td>
+                <td>Ephemeral injection into that turn only — not standing memory by default</td>
+              </tr>
+              <tr>
+                <td>Push tokens</td>
+                <td>APNs / FCM device tokens</td>
+                <td>Registered on your daemon via <code>home.registerPushToken</code></td>
+              </tr>
+              <tr>
+                <td>Local network</td>
+                <td>LAN discovery, <code>ws://</code> connection to the house</td>
+                <td>Local network only</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h2>4. Push notifications</h2>
+          <p>If you enable notifications, the daemon can send <strong>approval-needed</strong> and <strong>schedule</strong> notify-only wakes through <strong>Apple Push Notification service (APNs)</strong> on iOS or <strong>Firebase Cloud Messaging (FCM)</strong> on Android. Those platforms receive the push payload and device token needed to deliver the notification. On Android, Firebase is used only when the build includes a <code>google-services.json</code>; FCM is the messaging service in that case.</p>
+
+          <h2>5. Pairing and network access</h2>
+          <p>A phone pairs by scanning a QR code minted in desktop Settings, or by entering the daemon endpoint. iOS requires Local Network permission to reach a LAN address. Pairing binds the device to specific household accounts; a device cannot act for an account it is not bound to, and the daemon denies the request if that binding cannot be resolved.</p>
+
+          <h2>6. Optional model and tool providers</h2>
+          <p>EnvoyHome can run local models (llama.cpp or Ollama) or call a provider you configure, such as an OpenAI-compatible or Anthropic-compatible endpoint. <strong>When you use a cloud provider, the prompt and the context needed for that turn leave the home machine and are handled under that provider’s terms.</strong> This may include excerpts from documents or memory retrieved for the turn. Chat sessions and memory may be sent to the provider you chose; the publisher is not that provider.</p>
+          <p><strong>Privacy Mode</strong> is a hard switch: it forces local turns and refuses cloud tools — web search, web research, browser, HTTP fetch, page extraction, remote MCP, image generation, and messaging. When smart-home egress blocking is enabled, it also refuses Home Assistant / MQTT actuation and event-source notifications.</p>
+          <p>Tools that browse or fetch the web contact third-party sites from the home machine. Those sites receive the request as any browser request would, and their own privacy policies apply.</p>
+
+          <h2>7. Smart-home data</h2>
+          <p>Hub credentials and broker passwords stay on the daemon. Device state, camera, lock, and presence data are treated as <strong>sensitive</strong>: a sensitive result forces the turn to local inference rather than sending it to a cloud provider. Device state does not enter standing memory automatically. EnvoyHome integrates with your hub; it does not operate a smart-home cloud of its own.</p>
+
+          <h2>8. What the publisher does not collect</h2>
+          <ul>
+            <li>No mandatory account registration, email address, or phone number for the self-hosted product.</li>
+            <li>No vendor-operated store of your household chats, memory, documents, or smart-home tokens.</li>
+          </ul>
+
+          <h2>9. Retention and deletion</h2>
+          <ul>
+            <li><strong>Revoke a device</strong> from Owner Settings on the desktop or phone; the credential can no longer open a session.</li>
+            <li><strong>Delete local history</strong> from the app or by removing the relevant sessions and memory files in the daemon’s state directory.</li>
+            <li><strong>Uninstall</strong> the phone app to remove its local data; uninstalling does not delete the daemon’s data on the home computer.</li>
+            <li><strong>Clear the daemon state directory</strong> on the home machine to remove local memory and stored tokens. Back up anything you want to keep first.</li>
+          </ul>
+
+          <h2>10. Children’s privacy</h2>
+          <p>EnvoyHome is not directed at children under 13, or under the minimum age required in your jurisdiction. Do not create household profiles for children without appropriate supervision.</p>
+
+          <h2>11. Your choices</h2>
+          <ul>
+            <li>Choose local-only inference, or enable Privacy Mode to block cloud tools and optionally block smart-home egress.</li>
+            <li>Decide which documents enter the knowledge base and which optional providers, channels, and MCP servers are configured.</li>
+            <li>Accept or reject proposed memory and skill changes through PendingLearn before they become durable.</li>
+            <li>Withdraw a device’s access by revoking its pairing.</li>
+          </ul>
+
+          <h2>12. Changes to this policy</h2>
+          <p>This policy may be updated as the preview evolves. The date at the top of this page is the effective date of the current version. Material changes will be reflected here before a public store listing is submitted.</p>
+
+          <h2>13. Contact</h2>
+          <p>Questions about this policy or the preview build:</p>
+          <ul>
+            <li><a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a></li>
+            <li><a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a></li>
+          </ul>
+          <p style="color: var(--text-muted); font-size: 0.88rem;">This page is a product privacy summary, not legal advice. A publisher submitting to an app store must supply the legal entity and contact required by that store.</p>
+        </div>
+
+        <a href="index.html" class="back">← Back to EnvoyHome</a>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <span>&copy; 2026 EnvoyHome · open source, self-hosted, local-first</span>
+      <span><a href="index.html">Overview</a> · <a href="privacy-zh.html">中文</a> · <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer">GitHub</a></span>
+    </div>
+  </footer>
+</body>
+</html>

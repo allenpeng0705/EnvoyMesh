@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacy Policy — EnvoyMesh, EnvoyGo &amp; EnvoyDev</title>
-  <meta name="description" content="Privacy Policy for EnvoyMesh (home node), EnvoyGo (social mobile), and EnvoyDev (coding-agent control plane + mobile). Local-first mesh: no central EnvoyMesh account.">
+  <title>Privacy Policy — EnvoyMesh, EnvoyGo, EnvoyDev &amp; EnvoyHome</title>
+  <meta name="description" content="Privacy Policy for EnvoyMesh (home node), EnvoyGo (social mobile), EnvoyDev (coding-agent control plane + mobile), and EnvoyHome (household agent desktop + mobile). Local-first mesh: no central EnvoyMesh account.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -200,9 +200,9 @@
 </head>
 <body>
   <main class="wrap">
-    <p class="brand">EnvoyMesh · EnvoyGo · EnvoyDev</p>
+    <p class="brand">EnvoyMesh · EnvoyGo · EnvoyDev · EnvoyHome</p>
     <h1>Privacy Policy</h1>
-    <p class="meta">Last updated: 26 September 2026 · Effective for EnvoyMesh home/desktop software, EnvoyGo, and EnvoyDev (desktop + mobile)</p>
+    <p class="meta">Last updated: 26 September 2026 · Effective for EnvoyMesh home/desktop software, EnvoyGo, EnvoyDev (desktop + mobile), and EnvoyHome (desktop + mobile)</p>
 
     <article class="panel">
       <p class="lede">
@@ -222,6 +222,7 @@
           <li><a href="#data">Data we process</a></li>
           <li><a href="#envoygo">EnvoyGo (mobile)</a></li>
           <li><a href="#envoydev">EnvoyDev (desktop &amp; mobile)</a></li>
+          <li><a href="#envoyhome">EnvoyHome (desktop &amp; mobile)</a></li>
           <li><a href="#envoymesh">EnvoyMesh (home / desktop)</a></li>
           <li><a href="#relays">Relays &amp; network</a></li>
           <li><a href="#third">Third-party services</a></li>
@@ -263,10 +264,14 @@
             <td><strong>EnvoyDev</strong></td>
             <td>Coding-agent control plane (desktop) and thin-client companion (EnvoyDev Mobile): pairs to <em>your</em> EnvoyDev daemon; projects, transcripts, approvals</td>
           </tr>
+          <tr>
+            <td><strong>EnvoyHome</strong></td>
+            <td>Household agent (desktop Settings shell + mobile thin client): pairs to <em>your</em> EnvoyHome daemon; chat, Approvals, schedules, memory, optional smart-home tools</td>
+          </tr>
         </tbody>
       </table>
       <p>
-        When you pair EnvoyGo or EnvoyDev Mobile to a machine you own, that
+        When you pair EnvoyGo, EnvoyDev Mobile, or EnvoyHome Mobile to a machine you own, that
         machine’s operator (often you) controls what is stored there. We do not operate a shared
         multi-tenant “Envoy cloud inbox” or coding transcript store.
       </p>
@@ -312,6 +317,25 @@
         EnvoyGo does <strong>not</strong> require access to your phone’s system Contacts
         database for mesh contacts — peer profiles come from the paired home node.
       </p>
+
+
+      <h2 id="envoyhome">6b. EnvoyHome (desktop &amp; mobile)</h2>
+      <p>
+        EnvoyHome is the household agent. The <strong>desktop app and daemon</strong>
+        run on a computer you own; <strong>EnvoyHome Mobile</strong> (<code>com.envoymesh.envoyhome</code>)
+        is a thin client that pairs to that daemon. Model API keys, channel tokens, smart-home
+        credentials, and standing memory stay on the home daemon — the phone never holds them.
+      </p>
+      <ul>
+        <li><strong>Pairing / session tokens</strong> — stored on the phone in Keychain / Keystore; used only to authenticate to <em>your</em> EnvoyHome daemon.</li>
+        <li><strong>Camera</strong> — optional QR scan for pairing. Images are not uploaded to an EnvoyHome cloud.</li>
+        <li><strong>Microphone / speech</strong> — optional dictation into Chat; on-device recognition stays local unless the OS uses cloud dictation.</li>
+        <li><strong>Location</strong> — optional “share for this turn” only; not standing memory by default.</li>
+        <li><strong>Push tokens</strong> — APNs / FCM tokens may be registered with <em>your</em> daemon for approval and schedule wakes.</li>
+        <li><strong>Chats, memory, documents, smart-home state</strong> — stored on the home daemon. Device state is treated as sensitive and is not auto-learned into standing memory.</li>
+        <li><strong>No EnvoyHome account</strong> — there is no central EnvoyHome signup.</li>
+      </ul>
+      <p>Product privacy page (after site deploy): <a href="https://www.envoymesh.cn/envoyhome/privacy.html">envoymesh.cn/envoyhome/privacy</a>.</p>
 
       <h2 id="envoydev">6. EnvoyDev (desktop &amp; mobile)</h2>
       <p>
@@ -401,7 +425,7 @@
 
       <h2 id="contact">14. Contact</h2>
       <p>
-        Privacy questions about EnvoyMesh / EnvoyGo / EnvoyDev:
+        Privacy questions about EnvoyMesh / EnvoyGo / EnvoyDev / EnvoyHome:
       </p>
       <ul>
         <li>Web: <a href="https://www.envoymesh.cn/">https://www.envoymesh.cn/</a></li>
@@ -416,7 +440,7 @@
     <footer>
       <p>
         <a href="https://www.envoymesh.cn/qr_review">Review pairing QR</a>
-        · EnvoyMesh, EnvoyGo &amp; EnvoyDev Privacy Policy
+        · EnvoyMesh, EnvoyGo, EnvoyDev &amp; EnvoyHome Privacy Policy
       </p>
     </footer>
   </main>

@@ -10,6 +10,9 @@ use tracing::{error, info, warn, Level};
 use tracing::subscriber::set_global_default;
 use tracing_subscriber::FmtSubscriber;
 
+#[cfg(target_os = "macos")]
+mod dmg_cleanup;
+
 #[derive(Clone)]
 struct NodeSpawnConfig {
     node_exe: PathBuf,
@@ -2509,6 +2512,11 @@ fn main() {
         ])
         .setup(move |app| {
             info!("Tauri app setup starting");
+
+            // macOS DMG: eject the installer volume (closes its Finder window) and offer to trash
+            // the downloaded `.dmg`. Cannot run during the drag — only once the installed app opens.
+            #[cfg(target_os = "macos")]
+            dmg_cleanup::after_launch();
 
             let app_data_dir = app
                 .path()

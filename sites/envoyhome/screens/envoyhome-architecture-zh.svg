@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" role="img" aria-label="EnvoyHome &#26550;&#26500;">
+  <title>EnvoyHome &#26550;&#26500;</title>
+  <desc>Thin clients dial the EnvoyHome daemon. Core is envoy-harness, workflows, memory, Approvals, and the tool catalogue. HA/MQTT hubs are optional.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f1224"/>
+      <stop offset="100%" stop-color="#1a1540"/>
+    </linearGradient>
+    <linearGradient id="homeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#211962" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#4f46e5" stop-opacity="0.35"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2.5" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrIndigo" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#818cf8"/>
+    </marker>
+    <marker id="arrCyan" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#22d3ee"/>
+    </marker>
+    <marker id="arrPurple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#c084fc"/>
+    </marker>
+    <marker id="arrMuted" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="560" rx="16" fill="url(#bg)"/>
+  <circle cx="160" cy="120" r="140" fill="none" stroke="#4f46e5" stroke-opacity="0.12" stroke-width="2"/>
+  <circle cx="800" cy="460" r="160" fill="none" stroke="#22d3ee" stroke-opacity="0.1" stroke-width="2"/>
+
+  <text x="480" y="36" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="18" font-weight="700" fill="#f8fafc">EnvoyHome &#26550;&#26500;</text>
+  <text x="480" y="58" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="12" fill="#94a3b8">&#26680;&#24515;&#65306;&#26234;&#33021;&#20307; / envoy-harness / &#24037;&#20316;&#27969; / &#24037;&#20855; - &#32593;&#20851;&#21487;&#36873;</text>
+  <line x1="120" y1="72" x2="840" y2="72" stroke="#334155" stroke-width="1.5" stroke-dasharray="4 6"/>
+
+  <g transform="translate(40,100)" filter="url(#soft)">
+    <rect width="200" height="200" rx="14" fill="#1e1b36" stroke="#818cf8" stroke-width="2"/>
+    <text x="100" y="28" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#a5b4fc">&#26700;&#38754; Settings</text>
+    <text x="100" y="48" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="11" fill="#94a3b8">Tauri &#36731;&#22771;</text>
+    <rect x="20" y="66" width="160" height="36" rx="8" fill="rgba(129,140,248,0.18)" stroke="#818cf8" stroke-width="1"/>
+    <text x="100" y="88" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="12" fill="#c7d2fe">&#32842;&#22825; / &#23457;&#25209;</text>
+    <rect x="20" y="112" width="160" height="36" rx="8" fill="rgba(129,140,248,0.12)" stroke="#6366f1" stroke-width="1"/>
+    <text x="100" y="134" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="12" fill="#c7d2fe">&#24037;&#20316;&#27969; / &#25216;&#33021;</text>
+    <rect x="20" y="158" width="160" height="28" rx="8" fill="rgba(129,140,248,0.1)" stroke="#6366f1" stroke-width="1"/>
+    <text x="100" y="176" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="11" fill="#c7d2fe">&#27169;&#22411; / &#37197;&#23545;</text>
+  </g>
+
+  <g transform="translate(720,100)" filter="url(#soft)">
+    <rect width="200" height="200" rx="14" fill="#1e1b36" stroke="#22d3ee" stroke-width="2"/>
+    <text x="100" y="28" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#67e8f9">&#25163;&#26426;</text>
+    <text x="100" y="48" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="11" fill="#94a3b8">Flutter &#36731;&#23458;&#25143;&#31471;</text>
+    <rect x="20" y="66" width="160" height="36" rx="8" fill="rgba(34,211,238,0.16)" stroke="#22d3ee" stroke-width="1"/>
+    <text x="100" y="88" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="12" fill="#a5f3fc">&#32842;&#22825; / &#23478;</text>
+    <rect x="20" y="112" width="160" height="36" rx="8" fill="rgba(34,211,238,0.1)" stroke="#0891b2" stroke-width="1"/>
+    <text x="100" y="134" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="12" fill="#a5f3fc">&#35774;&#32622;&#20013;&#26530;</text>
+    <text x="100" y="180" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="10" fill="#64748b">&#26080;&#23494;&#38053; / &#26080;&#26234;&#33021;&#20307;&#22823;&#33041;</text>
+  </g>
+
+  <g transform="translate(280,90)" filter="url(#soft)">
+    <rect width="400" height="250" rx="16" fill="url(#homeGrad)" stroke="#a5b4fc" stroke-width="2.5"/>
+    <text x="200" y="28" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="16" font-weight="700" fill="#eef2ff">&#23478;&#24237;&#26234;&#33021;&#20307;&#23432;&#25252;&#36827;&#31243;</text>
+    <text x="200" y="48" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="11" fill="#c7d2fe">home.* / WS :4780/ws / HTTP :4781</text>
+    <line x1="28" y1="60" x2="372" y2="60" stroke="#6366f1" stroke-opacity="0.5" stroke-width="1"/>
+
+    <rect x="24" y="74" width="170" height="48" rx="8" fill="rgba(15,18,36,0.55)" stroke="#c084fc" stroke-width="1"/>
+    <text x="109" y="94" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="600" fill="#e9d5ff">envoy-harness</text>
+    <text x="109" y="110" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="10" fill="#94a3b8">&#21807;&#19968;&#20132;&#20184;&#30340; harness</text>
+
+    <rect x="206" y="74" width="170" height="48" rx="8" fill="rgba(15,18,36,0.55)" stroke="#4ade80" stroke-width="1"/>
+    <text x="291" y="94" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="600" fill="#bbf7d0">&#24037;&#20316;&#27969;</text>
+    <text x="291" y="110" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="10" fill="#94a3b8">&#38745;&#24577; DAG / &#33258;&#28982;&#35821;&#35328;&#33609;&#31295;</text>
+
+    <rect x="24" y="134" width="170" height="48" rx="8" fill="rgba(15,18,36,0.55)" stroke="#818cf8" stroke-width="1"/>
+    <text x="109" y="154" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="600" fill="#c7d2fe">&#35760;&#24518; / &#23457;&#25209;</text>
+    <text x="109" y="170" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="10" fill="#94a3b8">L1-L3 / PendingLearn</text>
+
+    <rect x="206" y="134" width="170" height="48" rx="8" fill="rgba(15,18,36,0.55)" stroke="#22d3ee" stroke-width="1"/>
+    <text x="291" y="154" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="600" fill="#a5f3fc">&#24037;&#20855;&#30446;&#24405;</text>
+    <text x="291" y="170" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="10" fill="#94a3b8">&#25991;&#20214; / &#32593;&#39029; / MCP / ...</text>
+
+    <rect x="24" y="196" width="352" height="36" rx="8" fill="rgba(15,18,36,0.65)" stroke="#a5b4fc" stroke-width="1"/>
+    <text x="200" y="218" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="600" fill="#e0e7ff">&#32842;&#22825;&#12289;&#24037;&#20316;&#27969;&#19982;&#35745;&#21010;&#20219;&#21153;&#20849;&#29992;&#21516;&#19968;&#22871;&#24037;&#20855;</text>
+  </g>
+
+  <path d="M240,200 C265,200 270,200 280,200" fill="none" stroke="#818cf8" stroke-width="2.5" marker-end="url(#arrIndigo)"/>
+  <text x="258" y="188" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#a5b4fc">home.*</text>
+  <path d="M720,200 C695,200 690,200 680,200" fill="none" stroke="#22d3ee" stroke-width="2.5" marker-end="url(#arrCyan)"/>
+  <text x="702" y="188" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#67e8f9">home.*</text>
+
+  <g transform="translate(300,370)" filter="url(#soft)">
+    <rect width="160" height="70" rx="12" fill="#1e1b36" stroke="#c084fc" stroke-width="2"/>
+    <text x="80" y="28" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="13" font-weight="700" fill="#e9d5ff">&#27169;&#22411;</text>
+    <text x="80" y="50" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="11" fill="#94a3b8">Cloud / Local :18792</text>
+  </g>
+  <path d="M400,340 C400,350 380,360 380,370" fill="none" stroke="#c084fc" stroke-width="2" marker-end="url(#arrPurple)"/>
+
+  <g transform="translate(520,370)" filter="url(#soft)">
+    <rect width="280" height="70" rx="12" fill="#1e1b36" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="140" y="26" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="13" font-weight="700" fill="#94a3b8">&#21487;&#36873;&#32593;&#20851;</text>
+    <text x="140" y="48" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="11" fill="#64748b">Home Assistant / MQTT &#24037;&#20855;</text>
+  </g>
+  <path d="M560,340 C580,350 620,360 640,370" fill="none" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrMuted)"/>
+
+  <g transform="translate(40,370)" filter="url(#soft)">
+    <rect width="220" height="70" rx="12" fill="#1e1b36" stroke="#22d3ee" stroke-width="1.5"/>
+    <text x="110" y="26" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="13" font-weight="700" fill="#a5f3fc">&#24037;&#20855;&#38754;</text>
+    <text x="110" y="48" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="10" fill="#94a3b8">&#25991;&#20214; / &#32593;&#39029; / &#27983;&#35272;&#22120; / &#21150;&#20844; / &#25216;&#33021;</text>
+  </g>
+  <path d="M360,340 C280,350 200,360 150,370" fill="none" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrCyan)"/>
+
+  <text x="480" y="535" text-anchor="middle" font-family="system-ui,Segoe UI,sans-serif" font-size="11" fill="#64748b">&#26234;&#33021;&#23478;&#23621;&#26159;&#24037;&#20855;&#30446;&#24405;&#20013;&#30340;&#19968;&#39033;&#33021;&#21147; - &#19981;&#26159;&#20135;&#21697;&#20013;&#24515;</text>
+</svg>

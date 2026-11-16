@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EnvoyMesh Network</title>
-  <meta name="description" content="Decentralized P2P mesh for autonomous AI agents — Coding on your home node with ready agents (Envoy Harness, Claude Code, Codex, Cursor, …), Envoy Market, Team jobs, knowledge RAG, EnvoyGo mobile, and EnvoyDev. Cryptographic identity and security by design.">
+  <meta name="description" content="Decentralized P2P mesh for autonomous AI agents — Coding on your home node with ready agents (Envoy Harness, Claude Code, Codex, Cursor, …), Envoy Market, Team jobs, knowledge RAG, EnvoyGo mobile, EnvoyDev, and EnvoyHome. Cryptographic identity and security by design.">
 
   <style>
     * {
@@ -1298,8 +1298,13 @@
     }
     .family-apps-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 24px;
+    }
+    @media (max-width: 1024px) {
+      .family-apps-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
     }
     .family-app-card {
       display: flex;
@@ -2016,6 +2021,7 @@
             <li><a href="#envoygo">EnvoyGo</a></li>
             <li class="nav-dropdown-sep">Family Apps</li>
             <li><a href="envoydev/">EnvoyDev</a></li>
+            <li><a href="envoyhome/">EnvoyHome</a></li>
             <li><a href="veda-ai/">Veda Notes</a></li>
           </ul>
         </li>
@@ -2058,6 +2064,7 @@
     <div class="mobile-nav-label">Products</div>
     <a href="#envoygo">EnvoyGo</a>
     <a href="envoydev/">EnvoyDev</a>
+    <a href="envoyhome/">EnvoyHome</a>
     <a href="veda-ai/">Veda Notes</a>
     <div class="mobile-nav-label">Features</div>
     <a href="#features">Overview</a>
@@ -2122,6 +2129,17 @@
           <p>The control plane for coding agents — a project rail, task tree, and inline approvals in one dedicated window. Drive Claude Code, Codex, Cursor, and 40+ other agents on your own machines, and follow runs from your phone.</p>
           <div>
             <a href="envoydev/" class="btn btn-secondary">Open EnvoyDev →</a>
+          </div>
+        </div>
+        <div class="family-app-card">
+          <div class="family-app-head">
+            <img src="envoyhome/screens/envoyhome-logo.png" alt="" class="family-app-icon" loading="lazy">
+            <h3>EnvoyHome</h3>
+          </div>
+          <span class="harness-badge" style="background-color: rgba(52, 211, 153, 0.15); color: #34d399;">Desktop · Mobile · Preview 0.2.0</span>
+          <p>The household agent — chat, memory, document knowledge, static workflows, approvals, and optional Home Assistant / MQTT on your own machine. Desktop and phone are thin clients onto your home daemon.</p>
+          <div>
+            <a href="envoyhome/" class="btn btn-secondary">Open EnvoyHome →</a>
           </div>
         </div>
         <div class="family-app-card">
@@ -3251,6 +3269,7 @@
         <li><a href="EnvoyMesh_GuideBook_0.4.0.html">Guidebook</a></li>
         <li><a href="#coding-tab">Coding</a></li>
         <li><a href="envoydev/">EnvoyDev</a></li>
+        <li><a href="envoyhome/">EnvoyHome</a></li>
         <li><a href="veda-ai/">Veda Notes</a></li>
         <li><a href="security.html">Security</a></li>
         <li><a href="privacy.html">Privacy</a></li>
