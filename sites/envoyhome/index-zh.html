@@ -305,7 +305,56 @@
     .family-link { margin-top: auto; color: var(--primary-light); font-size: 0.9rem; font-weight: 500; text-decoration: none; transition: color 0.2s; }
     .family-link:hover { color: var(--text-primary); }
 
-    /* Get started */
+    /* 下载 — 与 EnvoyMesh 系列站点下载卡片结构一致的 2×2 网格 */
+    .download-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; max-width: 900px; margin: 0 auto 24px; }
+    .download-card {
+      background-color: #1e293b; border-radius: 16px; padding: 32px 28px;
+      border: 1px solid #334155; text-align: center; transition: all 0.3s ease;
+      display: flex; flex-direction: column; min-width: 0;
+    }
+    .download-card:hover { transform: translateY(-4px); border-color: #6366f1; box-shadow: 0 8px 32px rgba(99, 102, 241, 0.1); }
+    .download-icon {
+      width: 64px; height: 64px; border-radius: 16px; margin: 0 auto 18px;
+      display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+    }
+    .download-icon svg { width: 32px; height: 32px; }
+    .download-icon.mac { background-color: rgba(99, 102, 241, 0.1); color: #818cf8; }
+    .download-icon.windows { background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+    .download-icon.android { background-color: rgba(34, 197, 94, 0.1); color: #22c55e; }
+    .download-icon.ios { background-color: rgba(147, 197, 253, 0.1); color: #93c5fd; }
+    .download-card h3 { font-size: 1.2rem; font-weight: 600; margin-bottom: 6px; color: #f8fafc; }
+    .download-card .platform-sub { font-size: 0.85rem; color: #64748b; margin-bottom: 20px; }
+    .download-links { display: flex; flex-direction: column; gap: 10px; margin-top: auto; }
+    .download-link {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 12px 16px; border-radius: 10px; text-decoration: none;
+      font-size: 0.9rem; font-weight: 500; transition: all 0.2s ease;
+      background-color: #6366f1; color: #fff;
+    }
+    .download-link:hover { background-color: #4f46e5; }
+    .download-link.alt { background-color: #0f172a; color: #94a3b8; border: 1px solid #334155; }
+    .download-link.alt:hover { color: #f8fafc; border-color: #6366f1; }
+    .download-link .tag {
+      font-size: 0.7rem; padding: 2px 8px; border-radius: 999px;
+      background-color: rgba(255, 255, 255, 0.15); white-space: nowrap;
+    }
+    .download-link.alt .tag { background-color: rgba(99, 102, 241, 0.15); color: #a5b4fc; }
+    .download-qr {
+      margin: 0 auto 20px; padding: 14px; background-color: #fff;
+      border: 1px solid #334155; border-radius: 12px;
+    }
+    .download-qr canvas, .download-qr img { display: block; width: 160px; height: 160px; border-radius: 6px; }
+    .download-qr .qr-error { font-size: 0.75rem; line-height: 1.4; text-align: center; max-width: 160px; color: #334155; }
+    .download-qr-label { margin-top: 8px; font-size: 0.75rem; color: #64748b; }
+    .download-link-note {
+      display: flex; align-items: center; justify-content: center;
+      padding: 12px 16px; border-radius: 10px; font-size: 0.85rem; font-weight: 500;
+      color: #64748b; border: 1px dashed #334155;
+      background-color: rgba(15, 23, 42, 0.35); line-height: 1.35;
+    }
+    .download-note { text-align: center; color: #64748b; font-size: 0.85rem; max-width: 640px; margin: 0 auto; line-height: 1.6; }
+
+    /* 从源码运行 */
     .start-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr); gap: 28px; align-items: start; }
     .steps { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
     .step-row {
@@ -416,7 +465,7 @@
       .section { padding: 60px 0; }
       .section-header { margin-bottom: 40px; }
       .section-header h2 { font-size: 1.8rem; }
-      .features-grid, .shots-grid, .security-grid, .channel-grid { grid-template-columns: 1fr; }
+      .features-grid, .shots-grid, .security-grid, .channel-grid, .download-grid { grid-template-columns: 1fr; }
       .mobile-shots { grid-template-columns: 1fr; gap: 36px; }
       .memory-row { grid-template-columns: 50px 1fr; }
       .memory-desc { grid-column: 2; text-align: left; }
@@ -426,7 +475,7 @@
 
     @media (prefers-reduced-motion: reduce) {
       .hero::before { animation: none; }
-      .feature-card, .shot-card, .btn { transition: none; }
+      .feature-card, .shot-card, .download-card, .btn { transition: none; }
     }
   </style>
 </head>
@@ -445,14 +494,14 @@
         <li><a href="#memory">记忆</a></li>
         <li><a href="#home">智能家居</a></li>
         <li><a href="#security">安全</a></li>
-        <li><a href="#get-started">开始使用</a></li>
+        <li><a href="#get-started">下载</a></li>
       </ul>
       <div class="nav-actions">
         <a href="index.html" class="nav-util">EN</a>
         <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer" class="nav-util nav-github" aria-label="GitHub">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
         </a>
-        <a href="#get-started" class="btn btn-primary btn-nav-cta">开始使用</a>
+        <a href="#get-started" class="btn btn-primary btn-nav-cta">下载</a>
       </div>
       <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="打开菜单">
         <span></span><span></span><span></span>
@@ -468,7 +517,7 @@
     <a href="#memory">记忆</a>
     <a href="#home">智能家居</a>
     <a href="#security">安全</a>
-    <a href="#get-started">开始使用</a>
+    <a href="#get-started">下载</a>
     <a href="privacy-zh.html">隐私</a>
     <div class="mobile-nav-actions">
       <a href="index.html" class="btn btn-secondary">EN</a>
@@ -496,7 +545,7 @@
         <span class="agent-chip chip-more">计划任务</span>
       </div>
       <div class="nav-actions" style="justify-content: center;">
-        <a href="#get-started" class="btn btn-primary">在家里跑起来</a>
+        <a href="#get-started" class="btn btn-primary">下载 EnvoyHome</a>
         <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">在 GitHub 查看</a>
       </div>
       <div class="hero-stats">
@@ -676,7 +725,7 @@
         </div>
       </div>
       <div class="callout">
-        <strong>预览版轻客户端（0.2.0）。</strong>需要可访问的 EnvoyHome 守护进程；手机应用不是独立的云端聊天机器人。只有配置并启用 Home Assistant 后才会显示可选的 Home 标签。APNs / FCM 推送为可选项（审批与计划任务提醒），在守护进程上配置。商店上架材料已准备；目前尚未正式上架 App Store 或 Play。
+        <strong>预览版轻客户端（0.2.0）。</strong>需要可访问的 EnvoyHome 守护进程；手机应用不是独立的云端聊天机器人。只有配置并启用 Home Assistant 后才会显示可选的 Home 标签。APNs / FCM 推送为可选项（审批与计划任务提醒），在守护进程上配置。下方提供下载链接与二维码；商店可用性因地区而异。
       </div>
       <p class="figure-caption">截图取自 iOS 模拟器中运行的真实 Flutter 应用。点击任意手机截图可放大。</p>
     </div>
@@ -892,66 +941,68 @@
     </div>
   </section>
 
-  <!-- Get started -->
+  <!-- 下载 -->
   <section class="section" id="get-started" style="background-color: #0a0d19;">
     <div class="container">
       <div class="section-header">
-        <h2>在家里跑起来</h2>
-        <p>预览版从源码运行。你需要 Node.js 22+、pnpm，以及一份同级的 EnvoyMesh 检出。</p>
+        <h2>下载 EnvoyHome</h2>
+        <p>安装桌面端家庭智能体，再配对手机应用。选择直接下载，或用手机扫描商店二维码。</p>
       </div>
-      <div class="start-grid">
-        <div class="steps">
-          <div class="step-row">
-            <div class="step-num">1</div>
-            <div class="step-body">
-              <h4>检查同级依赖</h4>
-              <p>EnvoyHome 通过 <code>link:</code> 链接 <code>@envoymesh/*</code>——它们不在 npm 上。同级依赖缺失或分支不对时，检查会失败关闭。</p>
-              <pre>./scripts/peers-check.sh
-<span class="cmt"># 或设置 ENVOYHOME_PEERS_GIT_BASE 后运行 ./scripts/fetch-peers.sh</span></pre>
-            </div>
+      <div class="download-grid">
+        <div class="download-card">
+          <div class="download-icon mac" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
           </div>
-          <div class="step-row">
-            <div class="step-num">2</div>
-            <div class="step-body">
-              <h4>安装并构建</h4>
-              <p>不要在 <code>CI=true</code> 下安装——pnpm 严格模式的这个陷阱在本仓库有明确约定。</p>
-              <pre>env -u CI pnpm install
-pnpm -r build</pre>
-            </div>
-          </div>
-          <div class="step-row">
-            <div class="step-num">3</div>
-            <div class="step-body">
-              <h4>启动家庭智能体</h4>
-              <p>单独运行守护进程，或让桌面外壳托管它。然后创建档案、添加模型，需要时再配对手机。</p>
-              <pre>pnpm run dev:daemon   <span class="cmt"># 仅守护进程</span>
-pnpm desktop:dev      <span class="cmt"># Tauri 设置外壳</span></pre>
-              <table class="endpoint-table">
-                <tr><td>WebSocket</td><td>ws://127.0.0.1:4780/ws</td></tr>
-                <tr><td>健康检查</td><td>http://127.0.0.1:4781/health</td></tr>
-              </table>
-            </div>
+          <h3>macOS</h3>
+          <p class="platform-sub">桌面应用 · DMG 安装包</p>
+          <div class="download-links">
+            <a href="https://github.com/allenpeng0705/EnvoyHome/releases" target="_blank" rel="noopener noreferrer" class="download-link">下载 DMG <span class="tag">GitHub</span></a>
+            <a href="https://download.envoymesh.cn/EnvoyMesh/envoyhome-desktop.dmg" target="_blank" rel="noopener noreferrer" class="download-link alt">下载 DMG <span class="tag">镜像</span></a>
           </div>
         </div>
-        <div class="start-side">
-          <div class="qr-card">
-            <div id="qr-repo" class="qr-host" role="img" aria-label="EnvoyHome GitHub 仓库二维码"></div>
-            <h4>源码与问题反馈</h4>
-            <p>扫码打开仓库，或使用下方链接。</p>
-            <a href="https://github.com/allenpeng0705/EnvoyHome" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="width: 100%; justify-content: center;">GitHub 仓库</a>
+        <div class="download-card">
+          <div class="download-icon windows" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.1L10.4 4v7.3H3V5.1zM10.4 12.7V20L3 18.9v-6.2h7.4zM11.6 3.8L21 2.5v8.8h-9.4V3.8zM21 12.7v8.8l-9.4-1.3v-7.5H21z"/></svg>
           </div>
-          <div class="platform-card">
-            <h4>平台</h4>
-            <div class="platform-row"><span>桌面外壳</span><span>macOS、Linux、Windows</span></div>
-            <div class="platform-row"><span>手机</span><span>iOS + Android</span></div>
-            <div class="platform-row"><span>本地模型</span><span>llama.cpp · Ollama</span></div>
-            <div class="platform-row"><span>Home embed</span><span>:18793</span></div>
-            <div class="platform-row"><span>许可证</span><span>MIT</span></div>
-            <p class="preview-note" style="margin-top: 10px;">桌面端以 macOS 为主，Linux 与 Windows 尽力支持。手机应用是 Flutter 预览版。</p>
+          <h3>Windows</h3>
+          <p class="platform-sub">桌面应用 · EXE 安装包</p>
+          <div class="download-links">
+            <a href="https://github.com/allenpeng0705/EnvoyHome/releases" target="_blank" rel="noopener noreferrer" class="download-link">下载 EXE <span class="tag">GitHub</span></a>
+            <a href="https://download.envoymesh.cn/EnvoyMesh/envoyhome-desktop.exe" target="_blank" rel="noopener noreferrer" class="download-link alt">下载 EXE <span class="tag">镜像</span></a>
           </div>
-          <p class="preview-note">EnvoyHome <strong>0.2.0</strong> 处于早期预览阶段。<code>v1.0.0</code> 尚未打标签，也没有正式的 App Store 或 Play 上架——请从源码或 <code>release/</code> 下本地构建的安装包安装。</p>
+        </div>
+        <div class="download-card">
+          <div class="download-icon android" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85-.29-.15-.65-.06-.83.22l-1.88 3.24a11.43 11.43 0 0 0-8.94 0L5.65 5.67c-.18-.28-.54-.37-.83-.22-.3.16-.42.54-.26.85L6.4 9.48A10.81 10.81 0 0 0 1 18h22a10.81 10.81 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></svg>
+          </div>
+          <h3>Android</h3>
+          <p class="platform-sub">EnvoyHome 手机应用 · Google Play 与 APK</p>
+          <div class="download-qr">
+            <div id="qr-google-play" class="qr-host" role="img" aria-label="EnvoyHome Google Play 上架页二维码"></div>
+            <div class="download-qr-label">扫码 · Google Play</div>
+          </div>
+          <div class="download-links">
+            <a href="https://play.google.com/store/apps/details?id=com.envoymesh.envoyhome" target="_blank" rel="noopener noreferrer" class="download-link">Google Play <span class="tag">官方</span></a>
+            <a href="https://download.envoymesh.cn/EnvoyMesh/envoyhome-android.apk" target="_blank" rel="noopener noreferrer" class="download-link alt">下载 APK <span class="tag">镜像</span></a>
+          </div>
+        </div>
+        <div class="download-card">
+          <div class="download-icon ios" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+          </div>
+          <h3>iOS</h3>
+          <p class="platform-sub">EnvoyHome 手机应用 · App Store</p>
+          <div class="download-qr">
+            <div id="qr-app-store" class="qr-host" role="img" aria-label="EnvoyHome App Store 上架页二维码"></div>
+            <div class="download-qr-label">扫码 · App Store</div>
+          </div>
+          <div class="download-links">
+            <a href="https://apps.apple.com/app/id6821779008" target="_blank" rel="noopener noreferrer" class="download-link">App Store <span class="tag">官方</span></a>
+            <div class="download-link-note">需连接已配对的 EnvoyHome 守护进程</div>
+          </div>
         </div>
       </div>
+      <p class="download-note">macOS 与 Windows 均提供 GitHub 构建与直接镜像。商店可用性因地区而异；Linux 安装包与源码归档请前往 GitHub Releases。Android 用户也可以直接安装 APK。</p>
       <div class="dev-path">
         <h4>从源码运行桌面应用</h4>
         <p>需要 Node.js ≥ 22 与 pnpm 10.33（根 <code>packageManager</code>）、一份同级的 <code>EnvoyMesh</code> 检出，以及桌面外壳所需的 Rust 与 Tauri CLI 前置依赖。</p>
@@ -980,7 +1031,7 @@ pnpm desktop:dev        <span class="cmt"># 缺少守护进程构建时先构建
           <li><a href="#memory">记忆</a></li>
           <li><a href="#home">智能家居</a></li>
           <li><a href="#security">安全</a></li>
-          <li><a href="#get-started">开始使用</a></li>
+          <li><a href="#get-started">下载</a></li>
           <li><a href="privacy-zh.html">隐私</a></li>
           <li><a href="index.html">English</a></li>
         </ul>
@@ -1003,10 +1054,12 @@ pnpm desktop:dev        <span class="cmt"># 缺少守护进程构建时先构建
 
   <script src="vendor/qrcode.min.js"></script>
   <script>
-    // === 仓库地址（同时用于生成二维码） ===
-    const REPO_URL = "https://github.com/allenpeng0705/EnvoyHome";
+    // === 发布地址（同时用于离线生成二维码） ===
+    const APP_STORE_URL = "https://apps.apple.com/app/id6821779008";
+    const GOOGLE_PLAY_URL = "https://play.google.com/store/apps/details?id=com.envoymesh.envoyhome";
 
     function qrUnavailable(host) {
+      host.classList.add("qr-error");
       host.textContent = "二维码库加载后将在此显示";
     }
 
@@ -1017,14 +1070,15 @@ pnpm desktop:dev        <span class="cmt"># 缺少守护进程构建时先构建
       QRCode.toCanvas(
         document.createElement("canvas"),
         url,
-        { errorCorrectionLevel: "M", margin: 1, width: 200, color: { dark: "#0c0f1d", light: "#ffffff" } },
+        { errorCorrectionLevel: "M", margin: 1, width: 160, color: { dark: "#0c0f1d", light: "#ffffff" } },
         function (err, canvas) {
           if (err) { qrUnavailable(host); return; }
           host.appendChild(canvas);
         }
       );
     }
-    renderQR("qr-repo", REPO_URL);
+    renderQR("qr-app-store", APP_STORE_URL);
+    renderQR("qr-google-play", GOOGLE_PLAY_URL);
 
     // Header scroll effect
     window.addEventListener("scroll", function () {
