@@ -53,8 +53,8 @@ Install the desktop app to run your private mesh (Social UI + node). Prefer the 
 
 | Platform | Download |
 |----------|----------|
-| **macOS** (Apple Silicon · DMG) | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [Mirror DMG](https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg) |
-| **Windows** (EXE) | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [Mirror EXE](https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe) |
+| **macOS** (Apple Silicon · DMG) | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [Mirror DMG](https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.dmg) |
+| **Windows** (EXE) | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [Mirror EXE](https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.exe) |
 | **Linux** | Build from source (see [QuickStart.md](QuickStart.md)) |
 
 More options and screenshots: [Website downloads](https://www.envoymesh.cn/#downloads).
@@ -66,7 +66,7 @@ Pair EnvoyGo to your home node via QR. Requires a running EnvoyMesh desktop inst
 | Platform | Download |
 |----------|----------|
 | **iOS** (App Store · iOS 18.6+) | [App Store](https://apps.apple.com/app/id6795717774) |
-| **Android** (Google Play) | [Google Play](https://play.google.com/store/apps/details?id=com.envoymesh.envoygo) · [APK mirror](https://gpt4people.online/EnvoyMesh/envoygo-android.apk) · [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) |
+| **Android** (Google Play) | [Google Play](https://play.google.com/store/apps/details?id=com.envoymesh.envoygo) · [APK mirror](https://download.envoymesh.cn/EnvoyMesh/envoygo-android.apk) · [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) |
 
 <p align="center">
   <img src="sites/screens/app-store-qr.png" alt="EnvoyGo · App Store QR" width="160" height="160" />

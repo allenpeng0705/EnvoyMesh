@@ -70,12 +70,12 @@ and email addresses; they are never loaded as page resources.
 Copy is drawn from `README.md`, `README.zh-CN.md`, `QuickStart.md`, `design_doc/*.md`,
 `docs/privacy-policy.md`, `docs/smart-home.md`, `docs/store-listing.md`, and the channel /
 Home Assistant / MQTT setup guides. Claims are limited to what those documents support;
-the preview posture (**0.2.0**; no `v1.0.0` tag yet; store submit uses
-`apps/mobile/store-release/`; live IM verification in progress) is stated on the pages.
+the preview posture (**0.2.0**; no `v1.0.0` tag yet; live IM verification in progress) is stated on the pages.
 
 **Store privacy URL after deploy:** `https://www.envoymesh.cn/envoyhome/privacy.html`  
 (Interim HTML preview is fine until Cloudflare hosts this folder.)  
-Release guide: [`docs/mobile-store-release.md`](../../docs/mobile-store-release.md) · listing pack: [`apps/mobile/store-release/`](../../apps/mobile/store-release/).
+**App / Play review pairing (noindex):** `app-review.html` on the same host.  
+Release guide: [`docs/mobile-store-release.md`](../../docs/mobile-store-release.md) · EnvoyGo listing pack: [`apps/envoygo/store-release/`](../../apps/envoygo/store-release/).
 
 Desktop release installers land under `release/envoyhome-desktop-0.2.0-*` via
 `./scripts/build-desktop.sh` / `build-desktop.ps1` (macOS requires Developer ID + notarization).

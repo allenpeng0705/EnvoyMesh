@@ -61,7 +61,7 @@ Change those strings if a listing URL moves; next page load regenerates both QRs
 
 - macOS `.dmg` — `https://download.envoymesh.cn/EnvoyMesh/envoydev-desktop.dmg`
 - Windows `.exe` — `https://download.envoymesh.cn/EnvoyMesh/envoydev-desktop.exe`
-- Android `.apk` — `https://download.envoymesh.cn/EnvoyMesh/envoydev_mobile.apk`
+- Android `.apk` — `https://download.envoymesh.cn/EnvoyMesh/envoydev-android.apk`
 - GitHub releases — `https://github.com/allenpeng0705/EnvoyCoder/releases`
 
 ## Verify locally

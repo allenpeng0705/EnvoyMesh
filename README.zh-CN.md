@@ -53,8 +53,8 @@ EnvoyMesh 定义了**一套基于 libp2p 的 mesh 协议**（家庭主节点之�
 
 | 平台 | 下载 |
 |------|------|
-| **macOS**（Apple Silicon · DMG） | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [镜像 DMG](https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg) |
-| **Windows**（EXE） | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [镜像 EXE](https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe) |
+| **macOS**（Apple Silicon · DMG） | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [镜像 DMG](https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.dmg) |
+| **Windows**（EXE） | [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) · [镜像 EXE](https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.exe) |
 | **Linux** | 从源码构建（见 [QuickStart.md](QuickStart.md)） |
 
 更多选项与截图：[官网下载区](https://www.envoymesh.cn/#downloads)。
@@ -66,7 +66,7 @@ EnvoyMesh 定义了**一套基于 libp2p 的 mesh 协议**（家庭主节点之�
 | 平台 | 下载 |
 |------|------|
 | **iOS**（App Store · 需 iOS 18.6+） | [App Store](https://apps.apple.com/cn/app/envoygo/id6795717774) |
-| **Android**（Google Play） | [Google Play](https://play.google.com/store/apps/details?id=com.envoymesh.envoygo) · [APK 镜像](https://gpt4people.online/EnvoyMesh/envoygo-android.apk) · [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) |
+| **Android**（Google Play） | [Google Play](https://play.google.com/store/apps/details?id=com.envoymesh.envoygo) · [APK 镜像](https://download.envoymesh.cn/EnvoyMesh/envoygo-android.apk) · [GitHub Releases](https://github.com/allenpeng0705/EnvoyMesh/releases) |
 
 <p align="center">
   <img src="sites/screens/app-store-qr.png" alt="EnvoyGo · App Store 二维码" width="160" height="160" />

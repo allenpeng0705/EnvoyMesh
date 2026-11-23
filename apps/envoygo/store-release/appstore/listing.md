@@ -109,9 +109,9 @@ Initial public release of EnvoyGo.
 
 | Field | Value |
 |-------|--------|
-| Support URL | `TODO: https://…` (required) |
-| Marketing URL | `TODO: https://envoymesh…` (optional) |
-| Privacy Policy URL | `TODO: https://…` (required) |
+| Support URL | `https://www.envoymesh.cn/` (required — add support email in App Store Connect if needed) |
+| Marketing URL | `https://www.envoymesh.cn/` (optional) |
+| Privacy Policy URL | `https://www.envoymesh.cn/privacy` (required) |
 
 Suggested privacy policy topics to cover:
 

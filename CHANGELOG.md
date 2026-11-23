@@ -20,6 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - EnvoyGo: Coding home Heartbeats sheet + EH / Pi / Ext “Add heartbeat…” dialog; RPC wrappers; en + zh (+ English fillers)
 - EnvoyGo Schedules UI still deferred — not Team jobs / EnvoyAI TriggerStore
 
+## [0.8.0] - 2026-10-01
+
+### Changed
+
+- **EnvoyMesh 0.8.0** / **EnvoyGo 1.8.0+53** — workspace version sync (`VERSION`, Tauri, packages, `ENVOYMESH_VERSION`)
+- Canonical product sites on **envoymesh.cn**: EnvoyMesh hub, [EnvoyDev](https://www.envoymesh.cn/envoydev), [Veda Notes](https://www.envoymesh.cn/veda-ai)
+- EnvoyGo setup / pairing download CTA → `https://www.envoymesh.cn` (`kEnvoyMeshDownloadUrl`)
+- README + sites: download mirrors on `download.envoymesh.cn` (aligned with `sites/index*.html`)
+
+### Added
+
+- **EnvoyHome** marketing site under `sites/envoyhome/` (EN + ZH landing, privacy, store-review pairing page)
+
 ## [0.4.0] - 2026-09-01
 
 ### Added

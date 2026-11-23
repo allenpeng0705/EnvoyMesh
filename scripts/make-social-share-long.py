@@ -140,9 +140,9 @@ def compose(locale: str) -> Path:
     ]
   )
   site_url = "https://www.envoymesh.cn"
-  dmg_url = "https://gpt4people.online/EnvoyMesh/envoymesh-desktop.dmg"
-  exe_url = "https://gpt4people.online/EnvoyMesh/envoymesh-desktop.exe"
-  apk_url = "https://gpt4people.online/EnvoyMesh/envoygo-android.apk"
+  dmg_url = "https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.dmg"
+  exe_url = "https://download.envoymesh.cn/EnvoyMesh/envoymesh-desktop.exe"
+  apk_url = "https://download.envoymesh.cn/EnvoyMesh/envoygo-android.apk"
   links_title = "下载桌面端 / APK" if zh else "Desktop & APK downloads"
   # (label, url) — label muted, URL cyan (website is shown separately at top)
   link_rows: list[tuple[str, str]] = (

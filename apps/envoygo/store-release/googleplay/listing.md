@@ -103,8 +103,8 @@ Initial public release of EnvoyGo.
 |-------|--------|
 | Email | `TODO: support@…` (required) |
 | Phone | optional |
-| Website | `TODO: https://…` |
-| Privacy policy | `TODO: https://…` (required) |
+| Website | `https://www.envoymesh.cn/` |
+| Privacy policy | `https://www.envoymesh.cn/privacy` (required) |
 
 ---
 
