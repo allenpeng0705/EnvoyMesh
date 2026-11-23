@@ -256,6 +256,7 @@ EnvoyMesh 定义的是同族应用共用的**协议**，而不只是桌面 UI：
 | **EnvoyMesh** | 桌面家庭主节点 + Social UI — 完整 mesh 对等节点（本仓库） | [官网](https://www.envoymesh.cn/) |
 | **EnvoyGo** | 手机轻客户端 → EnvoyMesh 家节点（聊天、AI、通话、家庭） | [下载](#下载) |
 | **EnvoyDev** | 编程代理控制平面 — 桌面 + **EnvoyDev Mobile**（同一套轻客户端协议） | [官网](https://www.envoymesh.cn/envoydev) · [GitHub](https://github.com/allenpeng0705/EnvoyCoder) |
+| **EnvoyHome** | 家庭智能体 — 桌面 + 手机轻客户端（记忆、工作流、可选智能家居） | [官网](https://www.envoymesh.cn/envoyhome) |
 | **Veda Notes** | AI 日记；与 EnvoyMesh Home 配对后可私有同步、Home AI、家庭社交 | [官网](https://www.envoymesh.cn/veda-ai) |
 
 ### EnvoyDev
@@ -1001,7 +1002,7 @@ EnvoyMesh/
 
 ## 当前状态
 
-**当前产品面：** Social（桌面，含 **编程** 页）+ **EnvoyGo**（手机）；**Envoy Harness** 负责编程聊天 / 终端，**Pi** 用于终端与 Ext Agent。同族应用：**[EnvoyDev](https://www.envoymesh.cn/envoydev)**（编程控制平面）、**[Veda Notes](https://www.envoymesh.cn/veda-ai)**。动态中继名册（CN + US 社区枢纽）随桌面安装包种子分发。
+**当前产品面：** Social（桌面，含 **编程** 页）+ **EnvoyGo**（手机）；**Envoy Harness** 负责编程聊天 / 终端，**Pi** 用于终端与 Ext Agent。同族应用：**[EnvoyDev](https://www.envoymesh.cn/envoydev)**（编程控制平面）、**[EnvoyHome](https://www.envoymesh.cn/envoyhome)**（家庭智能体）、**[Veda Notes](https://www.envoymesh.cn/veda-ai)**。动态中继名册（CN + US 社区枢纽）随桌面安装包种子分发。
 
 近期里程碑（完整列表见 [`docs/implementation-plan.md`](docs/implementation-plan.md)）：
 
@@ -1030,7 +1031,7 @@ EnvoyMesh/
 - **知识库：** [知识库 & RAG](docs/knowledge-base-and-rag.md) · [Obsidian 集成](#obsidian-集成)
 - **语音与通话：** [语音消息](docs/audio-message-support.md) · [语音通话（桌面；视频计划中）](docs/voice-video-call-support.md) · [EnvoyGo 原生 WebRTC](docs/voice-video-call-envoygo.md)
 - **移动：** [EnvoyGo 设计](docs/flutter-thin-client-design.md)
-- **编程 / 同族应用：** [编程（Coding）](#编程coding) · [EnvoyDev](https://www.envoymesh.cn/envoydev)（[GitHub](https://github.com/allenpeng0705/EnvoyCoder)） · [Veda Notes](https://www.envoymesh.cn/veda-ai) · [envoy-harness](https://github.com/allenpeng0705/envoy-harness)
+- **编程 / 同族应用：** [编程（Coding）](#编程coding) · [EnvoyDev](https://www.envoymesh.cn/envoydev)（[GitHub](https://github.com/allenpeng0705/EnvoyCoder)） · [EnvoyHome](https://www.envoymesh.cn/envoyhome) · [Veda Notes](https://www.envoymesh.cn/veda-ai) · [envoy-harness](https://github.com/allenpeng0705/envoy-harness)
 - **开发者：** [协议参考](docs/protocol-standard.md) · [路线图](docs/implementation-plan.md)
 
 ---

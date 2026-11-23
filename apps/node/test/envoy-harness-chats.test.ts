@@ -109,9 +109,8 @@ describe("envoy-harness-chats", () => {
     await session.appendMessage("assistant", [
       { type: "text", text: "hello" },
     ]);
-    // PersistedSession.appendMessage flushes to disk asynchronously
-    // (fire-and-forget); wait for the write before re-reading the file.
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    // PersistedSession buffers writes; reload-from-store needs flush().
+    await session.flush();
 
     const summaries = await summarizeEhChats({
       chats: [chat({ sessionId: session.id })],

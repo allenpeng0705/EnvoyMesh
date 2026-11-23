@@ -1,7 +1,7 @@
 # Sites & release hygiene — v0.8.0
 
 **Release:** 0.8.0 (EnvoyMesh) · **EnvoyGo** 1.8.0+53  
-**Revised:** 2026-10-01  
+**Revised:** 2026-11-23  
 
 ## Canonical product URLs
 
@@ -23,7 +23,8 @@ HomeClaw install docs stay on **https://www.homeclaw.cn/** (separate product).
 |------|--------|
 | `VERSION` + `node scripts/sync-version.mjs` → 0.8.0 | ✅ |
 | `apps/envoygo/pubspec.yaml` → 1.8.0+N | ✅ |
-| README / README.zh-CN product + mirror links | ✅ |
+| README / README.zh-CN product + mirror links (+ EnvoyHome family row) | ✅ |
+| Stale `homeclaw.cn/envoy` or `homeclaw.cn/veda` product URLs in docs/code | ✅ (none) |
 | `sites/index*.html` download mirrors | ✅ (prior pass) |
 | `CHANGELOG.md` `[0.8.0]` | ✅ |
 | EnvoyGo store listing website + privacy URLs | ✅ (support email still manual) |

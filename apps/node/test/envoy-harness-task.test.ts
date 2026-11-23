@@ -91,7 +91,7 @@ describe("envoy-harness-task", () => {
     });
     await created.appendMessage("user", [{ type: "text", text: "Hi" }]);
     await created.appendMessage("assistant", [{ type: "text", text: "Hello!" }]);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await created.flush();
 
     const history = await loadEhChatHistoryFromStore({
       sessionStore: store,

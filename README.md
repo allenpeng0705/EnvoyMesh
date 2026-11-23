@@ -187,6 +187,7 @@ EnvoyMesh defines the **shared protocols** the family runs on — not just a des
 | **EnvoyMesh** | Desktop home node + Social UI — full mesh peer (this repo) | [Website](https://www.envoymesh.cn/) |
 | **EnvoyGo** | Phone thin client → EnvoyMesh home (chat, AI, calls, family) | [Download](#download) |
 | **EnvoyDev** | Coding-agent control plane — desktop + **EnvoyDev Mobile** (same thin-client protocol) | [Website](https://www.envoymesh.cn/envoydev) · [GitHub](https://github.com/allenpeng0705/EnvoyCoder) |
+| **EnvoyHome** | Household agent — desktop + mobile thin client (memory, workflows, optional smart home) | [Website](https://www.envoymesh.cn/envoyhome) |
 | **Veda Notes** | AI journal; pairs with EnvoyMesh Home for private sync, Home AI, family social | [Website](https://www.envoymesh.cn/veda-ai) |
 
 ### EnvoyDev
@@ -1013,7 +1014,7 @@ EnvoyMesh/
 
 ## Current Status
 
-**Active product surfaces:** Social (desktop, including the **Coding** tab) + **EnvoyGo** (mobile), with **Envoy Harness** for coding chat / Terminal and **Pi** for Terminal + Ext Agent. Family apps: **[EnvoyDev](https://www.envoymesh.cn/envoydev)** (coding control plane) and **[Veda Notes](https://www.envoymesh.cn/veda-ai)**. Dynamic relay roster (CN + US community hubs) ships in the desktop package seed.
+**Active product surfaces:** Social (desktop, including the **Coding** tab) + **EnvoyGo** (mobile), with **Envoy Harness** for coding chat / Terminal and **Pi** for Terminal + Ext Agent. Family apps: **[EnvoyDev](https://www.envoymesh.cn/envoydev)** (coding control plane), **[EnvoyHome](https://www.envoymesh.cn/envoyhome)** (household agent), and **[Veda Notes](https://www.envoymesh.cn/veda-ai)**. Dynamic relay roster (CN + US community hubs) ships in the desktop package seed.
 
 Recent milestones (see [`docs/implementation-plan.md`](docs/implementation-plan.md) for the full list):
 
@@ -1042,7 +1043,7 @@ Earlier phases (trust modes, Agent Network / Team jobs, fleet onboarding, termin
 - **Knowledge base:** [Knowledge base & RAG](docs/knowledge-base-and-rag.md) · [Obsidian integration](#obsidian-integration)
 - **Voice & calls:** [Audio messages](docs/audio-message-support.md) · [Voice calls (desktop; video planned)](docs/voice-video-call-support.md) · [Native WebRTC on EnvoyGo](docs/voice-video-call-envoygo.md)
 - **Mobile:** [EnvoyGo design](docs/flutter-thin-client-design.md)
-- **Coding / family apps:** [Coding](#coding) · [EnvoyDev](https://www.envoymesh.cn/envoydev) ([GitHub](https://github.com/allenpeng0705/EnvoyCoder)) · [Veda Notes](https://www.envoymesh.cn/veda-ai) · [envoy-harness](https://github.com/allenpeng0705/envoy-harness)
+- **Coding / family apps:** [Coding](#coding) · [EnvoyDev](https://www.envoymesh.cn/envoydev) ([GitHub](https://github.com/allenpeng0705/EnvoyCoder)) · [EnvoyHome](https://www.envoymesh.cn/envoyhome) · [Veda Notes](https://www.envoymesh.cn/veda-ai) · [envoy-harness](https://github.com/allenpeng0705/envoy-harness)
 - **For developers:** [Protocol reference](docs/protocol-standard.md) · [Roadmap](docs/implementation-plan.md)
 
 ---
