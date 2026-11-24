@@ -351,6 +351,11 @@ if [ "$TYPECHECK" = "1" ]; then
   run_phase "01-typecheck" "TypeScript project-references build" \
     npm run typecheck
   if [ "$FAIL_COUNT" -gt 0 ] && [ "$BAIL" = "1" ]; then BAIL_OUT=1; fi
+  if [ "$BAIL_OUT" != "1" ]; then
+    run_phase "01-family-catalog" "Featured harness catalog drift" \
+      npm run check:family-catalog
+    if [ "$FAIL_COUNT" -gt 0 ] && [ "$BAIL" = "1" ]; then BAIL_OUT=1; fi
+  fi
 fi
 
 # ---- phase: unit (always for dev/full/ci/bundle) ---------------------------

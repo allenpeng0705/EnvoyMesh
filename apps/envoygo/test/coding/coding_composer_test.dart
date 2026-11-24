@@ -19,17 +19,35 @@ void main() {
       expect(eh.workingMode, isFalse);
     });
 
-    test('disables Full access for Codex sidecar', () {
-      final codex = codingComposerCapabilities('codex');
-      expect(codex.permissionFullDisabledReason, isNotNull);
-      expect(codex.permissionAskDisabledReason, isNull);
-      expect(codex.agentModes.any((m) => m.id == 'agent'), isTrue);
+    test('enables Pi permissions without native modes', () {
+      final pi = codingComposerCapabilities('pi');
+      expect(pi.permissions, isTrue);
+      expect(pi.agentModes, isEmpty);
+      expect(pi.workingMode, isTrue);
     });
 
-    test('disables Ask for catalog ACP until a Mesh dock ships', () {
+    test('shows no Permissions control for a sidecar the coding run path cannot gate', () {
+      final codex = codingComposerCapabilities('codex');
+      expect(codex.permissions, isFalse);
+      expect(codex.permissionDisabledReason, contains('would change nothing'));
+      expect(codex.permissionFullDisabledReason, isNull);
+      expect(codex.agentModes.any((m) => m.id == 'agent'), isTrue);
+      expect(codex.canSetMode, isFalse);
+    });
+
+    test('gives a catalog ACP agent the full Permissions control, Ask included', () {
       final gemini = codingComposerCapabilities('gemini');
-      expect(gemini.permissionAskDisabledReason, isNotNull);
+      expect(gemini.permissions, isTrue);
+      expect(gemini.permissionAskDisabledReason, isNull);
+      expect(gemini.permissionDisabledReason, isNull);
       expect(gemini.permissionFullDisabledReason, isNull);
+    });
+
+    test('deepseek-harness is sidecar (no set_mode, no Mesh perms)', () {
+      final ds = codingComposerCapabilities('deepseek-harness');
+      expect(ds.canSetMode, isFalse);
+      expect(ds.permissions, isFalse);
+      expect(ds.agentModes, isEmpty);
     });
 
     test('gates fast/plan/thinking for Codex and Claude Code', () {
@@ -41,7 +59,6 @@ void main() {
       final pi = codingComposerCapabilities('pi');
       expect(pi.fast, isFalse);
       expect(pi.planSlash, isFalse);
-      expect(pi.permissions, isTrue);
     });
   });
 
@@ -65,7 +82,7 @@ void main() {
       expect(out, '/plan refactor auth');
     });
 
-    test('leaves Code mode body unchanged', () {
+    test('leaves Code mode body unchanged for catalog without agentModes', () {
       final caps = codingComposerCapabilities('gemini');
       expect(
         shapeCodingComposerPrompt(

@@ -37,6 +37,7 @@ class CodingComposerToolbar extends StatelessWidget {
         caps.workingMode ||
         caps.agentModes.isNotEmpty ||
         caps.permissions ||
+        caps.permissionDisabledReason != null ||
         caps.fast ||
         caps.thinking ||
         caps.importSession;
@@ -162,6 +163,18 @@ class CodingComposerToolbar extends StatelessWidget {
                   onPrefsChanged(prefs.copyWith(permissionPolicy: v));
                   onPermissionPolicyChanged?.call(v);
                 },
+              ),
+            ] else if (caps.permissionDisabledReason != null) ...[
+              const SizedBox(width: 6),
+              Tooltip(
+                message: caps.permissionDisabledReason!,
+                child: Text(
+                  'Perms unavailable',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
               ),
             ],
             if (caps.fast) ...[

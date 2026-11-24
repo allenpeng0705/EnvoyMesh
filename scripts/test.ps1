@@ -185,6 +185,8 @@ function JUnit-Args {
 if ($TYPECHECK) {
   Run-Phase "01-typecheck" "TypeScript project-references build" { npm run typecheck }
   if ($BAIL_OUT) { goto summary }
+  Run-Phase "01-family-catalog" "Featured harness catalog drift" { npm run check:family-catalog }
+  if ($BAIL_OUT) { goto summary }
 }
 
 # ---- phase: unit -----------------------------------------------------------

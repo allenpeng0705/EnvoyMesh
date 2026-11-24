@@ -1405,6 +1405,11 @@ import {
   normalizeEhTaskCwd,
   resolveEhSessionIdForCwd,
 } from "./envoy-harness-task.js";
+import {
+  appendEhIncompleteContinueCue,
+  envoyHarnessContinuationPhasesForTurn,
+  parseEnvoyHarnessContinuationPhases,
+} from "./envoy-harness-continuation.js";
 import { EhChatRuntime } from "./eh-chat-runtime.js";
 import {
   auditEhPermissionResponded,
@@ -5485,6 +5490,9 @@ class NodeServiceImpl implements NodeService {
       chatId?: string;
       /** Native Mode — applied via session/set_mode before the prompt. */
       collaborationMode?: "default" | "plan" | "review";
+      /** Heartbeats / schedules — no silent continuation phases (Q2). */
+      unattended?: boolean;
+      continuationPhases?: number;
     },
   ): Promise<{ turnId: string }> {
     await this._refreshEnvoyHarnessHostConfig();
@@ -5508,6 +5516,14 @@ class NodeServiceImpl implements NodeService {
     }
     if (chat && this._ehChatRuntime.hasTurnForChat(chat.id)) {
       throw new Error("envoy_harness_turn_busy");
+    }
+
+    const unattended = opts?.unattended === true;
+    const continuationPhases =
+      opts?.continuationPhases ??
+      envoyHarnessContinuationPhasesForTurn(unattended);
+    if (unattended && chat) {
+      this._ehChatRuntime.removeHost(chat.id);
     }
 
     // Paseo-aligned: first user prompt becomes the task title.
@@ -5557,6 +5573,7 @@ class NodeServiceImpl implements NodeService {
       chat?.id,
       cwd,
       opts?.collaborationMode,
+      continuationPhases,
     );
     this._ehChatRuntime.registerTurn({
       turnId,
@@ -5617,6 +5634,7 @@ class NodeServiceImpl implements NodeService {
     chatId?: string,
     cwdOverride?: string,
     collaborationMode?: "default" | "plan" | "review",
+    continuationPhases: number = parseEnvoyHarnessContinuationPhases(undefined),
   ): Promise<import("@envoymesh/api").EhTurnCompleteEvent> {
     const turnRecord = () => this._ehChatRuntime.getTurn(turnId);
     try {
@@ -5626,7 +5644,7 @@ class NodeServiceImpl implements NodeService {
         if (!cwd) {
           throw new Error(`envoy_harness_chat_not_found: ${chatId}`);
         }
-        const ensured = await this._ensureEhChatHost(chatId, cwd);
+        const ensured = await this._ensureEhChatHost(chatId, cwd, continuationPhases);
         host = ensured.host;
         const turn = turnRecord();
         if (turn) turn.sessionId = ensured.sessionId;
@@ -5745,7 +5763,10 @@ class NodeServiceImpl implements NodeService {
       // bubble and show something other than a blank Completed state.
       const EMPTY_REPLY_FALLBACK =
         "(No visible reply was produced. Please try again or rephrase.)";
-      const stripped = stripModelThinking(text.text ?? "").trim();
+      let stripped = stripModelThinking(text.text ?? "").trim();
+      if (text.stopReason === "max_iterations" && stripped.length > 0) {
+        stripped = appendEhIncompleteContinueCue(stripped).trim();
+      }
       const assistantText =
         stripped.length > 0 ? stripped : EMPTY_REPLY_FALLBACK;
       return finishComplete({
@@ -6978,6 +6999,7 @@ class NodeServiceImpl implements NodeService {
     await this.updateNodeConfig({
       envoyHarnessAutoRunPolicy: normalized,
     });
+    await this._syncEhHarnessSessionAutoRunPolicy(normalized);
     // The change takes effect from the NEXT turn: idle per-chat hosts are
     // closed so they rebuild with the new policy, while hosts with an
     // in-flight turn are left running (the current turn keeps the policy
@@ -7091,6 +7113,24 @@ class NodeServiceImpl implements NodeService {
       cfg?.envoyHarnessAutoRunPolicy ??
       "safe-only"
     );
+  }
+
+  /** FH-P1-A — sync stored policy to open harness sessions via ACP. */
+  private async _syncEhHarnessSessionAutoRunPolicy(policy: string): Promise<void> {
+    const syncs: Promise<unknown>[] = [];
+    for (const record of this._ehChatRuntime.listHosts()) {
+      syncs.push(
+        record.host.applySessionAutoRunPolicy(policy).catch(() => undefined),
+      );
+    }
+    if (this._envoyHarnessPersistentAcpHost !== undefined) {
+      syncs.push(
+        this._envoyHarnessPersistentAcpHost
+          .applySessionAutoRunPolicy(policy)
+          .catch(() => undefined),
+      );
+    }
+    await Promise.all(syncs);
   }
 
   async getEnvoyHarnessChatHistory(
@@ -7454,6 +7494,7 @@ class NodeServiceImpl implements NodeService {
       if (hb.target.kind === "eh") {
         await this.startEnvoyHarnessTurn(hb.prompt, {
           chatId: hb.target.chatId,
+          unattended: true,
         });
       } else if (hb.target.kind === "pi") {
         await this.sendToPi(hb.prompt, { sessionId: hb.target.sessionId });
@@ -7608,7 +7649,10 @@ class NodeServiceImpl implements NodeService {
           forceNew: true,
         });
         taskId = created.id;
-        await this.startEnvoyHarnessTurn(row.prompt, { chatId: created.id });
+        await this.startEnvoyHarnessTurn(row.prompt, {
+          chatId: created.id,
+          unattended: true,
+        });
       } else if (row.harness === "pi") {
         const ensured = await this.ensurePiTerminalSession({
           projectPath: row.cwd,
@@ -8107,6 +8151,7 @@ class NodeServiceImpl implements NodeService {
       endpoint?: string;
       apiKey?: string;
     },
+    maxContinuationPhases: number = parseEnvoyHarnessContinuationPhases(undefined),
   ): Promise<ProtocolSessionBackend> {
     await runtime.ensureInternals();
     const cfg = await this._configStore.load().catch(() => undefined);
@@ -8203,6 +8248,7 @@ class NodeServiceImpl implements NodeService {
           ...(session !== undefined ? { session } : {}),
           shouldAskTool: (toolName, args) =>
             shouldAskAcpTool(toolName, autoRun, args),
+          maxContinuationPhases,
         }),
       listPeers: () => this.listEnvoyHarnessPeers(),
       ...(this._envoyHarnessPeerPool !== undefined
@@ -8219,6 +8265,7 @@ class NodeServiceImpl implements NodeService {
   private async _ensureEhChatHost(
     chatId: string,
     cwd: string,
+    maxContinuationPhases: number = parseEnvoyHarnessContinuationPhases(undefined),
   ): Promise<{ host: EnvoyHarnessPersistentAcpHost; sessionId: string }> {
     await this._refreshEnvoyHarnessHostConfig();
     const { chats } = await this._loadEhChatState();
@@ -8239,7 +8286,7 @@ class NodeServiceImpl implements NodeService {
       hostEndpoint: creds.endpoint,
     });
     const policyKey = await this._envoyHarnessAutoRunPolicyKey();
-    const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}:${policyKey}`;
+    const configKey = `${eh.model ?? ""}:${eh.apiKey ?? ""}:${eh.endpoint ?? ""}:${policyKey}:c${maxContinuationPhases}`;
     const normalized = normalizeEhTaskCwd(cwd);
     const existing = this._ehChatRuntime.getHost(chatId);
     if (
@@ -8266,6 +8313,7 @@ class NodeServiceImpl implements NodeService {
         endpoint: chat?.endpoint,
         apiKey: chat?.apiKey,
       },
+      maxContinuationPhases,
     );
     const cfg = await this._configStore.load().catch(() => undefined);
     const sessionStore = createEnvoyHarnessSessionStore(requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"));
@@ -8274,6 +8322,7 @@ class NodeServiceImpl implements NodeService {
       sessionByCwd: cfg?.envoyHarnessSessionByCwd,
       sessionStore,
     });
+    const sessionAutoRunPolicy = await this._envoyHarnessAutoRunPolicyKey();
     const host = new EnvoyHarnessPersistentAcpHost();
     let started: { sessionId: string; resumed: boolean };
     try {
@@ -8281,6 +8330,7 @@ class NodeServiceImpl implements NodeService {
         cwd: normalized,
         backend,
         permissionBridge: this._ehPermissionBridge,
+        sessionAutoRunPolicy,
         ...(resolved.sessionId !== undefined
           ? { resumeSessionId: resolved.sessionId }
           : {}),
@@ -8291,6 +8341,7 @@ class NodeServiceImpl implements NodeService {
         cwd: normalized,
         backend,
         permissionBridge: this._ehPermissionBridge,
+        sessionAutoRunPolicy,
       });
       started = { sessionId: host.sessionId!, resumed: false };
     }
@@ -8347,6 +8398,7 @@ class NodeServiceImpl implements NodeService {
       sessionByCwd: cfg?.envoyHarnessSessionByCwd,
       sessionStore,
     });
+    const sessionAutoRunPolicy = await this._envoyHarnessAutoRunPolicyKey();
     const host = new EnvoyHarnessPersistentAcpHost();
     let started: { sessionId: string; resumed: boolean };
     try {
@@ -8354,6 +8406,7 @@ class NodeServiceImpl implements NodeService {
         cwd,
         backend,
         permissionBridge: this._ehPermissionBridge,
+        sessionAutoRunPolicy,
         ...(resolved.sessionId !== undefined
           ? { resumeSessionId: resolved.sessionId }
           : {}),
@@ -8367,6 +8420,7 @@ class NodeServiceImpl implements NodeService {
         cwd,
         backend,
         permissionBridge: this._ehPermissionBridge,
+        sessionAutoRunPolicy,
       });
       started = { sessionId: host.sessionId!, resumed: false };
     }

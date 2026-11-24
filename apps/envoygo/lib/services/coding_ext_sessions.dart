@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../coding/coding_harness_wire.dart';
 import '../coding/coding_projects.dart' show codingProjectLabelFromPath;
 
 /// Client-side Coding Tier B (Ext Agent) session registry.
@@ -11,17 +12,8 @@ import '../coding/coding_projects.dart' show codingProjectLabelFromPath;
 /// API keys live on the home node (`setCodingHarnessRuntime`), not here.
 const kCodingExtSessionsKey = 'envoymesh.codingExtSessions';
 
-const kCodingTierBHarnesses = {
-  'claudecode',
-  'codex',
-  'opencode',
-  'cursor',
-  'codewhale',
-  'minimax-code',
-};
-
 bool isCodingTierBHarnessId(String harness) =>
-    kCodingTierBHarnesses.contains(harness.trim());
+    isCodingTierBHarnessWireId(harness);
 
 const kCodingExtPlaceholderTitle = 'New task';
 

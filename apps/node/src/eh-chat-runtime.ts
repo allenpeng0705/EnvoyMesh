@@ -35,6 +35,10 @@ export class EhChatRuntime {
     return this.#hosts.get(chatId);
   }
 
+  listHosts(): EhChatHostRecord[] {
+    return [...this.#hosts.values()];
+  }
+
   setHost(chatId: string, record: EhChatHostRecord): void {
     this.#hosts.set(chatId, record);
     this.#sessionToChatId.set(record.sessionId, chatId);

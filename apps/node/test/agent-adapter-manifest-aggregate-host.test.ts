@@ -9,10 +9,10 @@
  *
  * 1. **Default path** (no test seam): the
  *    `getNodeManifest()` method returns the
- *    `ENVOY_HARNESS_RUNTIME_SKILLS` (5 skills) +
- *    `OPENCLAW_SKILLS` (4 skills) = 9 skills, each
- *    tagged with its runtime. This is the production
- *    path.
+ *    `ENVOY_HARNESS_RUNTIME_SKILLS` catalog +
+ *    `OPENCLAW_SKILLS` (4 skills), each tagged with
+ *    its runtime. Assertions use skill IDs (not a
+ *    brittle total count). This is the production path.
  *
  * 2. **Test seam path** (`setManifestStubsForTests`):
  *    tests can inject a custom adapter list. This is
@@ -110,8 +110,8 @@ afterEach(() => {
 
 describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", () => {
   describe("default path (no test seam)", () => {
-    it("returns 13 skills from the default envoy-harness + openclaw catalogs, each tagged with its runtime", () => {
-      // Phase 8 / Step 3 — envoy-harness grew (B-class + peer-cluster).
+    it("returns the default envoy-harness + openclaw skill catalogs, each tagged with its runtime", () => {
+      // Envoy-harness catalog grows additively via envoy-harness-adapter.
       // OpenClaw stays at 4 (B-class skills are NOT duplicated in
       // OPENCLAW_SKILLS — fail-loud SkillIdCollisionError on duplicates).
       const service = makeTestService();
@@ -127,45 +127,50 @@ describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", (
         { runtime: "openclaw", runtimeVersion: "unknown" },
       ]);
 
-      // 9 envoy-harness skills: 5 original
-      // (code-edit / code-review / doc-search / bash-run
-      // / plan) + B-class + peer-cluster.
-      const envoySkills = manifest.skills.filter(
-        (s) => s.runtime === "envoy-harness",
-      );
-      expect(envoySkills.length).toBe(9);
-      const envoySkillIds = envoySkills.map((s) => s.skillId).sort();
-      expect(envoySkillIds).toEqual([
+      const expectedEnvoySkillIds = [
         "bash-run",
+        "browser-debug",
         "code-edit",
         "code-review",
+        "device-debug",
         "doc-search",
         "peer-cluster",
         "peer-list",
         "plan",
         "relay-status",
         "setup-sponsor-friend",
-      ]);
+      ];
+      const envoySkills = manifest.skills.filter(
+        (s) => s.runtime === "envoy-harness",
+      );
+      const envoySkillIds = envoySkills.map((s) => s.skillId).sort();
+      expect(envoySkillIds).toEqual(expectedEnvoySkillIds);
+      expect(envoySkills.length).toBe(expectedEnvoySkillIds.length);
 
       // 4 openclaw skills (unchanged from Step 4; the
       // B-class skills are envoy-harness only in v0).
-      const openClawSkills = manifest.skills.filter(
-        (s) => s.runtime === "openclaw",
-      );
-      expect(openClawSkills.length).toBe(4);
-      const openClawSkillIds = openClawSkills.map((s) => s.skillId).sort();
-      expect(openClawSkillIds).toEqual([
+      const expectedOpenClawSkillIds = [
         "draft",
         "research",
         "summarize",
         "translate",
-      ]);
-      expect(manifest.skills.length).toBe(13);
+      ];
+      const openClawSkills = manifest.skills.filter(
+        (s) => s.runtime === "openclaw",
+      );
+      const openClawSkillIds = openClawSkills.map((s) => s.skillId).sort();
+      expect(openClawSkillIds).toEqual(expectedOpenClawSkillIds);
+      expect(openClawSkills.length).toBe(expectedOpenClawSkillIds.length);
+      const expectedAllSkillIds = [
+        ...expectedEnvoySkillIds,
+        ...expectedOpenClawSkillIds,
+      ];
+      expect(manifest.skills.length).toBe(expectedAllSkillIds.length);
       // All skillIds are unique (the aggregator
       // fails loud on collision; this verifies it
       // doesn't trip for the production catalogs).
       const allIds = manifest.skills.map((s) => s.skillId);
-      expect(new Set(allIds).size).toBe(13);
+      expect(new Set(allIds).size).toBe(expectedAllSkillIds.length);
     });
 
     it("uses the mesh peerId when a mesh is provided (sync; no async setup needed)", () => {
@@ -238,11 +243,28 @@ describe("NodeServiceImpl.getNodeManifest (Phase 8 / Step 4 — host wiring)", (
       expect(withCustom.skills.length).toBe(1);
       expect(withCustom.skills[0].skillId).toBe("custom-1");
 
-      // Reset the test seam → back to the default
-      // 9 + 4 = 13 skills.
+      // Reset the test seam → back to the default catalogs.
       service.setManifestStubsForTests(undefined);
       const withDefault = service.getNodeManifest();
-      expect(withDefault.skills.length).toBe(13);
+      expect(withDefault.skills.map((s) => s.skillId).sort()).toEqual(
+        [
+          "bash-run",
+          "browser-debug",
+          "code-edit",
+          "code-review",
+          "device-debug",
+          "doc-search",
+          "draft",
+          "peer-cluster",
+          "peer-list",
+          "plan",
+          "relay-status",
+          "research",
+          "setup-sponsor-friend",
+          "summarize",
+          "translate",
+        ],
+      );
     });
 
     it("throws SkillIdCollisionError when two test adapters expose the same skillId", () => {

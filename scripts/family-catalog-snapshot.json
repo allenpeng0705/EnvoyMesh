@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "scripts/family-catalog-mesh-export.ts",
+  "harnesses": [
+    {
+      "id": "envoy-harness",
+      "extAgentId": null,
+      "canSetMode": true,
+      "permissions": true,
+      "agentModeIds": [
+        "default",
+        "plan",
+        "review"
+      ],
+      "askingControl": "policy"
+    },
+    {
+      "id": "pi",
+      "extAgentId": null,
+      "canSetMode": false,
+      "permissions": true,
+      "agentModeIds": [],
+      "askingControl": "none"
+    },
+    {
+      "id": "claudecode",
+      "extAgentId": "claudecode",
+      "canSetMode": false,
+      "permissions": false,
+      "agentModeIds": [
+        "default",
+        "acceptEdits",
+        "plan",
+        "auto",
+        "bypassPermissions"
+      ],
+      "askingControl": "unattended-mode"
+    },
+    {
+      "id": "codex",
+      "extAgentId": "codex",
+      "canSetMode": false,
+      "permissions": false,
+      "agentModeIds": [
+        "read-only",
+        "agent",
+        "agent-full-access"
+      ],
+      "askingControl": "unattended-mode"
+    },
+    {
+      "id": "opencode",
+      "extAgentId": "opencode",
+      "canSetMode": false,
+      "permissions": false,
+      "agentModeIds": [],
+      "askingControl": "session-auto"
+    },
+    {
+      "id": "cursor",
+      "extAgentId": "cursor",
+      "canSetMode": false,
+      "permissions": false,
+      "agentModeIds": [
+        "ask",
+        "plan",
+        "agent"
+      ],
+      "askingControl": "launch-force"
+    },
+    {
+      "id": "codewhale",
+      "extAgentId": "codewhale",
+      "canSetMode": false,
+      "permissions": false,
+      "agentModeIds": [],
+      "askingControl": "catalog-acp"
+    },
+    {
+      "id": "deepseek-harness",
+      "extAgentId": "codewhale",
+      "canSetMode": false,
+      "permissions": false,
+      "agentModeIds": [],
+      "askingControl": "unattended-mode"
+    },
+    {
+      "id": "minimax-code",
+      "extAgentId": "minimax-code",
+      "canSetMode": false,
+      "permissions": false,
+      "agentModeIds": [],
+      "askingControl": "catalog-acp"
+    },
+    {
+      "id": "grok",
+      "extAgentId": "grok",
+      "canSetMode": false,
+      "permissions": true,
+      "agentModeIds": [],
+      "askingControl": "catalog-acp"
+    },
+    {
+      "id": "gemini",
+      "extAgentId": "gemini",
+      "canSetMode": false,
+      "permissions": true,
+      "agentModeIds": [],
+      "askingControl": "catalog-acp"
+    },
+    {
+      "id": "traecli",
+      "extAgentId": "traecli",
+      "canSetMode": false,
+      "permissions": true,
+      "agentModeIds": [],
+      "askingControl": "catalog-acp"
+    },
+    {
+      "id": "qoder",
+      "extAgentId": "qoder",
+      "canSetMode": false,
+      "permissions": true,
+      "agentModeIds": [],
+      "askingControl": "catalog-acp"
+    },
+    {
+      "id": "copilot",
+      "extAgentId": "copilot",
+      "canSetMode": false,
+      "permissions": true,
+      "agentModeIds": [],
+      "askingControl": "none"
+    }
+  ]
+}

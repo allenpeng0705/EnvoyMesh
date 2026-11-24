@@ -121,6 +121,7 @@ import type { SignedAgentResult } from "@envoymesh/protocol";
 
 import { LocalRuntimeRegistry } from "./local-runtime-registry.js";
 import type { EnvoyHarnessRuntimeConfig } from "./config.js";
+import { stripMeshHarnessAutoTools } from "./eh-tool-surface.js";
 
 /** Options for `createRealEnvoyHarnessRuntime`. */
 export interface CreateRealEnvoyHarnessRuntimeOptions {
@@ -403,6 +404,8 @@ export interface RealEnvoyHarnessRuntime {
     skills?: SkillRegistry;
     shellEnvironmentPolicy?: ShellEnvironmentPolicy;
     userQuestions?: UserQuestionService;
+    /** Attended default 2 (Mesh node); unattended callers pass 0. */
+    maxContinuationPhases?: number;
   }) => Agent;
 }
 
@@ -856,7 +859,8 @@ export function createRealEnvoyHarnessRuntime(
             ? { shouldAsk: params.shouldAskTool }
             : {}),
         });
-        return new Agent({
+        const declaredTools = tools.list().map((tool) => tool.name);
+        const agent = new Agent({
           model: internals.model,
           tools,
           hooks,
@@ -889,7 +893,12 @@ export function createRealEnvoyHarnessRuntime(
           ...(params.userQuestions !== undefined
             ? { userQuestions: params.userQuestions }
             : {}),
+          ...(params.maxContinuationPhases !== undefined
+            ? { maxContinuationPhases: params.maxContinuationPhases }
+            : {}),
         });
+        stripMeshHarnessAutoTools(tools, declaredTools);
+        return agent;
       },
     };
   };

@@ -18,6 +18,11 @@ import {
   type EhuiDataSource,
 } from "@envoymesh/envoy-harness-client";
 
+import {
+  meshEhAutoRunToAcpPolicy,
+  type PiAutoRunPolicy,
+} from "./acp-policy.js";
+
 export interface AcpPermissionBridge {
   request(req: {
     sessionId: string;
@@ -63,6 +68,8 @@ export class EnvoyHarnessPersistentAcpHost {
     permissionBridge: AcpPermissionBridge;
     /** When set, resume this persisted session instead of session/new. */
     resumeSessionId?: string;
+    /** Sync harness `session/set_policy` auto-run after session/new|load. */
+    sessionAutoRunPolicy?: PiAutoRunPolicy;
   }): Promise<{ sessionId: string; resumed: boolean }> {
     if (
       this.#sessionId !== undefined &&
@@ -99,7 +106,20 @@ export class EnvoyHarnessPersistentAcpHost {
       this.#sessionId = created.sessionId;
     }
     this.#cwd = opts.cwd;
+    if (opts.sessionAutoRunPolicy !== undefined) {
+      await this.applySessionAutoRunPolicy(opts.sessionAutoRunPolicy);
+    }
     return { sessionId: this.#sessionId, resumed };
+  }
+
+  /** FH-P1-A — push Mesh permission policy to the harness session. */
+  async applySessionAutoRunPolicy(policy: PiAutoRunPolicy): Promise<void> {
+    if (this.#client === undefined || this.#sessionId === undefined) {
+      throw new Error("EnvoyHarnessPersistentAcpHost: call start() first");
+    }
+    await this.#client.setSessionPolicy(this.#sessionId, {
+      autoRun: meshEhAutoRunToAcpPolicy(policy),
+    });
   }
 
   async prompt(

@@ -69,3 +69,18 @@ export function shouldAskAcpTool(
   }
   return true;
 }
+
+/** Wire shape for harness `session/set_policy` `autoRun`. */
+export type HarnessSessionAutoRun = "always-confirm" | "safe-only" | "off";
+
+/** Map Mesh `envoyHarnessAutoRunPolicy` onto harness session auto-run. */
+export function meshEhAutoRunToAcpPolicy(
+  policy: PiAutoRunPolicy,
+): HarnessSessionAutoRun {
+  const normalized =
+    typeof policy === "string" ? policy.trim().toLowerCase() : "";
+  if (normalized === "off" || normalized === "never") return "off";
+  if (normalized === "safe-only") return "safe-only";
+  if (normalized === "always-confirm") return "always-confirm";
+  return "safe-only";
+}

@@ -6,6 +6,8 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'coding_harness_wire.dart';
+
 const kCodingComposerPrefsKey = 'envoymesh.codingComposerPrefs';
 
 typedef CodingWorkingMode = String; // ask | plan | code
@@ -187,7 +189,71 @@ const _sidecarNoMeshPerms = {
 };
 
 const _sidecarPermsReason =
-    'This agent’s Coding run path does not support Mesh permission gating yet.';
+    'This agent’s Coding run path does not gate tools through Mesh yet, so a policy here would change nothing.';
+
+const _planSlash = {'codex', 'claudecode'};
+const _fast = {'codex', 'claudecode'};
+const _thinking = {'claudecode', 'codex'};
+
+List<FamilyCatalogHarnessRow> exportFamilyCatalogMesh() {
+  final harnesses = <FamilyCatalogHarnessRow>[];
+  for (final id in kCodingFeaturedHarnessIds) {
+    final caps = codingComposerCapabilities(id);
+    harnesses.add(
+      FamilyCatalogHarnessRow(
+        id: id,
+        extAgentId: codingHarnessToExtAgentWireId(id),
+        canSetMode: caps.canSetMode,
+        permissions: caps.permissions,
+        agentModeIds: caps.agentModes.map((m) => m.id).toList(),
+        askingControl: _askingControlForHarness(id),
+      ),
+    );
+  }
+  return harnesses;
+}
+
+/// EnvoyCoder `asking-control.ts` — manual sync on Coder change.
+String _askingControlForHarness(String id) {
+  const map = {
+    'envoy-harness': 'policy',
+    'deepseek-harness': 'unattended-mode',
+    'claudecode': 'unattended-mode',
+    'codex': 'unattended-mode',
+    'cursor': 'launch-force',
+    'opencode': 'session-auto',
+    'copilot': 'none',
+    'pi': 'none',
+  };
+  return map[id] ?? 'catalog-acp';
+}
+
+class FamilyCatalogHarnessRow {
+  const FamilyCatalogHarnessRow({
+    required this.id,
+    required this.extAgentId,
+    required this.canSetMode,
+    required this.permissions,
+    required this.agentModeIds,
+    required this.askingControl,
+  });
+
+  final String id;
+  final String? extAgentId;
+  final bool canSetMode;
+  final bool permissions;
+  final List<String> agentModeIds;
+  final String askingControl;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'extAgentId': extAgentId,
+        'canSetMode': canSetMode,
+        'permissions': permissions,
+        'agentModeIds': agentModeIds,
+        'askingControl': askingControl,
+      };
+}
 
 CodingComposerCapabilities codingComposerCapabilities(String harness) {
   final id = harness.trim();
@@ -214,30 +280,51 @@ CodingComposerCapabilities codingComposerCapabilities(String harness) {
       thinking: false,
       importSession: true,
       attach: true,
+      agentModes: [],
+      canSetMode: false,
       permissions: true,
     );
   }
 
-  const planSlash = {'codex', 'claudecode'};
-  const fast = {'codex', 'claudecode'};
-  const thinking = {'claudecode', 'codex'};
-  final isSidecar = _sidecarNoMeshPerms.contains(id);
-  List<CodingAgentModeOption> agentModes = const [];
-  if (id == 'claudecode') agentModes = _claudeModes;
-  else if (id == 'codex') agentModes = _codexModes;
-  else if (id == 'cursor') agentModes = _cursorModes;
+  if (!isCodingTierBHarnessWireId(id)) {
+    return const CodingComposerCapabilities(
+      model: false,
+      workingMode: true,
+      planSlash: false,
+      fast: false,
+      thinking: false,
+      importSession: true,
+      attach: true,
+      agentModes: [],
+      canSetMode: false,
+      permissions: false,
+      permissionDisabledReason:
+          'Permission policy is not available for this agent.',
+    );
+  }
+
+  final agent = resolveCodingComposerAgentKey(id);
+  final isSidecar =
+      _sidecarNoMeshPerms.contains(agent) || _sidecarNoMeshPerms.contains(id);
+  var agentModes = <CodingAgentModeOption>[];
+  if (agent == 'claudecode' || id == 'claudecode') {
+    agentModes = _claudeModes;
+  } else if (agent == 'codex' || id == 'codex') {
+    agentModes = _codexModes;
+  } else if (agent == 'cursor' || id == 'cursor') {
+    agentModes = _cursorModes;
+  }
 
   return CodingComposerCapabilities(
     model: true,
     workingMode: agentModes.isEmpty,
-    planSlash: planSlash.contains(id),
-    fast: fast.contains(id),
-    thinking: thinking.contains(id),
+    planSlash: _planSlash.contains(agent) || _planSlash.contains(id),
+    fast: _fast.contains(agent) || _fast.contains(id),
+    thinking: _thinking.contains(agent) || _thinking.contains(id),
     importSession: true,
     attach: true,
     agentModes: agentModes,
     canSetMode: false,
-    // Catalog ACP gates tools through Mesh (permission + ask_user docks).
     permissions: !isSidecar,
     permissionDisabledReason: isSidecar ? _sidecarPermsReason : null,
   );

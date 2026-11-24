@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isAcpSafeBashCommand,
+  meshEhAutoRunToAcpPolicy,
   shouldAskAcpTool,
 } from "../src/agent-runtime-envoy/acp-policy.js";
 
@@ -69,5 +70,15 @@ describe("shouldAskAcpTool", () => {
   it("always-confirm asks for every tool", () => {
     expect(shouldAskAcpTool("read_file", "always-confirm")).toBe(true);
     expect(shouldAskAcpTool("bash", "always-confirm")).toBe(true);
+  });
+});
+
+describe("meshEhAutoRunToAcpPolicy", () => {
+  it("maps Mesh policies onto harness session autoRun", () => {
+    expect(meshEhAutoRunToAcpPolicy("off")).toBe("off");
+    expect(meshEhAutoRunToAcpPolicy("never")).toBe("off");
+    expect(meshEhAutoRunToAcpPolicy("safe-only")).toBe("safe-only");
+    expect(meshEhAutoRunToAcpPolicy("always-confirm")).toBe("always-confirm");
+    expect(meshEhAutoRunToAcpPolicy("unknown")).toBe("safe-only");
   });
 });
