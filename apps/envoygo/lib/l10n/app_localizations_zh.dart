@@ -162,7 +162,37 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingHistoryAll => '全部';
 
   @override
+  String get codingHistoryNeedsYou => '待处理';
+
+  @override
+  String get codingHistoryRecent => '最近';
+
+  @override
   String get codingHistoryArchived => '已归档';
+
+  @override
+  String get codingHistoryAllTasks => '全部任务';
+
+  @override
+  String get codingSearchTitle => '搜索 Coding';
+
+  @override
+  String get codingSearchHint => '项目、任务、操作…';
+
+  @override
+  String get codingSearchEmpty => '没有匹配项。';
+
+  @override
+  String get codingViewSearchKindAction => '操作';
+
+  @override
+  String get codingSessionDrawerTitle => '切换任务';
+
+  @override
+  String get codingSectionEnvoyHarness => 'Envoy Harness';
+
+  @override
+  String get codingSectionExtAgent => '外部 Agent';
 
   @override
   String get codingArchive => '归档';

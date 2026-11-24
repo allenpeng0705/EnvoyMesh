@@ -28,7 +28,10 @@ import '../../widgets/eh/eh_subagents_banner.dart';
 import '../../widgets/eh/eh_turn_review_sheet.dart';
 import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
 import '../coding/coding_heartbeat_ui.dart';
+import '../coding/coding_session_list_sheet.dart';
 import '../coding/coding_import_session_sheet.dart';
+import '../coding/ext_agent_coding_screen.dart';
+import '../coding/pi_coding_chat_screen.dart';
 import '../files/home_file_pick_screen.dart';
 
 /// Envoy Harness coding chat — multi-turn agent thread per project folder.
@@ -1590,6 +1593,65 @@ class _EnvoyHarnessChatScreenState
               .toList();
     return Scaffold(
       appBar: AppBar(
+        leading: widget.readOnlyReview
+            ? null
+            : IconButton(
+                tooltip: l10n.codingSessionDrawerTitle,
+                icon: const Icon(Icons.menu),
+                onPressed: () {
+                  unawaited(
+                    showCodingSessionListSheet(
+                      context,
+                      ref,
+                      CodingSessionListHost(
+                        currentEhChatId: widget.chatId?.trim(),
+                        onNewTask: () async {
+                          if (!context.mounted) return;
+                          Navigator.of(context).popUntil((r) => r.isFirst);
+                        },
+                        onOpenEh: (t) async {
+                          final parts = t.id.split(':eh:');
+                          final chatId =
+                              parts.length > 1 ? parts[1] : null;
+                          if (chatId == widget.chatId?.trim()) return;
+                          await Navigator.of(context).pushReplacement(
+                            MaterialPageRoute<void>(
+                              builder: (_) => EnvoyHarnessChatScreen(
+                                threadId: t.id,
+                                displayName: t.displayName,
+                                chatId: chatId,
+                              ),
+                            ),
+                          );
+                        },
+                        onOpenPi: (s) async {
+                          await Navigator.of(context).pushReplacement(
+                            MaterialPageRoute<void>(
+                              builder: (_) => PiCodingChatScreen(
+                                sessionId: s.id,
+                                sessionName: s.name,
+                                cwd: s.cwd,
+                              ),
+                            ),
+                          );
+                        },
+                        onOpenExt: (s) async {
+                          await Navigator.of(context).pushReplacement(
+                            MaterialPageRoute<void>(
+                              builder: (_) => ExtAgentCodingScreen(
+                                sessionId: s.id,
+                                harness: s.harness,
+                                cwd: s.cwd,
+                                title: s.title,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
         title: _searching
             ? TextField(
                 controller: _searchController,

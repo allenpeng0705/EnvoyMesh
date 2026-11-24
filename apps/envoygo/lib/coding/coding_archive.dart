@@ -10,7 +10,9 @@ const kCodingHistoryFilterKey = 'envoymesh.codingHistoryFilter';
 
 typedef CodingArchiveKind = String; // eh | pi | ext
 
-enum CodingHistoryFilter { all, archived }
+enum CodingHistoryFilter { all, needsYou, recent, archived }
+
+const kCodingHistoryFlatKey = 'envoymesh.codingHistoryFlat';
 
 String codingArchiveKey(CodingArchiveKind kind, String id) =>
     '${kind.trim()}:${id.trim()}';
@@ -54,17 +56,52 @@ Future<void> unarchiveCodingTask(String key) async {
   await _saveArchived(keys);
 }
 
+String codingHistoryFilterWire(CodingHistoryFilter filter) {
+  switch (filter) {
+    case CodingHistoryFilter.needsYou:
+      return 'needs_you';
+    case CodingHistoryFilter.recent:
+      return 'recent';
+    case CodingHistoryFilter.archived:
+      return 'archived';
+    case CodingHistoryFilter.all:
+      return 'all';
+  }
+}
+
+CodingHistoryFilter parseCodingHistoryFilter(String? raw) {
+  switch (raw?.trim()) {
+    case 'needs_you':
+      return CodingHistoryFilter.needsYou;
+    case 'recent':
+      return CodingHistoryFilter.recent;
+    case 'archived':
+      return CodingHistoryFilter.archived;
+    default:
+      return CodingHistoryFilter.all;
+  }
+}
+
 Future<CodingHistoryFilter> loadCodingHistoryFilter() async {
   final prefs = await SharedPreferences.getInstance();
-  final raw = prefs.getString(kCodingHistoryFilterKey)?.trim() ?? '';
-  if (raw == 'archived') return CodingHistoryFilter.archived;
-  return CodingHistoryFilter.all;
+  return parseCodingHistoryFilter(prefs.getString(kCodingHistoryFilterKey));
 }
 
 Future<void> saveCodingHistoryFilter(CodingHistoryFilter filter) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString(
     kCodingHistoryFilterKey,
-    filter == CodingHistoryFilter.archived ? 'archived' : 'all',
+    codingHistoryFilterWire(filter),
   );
+}
+
+Future<bool> loadCodingHistoryFlatMode() async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString(kCodingHistoryFlatKey)?.trim() ?? '';
+  return raw == '1' || raw == 'true';
+}
+
+Future<void> saveCodingHistoryFlatMode(bool flat) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(kCodingHistoryFlatKey, flat ? '1' : '0');
 }

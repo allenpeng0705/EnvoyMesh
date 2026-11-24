@@ -33,8 +33,16 @@ void main() {
       expect(await loadCodingHistoryFilter(), CodingHistoryFilter.all);
       await saveCodingHistoryFilter(CodingHistoryFilter.archived);
       expect(await loadCodingHistoryFilter(), CodingHistoryFilter.archived);
+      await saveCodingHistoryFilter(CodingHistoryFilter.needsYou);
+      expect(await loadCodingHistoryFilter(), CodingHistoryFilter.needsYou);
       await saveCodingHistoryFilter(CodingHistoryFilter.all);
       expect(await loadCodingHistoryFilter(), CodingHistoryFilter.all);
+    });
+
+    test('flat history mode persists', () async {
+      expect(await loadCodingHistoryFlatMode(), isFalse);
+      await saveCodingHistoryFlatMode(true);
+      expect(await loadCodingHistoryFlatMode(), isTrue);
     });
   });
 }

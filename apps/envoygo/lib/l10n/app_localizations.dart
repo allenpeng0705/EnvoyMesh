@@ -408,11 +408,71 @@ abstract class AppLocalizations {
   /// **'All'**
   String get codingHistoryAll;
 
+  /// No description provided for @codingHistoryNeedsYou.
+  ///
+  /// In en, this message translates to:
+  /// **'Action'**
+  String get codingHistoryNeedsYou;
+
+  /// No description provided for @codingHistoryRecent.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent'**
+  String get codingHistoryRecent;
+
   /// No description provided for @codingHistoryArchived.
   ///
   /// In en, this message translates to:
   /// **'Archived'**
   String get codingHistoryArchived;
+
+  /// No description provided for @codingHistoryAllTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'All tasks'**
+  String get codingHistoryAllTasks;
+
+  /// No description provided for @codingSearchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Search Coding'**
+  String get codingSearchTitle;
+
+  /// No description provided for @codingSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Projects, tasks, actions…'**
+  String get codingSearchHint;
+
+  /// No description provided for @codingSearchEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No matches.'**
+  String get codingSearchEmpty;
+
+  /// No description provided for @codingViewSearchKindAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Action'**
+  String get codingViewSearchKindAction;
+
+  /// No description provided for @codingSessionDrawerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch task'**
+  String get codingSessionDrawerTitle;
+
+  /// No description provided for @codingSectionEnvoyHarness.
+  ///
+  /// In en, this message translates to:
+  /// **'Envoy Harness'**
+  String get codingSectionEnvoyHarness;
+
+  /// No description provided for @codingSectionExtAgent.
+  ///
+  /// In en, this message translates to:
+  /// **'Ext Agent'**
+  String get codingSectionExtAgent;
 
   /// No description provided for @codingArchive.
   ///

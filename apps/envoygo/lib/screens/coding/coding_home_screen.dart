@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../coding/coding_archive.dart';
+import '../../coding/coding_history.dart';
 import '../../coding/coding_projects.dart';
 import '../../coding/coding_transcript_store.dart';
 import '../../l10n/app_localizations.dart';
@@ -21,6 +22,7 @@ import '../chat/envoy_harness_chat_screen.dart';
 import 'coding_add_project_sheet.dart';
 import 'coding_new_task_sheet.dart';
 import 'coding_project_settings_sheet.dart';
+import 'coding_command_palette.dart';
 import 'coding_mesh_work_ui.dart';
 import 'coding_scheduler_ui.dart';
 import 'coding_task_agent_sheet.dart';
@@ -45,6 +47,8 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
   List<CodingProject> _projects = const [];
   Set<String> _archivedKeys = {};
   CodingHistoryFilter _historyFilter = CodingHistoryFilter.all;
+  var _flatHistoryMode = false;
+  final Map<String, ({String? uiBucket, DateTime? lastUsedAt})> _ehListMeta = {};
 
   @override
   void initState() {
@@ -59,11 +63,46 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
     return parts.length > 1 ? parts[1] : thread.id;
   }
 
-  bool _passesHistoryFilter(String kind, String id) {
-    final key = codingArchiveKey(kind, id);
-    final archived = _archivedKeys.contains(key);
-    if (_historyFilter == CodingHistoryFilter.archived) return archived;
-    return !archived;
+  CodingHistoryRowMeta _rowMeta({
+    required String kind,
+    required String id,
+    DateTime? lastUsedAt,
+    String? uiBucket,
+    bool extNeedsInstall = false,
+  }) {
+    return CodingHistoryRowMeta(
+      kind: kind,
+      id: id,
+      lastUsedAt: lastUsedAt,
+      uiBucket: uiBucket,
+      extNeedsInstall: extNeedsInstall,
+    );
+  }
+
+  bool _passesHistoryFilter(
+    String kind,
+    String id, {
+    DateTime? lastUsedAt,
+    String? uiBucket,
+    bool extNeedsInstall = false,
+  }) {
+    return codingRowMatchesFilter(
+      _rowMeta(
+        kind: kind,
+        id: id,
+        lastUsedAt: lastUsedAt,
+        uiBucket: uiBucket,
+        extNeedsInstall: extNeedsInstall,
+      ),
+      _historyFilter,
+      _archivedKeys,
+    );
+  }
+
+  Future<void> _setFlatHistoryMode(bool flat) async {
+    await saveCodingHistoryFlatMode(flat);
+    if (!mounted) return;
+    setState(() => _flatHistoryMode = flat);
   }
 
   Future<void> _toggleArchive(String kind, String id) async {
@@ -91,10 +130,25 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
       final ext = await loadCodingExtSessions();
       final archived = await loadCodingArchivedKeys();
       final filter = await loadCodingHistoryFilter();
+      final flat = await loadCodingHistoryFlatMode();
       await Future.wait([
         ref.read(chatProvider.notifier).syncEhChats(),
         ref.read(chatProvider.notifier).syncTerminals(),
       ]);
+      final client = ref.read(nodeServiceProvider);
+      final ehMeta = <String, ({String? uiBucket, DateTime? lastUsedAt})>{};
+      if (client != null) {
+        try {
+          for (final raw in await client.listEnvoyHarnessChats()) {
+            final id = raw['id']?.toString().trim() ?? '';
+            if (id.isEmpty) continue;
+            ehMeta[id] = (
+              uiBucket: raw['uiBucket']?.toString(),
+              lastUsedAt: parseCodingLastUsedAt(raw['lastUsedAt']),
+            );
+          }
+        } catch (_) {}
+      }
       final term = ref.read(terminalProvider);
       final eh = _ehThreads(ref.read(chatProvider));
       final cwds = <String>{
@@ -113,6 +167,10 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
           _projects = projects;
           _archivedKeys = archived;
           _historyFilter = filter;
+          _flatHistoryMode = flat;
+          _ehListMeta
+            ..clear()
+            ..addAll(ehMeta);
         });
       }
     } catch (_) {
@@ -121,6 +179,7 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
         final ext = await loadCodingExtSessions();
         final archived = await loadCodingArchivedKeys();
         final filter = await loadCodingHistoryFilter();
+        final flat = await loadCodingHistoryFlatMode();
         final projects = await loadCodingProjects();
         if (mounted) {
           setState(() {
@@ -128,6 +187,7 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
             _projects = projects;
             _archivedKeys = archived;
             _historyFilter = filter;
+            _flatHistoryMode = flat;
           });
         }
       } catch (_) {}
@@ -1023,6 +1083,27 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
     ];
   }
 
+  String _historyFilterLabel(AppLocalizations l10n) {
+    switch (_historyFilter) {
+      case CodingHistoryFilter.needsYou:
+        return l10n.codingHistoryNeedsYou;
+      case CodingHistoryFilter.recent:
+        return l10n.codingHistoryRecent;
+      case CodingHistoryFilter.archived:
+        return l10n.codingHistoryArchived;
+      case CodingHistoryFilter.all:
+        return l10n.codingHistoryAll;
+    }
+  }
+
+  CodingCommandPaletteHost get _paletteHost => CodingCommandPaletteHost(
+        onNewTask: ({String? cwd}) => _openNewTask(initialCwd: cwd),
+        onAddProject: _openAddProject,
+        onOpenEh: (t) async => _openEh(t),
+        onOpenPi: (s) async => _openPi(s),
+        onOpenExt: (s) async => _openExt(s),
+      );
+
   Widget _emptyHome(AppLocalizations l10n) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -1078,14 +1159,33 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
     final chat = ref.watch(chatProvider);
     final term = ref.watch(terminalProvider);
     final ehThreads = _ehThreads(chat)
-        .where((t) => _passesHistoryFilter('eh', _ehArchiveId(t)))
+        .where((t) {
+          final id = _ehArchiveId(t);
+          final meta = _ehListMeta[id];
+          return _passesHistoryFilter(
+            'eh',
+            id,
+            lastUsedAt: meta?.lastUsedAt ?? t.lastMessageAt,
+            uiBucket: meta?.uiBucket,
+          );
+        })
         .toList();
     final piSessions = _piSessions(term)
-        .where((s) => _passesHistoryFilter('pi', s.id))
+        .where(
+          (s) => _passesHistoryFilter(
+            'pi',
+            s.id,
+            lastUsedAt: s.createdAt,
+          ),
+        )
         .toList();
     final extSessions = _extSessions
-        .where((s) => _passesHistoryFilter('ext', s.id))
+        .where(
+          (s) => _passesHistoryFilter('ext', s.id),
+        )
         .toList();
+    final showFlatList =
+        _flatHistoryMode || _historyFilter != CodingHistoryFilter.all;
     final hasTasks = ehThreads.isNotEmpty ||
         piSessions.isNotEmpty ||
         extSessions.isNotEmpty;
@@ -1126,21 +1226,41 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
               icon: const Icon(Icons.create_new_folder_outlined),
               onPressed: () => unawaited(_openAddProject()),
             ),
-            PopupMenuButton<CodingHistoryFilter>(
-              tooltip: _historyFilter == CodingHistoryFilter.archived
-                  ? l10n.codingHistoryArchived
-                  : l10n.codingHistoryAll,
-              icon: Icon(
-                _historyFilter == CodingHistoryFilter.archived
-                    ? Icons.inventory_2_outlined
-                    : Icons.filter_list,
+            IconButton(
+              tooltip: l10n.codingSearchTitle,
+              icon: const Icon(Icons.search),
+              onPressed: () => unawaited(
+                showCodingCommandPalette(context, ref, _paletteHost),
               ),
+            ),
+            IconButton(
+              tooltip: l10n.codingHistoryAllTasks,
+              icon: Icon(
+                _flatHistoryMode
+                    ? Icons.view_list
+                    : Icons.account_tree_outlined,
+              ),
+              onPressed: () => unawaited(_setFlatHistoryMode(!_flatHistoryMode)),
+            ),
+            PopupMenuButton<CodingHistoryFilter>(
+              tooltip: _historyFilterLabel(l10n),
+              icon: const Icon(Icons.filter_list),
               onSelected: (v) => unawaited(_setHistoryFilter(v)),
               itemBuilder: (_) => [
                 CheckedPopupMenuItem(
                   value: CodingHistoryFilter.all,
                   checked: _historyFilter == CodingHistoryFilter.all,
                   child: Text(l10n.codingHistoryAll),
+                ),
+                CheckedPopupMenuItem(
+                  value: CodingHistoryFilter.needsYou,
+                  checked: _historyFilter == CodingHistoryFilter.needsYou,
+                  child: Text(l10n.codingHistoryNeedsYou),
+                ),
+                CheckedPopupMenuItem(
+                  value: CodingHistoryFilter.recent,
+                  checked: _historyFilter == CodingHistoryFilter.recent,
+                  child: Text(l10n.codingHistoryRecent),
                 ),
                 CheckedPopupMenuItem(
                   value: CodingHistoryFilter.archived,
@@ -1210,6 +1330,12 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
                       : ListView(
                           physics: const AlwaysScrollableScrollPhysics(),
                           children: [
+                            if (showFlatList) ...[
+                              _sectionHeader(l10n.codingHistoryAllTasks),
+                              ...ehThreads.map((t) => _ehTile(l10n, t)),
+                              ...piSessions.map((s) => _piTile(l10n, s)),
+                              ...extSessions.map((s) => _extTile(l10n, s)),
+                            ] else ...[
                             _sectionHeader(l10n.codingSectionProjects),
                             if (!hasProjects)
                               ListTile(
@@ -1235,6 +1361,7 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
                               ...orphanEh.map((t) => _ehTile(l10n, t)),
                               ...orphanPi.map((s) => _piTile(l10n, s)),
                               ...orphanExt.map((s) => _extTile(l10n, s)),
+                            ],
                             ],
                             if (!hasTasks)
                               Padding(

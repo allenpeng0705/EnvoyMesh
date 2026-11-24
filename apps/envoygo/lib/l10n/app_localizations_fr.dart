@@ -170,7 +170,37 @@ class AppLocalizationsFr extends AppLocalizations {
   String get codingHistoryAll => 'All';
 
   @override
+  String get codingHistoryNeedsYou => 'Action';
+
+  @override
+  String get codingHistoryRecent => 'Recent';
+
+  @override
   String get codingHistoryArchived => 'Archived';
+
+  @override
+  String get codingHistoryAllTasks => 'All tasks';
+
+  @override
+  String get codingSearchTitle => 'Search Coding';
+
+  @override
+  String get codingSearchHint => 'Projects, tasks, actions…';
+
+  @override
+  String get codingSearchEmpty => 'No matches.';
+
+  @override
+  String get codingViewSearchKindAction => 'Action';
+
+  @override
+  String get codingSessionDrawerTitle => 'Switch task';
+
+  @override
+  String get codingSectionEnvoyHarness => 'Envoy Harness';
+
+  @override
+  String get codingSectionExtAgent => 'Ext Agent';
 
   @override
   String get codingArchive => 'Archive';
