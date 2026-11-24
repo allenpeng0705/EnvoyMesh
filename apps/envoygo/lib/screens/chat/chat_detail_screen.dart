@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import '../../coding/coding_review_ref.dart';
+import '../../coding/eh_mesh_work_ref.dart';
 import '../../ext_agent/agent_attachments.dart';
 import '../../ext_agent/envoy_ai_slash_commands.dart';
 import '../../ext_agent/ext_agent_presets.dart';
@@ -1528,6 +1529,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                                 : null,
                             localOwnerId: ref.watch(nodeProvider).ownerId,
                             onOpenCodingReview: _openCodingReview,
+                            onRunMeshWork: _runMeshWork,
                           ),
                         );
                       },
@@ -2646,6 +2648,40 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _runMeshWork(EhMeshWorkRef workRef) async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    final l10n = AppLocalizations.of(context);
+    try {
+      final row = await client.runEhMeshWorkItemNow(workRef.workId);
+      final chatId = row['chatId']?.toString().trim();
+      if (!mounted) return;
+      if (chatId == null || chatId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.codingRunMeshWorkFailed)),
+        );
+        return;
+      }
+      ref.read(chatProvider.notifier).selectTab(OwnerTabs.coding);
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => EnvoyHarnessChatScreen(
+            threadId: chatId,
+            chatId: chatId,
+            displayName: workRef.title?.trim().isNotEmpty == true
+                ? workRef.title!.trim()
+                : chatId,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.codingRunMeshWorkFailed)),
+      );
+    }
   }
 
   void _deleteMessage(ChatMessage msg) {

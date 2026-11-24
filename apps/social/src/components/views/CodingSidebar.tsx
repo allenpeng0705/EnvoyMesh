@@ -104,6 +104,9 @@ import { ConfirmDialog } from "../ConfirmDialog.js";
 import { CodingHeartbeatModal } from "../CodingHeartbeatModal.js";
 import { CodingScheduleModal } from "../CodingScheduleModal.js";
 import { CodingSchedulerPanel } from "../CodingSchedulerPanel.js";
+import { CodingMeshWorkPanel } from "../CodingMeshWorkPanel.js";
+import { CodingInviteReviewModal } from "../CodingInviteReviewModal.js";
+import { CodingInviteMeshWorkModal } from "../CodingInviteMeshWorkModal.js";
 import { EhChatRowMenu } from "../EhChatRowMenu.js";
 import { ExtAgentSwitcherInstallDialog } from "../ExtAgentSwitcherInstallDialog.js";
 import { useToastOptional } from "../../hooks/useToast.js";
@@ -205,7 +208,7 @@ export function CodingSidebar({
 }: CodingSidebarProps) {
   const t = useT();
   const nodeService = useNodeService();
-  const { nodeConfig } = useNodeState();
+  const { nodeConfig, bonds } = useNodeState();
   const { showToast } = useToastOptional();
   const { sessions: terminalSessions, refresh: refreshTerminalSessions } =
     useTerminalSessions();
@@ -247,6 +250,19 @@ export function CodingSidebar({
   const [heartbeatBusy, setHeartbeatBusy] = useState(false);
   const [heartbeatError, setHeartbeatError] = useState<string | null>(null);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
+  const [meshWorkOpen, setMeshWorkOpen] = useState(false);
+  const [inviteReviewTarget, setInviteReviewTarget] =
+    useState<EhChatTaskSummary | null>(null);
+  const [inviteReviewBusy, setInviteReviewBusy] = useState(false);
+  const [inviteReviewError, setInviteReviewError] = useState<string | null>(
+    null,
+  );
+  const [inviteMeshWorkTarget, setInviteMeshWorkTarget] =
+    useState<EhChatTaskSummary | null>(null);
+  const [inviteMeshWorkBusy, setInviteMeshWorkBusy] = useState(false);
+  const [inviteMeshWorkError, setInviteMeshWorkError] = useState<string | null>(
+    null,
+  );
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleBusy, setScheduleBusy] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
@@ -1666,6 +1682,14 @@ export function CodingSidebar({
                 target: { kind: "eh", chatId: c.id },
               });
             }}
+            onInviteReview={(c) => {
+              setInviteReviewError(null);
+              setInviteReviewTarget(c);
+            }}
+            onInviteMeshWork={(c) => {
+              setInviteMeshWorkError(null);
+              setInviteMeshWorkTarget(c);
+            }}
             archiveLabel={archiveLabelFor(row)}
             onArchive={() => toggleArchiveRow(row)}
           />
@@ -2037,12 +2061,24 @@ export function CodingSidebar({
         <button
           type="button"
           className="coding-sidebar-settings"
+          onClick={() => setMeshWorkOpen(true)}
+          data-testid="coding-mesh-work"
+        >
+          {t("codingView.meshWorkTitle", "Mesh work")}
+        </button>
+        <button
+          type="button"
+          className="coding-sidebar-settings"
           onClick={() => setSchedulerOpen(true)}
           data-testid="coding-scheduler"
         >
           {t("codingView.schedulerTitle", "Scheduler")}
         </button>
       </div>
+
+      {meshWorkOpen ? (
+        <CodingMeshWorkPanel onClose={() => setMeshWorkOpen(false)} />
+      ) : null}
 
       {schedulerOpen ? (
         <CodingSchedulerPanel
@@ -2051,6 +2087,126 @@ export function CodingSidebar({
             setSchedulerOpen(false);
             setScheduleError(null);
             setScheduleModalOpen(true);
+          }}
+        />
+      ) : null}
+
+      {inviteReviewTarget ? (
+        <CodingInviteReviewModal
+          chatId={inviteReviewTarget.id}
+          chatTitle={
+            inviteReviewTarget.title || codingProjectLabel(inviteReviewTarget.cwd)
+          }
+          bonds={bonds}
+          busy={inviteReviewBusy}
+          error={inviteReviewError}
+          onCancel={() => {
+            if (!inviteReviewBusy) {
+              setInviteReviewTarget(null);
+              setInviteReviewError(null);
+            }
+          }}
+          onInvite={(peerOwnerId) => {
+            if (inviteReviewBusy) return;
+            setInviteReviewBusy(true);
+            setInviteReviewError(null);
+            void (async () => {
+              try {
+                const { messageText } = await nodeService.createCodingReviewInvite(
+                  {
+                    chatId: inviteReviewTarget.id,
+                    peerOwnerId,
+                  },
+                );
+                await nodeService.sendChat(peerOwnerId, messageText);
+                showToast(
+                  t("codingView.inviteReviewSent", "Review invite sent."),
+                  "success",
+                );
+                setInviteReviewTarget(null);
+              } catch (err) {
+                const msg =
+                  err instanceof Error ? err.message : String(err ?? "");
+                setInviteReviewError(
+                  msg.includes("coding_review_peer")
+                    ? t(
+                        "codingView.inviteReviewBondDenied",
+                        "That contact isn’t eligible for a review invite.",
+                      )
+                    : t(
+                        "codingView.inviteReviewFailed",
+                        "Couldn’t send the review invite. Try again.",
+                      ),
+                );
+              } finally {
+                setInviteReviewBusy(false);
+              }
+            })();
+          }}
+        />
+      ) : null}
+
+      {inviteMeshWorkTarget ? (
+        <CodingInviteMeshWorkModal
+          cwd={inviteMeshWorkTarget.cwd}
+          chatId={inviteMeshWorkTarget.id}
+          chatTitle={
+            inviteMeshWorkTarget.title ||
+            codingProjectLabel(inviteMeshWorkTarget.cwd)
+          }
+          bonds={bonds}
+          busy={inviteMeshWorkBusy}
+          error={inviteMeshWorkError}
+          onCancel={() => {
+            if (!inviteMeshWorkBusy) {
+              setInviteMeshWorkTarget(null);
+              setInviteMeshWorkError(null);
+            }
+          }}
+          onInvite={(peerOwnerId, prompt) => {
+            if (inviteMeshWorkBusy) return;
+            setInviteMeshWorkBusy(true);
+            setInviteMeshWorkError(null);
+            void (async () => {
+              try {
+                const { messageText } = await nodeService.createEhMeshWorkInvite(
+                  {
+                    prompt,
+                    cwd: inviteMeshWorkTarget.cwd,
+                    peerOwnerId,
+                    chatId: inviteMeshWorkTarget.id,
+                    title:
+                      inviteMeshWorkTarget.title ||
+                      codingProjectLabel(inviteMeshWorkTarget.cwd),
+                  },
+                );
+                await nodeService.sendChat(peerOwnerId, messageText);
+                showToast(
+                  t(
+                    "codingView.inviteMeshWorkSent",
+                    "Coding work invite sent.",
+                  ),
+                  "success",
+                );
+                setInviteMeshWorkTarget(null);
+              } catch (err) {
+                const msg =
+                  err instanceof Error ? err.message : String(err ?? "");
+                setInviteMeshWorkError(
+                  msg.includes("eh_mesh_work_peer")
+                    ? t(
+                        "codingView.inviteMeshWorkBondDenied",
+                        "That contact isn’t eligible for a work invite.",
+                      )
+                    : t(
+                        "codingView.inviteMeshWorkFailed",
+                        "Couldn’t send the work invite. Try again.",
+                      ),
+                );
+              } finally {
+                setInviteMeshWorkBusy(false);
+              }
+            })();
           }}
         />
       ) : null}

@@ -411,6 +411,42 @@ class AppLocalizationsJa extends AppLocalizations {
       'このタスクをレビューするには所有者のホームノードで開いてください。';
 
   @override
+  String get codingRunMeshWork => 'Run in Coding';
+
+  @override
+  String get codingRunMeshWorkFailed =>
+      'Couldn’t start Coding from this work invite. Try again.';
+
+  @override
+  String get codingInviteMeshWork => 'Send Coding work to a friend';
+
+  @override
+  String get codingInviteMeshWorkTitle => 'Send Coding work to a friend';
+
+  @override
+  String codingInviteMeshWorkDesc(String title) {
+    return 'Your friend can run this prompt in Coding on their home node. Task: “$title”.';
+  }
+
+  @override
+  String get codingInviteMeshWorkPrompt => 'Work prompt';
+
+  @override
+  String get codingInviteMeshWorkNoDirect =>
+      'No direct-bonded contacts yet. Bond with a friend first.';
+
+  @override
+  String get codingInviteMeshWorkSent => 'Coding work invite sent.';
+
+  @override
+  String get codingInviteMeshWorkFailed =>
+      'Couldn’t send the work invite. Try again.';
+
+  @override
+  String get codingInviteMeshWorkBondDenied =>
+      'That contact isn’t eligible for a work invite.';
+
+  @override
   String get codingReviewOnlyBanner => 'レビューのみ — タイムラインと変更を表示。ツールと取り消しは無効です。';
 
   @override
@@ -4354,6 +4390,14 @@ class AppLocalizationsJa extends AppLocalizations {
       one: 'このターンで 1 ファイル変更',
     );
     return '$_temp0';
+  }
+
+  @override
+  String get ehTrackSubagents => 'Subagents';
+
+  @override
+  String ehSubagentsCap(int n) {
+    return 'Up to $n';
   }
 
   @override

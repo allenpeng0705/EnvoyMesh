@@ -24,6 +24,7 @@ import '../../widgets/agent_attachment_bar.dart';
 import '../../widgets/chat/slash_command_suggest.dart';
 import '../../widgets/coding_composer_toolbar.dart';
 import '../../widgets/eh/eh_changes_banner.dart';
+import '../../widgets/eh/eh_subagents_banner.dart';
 import '../../widgets/eh/eh_turn_review_sheet.dart';
 import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
 import '../coding/coding_heartbeat_ui.dart';
@@ -84,6 +85,7 @@ class _EnvoyHarnessChatScreenState
   bool _searching = false;
   bool _searchTelemetryActive = false;
   List<String> _changedFiles = [];
+  final List<EhSubagentRow> _subagentRows = [];
   bool _dismissedChanges = false;
   String? _lastReviewTurnId;
   int _reviewMinFiles = 1;
@@ -355,6 +357,7 @@ class _EnvoyHarnessChatScreenState
         if (mounted) {
           setState(() {
             _changedFiles = [];
+            _subagentRows.clear();
             _dismissedChanges = false;
           });
         }
@@ -402,6 +405,54 @@ class _EnvoyHarnessChatScreenState
     _unsubs.add(
       client.on('eh:prompt_busy', (data) {
         if (data is Map) queue.handlePromptBusy(data);
+      }),
+    );
+    _unsubs.add(
+      client.on('eh:activity', (data) {
+        if (data is! Map) return;
+        if (!_eventMatchesChat(data['chatId']?.toString())) return;
+        final tool = data['toolName']?.toString();
+        if (tool != 'task') return;
+        final kind = data['kind']?.toString();
+        final summary = data['summary']?.toString() ?? '';
+        final callId = data['toolCallId']?.toString() ??
+            DateTime.now().microsecondsSinceEpoch.toString();
+        if (!mounted) return;
+        setState(() {
+          if (kind == 'tool_call' && summary.isNotEmpty) {
+            _subagentRows.add(
+              EhSubagentRow(
+                id: callId,
+                summary: summary,
+                status: 'running',
+              ),
+            );
+          } else if (kind == 'tool_result') {
+            var runIdx = -1;
+            for (var i = 0; i < _subagentRows.length; i++) {
+              if (_subagentRows[i].id == callId) {
+                runIdx = i;
+                break;
+              }
+            }
+            if (runIdx < 0) {
+              for (var i = _subagentRows.length - 1; i >= 0; i--) {
+                if (_subagentRows[i].status == 'running') {
+                  runIdx = i;
+                  break;
+                }
+              }
+            }
+            if (runIdx < 0) return;
+            final status =
+                data['status']?.toString() == 'failed' ? 'failed' : 'succeeded';
+            _subagentRows[runIdx] = EhSubagentRow(
+              id: callId,
+              summary: _subagentRows[runIdx].summary,
+              status: status,
+            );
+          }
+        });
       }),
     );
     _unsubs.add(
@@ -883,6 +934,129 @@ class _EnvoyHarnessChatScreenState
       }
     } catch (error) {
       _setSystem(error.toString(), error: true);
+    }
+  }
+
+  Future<void> _invitePeerMeshWork() async {
+    final chatId = widget.chatId?.trim();
+    final cwd = _status?['cwd']?.toString().trim();
+    if (chatId == null || chatId.isEmpty || cwd == null || cwd.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
+    final prompt = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final controller = TextEditingController();
+        final sheetL10n = AppLocalizations.of(ctx);
+        return AlertDialog(
+          title: Text(sheetL10n.codingInviteMeshWorkTitle),
+          content: TextField(
+            controller: controller,
+            maxLines: 4,
+            decoration: InputDecoration(
+              labelText: sheetL10n.codingInviteMeshWorkPrompt,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(sheetL10n.commonCancel),
+            ),
+            FilledButton(
+              onPressed: () {
+                final text = controller.text.trim();
+                if (text.isEmpty) return;
+                Navigator.pop(ctx, text);
+              },
+              child: Text(sheetL10n.codingInviteReviewSend),
+            ),
+          ],
+        );
+      },
+    );
+    if (prompt == null || prompt.trim().isEmpty || !mounted) return;
+
+    final contacts = ref
+        .read(contactProvider)
+        .bonds
+        .where((c) => c.bondLevel == 'direct')
+        .toList()
+      ..sort((a, b) {
+        final an = (a.displayName?.trim().isNotEmpty == true)
+            ? a.displayName!.trim()
+            : a.ownerId;
+        final bn = (b.displayName?.trim().isNotEmpty == true)
+            ? b.displayName!.trim()
+            : b.ownerId;
+        return an.toLowerCase().compareTo(bn.toLowerCase());
+      });
+    if (contacts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.codingInviteMeshWorkNoDirect)),
+      );
+      return;
+    }
+    final chosen = await showModalBottomSheet<Contact>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final sheetL10n = AppLocalizations.of(ctx);
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title: Text(sheetL10n.codingInviteMeshWorkTitle),
+                subtitle: Text(
+                  sheetL10n.codingInviteMeshWorkDesc(widget.displayName),
+                ),
+              ),
+              for (final c in contacts)
+                ListTile(
+                  title: Text(
+                    c.displayName?.trim().isNotEmpty == true
+                        ? c.displayName!
+                        : c.ownerId,
+                  ),
+                  onTap: () => Navigator.pop(ctx, c),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+    if (chosen == null || !mounted) return;
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final invite = await client.createEhMeshWorkInvite(
+        prompt: prompt.trim(),
+        cwd: cwd,
+        peerOwnerId: chosen.ownerId,
+        chatId: chatId,
+        title: widget.displayName,
+      );
+      final messageText = invite['messageText']?.toString() ?? '';
+      if (messageText.isEmpty) {
+        throw StateError('missing messageText');
+      }
+      await client.sendChat(chosen.ownerId, messageText);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.codingInviteMeshWorkSent)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString();
+      final denied = msg.contains('eh_mesh_work_peer');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            denied
+                ? l10n.codingInviteMeshWorkBondDenied
+                : l10n.codingInviteMeshWorkFailed,
+          ),
+        ),
+      );
     }
   }
 
@@ -1443,6 +1617,10 @@ class _EnvoyHarnessChatScreenState
                   unawaited(_invitePeerToReview());
                   return;
                 }
+                if (value == 'invite-mesh-work') {
+                  unawaited(_invitePeerMeshWork());
+                  return;
+                }
                 if (value == 'add-heartbeat') {
                   final chatId = widget.chatId?.trim();
                   if (chatId == null || chatId.isEmpty) return;
@@ -1471,6 +1649,11 @@ class _EnvoyHarnessChatScreenState
                   PopupMenuItem(
                     value: 'invite-review',
                     child: Text(l10n.codingInviteReview),
+                  ),
+                if (widget.chatId != null && widget.chatId!.trim().isNotEmpty)
+                  PopupMenuItem(
+                    value: 'invite-mesh-work',
+                    child: Text(l10n.codingInviteMeshWork),
                   ),
                 if (widget.chatId != null && widget.chatId!.trim().isNotEmpty)
                   PopupMenuItem(
@@ -1735,6 +1918,13 @@ class _EnvoyHarnessChatScreenState
                   ),
           ),
           if (!widget.readOnlyReview) _buildQueueBar(l10n),
+          if (_subagentRows.isNotEmpty)
+            EhSubagentsBanner(
+              rows: List<EhSubagentRow>.from(_subagentRows),
+              maxSubagents:
+                  (_status?['subagentCaps'] as Map?)?['maxSubagents'] as int? ??
+                  8,
+            ),
           if (!_dismissedChanges && _changedFiles.isNotEmpty)
             EhChangesBanner(
               files: _changedFiles,

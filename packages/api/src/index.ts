@@ -133,6 +133,7 @@ export * from "./coding-ui-bucket.js";
 export * from "./coding-harness.js";
 export * from "./coding-harness-runtime.js";
 export * from "./coding-review-ref.js";
+export * from "./eh-mesh-work.js";
 export * from "./coding-heartbeat.js";
 export * from "./coding-schedule.js";
 export * from "./eh-turn-review.js";

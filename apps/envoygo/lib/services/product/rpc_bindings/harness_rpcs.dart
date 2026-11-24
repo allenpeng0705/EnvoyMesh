@@ -61,6 +61,33 @@ mixin HarnessRpcs on HomeRpcSession {
         as Map<String, dynamic>;
   }
 
+  /// FH-P2-C — mesh-lite work invite. Caller must [sendChat] with `messageText`.
+  Future<Map<String, dynamic>> createEhMeshWorkInvite({
+    required String prompt,
+    required String cwd,
+    required String peerOwnerId,
+    String? chatId,
+    String? title,
+  }) async {
+    return await homeClient.call('createEhMeshWorkInvite', {
+          'prompt': prompt,
+          'cwd': cwd,
+          'peerOwnerId': peerOwnerId,
+          if (chatId != null) 'chatId': chatId,
+          if (title != null) 'title': title,
+        }, const Duration(seconds: 30))
+        as Map<String, dynamic>;
+  }
+
+  /// FH-P2-C — run a pending mesh work ticket → EH turn.
+  Future<Map<String, dynamic>> runEhMeshWorkItemNow(String id) async {
+    return await homeClient.call(
+      'runEhMeshWorkItemNow',
+      {'id': id.trim()},
+      const Duration(seconds: 120),
+    ) as Map<String, dynamic>;
+  }
+
   /// Phase 68-C6 — list Coding heartbeats (cron wakes existing task).
   Future<List<CodingHeartbeat>> listCodingHeartbeats() async {
     final result = await homeClient.call('listCodingHeartbeats');

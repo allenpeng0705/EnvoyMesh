@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@envoymesh/agent-catalog": "file:../../../envoy-harness/packages/agent-catalog",
     "@envoymesh/api": "0.8.0",
     "@envoymesh/envoy-harness-client": "file:../../../envoy-harness/packages/envoy-harness-client",
     "@envoymesh/envoy-harness-ehui": "file:../../../envoy-harness/packages/envoy-harness-ehui",

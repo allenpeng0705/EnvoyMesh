@@ -4,6 +4,7 @@ import {
   DEFAULT_CHAIN_MAX_SUBAGENTS,
   applyChainHarnessSubagentCaps,
   resolveChainHarnessSubagentCaps,
+  resolveEhCodingSubagentCaps,
 } from "../src/agent-runtime-envoy/chain-harness-caps.js";
 
 describe("chain-harness-caps (FH-P1-D)", () => {
@@ -15,6 +16,17 @@ describe("chain-harness-caps (FH-P1-D)", () => {
       maxSubagents: 8,
       maxParallelToolCalls: 4,
     });
+  });
+
+  it("resolveEhCodingSubagentCaps honors ENVOYMESH_EH_*", () => {
+    const prev = process.env.ENVOYMESH_EH_MAX_SUBAGENTS;
+    process.env.ENVOYMESH_EH_MAX_SUBAGENTS = "5";
+    try {
+      expect(resolveEhCodingSubagentCaps().maxSubagents).toBe(5);
+    } finally {
+      if (prev === undefined) delete process.env.ENVOYMESH_EH_MAX_SUBAGENTS;
+      else process.env.ENVOYMESH_EH_MAX_SUBAGENTS = prev;
+    }
   });
 
   it("honors ENVOYMESH_CHAIN_* overrides with ceiling", () => {

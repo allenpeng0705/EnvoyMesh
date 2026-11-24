@@ -828,6 +828,66 @@ abstract class AppLocalizations {
   /// **'Open on the owner’s home node to review this task.'**
   String get codingInviteReviewOpenOnOwnerHome;
 
+  /// No description provided for @codingRunMeshWork.
+  ///
+  /// In en, this message translates to:
+  /// **'Run in Coding'**
+  String get codingRunMeshWork;
+
+  /// No description provided for @codingRunMeshWorkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t start Coding from this work invite. Try again.'**
+  String get codingRunMeshWorkFailed;
+
+  /// No description provided for @codingInviteMeshWork.
+  ///
+  /// In en, this message translates to:
+  /// **'Send Coding work to a friend'**
+  String get codingInviteMeshWork;
+
+  /// No description provided for @codingInviteMeshWorkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Send Coding work to a friend'**
+  String get codingInviteMeshWorkTitle;
+
+  /// No description provided for @codingInviteMeshWorkDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Your friend can run this prompt in Coding on their home node. Task: “{title}”.'**
+  String codingInviteMeshWorkDesc(String title);
+
+  /// No description provided for @codingInviteMeshWorkPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Work prompt'**
+  String get codingInviteMeshWorkPrompt;
+
+  /// No description provided for @codingInviteMeshWorkNoDirect.
+  ///
+  /// In en, this message translates to:
+  /// **'No direct-bonded contacts yet. Bond with a friend first.'**
+  String get codingInviteMeshWorkNoDirect;
+
+  /// No description provided for @codingInviteMeshWorkSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding work invite sent.'**
+  String get codingInviteMeshWorkSent;
+
+  /// No description provided for @codingInviteMeshWorkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t send the work invite. Try again.'**
+  String get codingInviteMeshWorkFailed;
+
+  /// No description provided for @codingInviteMeshWorkBondDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'That contact isn’t eligible for a work invite.'**
+  String get codingInviteMeshWorkBondDenied;
+
   /// No description provided for @codingReviewOnlyBanner.
   ///
   /// In en, this message translates to:
@@ -8075,6 +8135,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =1{1 file changed this turn} other{{count} files changed this turn}}'**
   String ehChangesCount(int count);
+
+  /// No description provided for @ehTrackSubagents.
+  ///
+  /// In en, this message translates to:
+  /// **'Subagents'**
+  String get ehTrackSubagents;
+
+  /// No description provided for @ehSubagentsCap.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to {n}'**
+  String ehSubagentsCap(int n);
 
   /// No description provided for @ehChangesKeepAll.
   ///

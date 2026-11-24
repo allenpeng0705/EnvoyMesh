@@ -395,6 +395,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingInviteReviewOpenOnOwnerHome => '请在所有者的主节点上打开以审阅此任务。';
 
   @override
+  String get codingRunMeshWork => '在 Coding 中运行';
+
+  @override
+  String get codingRunMeshWorkFailed => '无法从该协作邀请启动 Coding，请重试。';
+
+  @override
+  String get codingInviteMeshWork => '向好友发送 Coding 协作';
+
+  @override
+  String get codingInviteMeshWorkTitle => '向好友发送 Coding 协作';
+
+  @override
+  String codingInviteMeshWorkDesc(String title) {
+    return '好友可在其主节点 Coding 中运行此提示。任务：“$title”。';
+  }
+
+  @override
+  String get codingInviteMeshWorkPrompt => '协作提示';
+
+  @override
+  String get codingInviteMeshWorkNoDirect => '还没有直接绑定的联系人。请先与好友建立绑定。';
+
+  @override
+  String get codingInviteMeshWorkSent => '协作邀请已发送。';
+
+  @override
+  String get codingInviteMeshWorkFailed => '无法发送协作邀请，请重试。';
+
+  @override
+  String get codingInviteMeshWorkBondDenied => '该联系人无法接收协作邀请。';
+
+  @override
   String get codingReviewOnlyBanner => '只读审阅 — 可查看时间线与变更；工具与还原已禁用。';
 
   @override
@@ -4293,6 +4325,14 @@ class AppLocalizationsZh extends AppLocalizations {
       one: '本回合更改了 1 个文件',
     );
     return '$_temp0';
+  }
+
+  @override
+  String get ehTrackSubagents => '子代理';
+
+  @override
+  String ehSubagentsCap(int n) {
+    return '最多 $n 个';
   }
 
   @override

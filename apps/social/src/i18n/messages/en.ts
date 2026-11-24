@@ -208,6 +208,32 @@ export const en = {
     inviteReviewOpenOnOwnerHome:
       "Open on the owner’s home node to review this task.",
     openReview: "Open review",
+    runMeshWork: "Run in Coding",
+    meshWorkTitle: "Mesh work",
+    meshWorkDesc:
+      "Coding requests from bonded chats. Run one to start an Envoy Harness turn on this home node.",
+    meshWorkEmpty:
+      "No pending work. Send an invite from a task menu or accept one in chat.",
+    meshWorkLoading: "Loading…",
+    meshWorkListFailed: "Couldn’t load work items. Try again.",
+    meshWorkActionFailed: "That didn’t work. Try again.",
+    meshWorkDismiss: "Dismiss",
+    meshWorkUntitled: "Coding work",
+    meshWorkSourceBond: "bond",
+    inviteMeshWork: "Send Coding work to a friend",
+    inviteMeshWorkTitle: "Send Coding work to a friend",
+    inviteMeshWorkDesc:
+      "Your bonded friend can run this prompt in Coding on their home node. Task: “{title}”.",
+    inviteMeshWorkPrompt: "Work prompt",
+    inviteMeshWorkPromptPh: "What should the agent do?",
+    inviteMeshWorkNoDirect:
+      "No direct-bonded contacts yet. Bond with a friend first.",
+    inviteMeshWorkSend: "Send invite",
+    inviteMeshWorkSending: "Sending…",
+    inviteMeshWorkSent: "Coding work invite sent.",
+    inviteMeshWorkFailed: "Couldn’t send the work invite. Try again.",
+    inviteMeshWorkBondDenied:
+      "That contact isn’t eligible for a work invite.",
     reviewOnlyBanner: "Review only",
     harnessLabel: "Harness",
     startSession: "Start task",
@@ -373,6 +399,9 @@ export const en = {
     extAgentPlaceholder: "Message {name}…",
     trackChanges: "Changes",
     trackQueue: "Queue",
+    trackSubagents: "Subagents",
+    subagentsCap: "up to {n}",
+    subagentsCapHint: "Maximum task sub-agents per turn",
     tracksAria: "Tracks",
     reviewChanges: "Review changes",
     tabChat: "Chat",

@@ -1045,6 +1045,28 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.createCodingReviewInvite(opts);
   }
 
+  async listEhMeshWorkItems() {
+    return this._ns.listEhMeshWorkItems();
+  }
+
+  async dismissEhMeshWorkItem(id: string) {
+    return this._ns.dismissEhMeshWorkItem(id);
+  }
+
+  async createEhMeshWorkInvite(opts: {
+    prompt: string;
+    cwd: string;
+    peerOwnerId: string;
+    chatId?: string;
+    title?: string;
+  }) {
+    return this._ns.createEhMeshWorkInvite(opts);
+  }
+
+  async runEhMeshWorkItemNow(id: string) {
+    return this._ns.runEhMeshWorkItemNow(id);
+  }
+
   async listCodingHeartbeats() {
     return this._ns.listCodingHeartbeats();
   }

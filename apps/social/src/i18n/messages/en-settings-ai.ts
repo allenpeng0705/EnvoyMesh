@@ -36,6 +36,8 @@ export const aiSettingsMessages = {
   aiEngine: {
     heading: "AI Engine",
     desc: "Which Envoy agent surfaces the AI on this home node. Built-in OpenClaw is always present; the External Agent Bridge is opt-in. (The 'Agent Network' tab is for onboarding other nodes — this is the AI engine.)",
+    extVsCodingOneLiner:
+      "Ext Agent runs sidecar CLIs (Codex, Aider, …) with narrower permissions. Full Envoy harness coding — projects, review, and mesh tools — lives in the Coding tab.",
     loading: "Loading agent status…",
     envoyai: "Built-in OpenClaw",
     envoyaiDesc: "Runs in-process on this node. Has direct access to your vault, mesh, and tools. Best for chat, knowledge queries, and assistant turns. To disable, edit node-config.json and restart the home node.",

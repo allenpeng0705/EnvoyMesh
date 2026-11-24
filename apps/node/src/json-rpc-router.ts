@@ -167,6 +167,11 @@ export const CODING_GATED_RPC = new Set<string>([
   "createEnvoyHarnessChat",
   "updateEnvoyHarnessChat",
   "createCodingReviewInvite",
+  "listEhMeshWorkItems",
+  "enqueueEhMeshWorkItem",
+  "dismissEhMeshWorkItem",
+  "createEhMeshWorkInvite",
+  "runEhMeshWorkItemNow",
   "listCodingHeartbeats",
   "createCodingHeartbeat",
   "updateCodingHeartbeat",
@@ -1703,6 +1708,24 @@ export async function routeRpcMethod(
         peerOwnerId: String(params.peerOwnerId ?? ""),
         ...(typeof params.turnId === "string" ? { turnId: params.turnId } : {}),
       });
+    case "listEhMeshWorkItems":
+      return ns.listEhMeshWorkItems();
+    case "enqueueEhMeshWorkItem":
+      return ns.enqueueEhMeshWorkItem(
+        params as unknown as import("@envoymesh/api").EnqueueEhMeshWorkInput,
+      );
+    case "dismissEhMeshWorkItem":
+      return ns.dismissEhMeshWorkItem(String(params.id ?? ""));
+    case "createEhMeshWorkInvite":
+      return ns.createEhMeshWorkInvite({
+        prompt: String(params.prompt ?? ""),
+        cwd: String(params.cwd ?? ""),
+        peerOwnerId: String(params.peerOwnerId ?? ""),
+        ...(typeof params.chatId === "string" ? { chatId: params.chatId } : {}),
+        ...(typeof params.title === "string" ? { title: params.title } : {}),
+      });
+    case "runEhMeshWorkItemNow":
+      return ns.runEhMeshWorkItemNow(String(params.id ?? ""));
     case "listCodingHeartbeats":
       return ns.listCodingHeartbeats();
     case "createCodingHeartbeat":

@@ -1353,6 +1353,11 @@ import {
 import { AcpPermissionBridge } from "./node-service-acp-ui.js";
 import { AcpUserQuestionBridge } from "./node-service-eh-user-question.js";
 import { ToolPermissionBridge } from "./tool-permission-bridge.js";
+import { ehSubagentCapSnapshot } from "./agent-runtime-envoy/eh-subagent-account.js";
+import {
+  resolveEhAutoCompactPolicy,
+  shouldAutoCompactEhSession,
+} from "./agent-runtime-envoy/eh-session-compact.js";
 import { buildEhPromptPayload, pathFromEhActivity } from "./agent-runtime-envoy/eh-prompt-attachments.js";
 import {
   ensurePiTerminalSession,
@@ -1382,6 +1387,11 @@ import {
   ehChatTitleFromUserPrompt,
   extTimelineChatId,
   formatCodingReviewInviteMessage,
+  EH_MESH_WORK_KIND,
+  formatEhMeshWorkInviteMessage,
+  parseEhMeshWorkRef,
+  type EhMeshWorkItem,
+  type EhMeshWorkRef,
   isCodingTierBHarness,
   legacyEhEventToTimelineItems,
   normalizeEhChatModel,
@@ -1419,6 +1429,7 @@ import {
   auditEhTurnStarted,
 } from "./eh-audit.js";
 import { CodingHeartbeatStore } from "./coding-heartbeat-store.js";
+import { EhMeshWorkStore } from "./eh-mesh-work-store.js";
 import {
   CodingRuntimeStore,
   codingRuntimeToSpawnEnv,
@@ -1799,6 +1810,10 @@ class NodeServiceImpl implements NodeService {
   private readonly _codingScheduleStore: CodingScheduleStore;
   private readonly _codingScheduleFiring = new Set<string>();
   private _codingScheduleReady: Promise<void> | null = null;
+  /** FH-P2-C — mesh-lite work ticket store. */
+  private readonly _ehMeshWorkStore: EhMeshWorkStore;
+  private _ehMeshWorkReady: Promise<void> | null = null;
+  private readonly _ehMeshWorkFiring = new Set<string>();
   private readonly _agentActivityStore: LocalAgentActivityStore | null;
   private readonly _agentCardStore: AgentCardStore | null;
   private readonly _chatDraftStore: ChatDraftStore | null;
@@ -2451,6 +2466,7 @@ class NodeServiceImpl implements NodeService {
     this._codingHeartbeatStore = productStore(productDir, "_codingHeartbeatStore", () => new CodingHeartbeatStore());
     this._codingRuntimeStore = productStore(productDir, "_codingRuntimeStore", () => new CodingRuntimeStore());
     this._codingScheduleStore = productStore(productDir, "_codingScheduleStore", () => new CodingScheduleStore());
+    this._ehMeshWorkStore = productStore(productDir, "_ehMeshWorkStore", () => new EhMeshWorkStore());
     this._chainStore = productStore(productDir, "_chainStore", () => new ChainStore());
     this._delegatedChainStore = productStore(productDir, "_delegatedChainStore", () => new DelegatedChainStore());
     this._publishedLibraryStore = productStore(
@@ -2508,6 +2524,9 @@ class NodeServiceImpl implements NodeService {
         .catch((err) => {
           console.warn("[coding.heartbeat] store init failed:", err);
         });
+      this._ehMeshWorkReady = this._ehMeshWorkStore.init(productDir).catch((err) => {
+        console.warn("[eh.mesh-work] store init failed:", err);
+      });
       this._codingScheduleReady = this._codingScheduleStore
         .init(productDir)
         .catch((err) => {
@@ -5686,6 +5705,19 @@ class NodeServiceImpl implements NodeService {
               : {}),
             ...(activity.ts !== undefined ? { ts: activity.ts } : {}),
             ...(active?.chatId ? { chatId: active.chatId } : {}),
+            ...(activity.kind === "tool_call"
+              ? { status: "running" as const }
+              : activity.kind === "tool_result"
+                ? {
+                    status: (activity.isError === true
+                      ? "failed"
+                      : "succeeded") as "failed" | "succeeded",
+                  }
+                : {}),
+            ...("toolCallId" in activity &&
+            typeof activity.toolCallId === "string"
+              ? { toolCallId: activity.toolCallId }
+              : {}),
           };
           this.emit("eh:activity", activityEvent);
           this._emitEhTimelineEvent({ name: "eh:activity", payload: activityEvent });
@@ -5738,6 +5770,9 @@ class NodeServiceImpl implements NodeService {
           };
           this.emit("eh:files_changed", filesEvent);
           this._emitEhTimelineEvent({ name: "eh:files_changed", payload: filesEvent });
+        }
+        if (completeEvent.ok) {
+          void this._maybeAutoCompactEhSession(host);
         }
         return withFiles;
       };
@@ -5811,6 +5846,31 @@ class NodeServiceImpl implements NodeService {
         this._emitEhTimelineEvent({ name: "eh:files_changed", payload: filesEvent });
       }
       return complete;
+    }
+  }
+
+  /** FH-P2-D — optional post-turn `session/compact` when transcript is long. */
+  private async _maybeAutoCompactEhSession(
+    host: EnvoyHarnessPersistentAcpHost,
+  ): Promise<void> {
+    const policy = resolveEhAutoCompactPolicy();
+    if (policy.afterMessageCount <= 0) return;
+    const sessionId = host.sessionId;
+    if (sessionId === undefined) return;
+    try {
+      const sessionStore = createEnvoyHarnessSessionStore(
+        requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"),
+      );
+      const cwd = await this._envoyHarnessResolvedCwd();
+      const history = await loadEhChatHistoryFromStore({
+        sessionStore,
+        sessionId,
+        cwd,
+      });
+      if (!shouldAutoCompactEhSession(history.turns.length, policy)) return;
+      await host.compactSession({ keep: policy.keep, summarize: true });
+    } catch {
+      // Best-effort — long sessions remain usable without compact.
     }
   }
 
@@ -6975,6 +7035,7 @@ class NodeServiceImpl implements NodeService {
         connected: peers.length,
         failed: this._envoyHarnessPeerPool?.failed.length ?? 0,
       },
+      subagentCaps: ehSubagentCapSnapshot(),
     };
   }
 
@@ -7398,6 +7459,178 @@ class NodeServiceImpl implements NodeService {
       turnId,
     });
     return { reviewRef, messageText };
+  }
+
+  private async _ensureEhMeshWorkStore(): Promise<void> {
+    if (this._ehMeshWorkReady) {
+      await this._ehMeshWorkReady;
+      return;
+    }
+    if (!hasProfileDir(this._profileDir)) {
+      throw new Error("eh_mesh_work_store_not_ready");
+    }
+    this._ehMeshWorkReady = this._ehMeshWorkStore.init(
+      requireProductStoreDir(this._productDir, "_ehMeshWorkStore"),
+    );
+    await this._ehMeshWorkReady;
+  }
+
+  /** FH-P2-C — list mesh-native Coding work tickets. */
+  async listEhMeshWorkItems(): Promise<EhMeshWorkItem[]> {
+    await this._ensureEhMeshWorkStore();
+    return this._ehMeshWorkStore.list();
+  }
+
+  async enqueueEhMeshWorkItem(
+    input: import("@envoymesh/api").EnqueueEhMeshWorkInput,
+  ): Promise<EhMeshWorkItem> {
+    await this._ensureEhMeshWorkStore();
+    return this._ehMeshWorkStore.enqueue({
+      ...input,
+      source: input.source ?? "owner",
+    });
+  }
+
+  async dismissEhMeshWorkItem(id: string): Promise<{ dismissed: boolean }> {
+    await this._ensureEhMeshWorkStore();
+    const dismissed = await this._ehMeshWorkStore.dismiss(id.trim());
+    return { dismissed };
+  }
+
+  /**
+   * FH-P2-C — build bond Coding work invite. Caller must `sendChat` after RPC.
+   */
+  async createEhMeshWorkInvite(opts: {
+    prompt: string;
+    cwd: string;
+    peerOwnerId: string;
+    chatId?: string;
+    title?: string;
+  }): Promise<{ workRef: EhMeshWorkRef; messageText: string }> {
+    const prompt = opts.prompt.trim();
+    const cwd = normalizeEhTaskCwd(opts.cwd);
+    const peerOwnerId = opts.peerOwnerId.trim();
+    if (!prompt) throw new Error("eh_mesh_work_prompt_required");
+    if (!cwd) throw new Error("eh_mesh_work_cwd_required");
+    if (!peerOwnerId) throw new Error("eh_mesh_work_peer_required");
+
+    const trust = await this._trustStore.getTrustRecord(peerOwnerId);
+    const level = trust?.level;
+    if (!level || level === "blocked" || level === "public") {
+      throw new Error(
+        level === "blocked"
+          ? "eh_mesh_work_peer_blocked"
+          : "eh_mesh_work_peer_not_bonded",
+      );
+    }
+
+    await this._ensureEhMeshWorkStore();
+    const item = await this._ehMeshWorkStore.enqueue({
+      prompt,
+      cwd,
+      source: "owner",
+      ...(opts.chatId?.trim() ? { chatId: opts.chatId.trim() } : {}),
+      ...(opts.title?.trim() ? { title: opts.title.trim() } : {}),
+    });
+
+    const profile = this.getProfile();
+    const workRef: EhMeshWorkRef = {
+      kind: EH_MESH_WORK_KIND,
+      v: 1,
+      workId: item.id,
+      prompt,
+      fromOwnerId: profile.owner.ownerId,
+      cwd,
+      ...(opts.title?.trim() ? { title: opts.title.trim() } : {}),
+      ...(item.chatId ? { chatId: item.chatId } : {}),
+    };
+    const messageText = formatEhMeshWorkInviteMessage(workRef);
+    return { workRef, messageText };
+  }
+
+  async runEhMeshWorkItemNow(id: string): Promise<EhMeshWorkItem> {
+    await this._ensureEhMeshWorkStore();
+    const workId = id.trim();
+    const item = this._ehMeshWorkStore.get(workId);
+    if (!item) throw new Error("eh_mesh_work_not_found");
+    if (item.status === "dismissed") {
+      throw new Error("eh_mesh_work_dismissed");
+    }
+    if (this._ehMeshWorkFiring.has(workId)) {
+      throw new Error("eh_mesh_work_already_firing");
+    }
+
+    this._ehMeshWorkFiring.add(workId);
+    try {
+      await this._ehMeshWorkStore.setStatus(workId, "running");
+      let chatId = item.chatId;
+      if (!chatId || !(await this._resolveEhChat(chatId))) {
+        const created = await this.createEnvoyHarnessChat({
+          cwd: item.cwd,
+          ...(item.title ? { title: item.title } : {}),
+          forceNew: true,
+        });
+        chatId = created.id;
+      }
+      if (this._ehChatRuntime.hasTurnForChat(chatId)) {
+        throw new Error("eh_mesh_work_turn_busy");
+      }
+      await this.startEnvoyHarnessTurn(item.prompt, { chatId });
+      const next = await this._ehMeshWorkStore.setStatus(workId, "done", {
+        chatId,
+      });
+      return next ?? item;
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.message.trim()
+          ? err.message.trim().slice(0, 200)
+          : "dispatch_failed";
+      const next = await this._ehMeshWorkStore.setStatus(workId, "pending", {
+        lastError: reason,
+      });
+      throw Object.assign(err instanceof Error ? err : new Error(reason), {
+        ehMeshWork: next,
+      });
+    } finally {
+      this._ehMeshWorkFiring.delete(workId);
+    }
+  }
+
+  /**
+   * FH-P2-C — ingest bond chat footer into the work ticket store (idempotent).
+   */
+  async maybeIngestEhMeshWorkFromChat(
+    senderOwnerId: string,
+    text: string,
+  ): Promise<EhMeshWorkItem | null> {
+    const ref = parseEhMeshWorkRef(text);
+    if (!ref) return null;
+    if (ref.fromOwnerId.trim() !== senderOwnerId.trim()) return null;
+
+    const trust = await this._trustStore.getTrustRecord(senderOwnerId);
+    const level = trust?.level;
+    if (!level || level === "blocked" || level === "public") return null;
+
+    const profile = this.getProfile();
+    if (ref.fromOwnerId.trim() === profile.owner.ownerId) return null;
+
+    if (!ref.cwd?.trim()) return null;
+    const cwd = normalizeEhTaskCwd(ref.cwd);
+    if (!cwd) return null;
+
+    await this._ensureEhMeshWorkStore();
+    try {
+      return await this._ehMeshWorkStore.upsertFromBondRef({
+        workId: ref.workId,
+        prompt: ref.prompt,
+        cwd,
+        fromOwnerId: senderOwnerId.trim(),
+        ...(ref.chatId ? { chatId: ref.chatId } : {}),
+        ...(ref.title ? { title: ref.title } : {}),
+      });
+    } catch {
+      return null;
+    }
   }
 
   private async _ensureCodingHeartbeatStore(): Promise<void> {
@@ -8249,6 +8482,8 @@ class NodeServiceImpl implements NodeService {
           shouldAskTool: (toolName, args) =>
             shouldAskAcpTool(toolName, autoRun, args),
           maxContinuationPhases,
+          subagentAccountKey:
+            this._profile?.owner?.ownerId ?? chatId ?? sessionId,
         }),
       listPeers: () => this.listEnvoyHarnessPeers(),
       ...(this._envoyHarnessPeerPool !== undefined

@@ -2712,6 +2712,9 @@ async function handleInboundMeshMessage({
             payload.senderOwnerId,
             chatMsg as ChatMessage,
           ) as typeof chatMsg;
+          void nodeService
+            .maybeIngestEhMeshWorkFromChat(payload.senderOwnerId, payload.text)
+            .catch(() => undefined);
         }
         scheduleChatRagIndex(payload.senderOwnerId, emitMsg);
         void sessionManager.recordMessage(

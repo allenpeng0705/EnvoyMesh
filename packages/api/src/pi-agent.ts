@@ -237,6 +237,12 @@ export interface EnvoyHarnessStatus {
   }
   /** The configured standalone peer cluster (Pattern A execution pool). */
   peers: { connected: number; failed: number }
+  /** FH-P2-B — EH Coding `task` caps (defaults 8 / 4 / 8). */
+  subagentCaps?: {
+    maxSubagents: number
+    maxParallel: number
+    accountConcurrency: number
+  }
 }
 
 /** Result of a one-shot prompt (collected from streaming events). */

@@ -577,8 +577,35 @@ export function EnvoyHarnessPanel({
   useEffect(() => {
     return nodeService.on("eh:activity", (event: EhActivityEvent) => {
       if (!ehEventMatchesChat(event, effectiveChatId)) return
-      if (event.summary.trim().length > 0) {
+      if (event.toolName !== "task" && event.summary.trim().length > 0) {
         setActivitySummary(event.summary)
+      }
+      if (event.toolName === "task") {
+        const callId = event.toolCallId ?? crypto.randomUUID()
+        if (event.kind === "tool_call") {
+          setSubagentRows((prev) => [
+            ...prev,
+            {
+              id: callId,
+              summary: event.summary,
+              status: "running",
+            },
+          ])
+        } else if (event.kind === "tool_result") {
+          setSubagentRows((prev) => {
+            const runIdx = prev.findIndex(
+              (row) => row.id === callId || row.status === "running",
+            )
+            if (runIdx < 0) return prev
+            const next = [...prev]
+            next[runIdx] = {
+              ...next[runIdx]!,
+              id: callId,
+              status: event.status === "failed" ? "failed" : "succeeded",
+            }
+            return next
+          })
+        }
       }
     })
   }, [effectiveChatId, nodeService])
@@ -590,6 +617,9 @@ export function EnvoyHarnessPanel({
         setActivitySummary(undefined)
         setPendingQuestion(null)
         setPendingPermission(null)
+        setSubagentRows((rows) =>
+          rows.length > 0 && rows.every((r) => r.status !== "running") ? [] : rows,
+        )
       }
     })
   }, [effectiveChatId, nodeService])
@@ -782,8 +812,17 @@ export function EnvoyHarnessPanel({
   const [activeTrack, setActiveTrack] = useState<EhTrackId | null>(null)
   const [changesHidden, setChangesHidden] = useState(false)
   const [queueHidden, setQueueHidden] = useState(false)
+  const [subagentsHidden, setSubagentsHidden] = useState(false)
+  const [subagentRows, setSubagentRows] = useState<
+    Array<{ id: string; summary: string; status: "running" | "succeeded" | "failed" }>
+  >([])
   const changesDockRef = useRef<HTMLDivElement | null>(null)
   const queueDockRef = useRef<HTMLDivElement | null>(null)
+  const subagentsDockRef = useRef<HTMLDivElement | null>(null)
+  const subagentCap =
+    status?.subagentCaps?.maxSubagents ??
+    status?.subagentCaps?.accountConcurrency ??
+    8
   const onTouchedFilesChangeRef = useRef(onTouchedFilesChange)
   onTouchedFilesChangeRef.current = onTouchedFilesChange
 
@@ -804,16 +843,31 @@ export function EnvoyHarnessPanel({
     setActiveTrack((prev) => {
       if (track === "changes") {
         setChangesHidden((hidden) => (prev === "changes" ? !hidden : false))
-      } else {
+        setQueueHidden(false)
+        setSubagentsHidden(false)
+      } else if (track === "queue") {
         setQueueHidden((hidden) => (prev === "queue" ? !hidden : false))
+        setChangesHidden(false)
+        setSubagentsHidden(false)
+      } else {
+        setSubagentsHidden((hidden) => (prev === "subagents" ? !hidden : false))
+        setChangesHidden(false)
+        setQueueHidden(false)
       }
       return track
     })
     window.setTimeout(() => {
-      const el = track === "changes" ? changesDockRef.current : queueDockRef.current
+      const el =
+        track === "changes"
+          ? changesDockRef.current
+          : track === "queue"
+            ? queueDockRef.current
+            : subagentsDockRef.current
       el?.scrollIntoView({ behavior: "smooth", block: "nearest" })
     }, 0)
   }, [])
+
+  const subagentsActiveCount = subagentRows.filter((r) => r.status === "running").length
 
   /** Start a fresh persisted session for this chat (same as /new). */
   const resetChat = useCallback(async () => {
@@ -1701,6 +1755,7 @@ export function EnvoyHarnessPanel({
       <EhTrackPills
         changesCount={changedFilesForDock.length}
         queueCount={queue.length}
+        subagentsCount={subagentsActiveCount}
         activeTrack={activeTrack}
         onSelectTrack={selectTrack}
       />
@@ -1732,6 +1787,10 @@ export function EnvoyHarnessPanel({
         onQueueClear={clearQueue}
         queueHidden={queueHidden}
         queueDockRef={queueDockRef}
+        subagents={subagentRows}
+        subagentsHidden={subagentsHidden}
+        subagentsDockRef={subagentsDockRef}
+        subagentCap={subagentCap}
         contextFiles={[...new Set([...ehAttachments.pathList, ...turnContext.touchedFiles])]}
         attachedPaths={ehAttachments.pathList}
         onRemoveAttached={(path) => {

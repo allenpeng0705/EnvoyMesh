@@ -12,6 +12,7 @@ import { EhTurnHintsDock } from "./EhTurnHintsDock.js"
 import { EhInputQueue } from "./EhInputQueue.js"
 import { EhContextStrip } from "./EhContextStrip.js"
 import { EhChangesDock } from "./EhChangesDock.js"
+import { EhSubagentsDock, type EhSubagentDockRow } from "./EhSubagentsDock.js"
 
 export interface EhComposerDockStackProps {
   permission: EhPermissionEvent | null
@@ -44,6 +45,10 @@ export interface EhComposerDockStackProps {
   onRevertChanges?: () => void
   reviewMinFiles?: number
   onReviewMinFilesChange?: (value: number) => void
+  subagents?: readonly EhSubagentDockRow[]
+  subagentsHidden?: boolean
+  subagentsDockRef?: RefObject<HTMLDivElement | null>
+  subagentCap?: number
   composer?: ReactNode
 }
 
@@ -76,6 +81,10 @@ export function EhComposerDockStack({
   onRevertChanges,
   reviewMinFiles,
   onReviewMinFilesChange,
+  subagents,
+  subagentsHidden = false,
+  subagentsDockRef,
+  subagentCap,
   composer,
 }: EhComposerDockStackProps) {
   return (
@@ -128,6 +137,11 @@ export function EhComposerDockStack({
             onRemove={onQueueRemove}
             onClear={onQueueClear}
           />
+        </div>
+      ) : null}
+      {!subagentsHidden && subagents && subagents.length > 0 ? (
+        <div ref={subagentsDockRef}>
+          <EhSubagentsDock rows={subagents} maxSubagents={subagentCap} />
         </div>
       ) : null}
       {composer ?? null}

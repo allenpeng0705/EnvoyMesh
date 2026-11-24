@@ -9,4 +9,6 @@ export interface EhActivityEvent {
   ts?: string;
   chatId?: string;
   status?: "running" | "succeeded" | "failed" | "cancelled";
+  /** Harness activity `toolCallId` when present (tool_result). */
+  toolCallId?: string;
 }

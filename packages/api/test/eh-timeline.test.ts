@@ -51,6 +51,42 @@ describe("Envoy Harness semantic timeline", () => {
     expect(replayed.items).toEqual(state.items);
   });
 
+  it("uses per-call ids for task tool activity (FH-P2-B)", () => {
+    const taskCall = legacyEhEventToTimelineItems(
+      {
+        name: "eh:activity",
+        payload: {
+          turnId: "turn-t",
+          chatId: "chat-1",
+          kind: "tool_call",
+          summary: "spawn sub-agent",
+          toolName: "task",
+          toolCallId: "call-1",
+          ts: "t1",
+        },
+      },
+      "recv-1",
+    )[0]!;
+    expect(taskCall?.id).toBe("turn:turn-t:task:call-1");
+    const taskResult = legacyEhEventToTimelineItems(
+      {
+        name: "eh:activity",
+        payload: {
+          turnId: "turn-t",
+          chatId: "chat-1",
+          kind: "tool_result",
+          summary: "task failed",
+          toolName: "task",
+          toolCallId: "call-1",
+          status: "failed",
+          ts: "t2",
+        },
+      },
+      "recv-2",
+    )[0]!;
+    expect(taskResult?.id).toBe("turn:turn-t:task:call-1");
+  });
+
   it("reuses one replaceable activity-live slot per turn", () => {
     let state = emptyEhTimelineState("chat-1");
     const at = (summary: string, ts: string) =>

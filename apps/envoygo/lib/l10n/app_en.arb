@@ -180,6 +180,21 @@
   "codingInviteReviewFailed": "Couldn’t send the review invite. Try again.",
   "codingInviteReviewBondDenied": "That contact isn’t eligible for a review invite.",
   "codingInviteReviewOpenOnOwnerHome": "Open on the owner’s home node to review this task.",
+  "codingRunMeshWork": "Run in Coding",
+  "codingRunMeshWorkFailed": "Couldn’t start Coding from this work invite. Try again.",
+  "codingInviteMeshWork": "Send Coding work to a friend",
+  "codingInviteMeshWorkTitle": "Send Coding work to a friend",
+  "codingInviteMeshWorkDesc": "Your friend can run this prompt in Coding on their home node. Task: “{title}”.",
+  "@codingInviteMeshWorkDesc": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "codingInviteMeshWorkPrompt": "Work prompt",
+  "codingInviteMeshWorkNoDirect": "No direct-bonded contacts yet. Bond with a friend first.",
+  "codingInviteMeshWorkSent": "Coding work invite sent.",
+  "codingInviteMeshWorkFailed": "Couldn’t send the work invite. Try again.",
+  "codingInviteMeshWorkBondDenied": "That contact isn’t eligible for a work invite.",
   "codingReviewOnlyBanner": "Review only — timeline and changes; tools and revert are disabled.",
   "codingHeartbeatAdd": "Schedule this task…",
   "codingHeartbeatAddTitle": "Schedule this task",
@@ -2199,6 +2214,15 @@
   "@ehChangesCount": {
     "placeholders": {
       "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehTrackSubagents": "Subagents",
+  "ehSubagentsCap": "Up to {n}",
+  "@ehSubagentsCap": {
+    "placeholders": {
+      "n": {
         "type": "int"
       }
     }

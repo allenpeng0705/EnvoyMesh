@@ -180,6 +180,21 @@
   "codingInviteReviewFailed": "无法发送审阅邀请，请重试。",
   "codingInviteReviewBondDenied": "该联系人无法接收审阅邀请。",
   "codingInviteReviewOpenOnOwnerHome": "请在所有者的主节点上打开以审阅此任务。",
+  "codingRunMeshWork": "在 Coding 中运行",
+  "codingRunMeshWorkFailed": "无法从该协作邀请启动 Coding，请重试。",
+  "codingInviteMeshWork": "向好友发送 Coding 协作",
+  "codingInviteMeshWorkTitle": "向好友发送 Coding 协作",
+  "codingInviteMeshWorkDesc": "好友可在其主节点 Coding 中运行此提示。任务：“{title}”。",
+  "@codingInviteMeshWorkDesc": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "codingInviteMeshWorkPrompt": "协作提示",
+  "codingInviteMeshWorkNoDirect": "还没有直接绑定的联系人。请先与好友建立绑定。",
+  "codingInviteMeshWorkSent": "协作邀请已发送。",
+  "codingInviteMeshWorkFailed": "无法发送协作邀请，请重试。",
+  "codingInviteMeshWorkBondDenied": "该联系人无法接收协作邀请。",
   "codingReviewOnlyBanner": "只读审阅 — 可查看时间线与变更；工具与还原已禁用。",
   "codingHeartbeatAdd": "定时这个任务…",
   "codingHeartbeatAddTitle": "定时这个任务",
@@ -1602,6 +1617,15 @@
   "@ehChangesCount": {
     "placeholders": {
       "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ehTrackSubagents": "子代理",
+  "ehSubagentsCap": "最多 {n} 个",
+  "@ehSubagentsCap": {
+    "placeholders": {
+      "n": {
         "type": "int"
       }
     }

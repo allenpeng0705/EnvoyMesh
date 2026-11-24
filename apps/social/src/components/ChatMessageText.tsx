@@ -1,11 +1,14 @@
 import {
   chatMessageTextForDisplay,
+  EH_MESH_WORK_MARKER,
   parseCodingReviewRef,
+  parseEhMeshWorkRef,
   stripModelThinking,
   type AiIdentity,
 } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { useNodeState } from "../context/NodeStateContext.js";
+import { useNodeService } from "../hooks/useNodeService.js";
 import { openCoding } from "../lib/open-coding-nav.js";
 import { Markdown } from "./Markdown.js";
 
@@ -16,8 +19,8 @@ interface ChatMessageTextProps {
   identity?: AiIdentity | null;
 }
 
-function humanTextWithoutMarker(text: string): string {
-  const markerIdx = text.indexOf("[envoymesh-coding-review]");
+function humanTextWithoutMarker(text: string, marker: string): string {
+  const markerIdx = text.indexOf(marker);
   if (markerIdx < 0) return text;
   return text.slice(0, markerIdx).trimEnd();
 }
@@ -28,10 +31,16 @@ export function ChatMessageText({
   identity,
 }: ChatMessageTextProps) {
   const t = useT();
+  const nodeService = useNodeService();
   const { humanProfile } = useNodeState();
   const display = chatMessageTextForDisplay(stripModelThinking(text), identity);
   const reviewRef = parseCodingReviewRef(display);
-  const body = reviewRef ? humanTextWithoutMarker(display) : display;
+  const workRef = parseEhMeshWorkRef(display);
+  const body = reviewRef
+    ? humanTextWithoutMarker(display, "[envoymesh-coding-review]")
+    : workRef
+      ? humanTextWithoutMarker(display, EH_MESH_WORK_MARKER)
+      : display;
   const localOwnerId = humanProfile?.ownerId?.trim() ?? "";
   const sameHome =
     !reviewRef || !localOwnerId || reviewRef.ownerId === localOwnerId;
@@ -65,6 +74,33 @@ export function ChatMessageText({
             }}
           >
             {t("codingView.openReview", "Open review")}
+          </button>
+        </div>
+      ) : null}
+      {workRef ? (
+        <div
+          className="chat-coding-review-cta"
+          data-testid="chat-coding-work-cta"
+        >
+          <button
+            type="button"
+            className="primary"
+            data-testid="chat-coding-work-run"
+            onClick={() => {
+              void nodeService
+                .runEhMeshWorkItemNow(workRef.workId)
+                .then((item) => {
+                  if (item.chatId) {
+                    openCoding({
+                      chatId: item.chatId,
+                      harness: "envoy-harness",
+                    });
+                  }
+                })
+                .catch(() => undefined);
+            }}
+          >
+            {t("codingView.runMeshWork", "Run in Coding")}
           </button>
         </div>
       ) : null}

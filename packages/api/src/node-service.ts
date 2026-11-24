@@ -2471,6 +2471,28 @@ export interface NodeService extends CoreNodeService {
     messageText: string;
   }>;
 
+  /** FH-P2-C — mesh-lite Coding work tickets (bond chat + deep-link). */
+  listEhMeshWorkItems(): Promise<
+    import("./eh-mesh-work.js").EhMeshWorkItem[]
+  >;
+  enqueueEhMeshWorkItem(
+    input: import("./eh-mesh-work.js").EnqueueEhMeshWorkInput,
+  ): Promise<import("./eh-mesh-work.js").EhMeshWorkItem>;
+  dismissEhMeshWorkItem(id: string): Promise<{ dismissed: boolean }>;
+  createEhMeshWorkInvite(opts: {
+    prompt: string;
+    cwd: string;
+    peerOwnerId: string;
+    chatId?: string;
+    title?: string;
+  }): Promise<{
+    workRef: import("./eh-mesh-work.js").EhMeshWorkRef;
+    messageText: string;
+  }>;
+  runEhMeshWorkItemNow(
+    id: string,
+  ): Promise<import("./eh-mesh-work.js").EhMeshWorkItem>;
+
   /**
    * Phase 68-C6 — Coding heartbeats: cron wakes an existing task.
    * Not Schedules (new task each run) and not Team jobs / TriggerStore.

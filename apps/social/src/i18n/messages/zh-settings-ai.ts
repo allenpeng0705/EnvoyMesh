@@ -190,6 +190,8 @@ export const zhAiSettingsMessages = {
   aiEngine: {
     heading: "AI 引擎",
     desc: "选择哪个 Envoy 代理在本主节点上提供 AI。内置 OpenClaw 始终存在；外部代理桥接为可选。（「代理网络」标签页用于上线其他节点 — 这里是 AI 引擎。）",
+    extVsCodingOneLiner:
+      "Ext Agent 调用本机侧车 CLI（Codex、Aider 等），权限较窄。完整的 Envoy 编码（项目、评审与 mesh 工具）请使用「编程」标签页。",
     loading: "正在加载代理状态…",
     envoyai: "内置 OpenClaw",
     envoyaiDesc: "在本节点进程内运行。可直接访问您的资料库、网格和工具。最适合聊天、知识查询和助手回合。如需禁用，请编辑 node-config.json 并重启主节点。",

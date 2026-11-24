@@ -78,6 +78,10 @@ export default defineConfig({
         rootDir,
         "../envoy-harness/packages/envoy-harness-ehui/src/index.ts",
       ),
+      "@envoymesh/agent-catalog": resolve(
+        rootDir,
+        "../envoy-harness/packages/agent-catalog/src/index.ts",
+      ),
     },
   },
   test: {

@@ -1,15 +1,16 @@
 /**
- * Composer track pills — Changes + Queue (Subagents skipped for C4).
+ * Composer track pills — Changes + Queue + Subagents (FH-P2-B).
  * Toggle / focus existing docks; not a parallel surface.
  */
 
 import { useT } from "../../context/I18nContext.js";
 
-export type EhTrackId = "changes" | "queue";
+export type EhTrackId = "changes" | "queue" | "subagents";
 
 export type EhTrackPillsProps = {
   changesCount: number;
   queueCount: number;
+  subagentsCount: number;
   /** Which dock is currently emphasized (expanded / visible). */
   activeTrack?: EhTrackId | null;
   onSelectTrack: (track: EhTrackId) => void;
@@ -18,6 +19,7 @@ export type EhTrackPillsProps = {
 export function EhTrackPills({
   changesCount,
   queueCount,
+  subagentsCount,
   activeTrack = null,
   onSelectTrack,
 }: EhTrackPillsProps) {
@@ -60,6 +62,22 @@ export function EhTrackPills({
         <span>{t("codingView.trackQueue", "Queue")}</span>
         <span className="eh-track-pill__count" aria-hidden="true">
           {queueCount}
+        </span>
+      </button>
+      <button
+        type="button"
+        className={
+          activeTrack === "subagents"
+            ? "eh-track-pill eh-track-pill--active"
+            : "eh-track-pill"
+        }
+        aria-pressed={activeTrack === "subagents"}
+        onClick={() => onSelectTrack("subagents")}
+        data-testid="eh-track-pill-subagents"
+      >
+        <span>{t("codingView.trackSubagents", "Subagents")}</span>
+        <span className="eh-track-pill__count" aria-hidden="true">
+          {subagentsCount}
         </span>
       </button>
     </div>

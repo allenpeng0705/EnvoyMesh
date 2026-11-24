@@ -4332,6 +4332,12 @@ export function SettingsAITab() {
       <section className="settings-section">
         <h4>{t("settings.ai.aiEngine.heading")}</h4>
         <p className="section-desc">{t("settings.ai.aiEngine.desc")}</p>
+        <p className="settings-hint" data-testid="settings-ext-vs-coding-hint">
+          {t(
+            "settings.ai.aiEngine.extVsCodingOneLiner",
+            "Ext Agent runs sidecar CLIs (Codex, Aider, …) with narrower permissions. Full Envoy harness coding — projects, review, and mesh tools — lives in the Coding tab.",
+          )}
+        </p>
         {openClawStatus ? (
           <AgentSettings
             envoyAI={envoyAIInfo}

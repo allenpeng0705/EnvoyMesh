@@ -112,6 +112,20 @@ export class EnvoyHarnessPersistentAcpHost {
     return { sessionId: this.#sessionId, resumed };
   }
 
+  /** FH-P2-D — harness `session/compact` (drop oldest transcript rows). */
+  async compactSession(options?: {
+    keep?: number;
+    summarize?: boolean;
+  }): Promise<void> {
+    if (this.#client === undefined || this.#sessionId === undefined) {
+      throw new Error("EnvoyHarnessPersistentAcpHost: call start() first");
+    }
+    await this.#client.compactSession(this.#sessionId, {
+      ...(options?.keep !== undefined ? { keep: options.keep } : {}),
+      ...(options?.summarize === true ? { summarize: true } : {}),
+    });
+  }
+
   /** FH-P1-A — push Mesh permission policy to the harness session. */
   async applySessionAutoRunPolicy(policy: PiAutoRunPolicy): Promise<void> {
     if (this.#client === undefined || this.#sessionId === undefined) {
@@ -131,6 +145,7 @@ export class EnvoyHarnessPersistentAcpHost {
         summary: string;
         toolName?: string;
         ts?: string;
+        isError?: boolean;
       }) => void;
       onToken?: (token: { role: string; delta: string }) => void;
     },
@@ -167,6 +182,8 @@ export class EnvoyHarnessPersistentAcpHost {
               summary: string;
               toolName?: string;
               ts?: string;
+              isError?: boolean;
+              toolCallId?: string;
             };
           };
           if (p.sessionId !== sessionId || p.activity === undefined) return;

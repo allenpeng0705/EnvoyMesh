@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import '../coding/coding_review_ref.dart';
+import '../coding/eh_mesh_work_ref.dart';
 import '../ext_agent/agent_attachments.dart';
 import '../l10n/app_localizations.dart';
 import '../models/chat_message.dart';
@@ -31,6 +32,9 @@ class ChatBubble extends StatelessWidget {
   /// Phase 68-C2 — open a coding-review invite in read-only EH mode.
   final void Function(CodingReviewRef ref)? onOpenCodingReview;
 
+  /// FH-P2-C — run mesh-lite Coding work from chat marker.
+  final void Function(EhMeshWorkRef ref)? onRunMeshWork;
+
   const ChatBubble({
     super.key,
     required this.message,
@@ -39,6 +43,7 @@ class ChatBubble extends StatelessWidget {
     this.onLoadFamilyAttachment,
     this.localOwnerId,
     this.onOpenCodingReview,
+    this.onRunMeshWork,
   });
 
   /// Agent home-path attaches (absolute / envoy-uploads) — never voice-note UI.
@@ -72,9 +77,13 @@ class ChatBubble extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final localized = localizeMessageBody(l10n, message.text);
     final reviewRef = parseCodingReviewRef(localized);
-    final displayText = reviewRef != null
-        ? humanTextWithoutCodingReviewMarker(localized)
-        : localized;
+    final workRef = parseEhMeshWorkRef(localized);
+  var displayText = localized;
+  if (reviewRef != null) {
+    displayText = humanTextWithoutCodingReviewMarker(displayText);
+  } else if (workRef != null) {
+    displayText = humanTextWithoutEhMeshWorkMarker(displayText);
+  }
     final localOwner = localOwnerId?.trim() ?? '';
     final sameHome =
         reviewRef == null || localOwner.isEmpty || reviewRef.ownerId == localOwner;
@@ -218,6 +227,16 @@ class ChatBubble extends StatelessWidget {
                       ? null
                       : () => onOpenCodingReview!(reviewRef),
                   child: Text(l10n.codingOpenReview),
+                ),
+              ],
+              if (workRef != null) ...[
+                const SizedBox(height: 8),
+                FilledButton.tonal(
+                  key: const Key('chat-coding-work-run'),
+                  onPressed: onRunMeshWork == null
+                      ? null
+                      : () => onRunMeshWork!(workRef),
+                  child: Text(l10n.codingRunMeshWork),
                 ),
               ],
               if (familyImageAtt != null && onLoadFamilyAttachment != null) ...[

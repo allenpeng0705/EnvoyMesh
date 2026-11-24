@@ -49,6 +49,22 @@ export function resolveChainHarnessSubagentCaps(): ChainHarnessSubagentCaps {
   };
 }
 
+/** FH-P2-B — EH Coding ACP parent agent (same defaults as chain / Home). */
+export function resolveEhCodingSubagentCaps(): ChainHarnessSubagentCaps {
+  return {
+    maxSubagents: parseBoundedIntEnv(
+      "ENVOYMESH_EH_MAX_SUBAGENTS",
+      DEFAULT_CHAIN_MAX_SUBAGENTS,
+      MAX_SUBAGENTS_CEILING,
+    ),
+    maxParallelToolCalls: parseBoundedIntEnv(
+      "ENVOYMESH_EH_MAX_PARALLEL",
+      DEFAULT_CHAIN_MAX_PARALLEL,
+      MAX_PARALLEL_CEILING,
+    ),
+  };
+}
+
 export function applyChainHarnessSubagentCaps(
   agent: Agent,
   caps: ChainHarnessSubagentCaps = resolveChainHarnessSubagentCaps(),

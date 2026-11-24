@@ -284,9 +284,15 @@ export function legacyEhEventToTimelineItems(
       }
       const chatId = payload.chatId ?? LEGACY_EH_CHAT_ID;
       const turnId = payload.turnId;
-      const id = turnId
-        ? `turn:${turnId}:activity-live`
-        : `activity:${chatId}:live`;
+      const isTask = payload.toolName === "task";
+      const id =
+        isTask && turnId && payload.toolCallId !== undefined
+          ? `turn:${turnId}:task:${payload.toolCallId}`
+          : isTask && turnId && payload.kind === "tool_call"
+            ? `turn:${turnId}:task:call:${receivedAt}`
+            : turnId
+              ? `turn:${turnId}:activity-live`
+              : `activity:${chatId}:live`;
       return [{
         id, chatId, ...(turnId ? { turnId } : {}), type: "activity",
         status: payload.status ?? "running", summary: payload.summary,

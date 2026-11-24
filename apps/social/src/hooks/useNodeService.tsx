@@ -564,6 +564,23 @@ export interface NodeServiceClient {
     reviewRef: import("@envoymesh/api").CodingReviewRef;
     messageText: string;
   }>;
+  listEhMeshWorkItems(): Promise<
+    import("@envoymesh/api").EhMeshWorkItem[]
+  >;
+  dismissEhMeshWorkItem(id: string): Promise<{ dismissed: boolean }>;
+  createEhMeshWorkInvite(opts: {
+    prompt: string;
+    cwd: string;
+    peerOwnerId: string;
+    chatId?: string;
+    title?: string;
+  }): Promise<{
+    workRef: import("@envoymesh/api").EhMeshWorkRef;
+    messageText: string;
+  }>;
+  runEhMeshWorkItemNow(
+    id: string,
+  ): Promise<import("@envoymesh/api").EhMeshWorkItem>;
   listCodingHeartbeats(): Promise<import("@envoymesh/api").CodingHeartbeat[]>;
   createCodingHeartbeat(
     input: import("@envoymesh/api").CreateCodingHeartbeatInput,
@@ -2149,6 +2166,39 @@ function createWsNodeServiceClient(
         reviewRef: import("@envoymesh/api").CodingReviewRef;
         messageText: string;
       }>;
+    },
+    async listEhMeshWorkItems() {
+      return wsClient.rpc("listEhMeshWorkItems", {}, {
+        timeoutMs: 15_000,
+      }) as Promise<import("@envoymesh/api").EhMeshWorkItem[]>;
+    },
+    async dismissEhMeshWorkItem(id: string) {
+      return wsClient.rpc(
+        "dismissEhMeshWorkItem",
+        { id },
+        { timeoutMs: 15_000 },
+      ) as Promise<{ dismissed: boolean }>;
+    },
+    async createEhMeshWorkInvite(opts: {
+      prompt: string;
+      cwd: string;
+      peerOwnerId: string;
+      chatId?: string;
+      title?: string;
+    }) {
+      return wsClient.rpc("createEhMeshWorkInvite", opts, {
+        timeoutMs: 30_000,
+      }) as Promise<{
+        workRef: import("@envoymesh/api").EhMeshWorkRef;
+        messageText: string;
+      }>;
+    },
+    async runEhMeshWorkItemNow(id: string) {
+      return wsClient.rpc(
+        "runEhMeshWorkItemNow",
+        { id },
+        { timeoutMs: 120_000 },
+      ) as Promise<import("@envoymesh/api").EhMeshWorkItem>;
     },
     async listCodingHeartbeats() {
       return wsClient.rpc("listCodingHeartbeats", {}, {

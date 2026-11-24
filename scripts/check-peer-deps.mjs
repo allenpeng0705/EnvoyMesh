@@ -53,6 +53,7 @@ const PEERS = [
   { name: "@envoymesh/envoy-harness-adapter", entry: "dist/index.js" },
   { name: "@envoymesh/envoy-harness-peer", entry: "dist/index.js" },
   { name: "@envoymesh/envoy-harness-client", entry: "dist/index.js" },
+  { name: "@envoymesh/agent-catalog", entry: "dist/index.js" },
 ];
 
 const SIBLING = path.join(root, "..", "envoy-harness");

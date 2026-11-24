@@ -40,6 +40,10 @@ export interface EhChatRowMenuProps {
   onArchive?: (chat: EhChatTaskSummary) => void;
   /** Phase 68-C6 — add heartbeat for this EH task. */
   onAddHeartbeat?: (chat: EhChatTaskSummary) => void;
+  /** Phase 68-C2 — peer-review invite via bond chat. */
+  onInviteReview?: (chat: EhChatTaskSummary) => void;
+  /** FH-P2-C — mesh work invite via bond chat. */
+  onInviteMeshWork?: (chat: EhChatTaskSummary) => void;
 }
 
 export function EhChatRowMenu({
@@ -49,6 +53,8 @@ export function EhChatRowMenu({
   archiveLabel,
   onArchive,
   onAddHeartbeat,
+  onInviteReview,
+  onInviteMeshWork,
 }: EhChatRowMenuProps) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -152,6 +158,47 @@ export function EhChatRowMenu({
                   }}
                 >
                   {t("codingView.taskAgentSettings", "Agent settings")}
+                </div>
+              ) : null}
+              {onInviteReview ? (
+                <div
+                  className="context-menu-item"
+                  role="menuitem"
+                  data-testid={`eh-chat-row-menu-review-${chat.id}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpen(false);
+                    window.setTimeout(() => onInviteReview(chat), 0);
+                  }}
+                >
+                  {t("codingView.inviteReview", "Invite peer to review")}
+                </div>
+              ) : null}
+              {onInviteMeshWork ? (
+                <div
+                  className="context-menu-item"
+                  role="menuitem"
+                  data-testid={`eh-chat-row-menu-mesh-work-${chat.id}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpen(false);
+                    window.setTimeout(() => onInviteMeshWork(chat), 0);
+                  }}
+                >
+                  {t(
+                    "codingView.inviteMeshWork",
+                    "Send Coding work to a friend",
+                  )}
                 </div>
               ) : null}
               {onAddHeartbeat ? (

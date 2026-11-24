@@ -124,7 +124,10 @@ import type { EnvoyHarnessRuntimeConfig } from "./config.js";
 import {
   applyChainHarnessSubagentCaps,
   resolveChainHarnessSubagentCaps,
+  resolveEhCodingSubagentCaps,
 } from "./chain-harness-caps.js";
+import { buildEhSubagentFactory } from "./eh-subagent-child-allow.js";
+import { installEhSubagentTaskGuard } from "./eh-subagent-task-guard.js";
 import { stripMeshHarnessAutoTools } from "./eh-tool-surface.js";
 
 /** Options for `createRealEnvoyHarnessRuntime`. */
@@ -410,6 +413,8 @@ export interface RealEnvoyHarnessRuntime {
     userQuestions?: UserQuestionService;
     /** Attended default 2 (Mesh node); unattended callers pass 0. */
     maxContinuationPhases?: number;
+    /** FH-P2-B — account key for task concurrency (owner id). */
+    subagentAccountKey?: string;
   }) => Agent;
 }
 
@@ -549,17 +554,12 @@ export function createRealEnvoyHarnessRuntime(
       const [providerStr, modelName] = opts.config.model.split(":", 2);
       const provider = providerStr ?? "deepseek";
       const model = modelFactory(provider, modelName);
-      // Same-runtime sub-agent pipeline (envoy-harness
-      // sub-agents). Uses `defaultBuildSubagentFactory` so
-      // the sub-agent gets all BUILTIN tools (the
-      // sub-agent's tool set is more open than the
-      // top-level skill's tool set).
-      // R2 — the execution pool is injectable: default to the local
-      // sub-agent pipeline; a host can swap in a peer-backed submitter.
+      // FH-P2-B — EH child agents get Home-style allow-lists at the host
+      // (see `buildEhSubagentFactory`), not the harness default of all builtins.
       const innerSubmitter =
         opts.innerSubmitter ??
         new LocalMeshSubmitter({
-          buildSubagent: defaultBuildSubagentFactory({
+          buildSubagent: buildEhSubagentFactory({
             model,
             cwd: opts.cwd,
           }),
@@ -872,6 +872,11 @@ export function createRealEnvoyHarnessRuntime(
             ? { shouldAsk: params.shouldAskTool }
             : {}),
         });
+        if (params.subagentAccountKey !== undefined) {
+          installEhSubagentTaskGuard(hooks, {
+            accountKey: params.subagentAccountKey,
+          });
+        }
         const declaredTools = tools.list().map((tool) => tool.name);
         const agent = new Agent({
           model: internals.model,
@@ -911,6 +916,7 @@ export function createRealEnvoyHarnessRuntime(
             : {}),
         });
         stripMeshHarnessAutoTools(tools, declaredTools);
+        applyChainHarnessSubagentCaps(agent, resolveEhCodingSubagentCaps());
         return agent;
       },
     };
