@@ -228,6 +228,10 @@ const CALLS: Array<[string, (svc: NodeServiceImpl) => unknown]> = [
   ["agentNetworkDiagnosticsSnapshot", (s) => (s as unknown as Record<string, () => unknown>)["agentNetworkDiagnosticsSnapshot"]()],
 ];
 
+/** Global vitest `testTimeout` (60s) is too low under full-suite load: this
+ * probe runs `CALLS.length` sequential budgets of `CALL_TIMEOUT_MS` each. */
+const PROBE_SUITE_TIMEOUT_MS = CALLS.length * CALL_TIMEOUT_MS + 60_000;
+
 async function probe(svc: NodeServiceImpl): Promise<Outcome[]> {
   const out: Outcome[] = [];
   for (const [name, fn] of CALLS) {
@@ -270,7 +274,7 @@ describe("kernel composability probe (§6.2)", () => {
     expect(isHumanProfileUnavailable(new Error("nope"))).toBe(false);
   });
 
-  it("serves RPCs without social inputs, and reports which still require a profile", async () => {
+  it("serves RPCs without social inputs, and reports which still require a profile", { timeout: PROBE_SUITE_TIMEOUT_MS }, async () => {
     const svc = await makeBareKernelInTempDir();
     const outcomes = await probe(svc);
     svc.stopMemoryPruneTimer?.();
