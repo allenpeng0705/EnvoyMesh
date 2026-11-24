@@ -79,6 +79,9 @@ apps/envoygo/lib/l10n/untranslated.json
 !/docs/envoymesh-multi-product-design.md
 !/docs/envoymesh-new-app-guide.md
 !/docs/node-test-typecheck-debt.md
+!/docs/roadmap.md
+!/docs/implementation-plan.md
+!/docs/family-harness-alignment-design.md
 !/docs/evidence
 /docs/evidence/*
 !/docs/evidence/social-rpc-defaults.md
