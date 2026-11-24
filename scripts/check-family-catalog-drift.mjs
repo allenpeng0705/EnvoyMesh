@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
  * FH-P0-B / Q1:B — compare live Mesh export vs committed snapshot.
+ * FH-P1-E — when adding a featured harness, see `.github/pull_request_template.md`
+ * (Coding provider checklist) before committing an updated snapshot.
  * Usage: node scripts/check-family-catalog-drift.mjs
  */
 

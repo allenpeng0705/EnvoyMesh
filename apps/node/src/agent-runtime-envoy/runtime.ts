@@ -121,6 +121,10 @@ import type { SignedAgentResult } from "@envoymesh/protocol";
 
 import { LocalRuntimeRegistry } from "./local-runtime-registry.js";
 import type { EnvoyHarnessRuntimeConfig } from "./config.js";
+import {
+  applyChainHarnessSubagentCaps,
+  resolveChainHarnessSubagentCaps,
+} from "./chain-harness-caps.js";
 import { stripMeshHarnessAutoTools } from "./eh-tool-surface.js";
 
 /** Options for `createRealEnvoyHarnessRuntime`. */
@@ -595,22 +599,31 @@ export function createRealEnvoyHarnessRuntime(
         shouldAskTool: (toolName, args) =>
           askBridgeAls.getStore()?.shouldAskTool?.(toolName, args) ?? true,
       });
+      const chainCaps = resolveChainHarnessSubagentCaps();
+      const withChainCaps = (agent: import("@envoymesh/envoy-harness").Agent) => {
+        applyChainHarnessSubagentCaps(agent, chainCaps);
+        return agent;
+      };
       const buildAgent: BuildAgentFn = (args) => {
-        if (args.providerHint === undefined) return baseBuildAgent(args);
+        if (args.providerHint === undefined) {
+          return withChainCaps(baseBuildAgent(args));
+        }
         const { provider, modelName } = parseProviderHint(
           args.providerHint,
           opts.config.model,
         );
         const overrideModel = modelFactory(provider, modelName);
-        return defaultBuildAgentFactory({
-          model: overrideModel,
-          cwd: opts.cwd,
-          meshSubmitter: submitter,
-          ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
-          getAskHandler: () => askBridgeAls.getStore()?.handler,
-          shouldAskTool: (toolName, args) =>
-            askBridgeAls.getStore()?.shouldAskTool?.(toolName, args) ?? true,
-        })(args);
+        return withChainCaps(
+          defaultBuildAgentFactory({
+            model: overrideModel,
+            cwd: opts.cwd,
+            meshSubmitter: submitter,
+            ...(opts.bClassTools ? { bClassTools: opts.bClassTools } : {}),
+            getAskHandler: () => askBridgeAls.getStore()?.handler,
+            shouldAskTool: (toolName, args) =>
+              askBridgeAls.getStore()?.shouldAskTool?.(toolName, args) ?? true,
+          })(args),
+        );
       };
       // The top-level agent (built by `defaultBuildAgentFactory`)
       // has its `task` tool wired to the cross-runtime
