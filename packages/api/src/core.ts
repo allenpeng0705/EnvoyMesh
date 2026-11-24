@@ -14,8 +14,8 @@
  * any part of it was tainted.
  *
  * This entry point is the alternative. It re-exports **only** the modules the
- * Axis-1 manifest calls `reusable` (109 of the barrel's 135 re-export
- * statements; 26 product-bound modules are deliberately absent — `NodeService`
+ * Axis-1 manifest calls `reusable` (109 of the barrel's 136 re-export
+ * statements; 27 product-bound modules are deliberately absent — `NodeService`
  * itself among them). A reusable module can therefore import the contract it
  * needs from `@envoymesh/api/core`, while importing `@envoymesh/api` still
  * means "the whole product surface" and still taints.
@@ -123,7 +123,6 @@ export * from "./coding-ui-bucket.js";
 export * from "./coding-harness.js";
 export * from "./coding-harness-runtime.js";
 export * from "./coding-review-ref.js";
-export * from "./eh-mesh-work.js";
 export * from "./coding-heartbeat.js";
 export * from "./coding-schedule.js";
 export * from "./eh-turn-review.js";

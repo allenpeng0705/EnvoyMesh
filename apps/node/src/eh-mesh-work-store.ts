@@ -10,7 +10,7 @@ import {
   type EhMeshWorkItem,
   type EhMeshWorkStatus,
   type EnqueueEhMeshWorkInput,
-} from "@envoymesh/api/core"
+} from "@envoymesh/api"
 
 const FILE_NAME = "eh-mesh-work.json"
 

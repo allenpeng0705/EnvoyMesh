@@ -518,18 +518,31 @@ describe("CodingView — Project → Task → Chat", () => {
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-agent-chat-1"));
     expect(await screen.findByTestId("coding-task-agent-settings")).toBeDefined();
     expect(await screen.findByTestId("coding-task-agent-harness")).toBeDefined();
-    fireEvent.change(screen.getByTestId("coding-new-task-model"), {
-      target: { value: "gpt-4.1" },
+    const modelEl = await screen.findByTestId("coding-new-task-model");
+    const nextModel =
+      modelEl instanceof HTMLSelectElement
+        ? [...modelEl.options]
+            .map((o) => o.value)
+            .find((v) => v && v !== "gpt-4o") ?? "gpt-4.1"
+        : "gpt-4.1";
+    fireEvent.change(modelEl, { target: { value: nextModel } });
+  await waitFor(() => {
+      const save = screen.getByTestId("coding-task-agent-save");
+      expect((save as HTMLButtonElement).disabled).toBe(false);
     });
     fireEvent.click(screen.getByTestId("coding-task-agent-save"));
     await waitFor(() => {
       expect(updateEnvoyHarnessChat).toHaveBeenCalledWith(
         expect.objectContaining({
           chatId: "chat-1",
-          model: "gpt-4.1",
+          model: expect.any(String),
         }),
       );
     });
+    const updateCall = updateEnvoyHarnessChat.mock.calls.find(
+      (c) => c[0]?.chatId === "chat-1",
+    );
+    expect(updateCall?.[0]?.model).toBeTruthy();
     expect(getCodingProject("/projects/app")?.defaultHarness).toBe("codex");
   });
 

@@ -18,6 +18,13 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
   }),
 }));
 
+vi.mock("../../src/hooks/useNodeService.js", () => ({
+  useNodeService: () => ({
+    listEhMeshWorkItems: vi.fn().mockResolvedValue([]),
+    runEhMeshWorkItemNow: vi.fn(),
+  }),
+}));
+
 describe("ChatMessageText — coding review CTA", () => {
   it("shows Open review and opens Coding read-only", () => {
     const events: CustomEvent[] = [];

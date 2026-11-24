@@ -74,7 +74,20 @@ function createMockAgent(opts: {
       return messages.length;
     },
     getSession() {
-      return { metadata: { cwd: opts.cwd }, messages };
+      return {
+        metadata: { cwd: opts.cwd },
+        messages,
+        getPlanItems: () => [],
+      };
+    },
+    tickSchedules() {
+      return 0;
+    },
+    listSchedules() {
+      return [];
+    },
+    tools: {
+      has: () => false,
     },
     async run(prompt: string | ReadonlyArray<{ type: string; text?: string }>) {
       const text =

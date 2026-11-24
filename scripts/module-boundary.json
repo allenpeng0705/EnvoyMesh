@@ -2161,6 +2161,12 @@
       ]
     },
     {
+      "path": "packages/harness/src/catalog-acp-user-question.ts",
+      "tags": [
+        "harness"
+      ]
+    },
+    {
       "path": "packages/harness/src/claudecode-backend.ts",
       "tags": [
         "harness"
