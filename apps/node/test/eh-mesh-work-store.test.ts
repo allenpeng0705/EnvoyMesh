@@ -28,4 +28,26 @@ describe("EhMeshWorkStore (FH-P2-C)", () => {
     await store.dismiss(row.id)
     expect(store.list()).toHaveLength(0)
   })
+
+  it("upserts bond-sourced work items idempotently", async () => {
+    dir = await mkdtemp(join(tmpdir(), "eh-mesh-work-"))
+    const store = new EhMeshWorkStore()
+    await store.init(dir)
+    const first = await store.upsertFromBondRef({
+      workId: "w-bond-1",
+      prompt: "Fix lint",
+      cwd: "/tmp/p",
+      fromOwnerId: "envoy:owner:friend",
+      title: "Lint pass",
+    })
+    expect(first.source).toBe("bond")
+    const again = await store.upsertFromBondRef({
+      workId: "w-bond-1",
+      prompt: "Fix lint",
+      cwd: "/tmp/p",
+      fromOwnerId: "envoy:owner:friend",
+    })
+    expect(again.id).toBe(first.id)
+    expect(store.list()).toHaveLength(1)
+  })
 })

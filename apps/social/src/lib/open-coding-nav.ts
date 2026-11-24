@@ -16,6 +16,12 @@ export type OpenCodingDetail = {
   startNew?: boolean;
   /** Phase 68-C2 — open EH task in read-only review mode. */
   reviewOnly?: boolean;
+  /** FH-P2-C — open the Mesh work queue panel on the Coding rail. */
+  meshWorkQueue?: boolean;
+  /** FH-P2-C — run a pending mesh work ticket (opens EH chat when done). */
+  runMeshWorkId?: string;
+  /** FH-P2-C — enqueue owner work ticket then show the queue. */
+  meshWorkEnqueue?: { prompt: string; cwd: string; title?: string };
 };
 
 let pending: OpenCodingDetail | null = null;

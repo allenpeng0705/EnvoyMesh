@@ -451,6 +451,32 @@ class AppLocalizationsEn extends AppLocalizations {
       'That contact isn’t eligible for a work invite.';
 
   @override
+  String get codingMeshWorkTitle => 'Mesh work';
+
+  @override
+  String get codingMeshWorkDesc =>
+      'Pending prompts from bond chat or local queue. Run opens a Coding task on your home node.';
+
+  @override
+  String get codingMeshWorkEmpty =>
+      'No pending items. Send an invite from a task, or accept one in chat.';
+
+  @override
+  String get codingMeshWorkListFailed => 'Couldn’t load work items. Try again.';
+
+  @override
+  String get codingMeshWorkActionFailed => 'That didn’t work. Try again.';
+
+  @override
+  String get codingMeshWorkDismiss => 'Dismiss';
+
+  @override
+  String get codingMeshWorkUntitled => 'Coding work';
+
+  @override
+  String get codingMeshWorkSourceBond => 'bond';
+
+  @override
   String get codingReviewOnlyBanner =>
       'Review only — timeline and changes; tools and revert are disabled.';
 

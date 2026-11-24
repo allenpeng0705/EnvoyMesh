@@ -19,6 +19,9 @@ const removeEnvoyHarnessChat = vi.fn();
 const setEnvoyHarnessProjectPath = vi.fn();
 const ensurePiTerminalSession = vi.fn();
 const refreshTerminalSessions = vi.fn();
+const enqueueEhMeshWorkItem = vi.fn();
+const runEhMeshWorkItemNow = vi.fn();
+const listEhMeshWorkItems = vi.fn().mockResolvedValue([]);
 
 let mockNodeConfig: Partial<NodeConfig> = {
   callerIsOwnerProfile: true,
@@ -51,6 +54,9 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     sendChat,
     listCodingHeartbeats: vi.fn().mockResolvedValue([]),
     listCodingSchedules: vi.fn().mockResolvedValue([]),
+    enqueueEhMeshWorkItem,
+    runEhMeshWorkItemNow,
+    listEhMeshWorkItems,
     createCodingHeartbeat: vi.fn(),
     updateCodingHeartbeat: vi.fn(),
     deleteCodingHeartbeat: vi.fn(),
@@ -509,7 +515,6 @@ describe("CodingView — Project → Task → Chat", () => {
     renderWithI18n(<CodingView active />);
     await screen.findByTestId("coding-task-chat-1");
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-btn-chat-1"));
-    expect(screen.queryByText("Invite peer to review")).toBeNull();
     fireEvent.click(screen.getByTestId("eh-chat-row-menu-agent-chat-1"));
     expect(await screen.findByTestId("coding-task-agent-settings")).toBeDefined();
     expect(await screen.findByTestId("coding-task-agent-harness")).toBeDefined();
@@ -526,6 +531,71 @@ describe("CodingView — Project → Task → Chat", () => {
       );
     });
     expect(getCodingProject("/projects/app")?.defaultHarness).toBe("codex");
+  });
+
+  it("opens mesh work queue from openCoding meshWorkQueue", async () => {
+    const { openCoding } = await import("../../src/lib/open-coding-nav.js");
+    listEnvoyHarnessChats.mockResolvedValue([]);
+    renderWithI18n(<CodingView active />);
+    openCoding({ meshWorkQueue: true });
+    expect(await screen.findByTestId("coding-mesh-work-panel")).toBeDefined();
+  });
+
+  it("enqueues mesh work from openCoding meshWorkEnqueue", async () => {
+    const { openCoding } = await import("../../src/lib/open-coding-nav.js");
+    enqueueEhMeshWorkItem.mockResolvedValue({
+      id: "mw-enq",
+      prompt: "hi",
+      cwd: "/tmp/p",
+      source: "owner",
+      status: "pending",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    listEnvoyHarnessChats.mockResolvedValue([]);
+    renderWithI18n(<CodingView active />);
+    openCoding({
+      meshWorkEnqueue: { prompt: " hi ", cwd: " /tmp/p ", title: " Lint " },
+    });
+    await waitFor(() => {
+      expect(enqueueEhMeshWorkItem).toHaveBeenCalledWith({
+        prompt: "hi",
+        cwd: "/tmp/p",
+        title: "Lint",
+      });
+    });
+    expect(await screen.findByTestId("coding-mesh-work-panel")).toBeDefined();
+  });
+
+  it("runs mesh work ticket from openCoding runMeshWorkId", async () => {
+    const { openCoding } = await import("../../src/lib/open-coding-nav.js");
+    listEnvoyHarnessChats.mockResolvedValue([
+      {
+        id: "chat-run",
+        cwd: "/projects/app",
+        title: "runner",
+        lastUsedAt: new Date().toISOString(),
+      },
+    ]);
+    runEhMeshWorkItemNow.mockResolvedValue({
+      id: "mw1",
+      chatId: "chat-run",
+      cwd: "/projects/app",
+      prompt: "fix",
+      source: "bond",
+      status: "running",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    renderWithI18n(<CodingView active />);
+    openCoding({ runMeshWorkId: "mw1" });
+    await waitFor(() => {
+      expect(runEhMeshWorkItemNow).toHaveBeenCalledWith("mw1");
+    });
+    expect(await screen.findByTestId("eh-panel-stub")).toBeDefined();
+    expect(screen.getByTestId("eh-panel-stub").textContent).toContain(
+      "chat-run",
+    );
   });
 
   it("opens EH task in review-only mode from openCoding", async () => {

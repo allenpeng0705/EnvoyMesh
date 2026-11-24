@@ -42,6 +42,19 @@ describe("openCoding", () => {
     }
   });
 
+  it("stores mesh work deep-link fields", () => {
+    openCoding({
+      meshWorkQueue: true,
+      runMeshWorkId: "mw1",
+      meshWorkEnqueue: { prompt: "hi", cwd: "/tmp/p" },
+    });
+    expect(takePendingCodingOpen()).toEqual({
+      meshWorkQueue: true,
+      runMeshWorkId: "mw1",
+      meshWorkEnqueue: { prompt: "hi", cwd: "/tmp/p" },
+    });
+  });
+
   it("sets session review-only flag when reviewOnly is true", () => {
     openCoding({ chatId: "c1", reviewOnly: true });
     expect(sessionStorage.getItem(CODING_REVIEW_READONLY_KEY)).toBe("1");

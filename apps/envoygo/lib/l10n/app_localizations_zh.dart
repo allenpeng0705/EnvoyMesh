@@ -427,6 +427,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingInviteMeshWorkBondDenied => '该联系人无法接收协作邀请。';
 
   @override
+  String get codingMeshWorkTitle => 'Mesh 协作';
+
+  @override
+  String get codingMeshWorkDesc => '来自绑定聊天或本地队列的待处理提示。运行后会在主节点 Coding 中打开任务。';
+
+  @override
+  String get codingMeshWorkEmpty => '暂无待办。可从任务菜单发送邀请，或在聊天中接受。';
+
+  @override
+  String get codingMeshWorkListFailed => '无法加载工作项，请重试。';
+
+  @override
+  String get codingMeshWorkActionFailed => '操作失败，请重试。';
+
+  @override
+  String get codingMeshWorkDismiss => '忽略';
+
+  @override
+  String get codingMeshWorkUntitled => 'Coding 协作';
+
+  @override
+  String get codingMeshWorkSourceBond => '绑定';
+
+  @override
   String get codingReviewOnlyBanner => '只读审阅 — 可查看时间线与变更；工具与还原已禁用。';
 
   @override

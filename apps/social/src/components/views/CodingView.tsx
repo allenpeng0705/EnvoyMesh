@@ -42,6 +42,17 @@ export function CodingView({ active }: CodingViewProps) {
   const [openCreateRequest, setOpenCreateRequest] = useState(0);
   const [openAddProjectRequest, setOpenAddProjectRequest] = useState(0);
   const [openDefaultsRequest, setOpenDefaultsRequest] = useState(0);
+  const [openMeshWorkRequest, setOpenMeshWorkRequest] = useState(0);
+  const [runMeshWorkRequest, setRunMeshWorkRequest] = useState<{
+    id: string;
+    bump: number;
+  } | null>(null);
+  const [meshWorkEnqueueRequest, setMeshWorkEnqueueRequest] = useState<{
+    prompt: string;
+    cwd: string;
+    title?: string;
+    bump: number;
+  } | null>(null);
   const [changesOpen, setChangesOpen] = useState(false);
   const [ehChangedFiles, setEhChangedFiles] = useState<string[]>([]);
   const [openEhReviewRequest, setOpenEhReviewRequest] = useState(0);
@@ -90,6 +101,24 @@ export function CodingView({ active }: CodingViewProps) {
         clearCodingReviewReadonly();
         if (sessionId) setSelected({ kind: "pi", sessionId });
         else setOpenCreateRequest((n) => n + 1);
+        return;
+      }
+      if (detail.meshWorkEnqueue?.prompt?.trim() && detail.meshWorkEnqueue.cwd?.trim()) {
+        setMeshWorkEnqueueRequest({
+          prompt: detail.meshWorkEnqueue.prompt.trim(),
+          cwd: detail.meshWorkEnqueue.cwd.trim(),
+          ...(detail.meshWorkEnqueue.title?.trim()
+            ? { title: detail.meshWorkEnqueue.title.trim() }
+            : {}),
+          bump: Date.now(),
+        });
+      }
+      if (detail.meshWorkQueue) {
+        setOpenMeshWorkRequest((n) => n + 1);
+      }
+      const runMeshWorkId = detail.runMeshWorkId?.trim();
+      if (runMeshWorkId) {
+        setRunMeshWorkRequest({ id: runMeshWorkId, bump: Date.now() });
       }
     };
     runDetail(takePendingCodingOpen());
@@ -247,6 +276,9 @@ export function CodingView({ active }: CodingViewProps) {
           openDefaultsRequest={openDefaultsRequest}
           openCreateRequest={openCreateRequest}
           openAddProjectRequest={openAddProjectRequest}
+          openMeshWorkRequest={openMeshWorkRequest}
+          runMeshWorkRequest={runMeshWorkRequest}
+          meshWorkEnqueueRequest={meshWorkEnqueueRequest}
           hotkeysEnabled={active}
           extBusySessionId={
             selected?.kind === "ext" && extStatus === "busy"

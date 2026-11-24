@@ -21,6 +21,7 @@ import '../chat/envoy_harness_chat_screen.dart';
 import 'coding_add_project_sheet.dart';
 import 'coding_new_task_sheet.dart';
 import 'coding_project_settings_sheet.dart';
+import 'coding_mesh_work_ui.dart';
 import 'coding_scheduler_ui.dart';
 import 'coding_task_agent_sheet.dart';
 import 'ext_agent_coding_screen.dart';
@@ -1147,6 +1148,11 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
                   child: Text(l10n.codingHistoryArchived),
                 ),
               ],
+            ),
+            IconButton(
+              tooltip: l10n.codingMeshWorkTitle,
+              icon: const Icon(Icons.hub_outlined),
+              onPressed: () => unawaited(showCodingMeshWorkSheet(context)),
             ),
             IconButton(
               tooltip: l10n.codingSchedulerTitle,

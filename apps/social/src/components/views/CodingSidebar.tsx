@@ -120,6 +120,17 @@ export type CodingSidebarProps = {
   openCreateRequest?: number;
   /** When bumped, open Add project (home empty / deep link). */
   openAddProjectRequest?: number;
+  /** When bumped, open Mesh work queue (FH-P2-C deep link). */
+  openMeshWorkRequest?: number;
+  /** When set, run a mesh work ticket then focus EH chat. */
+  runMeshWorkRequest?: { id: string; bump: number } | null;
+  /** When set, enqueue owner mesh work then open queue. */
+  meshWorkEnqueueRequest?: {
+    prompt: string;
+    cwd: string;
+    title?: string;
+    bump: number;
+  } | null;
   /** Live Ext busy session id (from ExtAgentCodingPanel). */
   extBusySessionId?: string | null;
   /** Live Pi busy session id (from PiCodingPanel). */
@@ -202,6 +213,9 @@ export function CodingSidebar({
   openDefaultsRequest = 0,
   openCreateRequest = 0,
   openAddProjectRequest = 0,
+  openMeshWorkRequest = 0,
+  runMeshWorkRequest = null,
+  meshWorkEnqueueRequest = null,
   extBusySessionId = null,
   piBusySessionId = null,
   hotkeysEnabled = false,
@@ -586,6 +600,62 @@ export function CodingSidebar({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open on bump only
   }, [openDefaultsRequest]);
+
+  useEffect(() => {
+    if (openMeshWorkRequest > 0) {
+      setMeshWorkOpen(true);
+    }
+  }, [openMeshWorkRequest]);
+
+  useEffect(() => {
+    if (!meshWorkEnqueueRequest) return;
+    void (async () => {
+      try {
+        await nodeService.enqueueEhMeshWorkItem({
+          prompt: meshWorkEnqueueRequest.prompt,
+          cwd: meshWorkEnqueueRequest.cwd,
+          ...(meshWorkEnqueueRequest.title
+            ? { title: meshWorkEnqueueRequest.title }
+            : {}),
+        });
+        setMeshWorkOpen(true);
+      } catch {
+        showToast?.(
+          t(
+            "codingView.meshWorkActionFailed",
+            "That didn’t work. Try again.",
+          ),
+          "error",
+        );
+      }
+    })();
+  }, [meshWorkEnqueueRequest, nodeService, showToast, t]);
+
+  useEffect(() => {
+    if (!runMeshWorkRequest?.id) return;
+    void (async () => {
+      try {
+        const next = await nodeService.runEhMeshWorkItemNow(runMeshWorkRequest.id);
+        if (next.chatId) {
+          onSelect({
+            kind: "eh",
+            chatId: next.chatId,
+            ...(next.title ? { title: next.title } : {}),
+            cwd: next.cwd,
+          });
+        }
+      } catch {
+        showToast?.(
+          t(
+            "codingView.meshWorkActionFailed",
+            "That didn’t work. Try again.",
+          ),
+          "error",
+        );
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bump-driven deep link
+  }, [runMeshWorkRequest?.bump]);
 
   const projectGroups = useMemo((): ProjectGroup[] => {
     const rows: ListRow[] = [

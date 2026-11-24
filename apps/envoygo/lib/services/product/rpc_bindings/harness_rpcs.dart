@@ -1,4 +1,5 @@
 import '../../../coding/coding_heartbeat.dart';
+import '../../../coding/coding_mesh_work.dart';
 import '../../../coding/coding_schedule.dart';
 import '../../home_rpc_session.dart';
 
@@ -86,6 +87,39 @@ mixin HarnessRpcs on HomeRpcSession {
       {'id': id.trim()},
       const Duration(seconds: 120),
     ) as Map<String, dynamic>;
+  }
+
+  /// FH-P2-C — owner queue: enqueue a mesh-native work ticket.
+  Future<CodingMeshWorkItem> enqueueEhMeshWorkItem({
+    required String prompt,
+    required String cwd,
+    String? title,
+    String? chatId,
+  }) async {
+    final result = await homeClient.call('enqueueEhMeshWorkItem', {
+      'prompt': prompt.trim(),
+      'cwd': cwd.trim(),
+      if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+      if (chatId != null && chatId.trim().isNotEmpty) 'chatId': chatId.trim(),
+    });
+    return CodingMeshWorkItem.fromJson(
+      Map<String, dynamic>.from(result as Map),
+    );
+  }
+
+  /// FH-P2-C — list mesh-native Coding work tickets.
+  Future<List<CodingMeshWorkItem>> listEhMeshWorkItems() async {
+    final result = await homeClient.call('listEhMeshWorkItems');
+    final list = (result as List<dynamic>?) ?? const [];
+    return list
+        .whereType<Map>()
+        .map((e) => CodingMeshWorkItem.fromJson(Map<String, dynamic>.from(e)))
+        .toList(growable: false);
+  }
+
+  /// FH-P2-C — dismiss a pending mesh work ticket.
+  Future<void> dismissEhMeshWorkItem(String id) async {
+    await homeClient.call('dismissEhMeshWorkItem', {'id': id.trim()});
   }
 
   /// Phase 68-C6 — list Coding heartbeats (cron wakes existing task).

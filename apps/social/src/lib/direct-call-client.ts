@@ -1049,6 +1049,12 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.listEhMeshWorkItems();
   }
 
+  async enqueueEhMeshWorkItem(
+    input: import("@envoymesh/api").EnqueueEhMeshWorkInput,
+  ) {
+    return this._ns.enqueueEhMeshWorkItem(input);
+  }
+
   async dismissEhMeshWorkItem(id: string) {
     return this._ns.dismissEhMeshWorkItem(id);
   }

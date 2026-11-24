@@ -567,6 +567,9 @@ export interface NodeServiceClient {
   listEhMeshWorkItems(): Promise<
     import("@envoymesh/api").EhMeshWorkItem[]
   >;
+  enqueueEhMeshWorkItem(
+    input: import("@envoymesh/api").EnqueueEhMeshWorkInput,
+  ): Promise<import("@envoymesh/api").EhMeshWorkItem>;
   dismissEhMeshWorkItem(id: string): Promise<{ dismissed: boolean }>;
   createEhMeshWorkInvite(opts: {
     prompt: string;
@@ -2171,6 +2174,13 @@ function createWsNodeServiceClient(
       return wsClient.rpc("listEhMeshWorkItems", {}, {
         timeoutMs: 15_000,
       }) as Promise<import("@envoymesh/api").EhMeshWorkItem[]>;
+    },
+    async enqueueEhMeshWorkItem(
+      input: import("@envoymesh/api").EnqueueEhMeshWorkInput,
+    ) {
+      return wsClient.rpc("enqueueEhMeshWorkItem", input, {
+        timeoutMs: 15_000,
+      }) as Promise<import("@envoymesh/api").EhMeshWorkItem>;
     },
     async dismissEhMeshWorkItem(id: string) {
       return wsClient.rpc(

@@ -888,6 +888,54 @@ abstract class AppLocalizations {
   /// **'That contact isn’t eligible for a work invite.'**
   String get codingInviteMeshWorkBondDenied;
 
+  /// No description provided for @codingMeshWorkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Mesh work'**
+  String get codingMeshWorkTitle;
+
+  /// No description provided for @codingMeshWorkDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending prompts from bond chat or local queue. Run opens a Coding task on your home node.'**
+  String get codingMeshWorkDesc;
+
+  /// No description provided for @codingMeshWorkEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No pending items. Send an invite from a task, or accept one in chat.'**
+  String get codingMeshWorkEmpty;
+
+  /// No description provided for @codingMeshWorkListFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t load work items. Try again.'**
+  String get codingMeshWorkListFailed;
+
+  /// No description provided for @codingMeshWorkActionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'That didn’t work. Try again.'**
+  String get codingMeshWorkActionFailed;
+
+  /// No description provided for @codingMeshWorkDismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get codingMeshWorkDismiss;
+
+  /// No description provided for @codingMeshWorkUntitled.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding work'**
+  String get codingMeshWorkUntitled;
+
+  /// No description provided for @codingMeshWorkSourceBond.
+  ///
+  /// In en, this message translates to:
+  /// **'bond'**
+  String get codingMeshWorkSourceBond;
+
   /// No description provided for @codingReviewOnlyBanner.
   ///
   /// In en, this message translates to:
