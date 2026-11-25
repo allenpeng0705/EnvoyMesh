@@ -609,14 +609,13 @@ export function CodingSidebar({
 
   useEffect(() => {
     if (!meshWorkEnqueueRequest) return;
+    const { prompt, cwd, title } = meshWorkEnqueueRequest;
     void (async () => {
       try {
         await nodeService.enqueueEhMeshWorkItem({
-          prompt: meshWorkEnqueueRequest.prompt,
-          cwd: meshWorkEnqueueRequest.cwd,
-          ...(meshWorkEnqueueRequest.title
-            ? { title: meshWorkEnqueueRequest.title }
-            : {}),
+          prompt,
+          cwd,
+          ...(title ? { title } : {}),
         });
         setMeshWorkOpen(true);
       } catch {
@@ -629,7 +628,8 @@ export function CodingSidebar({
         );
       }
     })();
-  }, [meshWorkEnqueueRequest, nodeService, showToast, t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bump-driven deep link
+  }, [meshWorkEnqueueRequest?.bump]);
 
   useEffect(() => {
     if (!runMeshWorkRequest?.id) return;

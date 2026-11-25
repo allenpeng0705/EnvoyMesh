@@ -371,8 +371,12 @@ case "$MODE" in
         apps/social/test
       BAIL_OUT=1
     else
+      # ${arr[@]+"${arr[@]}"} — macOS bash 3.2 + `set -u` rejects empty `"${arr[@]}"`.
       run_phase "02-unit" "Vitest unit tests (RUN_E2E=; ~4.4k tests, ~35s)" \
-        bash -c "RUN_E2E= npx vitest run ${VITEST_FILTER_ARGS[*]:-} ${VITEST_BAIL_ARGS[*]:-}$(junit_args 02-unit)"
+        env RUN_E2E= npx vitest run \
+          ${VITEST_FILTER_ARGS[@]+"${VITEST_FILTER_ARGS[@]}"} \
+          ${VITEST_BAIL_ARGS[@]+"${VITEST_BAIL_ARGS[@]}"} \
+          $(junit_args 02-unit)
       if [ "$FAIL_COUNT" -gt 0 ] && [ "$BAIL" = "1" ]; then BAIL_OUT=1; fi
     fi
     ;;
@@ -408,7 +412,10 @@ if [ "$E2E" = "1" ] && [ "$BAIL_OUT" != "1" ]; then
     --exclude='apps/social/test/**'
   )
   run_phase "04-e2e-fast" "libp2p in-process E2E (RUN_E2E=1, no chromium)" \
-    bash -c "RUN_E2E=1 npx vitest run ${E2E_FAST_EXCLUDES[*]} ${VITEST_FILTER_ARGS[*]:-} ${VITEST_BAIL_ARGS[*]:-}$(junit_args 04-e2e-fast)"
+    env RUN_E2E=1 npx vitest run "${E2E_FAST_EXCLUDES[@]}" \
+      ${VITEST_FILTER_ARGS[@]+"${VITEST_FILTER_ARGS[@]}"} \
+      ${VITEST_BAIL_ARGS[@]+"${VITEST_BAIL_ARGS[@]}"} \
+      $(junit_args 04-e2e-fast)
   if [ "$FAIL_COUNT" -gt 0 ] && [ "$BAIL" = "1" ]; then BAIL_OUT=1; fi
 fi
 
@@ -443,7 +450,10 @@ if [ "$E2E" = "1" ] && [ "$SKIP_PLAYWRIGHT" != "1" ] && [ "$BAIL_OUT" != "1" ] &
     npx playwright install chromium >"$ARTIFACTS_DIR/05-playwright-install.log" 2>&1 || true
   fi
   run_phase "05-e2e-playwright" "Chromium-driven E2E (RUN_E2E=1, requires Playwright)" \
-    bash -c "RUN_E2E=1 npx vitest run ${CHROMIUM_E2E_FILES[*]} ${VITEST_FILTER_ARGS[*]:-} ${VITEST_BAIL_ARGS[*]:-}$(junit_args 05-e2e-playwright)"
+    env RUN_E2E=1 npx vitest run "${CHROMIUM_E2E_FILES[@]}" \
+      ${VITEST_FILTER_ARGS[@]+"${VITEST_FILTER_ARGS[@]}"} \
+      ${VITEST_BAIL_ARGS[@]+"${VITEST_BAIL_ARGS[@]}"} \
+      $(junit_args 05-e2e-playwright)
   if [ "$FAIL_COUNT" -gt 0 ] && [ "$BAIL" = "1" ]; then BAIL_OUT=1; fi
 elif [ "$SKIP_PLAYWRIGHT" = "1" ] || [ "${NODE_INCLUDE_UI_MOCK_E2E:-0}" != "1" ]; then
   skip_phase "05-e2e-playwright"
