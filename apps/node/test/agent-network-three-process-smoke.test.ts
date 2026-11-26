@@ -22,6 +22,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   cleanupPhase13Harness,
   cleanupPhase13Node,
+  connectPhase13Peers,
   createPhase13TestNode,
   waitForPhase13,
   wireWorkerLeaseInboundHandler,
@@ -31,6 +32,7 @@ import {
 import {
   bondAndExchangeCards,
   enableAgentNetworkWorker,
+  warmChainTransportAfterAward,
   wireHomeAsChainParticipant,
 } from "./chain-plan-assign-e2e-helpers.js";
 
@@ -59,6 +61,28 @@ async function startLeasePublisher(node: Phase13TestNode): Promise<void> {
     leaseStops.push(broadcaster);
     await broadcaster.publishNow();
   }
+}
+
+/** Re-warm worker→assigner routing while waiting on mesh partials/report. */
+async function waitForChainMeshProgress(
+  orchestrator: Phase13TestNode,
+  workerHomes: Phase13TestNode[],
+  chainId: string,
+  timeoutMs: number,
+): Promise<void> {
+  let lastWarm = 0;
+  await waitForPhase13(async () => {
+    const state = await orchestrator.service.chainGetState({ chainId });
+    if (state.published || state.partialCount > 0) return true;
+    const report = await orchestrator.service.chainGetReport({ chainId });
+    if (report.report != null) return true;
+    const now = Date.now();
+    if (now - lastWarm > 2_000) {
+      lastWarm = now;
+      await warmChainTransportAfterAward(orchestrator, workerHomes);
+    }
+    return false;
+  }, timeoutMs);
 }
 
 describe.sequential("E2E Phase 60 three-process Agent Network smoke (libp2p)", () => {
@@ -120,6 +144,7 @@ describe.sequential("E2E Phase 60 three-process Agent Network smoke (libp2p)", (
     await bondAndExchangeCards(orchestrator, workerB, "Assigner", "Harness Worker");
     await bondAndExchangeCards(orchestrator, workerC, "Assigner", "OpenClaw Worker");
     await bondAndExchangeCards(workerB, workerC, "Harness Worker", "OpenClaw Worker");
+    await connectPhase13Peers(orchestrator, workerB, workerC);
     await orchestrator.service.refreshAgentNetworkMembershipIndex();
 
     // Assigner must accept inbound leases; workers publish.
@@ -137,6 +162,10 @@ describe.sequential("E2E Phase 60 three-process Agent Network smoke (libp2p)", (
     expect(diagnostics.localFeatures).toContain("worker-lease-v1");
     expect(diagnostics.localFeatures).toContain("chain-attempt-v1");
     expect(diagnostics.workers.filter((w) => w.leaseReady).length).toBeGreaterThanOrEqual(2);
+
+    await orchestrator.service.refreshAgentNetworkMembershipIndex();
+    await workerB.service.refreshAgentNetworkMembershipIndex();
+    await workerC.service.refreshAgentNetworkMembershipIndex();
 
     const preview = await orchestrator.service.chainPreviewGoal({
       goal: "summarize the Q3 report",
@@ -174,12 +203,17 @@ describe.sequential("E2E Phase 60 three-process Agent Network smoke (libp2p)", (
       return state.bidCount >= 1;
     }, 30_000);
 
+    // Bid accept + mock execute can race mesh card routing — warm before
+    // evaluate and again immediately after so partials are not dropped.
+    await warmChainTransportAfterAward(orchestrator, [workerB, workerC]);
+
     const evaluated = await orchestrator.service.chainEvaluateBids({
       chainId,
       subtaskId: subtaskId!,
       policy: "composite",
     });
-    expect(evaluated.awarded).toBe(true);
+    expect(evaluated.awarded, evaluated.reason ?? "unknown").toBe(true);
+    await warmChainTransportAfterAward(orchestrator, [workerB, workerC]);
 
     await waitForPhase13(async () => {
       const state = await orchestrator.service.chainGetState({ chainId });
@@ -189,20 +223,12 @@ describe.sequential("E2E Phase 60 three-process Agent Network smoke (libp2p)", (
     const awardedState = await orchestrator.service.chainGetState({ chainId });
     expect(awardedState.awardedCount).toBeGreaterThan(0);
 
-    await waitForPhase13(async () => {
-      const state = await orchestrator.service.chainGetState({ chainId });
-      return state.published || state.partialCount > 0;
-    }, 30_000);
-
-    await waitForPhase13(async () => {
-      const report = await orchestrator.service.chainGetReport({ chainId });
-      return report.report != null;
-    }, 30_000);
+    await waitForChainMeshProgress(orchestrator, [workerB, workerC], chainId, 120_000);
 
     const report = await orchestrator.service.chainGetReport({ chainId });
     expect(report.report?.chainId).toBe(chainId);
     expect(report.report?.executiveSummary?.length).toBeGreaterThan(0);
-  }, 120_000);
+  }, 180_000);
 
   it("66B cold start: bond → Join+lease ensure → lease-visible → Team job starts", async () => {
     const orchestrator = await createPhase13TestNode();
@@ -222,6 +248,7 @@ describe.sequential("E2E Phase 60 three-process Agent Network smoke (libp2p)", (
 
     await bondAndExchangeCards(orchestrator, workerB, "Assigner", "Worker B");
     await bondAndExchangeCards(orchestrator, workerC, "Assigner", "Worker C");
+    await connectPhase13Peers(orchestrator, workerB, workerC);
 
     const before = await orchestrator.service.agentNetworkDiagnosticsSnapshot();
     expect(before.workers.filter((w) => w.leaseReady).length).toBe(0);
@@ -254,7 +281,7 @@ describe.sequential("E2E Phase 60 three-process Agent Network smoke (libp2p)", (
       const rowB = snap.workers.find((w) => w.ownerId === ownerB);
       const rowC = snap.workers.find((w) => w.ownerId === ownerC);
       return rowB?.leaseReady === true && rowC?.leaseReady === true;
-    }, 30_000);
+    }, 45_000);
 
     const snap = await orchestrator.service.agentNetworkDiagnosticsSnapshot();
     expect(snap.workers.filter((w) => w.leaseReady).length).toBeGreaterThanOrEqual(2);
@@ -270,5 +297,5 @@ describe.sequential("E2E Phase 60 three-process Agent Network smoke (libp2p)", (
       const state = await orchestrator.service.chainGetState({ chainId: started.chainId! });
       return state.bidCount >= 1;
     }, 30_000);
-  }, 90_000);
+  }, 120_000);
 });

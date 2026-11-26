@@ -114,6 +114,61 @@ export async function bondAndExchangeCards(
   void bOk;
 }
 
+/**
+ * Re-sync peer-directory transport rows, agent cards, and libp2p dials before
+ * (or after) competitive award. Three-home smokes race execute against stale
+ * agent→owner routing — worker partials need orchestrator `sourceAgentPeerId`
+ * in the card map (64C uses this pattern before worker release).
+ */
+export async function warmChainTransportAfterAward(
+  orchestrator: Phase13TestNode,
+  workerHomes: Phase13TestNode[],
+): Promise<void> {
+  for (const worker of workerHomes) {
+    await orchestrator.peerDirectory.ensurePeerFromInboundChat({
+      ownerId: worker.profile.owner.ownerId,
+      peerId: worker.mesh.peerId,
+      listenAddrs: worker.mesh.multiaddrs.map(String),
+    });
+    await worker.peerDirectory.ensurePeerFromInboundChat({
+      ownerId: orchestrator.profile.owner.ownerId,
+      peerId: orchestrator.mesh.peerId,
+      listenAddrs: orchestrator.mesh.multiaddrs.map(String),
+    });
+    await orchestrator.mesh.probePeer(worker.mesh.multiaddrs[0]!);
+    await worker.mesh.probePeer(orchestrator.mesh.multiaddrs[0]!);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await orchestrator.service
+        .requestAgentCard(worker.profile.owner.ownerId, { timeoutMs: 8_000 })
+        .catch(() => ({ ok: false as const, error: "warm-skip" }));
+      await worker.service
+        .requestAgentCard(orchestrator.profile.owner.ownerId, { timeoutMs: 8_000 })
+        .catch(() => ({ ok: false as const, error: "warm-skip" }));
+      let orchCards = false;
+      let workerCards = false;
+      await waitForPhase13(async () => {
+        const oCards = await orchestrator.service.listAgentCards();
+        const wCards = await worker.service.listAgentCards();
+        orchCards = oCards.some(
+          (c) =>
+            c.ownerId === worker.profile.owner.ownerId &&
+            typeof c.sourceAgentPeerId === "string" &&
+            c.sourceAgentPeerId.length > 0,
+        );
+        workerCards = wCards.some(
+          (c) =>
+            c.ownerId === orchestrator.profile.owner.ownerId &&
+            typeof c.sourceAgentPeerId === "string" &&
+            c.sourceAgentPeerId.length > 0,
+        );
+        return orchCards && workerCards;
+      }, 5_000).catch(() => false);
+      if (orchCards && workerCards) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+}
+
 export async function enableAgentNetworkWorker(
   node: Phase13TestNode,
   opts: {

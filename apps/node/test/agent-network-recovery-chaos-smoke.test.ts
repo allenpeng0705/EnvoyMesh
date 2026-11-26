@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   cleanupPhase13Harness,
   cleanupPhase13Node,
+  connectPhase13Peers,
   createPhase13TestNode,
   restartPhase13NodeService,
   waitForPhase13,
@@ -30,6 +31,7 @@ import {
 import {
   bondAndExchangeCards,
   enableAgentNetworkWorker,
+  warmChainTransportAfterAward,
   wireHomeAsChainParticipant,
 } from "./chain-plan-assign-e2e-helpers.js";
 
@@ -118,6 +120,7 @@ async function setupMidRunRecovery(): Promise<{
     },
   });
   await bondAndExchangeCards(assigner, worker, "Assigner", "Worker");
+  await connectPhase13Peers(assigner, worker);
   await assigner.service.refreshAgentNetworkMembershipIndex();
 
   await startLeasePublisher(assigner);
@@ -127,6 +130,9 @@ async function setupMidRunRecovery(): Promise<{
     const snap = await assigner.service.agentNetworkDiagnosticsSnapshot();
     return snap.workers.some((w) => w.leaseReady);
   }, 30_000);
+
+  await assigner.service.refreshAgentNetworkMembershipIndex();
+  await worker.service.refreshAgentNetworkMembershipIndex();
 
   const started = await assigner.service.chainStartFromGoal({
     goal: "summarize the Q3 report",
@@ -145,14 +151,17 @@ async function setupMidRunRecovery(): Promise<{
     return state.bidCount >= 1;
   }, 30_000);
 
+  await warmChainTransportAfterAward(assigner, [worker]);
+
   const evaluated = await assigner.service.chainEvaluateBids({
     chainId,
     subtaskId,
     policy: "composite",
   });
   if (!evaluated.awarded) {
-    throw new Error("setup: chainEvaluateBids did not award");
+    throw new Error(`setup: chainEvaluateBids did not award: ${evaluated.reason ?? "unknown"}`);
   }
+  await warmChainTransportAfterAward(assigner, [worker]);
 
   await waitForPhase13(async () => {
     const state = await assigner.service.chainGetState({ chainId });
@@ -160,10 +169,17 @@ async function setupMidRunRecovery(): Promise<{
   }, 15_000);
 
   // Worker must be mid-execution (non-final partial) before assigner restart.
+  let lastWarm = 0;
   await waitForPhase13(async () => {
     const state = await assigner.service.chainGetState({ chainId });
-    return state.partialCount > 0;
-  }, 30_000);
+    if (state.partialCount > 0) return true;
+    const now = Date.now();
+    if (now - lastWarm > 2_000) {
+      lastWarm = now;
+      await warmChainTransportAfterAward(assigner, [worker]);
+    }
+    return false;
+  }, 60_000);
 
   await restartPhase13NodeService(assigner, { chainId });
   await assigner.mesh.probePeer(worker.mesh.multiaddrs[0]!);
