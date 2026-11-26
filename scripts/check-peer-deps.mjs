@@ -159,12 +159,40 @@ console.log(
     `value import(s) in ${importingFiles.size} file(s)`,
 );
 
+/** Root hoist first; npm on Windows sometimes leaves file: peers under a workspace package. */
+function peerInstallCandidates(name) {
+  const parts = name.split("/");
+  const out = [path.join(root, "node_modules", ...parts)];
+  for (const top of ["apps", "packages"]) {
+    const topDir = path.join(root, top);
+    if (!existsSync(topDir)) continue;
+    for (const entry of readdirSync(topDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      out.push(path.join(topDir, entry.name, "node_modules", ...parts));
+    }
+  }
+  return out;
+}
+
 const missing = [];
 for (const peer of PEERS) {
-  const linked = path.join(root, "node_modules", ...peer.name.split("/"));
+  const candidates = peerInstallCandidates(peer.name);
+  const linked = candidates.find((dir) => existsSync(dir)) ?? candidates[0];
   const entry = path.join(linked, peer.entry);
   if (!existsSync(entry)) {
-    missing.push({ ...peer, linked, entry, linkedExists: existsSync(linked) });
+    missing.push({
+      name: peer.name,
+      entryRel: peer.entry,
+      linked,
+      entry,
+      linkedExists: existsSync(linked),
+      siblingEntry: path.join(
+        SIBLING,
+        "packages",
+        peer.name.replace("@envoymesh/", ""),
+        peer.entry,
+      ),
+    });
   }
 }
 
@@ -173,11 +201,17 @@ if (missing.length === 0) {
   process.exit(0);
 }
 
+const anyUnlinked = missing.some((peer) => !peer.linkedExists);
+const anyUnbuilt = missing.some((peer) => peer.linkedExists);
+
 console.error("Missing peer dependencies — this repo does not ship them.\n");
 for (const peer of missing) {
+  const kind = peer.linkedExists
+    ? " (link exists, but no built entry)"
+    : " (no link in node_modules)";
   console.error(
     `  ${peer.name}\n` +
-      `    resolved to: ${peer.linked}${peer.linkedExists ? " (link exists, but no built entry)" : " (no link)"}\n` +
+      `    resolved to: ${peer.linked}${kind}\n` +
       `    expected:    ${peer.entry}`,
   );
 }
@@ -188,11 +222,28 @@ console.error(
     "EnvoyMesh distributes. Get it the way this repo does:",
     "",
     `  sibling checkout:  ${SIBLING}`,
-    "  clone or copy it there, then build it:",
     "",
-    "      git clone <envoy-harness> ../envoy-harness",
-    "      npm run build:envoy-harness",
-    "",
+    ...(anyUnlinked
+      ? [
+          "  Link missing (common after pulling agent-catalog / harness deps):",
+          "      npm install",
+          "    or a clean reinstall:",
+          "      npm ci",
+          "",
+        ]
+      : []),
+    ...(anyUnbuilt
+      ? [
+          "  Link present but dist/ missing — build the sibling:",
+          "      npm run build:envoy-harness",
+          "",
+        ]
+      : [
+          "  Then build the sibling (needs pnpm):",
+          "      git clone <envoy-harness> ../envoy-harness   # if missing",
+          "      npm run build:envoy-harness",
+          "",
+        ]),
     "A product that needs the harness should depend on its **own** copy (`file:../envoy-harness/…`",
     "or a published release), never on EnvoyMesh's link.",
     "",

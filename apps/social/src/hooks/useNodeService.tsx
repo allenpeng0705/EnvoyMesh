@@ -530,7 +530,7 @@ export interface NodeServiceClient {
   setEnvoyHarnessCollaborationMode(
     mode: string,
     chatId?: string,
-  ): Promise<{ ok: true; mode: string }>;
+  ): Promise<{ ok: true; mode: string; applied: boolean }>;
   getEnvoyHarnessChatHistory(
     chatId?: string,
     sinceRevision?: number,
@@ -583,6 +583,7 @@ export interface NodeServiceClient {
   }>;
   runEhMeshWorkItemNow(
     id: string,
+    opts?: import("@envoymesh/api").RunEhMeshWorkItemOpts,
   ): Promise<import("@envoymesh/api").EhMeshWorkItem>;
   listCodingHeartbeats(): Promise<import("@envoymesh/api").CodingHeartbeat[]>;
   createCodingHeartbeat(
@@ -2119,7 +2120,7 @@ function createWsNodeServiceClient(
           ...(chatId ? { chatId } : {}),
         },
         { timeoutMs: 15_000 },
-      ) as Promise<{ ok: true; mode: string }>;
+      ) as Promise<{ ok: true; mode: string; applied: boolean }>;
     },
     async getEnvoyHarnessChatHistory(chatId?: string, sinceRevision?: number) {
       return wsClient.rpc(
@@ -2203,10 +2204,20 @@ function createWsNodeServiceClient(
         messageText: string;
       }>;
     },
-    async runEhMeshWorkItemNow(id: string) {
+    async runEhMeshWorkItemNow(
+      id: string,
+      opts?: import("@envoymesh/api").RunEhMeshWorkItemOpts,
+    ) {
       return wsClient.rpc(
         "runEhMeshWorkItemNow",
-        { id },
+        {
+          id,
+          ...(opts?.prompt ? { prompt: opts.prompt } : {}),
+          ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+          ...(opts?.fromOwnerId ? { fromOwnerId: opts.fromOwnerId } : {}),
+          ...(opts?.title ? { title: opts.title } : {}),
+          ...(opts?.chatId ? { chatId: opts.chatId } : {}),
+        },
         { timeoutMs: 120_000 },
       ) as Promise<import("@envoymesh/api").EhMeshWorkItem>;
     },

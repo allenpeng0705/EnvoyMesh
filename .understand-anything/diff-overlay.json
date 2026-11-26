@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "baseBranch": "ec28b502^",
+  "generatedAt": "2026-11-26T10:26:00.000Z",
+  "note": "Knowledge graph missing; overlay lists reviewed changed files only (no affectedNodeIds).",
+  "changedFiles": [
+    "apps/node/src/eh-mesh-work-store.ts",
+    "apps/node/src/envoy-harness-continuation.ts",
+    "apps/node/src/agent-runtime-envoy/eh-tool-surface.ts",
+    "apps/node/src/agent-runtime-envoy/eh-subagent-child-allow.ts",
+    "apps/node/src/agent-runtime-envoy/eh-subagent-task-guard.ts",
+    "apps/node/src/agent-runtime-envoy/chain-harness-caps.ts",
+    "apps/node/src/agent-runtime-envoy/persistent-acp-host.ts",
+    "apps/node/src/agent-runtime-envoy/runtime.ts",
+    "apps/node/src/node-service-impl.ts",
+    "packages/api/src/eh-mesh-work.ts",
+    "apps/social/src/components/views/CodingSidebar.tsx",
+    "apps/social/src/lib/family-catalog-mesh-export.ts",
+    "apps/envoygo/lib/coding/coding_composer.dart",
+    "apps/envoygo/lib/coding/eh_mesh_work_ref.dart",
+    "docs/family-harness-alignment-design.md"
+  ],
+  "changedNodeIds": [],
+  "affectedNodeIds": []
+}

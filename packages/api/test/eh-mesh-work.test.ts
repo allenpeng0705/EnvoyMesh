@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   encodeEhMeshWorkRef,
+  formatEhMeshWorkUserError,
   parseEhMeshWorkRef,
   EH_MESH_WORK_MARKER,
 } from "../src/eh-mesh-work.js"
@@ -22,5 +23,20 @@ describe("eh-mesh-work (FH-P2-C)", () => {
     expect(parsed?.workId).toBe("w-1")
     expect(parsed?.prompt).toBe("Fix the auth bug")
     expect(parsed?.cwd).toBe("/tmp/proj")
+  })
+
+  it("maps known error codes to user copy", () => {
+    expect(formatEhMeshWorkUserError("eh_mesh_work_turn_busy")).toMatch(
+      /busy/i,
+    )
+    expect(formatEhMeshWorkUserError("eh_mesh_work_not_found")).toMatch(
+      /home/i,
+    )
+    expect(
+      formatEhMeshWorkUserError("Error: eh_mesh_work_not_found"),
+    ).toMatch(/home/i)
+    expect(
+      formatEhMeshWorkUserError("RPC failed: eh_mesh_work_interrupted"),
+    ).toMatch(/interrupted/i)
   })
 })

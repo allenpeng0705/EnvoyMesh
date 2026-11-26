@@ -504,7 +504,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get codingMeshWorkUntitled => 'Coding work';
 
   @override
-  String get codingMeshWorkSourceBond => 'bond';
+  String get codingMeshWorkSourceBond => 'From a friend';
+
+  @override
+  String get codingMeshWorkRunning => 'Running…';
+
+  @override
+  String get codingPermsUnavailable => 'Perms unavailable';
 
   @override
   String get codingReviewOnlyBanner =>

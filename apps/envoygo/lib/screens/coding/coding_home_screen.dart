@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../coding/coding_archive.dart';
 import '../../coding/coding_history.dart';
+import '../../coding/coding_open_nav.dart';
 import '../../coding/coding_projects.dart';
 import '../../coding/coding_transcript_store.dart';
 import '../../l10n/app_localizations.dart';
@@ -49,13 +50,95 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
   CodingHistoryFilter _historyFilter = CodingHistoryFilter.all;
   var _flatHistoryMode = false;
   final Map<String, ({String? uiBucket, DateTime? lastUsedAt})> _ehListMeta = {};
+  void Function()? _unsubscribeCodingOpen;
 
   @override
   void initState() {
     super.initState();
+    _unsubscribeCodingOpen = subscribeCodingOpen((detail) {
+      // Live openCoding while Coding home is already mounted.
+      unawaited(_handleCodingOpen(detail, clearPending: true));
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_refresh());
+      unawaited(_consumePendingCodingOpen());
     });
+  }
+
+  @override
+  void dispose() {
+    _unsubscribeCodingOpen?.call();
+    _unsubscribeCodingOpen = null;
+    super.dispose();
+  }
+
+  Future<void> _consumePendingCodingOpen() async {
+    final pending = takePendingCodingOpen();
+    if (pending == null || !mounted) return;
+    await _handleCodingOpen(pending, clearPending: false);
+  }
+
+  Future<void> _handleCodingOpen(
+    CodingOpenDetail pending, {
+    required bool clearPending,
+  }) async {
+    if (clearPending) {
+      // Subscriber path — drop the buffered copy so mount does not re-run it.
+      takePendingCodingOpen();
+    }
+    if (!mounted) return;
+    final client = ref.read(nodeServiceProvider);
+    final enqueue = pending.meshWorkEnqueue;
+    if (enqueue != null && client != null) {
+      try {
+        await client.enqueueEhMeshWorkItem(
+          prompt: enqueue.prompt,
+          cwd: enqueue.cwd,
+          title: enqueue.title,
+        );
+      } catch (_) {
+        // Sheet still opens so the user can retry from the queue.
+      }
+    }
+    final runId = pending.runMeshWorkId?.trim();
+    if (runId != null && runId.isNotEmpty && client != null) {
+      try {
+        final row = await client.runEhMeshWorkItemNow(runId);
+        final chatId = row['chatId']?.toString().trim();
+        if (chatId != null && chatId.isNotEmpty && mounted) {
+          await ref.read(chatProvider.notifier).syncEhChats();
+          if (!mounted) return;
+          ChatThread? thread;
+          for (final t in ref.read(chatProvider).threads) {
+            if (t.id.endsWith(':eh:$chatId')) {
+              thread = t;
+              break;
+            }
+          }
+          final resolved = thread;
+          if (resolved != null) {
+            await Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => EnvoyHarnessChatScreen(
+                  threadId: resolved.id,
+                  displayName: resolved.displayName,
+                  chatId: chatId,
+                ),
+              ),
+            );
+            return;
+          }
+        }
+      } catch (_) {
+        // Fall through to the queue sheet.
+      }
+    }
+    if (pending.meshWorkQueue ||
+        enqueue != null ||
+        (runId != null && runId.isNotEmpty)) {
+      if (!mounted) return;
+      await showCodingMeshWorkSheet(context);
+    }
   }
 
   String _ehArchiveId(ChatThread thread) {

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
+import '../../coding/coding_mesh_work.dart';
 import '../../coding/coding_review_ref.dart';
 import '../../coding/eh_mesh_work_ref.dart';
 import '../../ext_agent/agent_attachments.dart';
@@ -2655,7 +2656,14 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     if (client == null) return;
     final l10n = AppLocalizations.of(context);
     try {
-      final row = await client.runEhMeshWorkItemNow(workRef.workId);
+      final row = await client.runEhMeshWorkItemNow(
+        workRef.workId,
+        prompt: workRef.prompt,
+        cwd: workRef.cwd,
+        fromOwnerId: workRef.fromOwnerId,
+        title: workRef.title,
+        chatId: workRef.chatId,
+      );
       final chatId = row['chatId']?.toString().trim();
       if (!mounted) return;
       if (chatId == null || chatId.isEmpty) {
@@ -2676,10 +2684,17 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           ),
         ),
       );
-    } catch (_) {
+    } catch (err) {
       if (!mounted) return;
+      final raw = err.toString();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.codingRunMeshWorkFailed)),
+        SnackBar(
+          content: Text(
+            formatEhMeshWorkUserError(raw).isNotEmpty
+                ? formatEhMeshWorkUserError(raw)
+                : l10n.codingRunMeshWorkFailed,
+          ),
+        ),
       );
     }
   }

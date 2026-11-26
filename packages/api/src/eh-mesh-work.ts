@@ -130,3 +130,55 @@ export function formatEhMeshWorkInviteMessage(ref: EhMeshWorkRef): string {
     : "Coding work request. Open Coding on your home node to run this in Envoy Harness."
   return `${human}\n\n${encodeEhMeshWorkRef(ref)}`
 }
+
+/** Pull a known mesh-work / dispatch code out of a wrapped RPC error string. */
+export function extractEhMeshWorkErrorCode(raw: string | undefined): string {
+  const text = (raw ?? "").trim()
+  if (!text) return ""
+  const match = text.match(
+    /\b(eh_mesh_work_[a-z0-9_]+|dispatch_failed|envoy_harness_cancelled)\b/i,
+  )
+  return match?.[1]?.toLowerCase() ?? text
+}
+
+/** Map store / RPC error codes to short end-user copy. */
+export function formatEhMeshWorkUserError(raw: string | undefined): string {
+  const code = extractEhMeshWorkErrorCode(raw)
+  switch (code) {
+    case "eh_mesh_work_not_found":
+      return "That work item isn’t on this home yet. Wait a moment and try again."
+    case "eh_mesh_work_dismissed":
+      return "That work item was already dismissed."
+    case "eh_mesh_work_already_firing":
+    case "eh_mesh_work_turn_busy":
+      return "Coding is already busy with this item. Wait for it to finish."
+    case "eh_mesh_work_interrupted":
+      return "That Coding run was interrupted. Try running it again."
+    case "eh_mesh_work_cap":
+      return "Too many work items waiting. Dismiss some, then try again."
+    case "eh_mesh_work_prompt_required":
+    case "eh_mesh_work_cwd_required":
+      return "That work invite is missing details. Ask your friend to send it again."
+    case "eh_mesh_work_peer_blocked":
+    case "eh_mesh_work_peer_not_bonded":
+      return "You can only send Coding work to a bonded contact."
+    case "dispatch_failed":
+    case "envoy_harness_cancelled":
+      return "Couldn’t start Coding for this work. Try again."
+    default:
+      if (!code) return "That didn’t work. Try again."
+      if (code.startsWith("eh_mesh_work_")) {
+        return "That didn’t work. Try again."
+      }
+      return code.length > 160 ? `${code.slice(0, 157)}…` : code
+  }
+}
+
+/** Optional upsert fields when running a bond invite before ingest finishes. */
+export type RunEhMeshWorkItemOpts = {
+  prompt?: string
+  cwd?: string
+  fromOwnerId?: string
+  title?: string
+  chatId?: string
+}

@@ -92,9 +92,14 @@ class _CodingMeshWorkSheetState extends ConsumerState<_CodingMeshWorkSheet> {
     try {
       await action();
       await _reload();
-    } catch (_) {
+    } catch (err) {
+      await _reload();
       if (mounted) {
-        setState(() => _error = l10n.codingMeshWorkActionFailed);
+        setState(
+          () => _error = formatEhMeshWorkUserError(err.toString()).isNotEmpty
+              ? formatEhMeshWorkUserError(err.toString())
+              : l10n.codingMeshWorkActionFailed,
+        );
       }
     } finally {
       if (mounted) setState(() => _busyId = null);
@@ -173,7 +178,8 @@ class _CodingMeshWorkSheetState extends ConsumerState<_CodingMeshWorkSheet> {
                       final title = (item.title?.isNotEmpty == true)
                           ? item.title!
                           : l10n.codingMeshWorkUntitled;
-                      final busy = _busyId == item.id;
+                      final rowBusy =
+                          _busyId == item.id || item.status == 'running';
                       return ListTile(
                         title: Text(title),
                         subtitle: Column(
@@ -181,7 +187,8 @@ class _CodingMeshWorkSheetState extends ConsumerState<_CodingMeshWorkSheet> {
                           children: [
                             Text(
                               '${_folderLabel(item.cwd)}'
-                              '${item.source == 'bond' ? ' · ${l10n.codingMeshWorkSourceBond}' : ''}',
+                              '${item.source == 'bond' ? ' · ${l10n.codingMeshWorkSourceBond}' : ''}'
+                              '${item.status == 'running' ? ' · ${l10n.codingMeshWorkRunning}' : ''}',
                             ),
                             Text(
                               item.prompt.length > 120
@@ -191,7 +198,7 @@ class _CodingMeshWorkSheetState extends ConsumerState<_CodingMeshWorkSheet> {
                             if (item.lastError != null &&
                                 item.lastError!.isNotEmpty)
                               Text(
-                                item.lastError!,
+                                formatEhMeshWorkUserError(item.lastError),
                                 style: TextStyle(color: scheme.error),
                               ),
                           ],
@@ -200,7 +207,7 @@ class _CodingMeshWorkSheetState extends ConsumerState<_CodingMeshWorkSheet> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             TextButton(
-                              onPressed: busy
+                              onPressed: rowBusy
                                   ? null
                                   : () => _runAction(
                                         item.id,
@@ -213,7 +220,7 @@ class _CodingMeshWorkSheetState extends ConsumerState<_CodingMeshWorkSheet> {
                               child: Text(l10n.codingMeshWorkDismiss),
                             ),
                             FilledButton(
-                              onPressed: busy
+                              onPressed: rowBusy
                                   ? null
                                   : () => _runAction(item.id, () async {
                                         final row = await _client!
@@ -225,7 +232,11 @@ class _CodingMeshWorkSheetState extends ConsumerState<_CodingMeshWorkSheet> {
                                           await _openEhChat(chatId);
                                         }
                                       }),
-                              child: Text(l10n.codingRunMeshWork),
+                              child: Text(
+                                item.status == 'running'
+                                    ? l10n.codingMeshWorkRunning
+                                    : l10n.codingRunMeshWork,
+                              ),
                             ),
                           ],
                         ),

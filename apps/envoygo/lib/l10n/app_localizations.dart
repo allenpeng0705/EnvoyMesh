@@ -993,8 +993,20 @@ abstract class AppLocalizations {
   /// No description provided for @codingMeshWorkSourceBond.
   ///
   /// In en, this message translates to:
-  /// **'bond'**
+  /// **'From a friend'**
   String get codingMeshWorkSourceBond;
+
+  /// No description provided for @codingMeshWorkRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running…'**
+  String get codingMeshWorkRunning;
+
+  /// No description provided for @codingPermsUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Perms unavailable'**
+  String get codingPermsUnavailable;
 
   /// No description provided for @codingReviewOnlyBanner.
   ///

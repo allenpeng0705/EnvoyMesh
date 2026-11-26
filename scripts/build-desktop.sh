@@ -450,18 +450,78 @@ cd "${PROJECT_DIR}"
 # Staging (stage-tauri-envoy-harness-bundle.sh) runs later for the Tauri
 # resources copy — this step only ensures node_modules links + dist/ exist.
 ENVOY_HARNESS_DIR="${ENVOY_HARNESS_DIR:-$(cd "${PROJECT_DIR}/.." && pwd)/envoy-harness}"
-echo "  Building peer envoy-harness (required for tsc)..."
+# Self-contained (mirrors build-desktop.ps1): npm link file: peers → build
+# sibling harness → peer check → tsc. Do not ask the operator to run these
+# by hand; this script owns the sequence. Existing sibling checkout is reused
+# (no re-clone).
 if [ ! -d "${ENVOY_HARNESS_DIR}" ]; then
   echo "error: sibling envoy-harness not found at ${ENVOY_HARNESS_DIR}" >&2
-  echo "  Clone or copy it next to EnvoyMesh, then re-run:" >&2
+  echo "  Clone or copy it next to EnvoyMesh (or set ENVOY_HARNESS_DIR), then re-run this script:" >&2
   echo "    git clone <envoy-harness-url> ${ENVOY_HARNESS_DIR}" >&2
-  echo "    cd ${PROJECT_DIR} && npm ci && npm run build:envoy-harness" >&2
-  echo "  Or set ENVOY_HARNESS_DIR to an existing checkout." >&2
   exit 1
 fi
-npm run build:envoy-harness
-npm run peer:deps:check
-npx tsc -b
+
+# file: peers (envoy-harness*, agent-catalog) only appear after npm install.
+# Stale node_modules (pre-FH catalog) is the usual failure mode.
+missing_peer_links=""
+for pkg in \
+  @envoymesh/envoy-harness \
+  @envoymesh/agent-catalog \
+  @envoymesh/envoy-harness-client \
+  @envoymesh/envoy-harness-ehui
+do
+  if [ ! -e "node_modules/${pkg}" ] \
+    && [ ! -e "apps/social/node_modules/${pkg}" ] \
+    && [ ! -e "apps/node/node_modules/${pkg}" ]; then
+    if [ -n "$missing_peer_links" ]; then
+      missing_peer_links="${missing_peer_links}, ${pkg}"
+    else
+      missing_peer_links="${pkg}"
+    fi
+  fi
+done
+if [ -n "$missing_peer_links" ]; then
+  echo "  Missing file: peer links (${missing_peer_links}) — running npm install..."
+  if ! npm install --no-audit --no-fund; then
+    echo "error: npm install failed while linking envoy-harness peers" >&2
+    exit 1
+  fi
+else
+  echo "  file: peer package links present"
+fi
+
+echo "  Building peer envoy-harness (required for tsc)..."
+if ! npm run build:envoy-harness; then
+  echo "error: npm run build:envoy-harness failed" >&2
+  echo "  Needs pnpm in PATH and a healthy sibling at ${ENVOY_HARNESS_DIR}" >&2
+  exit 1
+fi
+
+if ! npm run peer:deps:check; then
+  echo "  peer:deps:check failed — refreshing npm links once and retrying..."
+  if ! npm install --no-audit --no-fund; then
+    echo "error: npm install failed while repairing peer links" >&2
+    exit 1
+  fi
+  if ! npm run peer:deps:check; then
+    echo "error: peer:deps:check still failing after npm install + build:envoy-harness" >&2
+    echo "  Sibling: ${ENVOY_HARNESS_DIR}" >&2
+    echo "  See output above for (no link) vs (no built entry)" >&2
+    exit 1
+  fi
+fi
+echo "  OK envoy-harness peers built and linked"
+
+echo "  TypeScript build (tsc -b)..."
+if ! npx tsc -b; then
+  echo "error: npx tsc -b failed. The Tauri bundle requires compiled workspace packages + apps/node/dist/." >&2
+  exit 1
+fi
+if [ ! -f "apps/node/dist/src/index.js" ]; then
+  echo "error: npx tsc -b returned 0 but apps/node/dist/src/index.js is still missing" >&2
+  exit 1
+fi
+echo "  OK EnvoyMesh workspace + node compiled"
 echo ""
 echo "[1/6] continued — Staging sidecars (Node.js, OpenClaw, Pi, EnvoyMesh node)..."
 # Always stage Node + OpenClaw + EnvoyMesh node. Pi is optional:

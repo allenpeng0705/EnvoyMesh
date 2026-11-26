@@ -5,8 +5,9 @@ import {
   __resetEhSubagentChildAllowForTests,
   clearActiveEhTaskChildren,
   installEhSubagentChildAllowGuard,
+  popActiveEhTaskChildren,
+  pushActiveEhTaskChildren,
   resolveEhChildAllowToolsForObjective,
-  setActiveEhTaskChildren,
 } from "../src/agent-runtime-envoy/eh-subagent-child-allow.js";
 
 describe("eh-subagent-child-allow (FH-P2-B)", () => {
@@ -25,17 +26,44 @@ describe("eh-subagent-child-allow (FH-P2-B)", () => {
     expect(ok.kind).toBe("continue");
   });
 
-  it("maps objective to parsed task child allowTools", () => {
+  it("stacks per-account batches for parallel task calls", () => {
     __resetEhSubagentChildAllowForTests();
-    setActiveEhTaskChildren([
+    pushActiveEhTaskChildren("chat-a", [
       { objective: "scan src", allowTools: ["read_file", "search_files"] },
     ]);
-    expect(resolveEhChildAllowToolsForObjective("scan src")).toEqual([
+    pushActiveEhTaskChildren("chat-a", [
+      { objective: "write docs", allowTools: ["read_file"] },
+    ]);
+    pushActiveEhTaskChildren("chat-b", [
+      { objective: "other", allowTools: ["list_dir"] },
+    ]);
+
+    expect(resolveEhChildAllowToolsForObjective("scan src", "chat-a")).toEqual([
       "read_file",
       "search_files",
     ]);
-    clearActiveEhTaskChildren();
-    expect(resolveEhChildAllowToolsForObjective("scan src")).toBeUndefined();
+    expect(
+      resolveEhChildAllowToolsForObjective("write docs", "chat-a"),
+    ).toEqual(["read_file"]);
+    expect(resolveEhChildAllowToolsForObjective("other", "chat-b")).toEqual([
+      "list_dir",
+    ]);
+
+    const popped = popActiveEhTaskChildren("chat-a", [
+      { objective: "scan src", allowTools: ["read_file", "search_files"] },
+    ]);
+    expect(popped?.[0]?.objective).toBe("scan src");
+    expect(
+      resolveEhChildAllowToolsForObjective("scan src", "chat-a"),
+    ).toBeUndefined();
+    expect(
+      resolveEhChildAllowToolsForObjective("write docs", "chat-a"),
+    ).toEqual(["read_file"]);
+
+    clearActiveEhTaskChildren("chat-a");
+    expect(
+      resolveEhChildAllowToolsForObjective("write docs", "chat-a"),
+    ).toBeUndefined();
   });
 
   it("denies nested task on child allow guard", async () => {

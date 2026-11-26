@@ -1725,7 +1725,15 @@ export async function routeRpcMethod(
         ...(typeof params.title === "string" ? { title: params.title } : {}),
       });
     case "runEhMeshWorkItemNow":
-      return ns.runEhMeshWorkItemNow(String(params.id ?? ""));
+      return ns.runEhMeshWorkItemNow(String(params.id ?? ""), {
+        ...(typeof params.prompt === "string" ? { prompt: params.prompt } : {}),
+        ...(typeof params.cwd === "string" ? { cwd: params.cwd } : {}),
+        ...(typeof params.fromOwnerId === "string"
+          ? { fromOwnerId: params.fromOwnerId }
+          : {}),
+        ...(typeof params.title === "string" ? { title: params.title } : {}),
+        ...(typeof params.chatId === "string" ? { chatId: params.chatId } : {}),
+      });
     case "listCodingHeartbeats":
       return ns.listCodingHeartbeats();
     case "createCodingHeartbeat":

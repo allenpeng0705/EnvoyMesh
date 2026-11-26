@@ -1,5 +1,8 @@
 /**
  * FH-P2-B — enforce EnvoyHome child `allowTools` on EH sub-agents (host side).
+ *
+ * Children specs are stacked per account (chat/session) so concurrent Coding
+ * sessions and parallel parent `task` calls do not clobber each other.
  */
 import {
   Agent,
@@ -18,32 +21,111 @@ import {
   filterEhChildAllowTools,
 } from "./eh-subagent-patterns.js";
 
-let activeTaskChildren: EhTaskChildSpec[] = [];
+/** Newest batch last — parallel `task` calls push/pop independently. */
+const batchesByAccount = new Map<string, EhTaskChildSpec[][]>();
 
 export function __resetEhSubagentChildAllowForTests(): void {
-  activeTaskChildren = [];
+  batchesByAccount.clear();
 }
 
-export function setActiveEhTaskChildren(children: readonly EhTaskChildSpec[]): void {
-  activeTaskChildren = [...children];
+export function pushActiveEhTaskChildren(
+  accountKey: string,
+  children: readonly EhTaskChildSpec[],
+): void {
+  const key = accountKey.trim();
+  if (!key) return;
+  const stack = batchesByAccount.get(key) ?? [];
+  stack.push([...children]);
+  batchesByAccount.set(key, stack);
 }
 
-export function clearActiveEhTaskChildren(): void {
-  activeTaskChildren = [];
+/**
+ * Pop one batch for the account. Prefers an exact objective-set match
+ * (parallel PostToolUse), else the newest batch.
+ */
+export function popActiveEhTaskChildren(
+  accountKey: string,
+  children?: readonly EhTaskChildSpec[],
+): EhTaskChildSpec[] | undefined {
+  const key = accountKey.trim();
+  if (!key) return undefined;
+  const stack = batchesByAccount.get(key);
+  if (!stack || stack.length === 0) return undefined;
+
+  let idx = stack.length - 1;
+  if (children && children.length > 0) {
+    const wanted = new Set(children.map((c) => c.objective));
+    const found = stack.findIndex((batch) => {
+      if (batch.length !== children.length) return false;
+      return batch.every((c) => wanted.has(c.objective));
+    });
+    if (found >= 0) idx = found;
+  }
+
+  const [removed] = stack.splice(idx, 1);
+  if (stack.length === 0) batchesByAccount.delete(key);
+  else batchesByAccount.set(key, stack);
+  return removed;
+}
+
+/** Clear every batch for an account (host teardown). */
+export function clearActiveEhTaskChildren(accountKey: string): number {
+  const key = accountKey.trim();
+  if (!key) return 0;
+  const stack = batchesByAccount.get(key);
+  if (!stack) return 0;
+  let count = 0;
+  for (const batch of stack) count += batch.length;
+  batchesByAccount.delete(key);
+  return count;
+}
+
+export function getActiveEhTaskChildren(
+  accountKey: string,
+): readonly EhTaskChildSpec[] | undefined {
+  const key = accountKey.trim();
+  if (!key) return undefined;
+  const stack = batchesByAccount.get(key);
+  if (!stack || stack.length === 0) return undefined;
+  return stack.flat();
+}
+
+function matchAllowTools(
+  children: readonly EhTaskChildSpec[] | undefined,
+  objective: string,
+): readonly string[] | undefined {
+  if (!children || children.length === 0) return undefined;
+  const trimmed = objective.trim();
+  const exact = children.find((c) => c.objective === trimmed);
+  if (exact !== undefined) return exact.allowTools;
+  const prefix = children.find(
+    (c) => trimmed.startsWith(c.objective) || c.objective.startsWith(trimmed),
+  );
+  return prefix?.allowTools;
 }
 
 /** Match sub-agent objective to parsed parent `task` child spec. */
 export function resolveEhChildAllowToolsForObjective(
   objective: string,
+  accountKey?: string,
 ): readonly string[] | undefined {
-  if (activeTaskChildren.length === 0) return undefined;
-  const trimmed = objective.trim();
-  const exact = activeTaskChildren.find((c) => c.objective === trimmed);
-  if (exact !== undefined) return exact.allowTools;
-  const prefix = activeTaskChildren.find(
-    (c) => trimmed.startsWith(c.objective) || c.objective.startsWith(trimmed),
-  );
-  return prefix?.allowTools;
+  if (accountKey?.trim()) {
+    const stack = batchesByAccount.get(accountKey.trim());
+    if (!stack) return undefined;
+    // Newest batch first so the most recent parent task wins on ties.
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const hit = matchAllowTools(stack[i], objective);
+      if (hit !== undefined) return hit;
+    }
+    return undefined;
+  }
+  for (const stack of batchesByAccount.values()) {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const hit = matchAllowTools(stack[i], objective);
+      if (hit !== undefined) return hit;
+    }
+  }
+  return undefined;
 }
 
 function payloadToolName(event: HookEvent): string | undefined {
@@ -82,6 +164,8 @@ export function installEhSubagentChildAllowGuard(
 export type EhSubagentBuildFactoryOptions = {
   model: import("@envoymesh/envoy-harness").ModelAdapter;
   cwd: string;
+  /** Scopes allow-list lookup when multiple EH chats run concurrently. */
+  accountKey?: string;
   permissionMode?: import("@envoymesh/envoy-harness").PermissionMode;
   getPermissionMode?: () => import("@envoymesh/envoy-harness").PermissionMode;
   meshSubmitter?: import("@envoymesh/envoy-harness").MeshSubmitter;
@@ -95,12 +179,15 @@ export function buildEhSubagentFactory(
   options: EhSubagentBuildFactoryOptions,
 ): (input: SubagentInput) => Agent {
   const cwd = options.cwd;
+  const accountKey = options.accountKey?.trim();
   return (input: SubagentInput) => {
     const permissionMode =
       options.getPermissionMode?.() ?? options.permissionMode ?? "read-only";
-    const allowFromTask = resolveEhChildAllowToolsForObjective(input.objective);
+    const allowFromTask = resolveEhChildAllowToolsForObjective(
+      input.objective,
+      accountKey,
+    );
     const allowTools = allowFromTask ?? [...filterEhChildAllowTools(undefined)];
-    const allowed = new Set(allowTools);
 
     const session = new InMemorySession(newSessionId(), {
       cwd,
@@ -109,7 +196,7 @@ export function buildEhSubagentFactory(
     });
     const tools = new ToolRegistry();
     for (const t of BUILTIN_TOOLS) {
-      if (allowed.has(t.name)) tools.register(t);
+      if (allowTools.includes(t.name)) tools.register(t);
     }
     const hooks = new HookRegistry();
     installEhSubagentChildAllowGuard(hooks, allowTools);

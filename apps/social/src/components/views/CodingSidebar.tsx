@@ -615,6 +615,7 @@ export function CodingSidebar({
         await nodeService.enqueueEhMeshWorkItem({
           prompt,
           cwd,
+          source: "deep-link",
           ...(title ? { title } : {}),
         });
         setMeshWorkOpen(true);

@@ -219,7 +219,8 @@ export const en = {
     meshWorkActionFailed: "That didn’t work. Try again.",
     meshWorkDismiss: "Dismiss",
     meshWorkUntitled: "Coding work",
-    meshWorkSourceBond: "bond",
+    meshWorkSourceBond: "From a friend",
+    meshWorkRunning: "Running…",
     inviteMeshWork: "Send Coding work to a friend",
     inviteMeshWorkTitle: "Send Coding work to a friend",
     inviteMeshWorkDesc:

@@ -82,5 +82,6 @@ export function meshEhAutoRunToAcpPolicy(
   if (normalized === "off" || normalized === "never") return "off";
   if (normalized === "safe-only") return "safe-only";
   if (normalized === "always-confirm") return "always-confirm";
-  return "safe-only";
+  // Unknown → fail closed (ask for every tool).
+  return "always-confirm";
 }

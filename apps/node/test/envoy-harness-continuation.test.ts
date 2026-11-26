@@ -25,7 +25,14 @@ describe("envoy-harness-continuation", () => {
 
   it("appends continue cue once", () => {
     const out = appendEhIncompleteContinueCue("partial result");
-    expect(out).toContain("continue");
+    expect(out).toContain("Reply **continue**");
     expect(appendEhIncompleteContinueCue(out)).toBe(out);
+  });
+
+  it("still appends when the answer already says continue", () => {
+    const out = appendEhIncompleteContinueCue(
+      "I will continue analyzing the module.",
+    );
+    expect(out).toContain("Reply **continue**");
   });
 });

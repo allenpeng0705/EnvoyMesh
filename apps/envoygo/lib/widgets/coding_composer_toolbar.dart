@@ -169,7 +169,7 @@ class CodingComposerToolbar extends StatelessWidget {
               Tooltip(
                 message: caps.permissionDisabledReason!,
                 child: Text(
-                  'Perms unavailable',
+                  l10n.codingPermsUnavailable,
                   style: TextStyle(
                     fontSize: 12,
                     color: scheme.onSurfaceVariant,

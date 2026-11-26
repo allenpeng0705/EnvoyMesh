@@ -1389,6 +1389,7 @@ import {
   formatCodingReviewInviteMessage,
   EH_MESH_WORK_KIND,
   formatEhMeshWorkInviteMessage,
+  type RunEhMeshWorkItemOpts,
   parseEhMeshWorkRef,
   type EhMeshWorkItem,
   type EhMeshWorkRef,
@@ -5772,7 +5773,10 @@ class NodeServiceImpl implements NodeService {
           this._emitEhTimelineEvent({ name: "eh:files_changed", payload: filesEvent });
         }
         if (completeEvent.ok) {
-          void this._maybeAutoCompactEhSession(host);
+          void this._maybeAutoCompactEhSession(
+            host,
+            active?.cwd ?? cwdOverride,
+          );
         }
         return withFiles;
       };
@@ -5852,6 +5856,7 @@ class NodeServiceImpl implements NodeService {
   /** FH-P2-D — optional post-turn `session/compact` when transcript is long. */
   private async _maybeAutoCompactEhSession(
     host: EnvoyHarnessPersistentAcpHost,
+    cwdOverride?: string,
   ): Promise<void> {
     const policy = resolveEhAutoCompactPolicy();
     if (policy.afterMessageCount <= 0) return;
@@ -5861,7 +5866,9 @@ class NodeServiceImpl implements NodeService {
       const sessionStore = createEnvoyHarnessSessionStore(
         requireProductStoreDir(this._productDir, "createEnvoyHarnessSessionStore"),
       );
-      const cwd = await this._envoyHarnessResolvedCwd();
+      const cwd =
+        (cwdOverride?.trim() ? normalizeEhTaskCwd(cwdOverride) : undefined) ||
+        (await this._envoyHarnessResolvedCwd());
       const history = await loadEhChatHistoryFromStore({
         sessionStore,
         sessionId,
@@ -7137,7 +7144,7 @@ class NodeServiceImpl implements NodeService {
   async setEnvoyHarnessCollaborationMode(
     mode: string,
     chatId?: string,
-  ): Promise<{ ok: true; mode: string }> {
+  ): Promise<{ ok: true; mode: string; applied: boolean }> {
     const normalized = mode.trim().toLowerCase();
     if (
       normalized !== "default" &&
@@ -7149,22 +7156,25 @@ class NodeServiceImpl implements NodeService {
       );
     }
     const kind = normalized as "default" | "plan" | "review";
+    let applied = false;
     try {
       if (chatId?.trim()) {
         const chat = await this._resolveEhChat(chatId);
         if (chat?.cwd) {
           const ensured = await this._ensureEhChatHost(chat.id, chat.cwd);
           await ensured.host.setCollaborationMode(kind);
-          return { ok: true, mode: kind };
+          return { ok: true as const, mode: kind, applied: true };
         }
       }
       if (this._envoyHarnessPersistentAcpHost?.sessionId) {
         await this._envoyHarnessPersistentAcpHost.setCollaborationMode(kind);
+        applied = true;
       }
     } catch {
       // Host may not be warm yet — mode is applied on the next turn.
+      applied = false;
     }
-    return { ok: true, mode: kind };
+    return { ok: true as const, mode: kind, applied };
   }
 
   /** The effective Envoy permission policy, for host staleness checks. */
@@ -7499,6 +7509,7 @@ class NodeServiceImpl implements NodeService {
 
   /**
    * FH-P2-C — build bond Coding work invite. Caller must `sendChat` after RPC.
+   * Allocates a workId for the peer; does **not** enqueue on the sender queue.
    */
   async createEhMeshWorkInvite(opts: {
     prompt: string;
@@ -7524,45 +7535,67 @@ class NodeServiceImpl implements NodeService {
       );
     }
 
-    await this._ensureEhMeshWorkStore();
-    const item = await this._ehMeshWorkStore.enqueue({
-      prompt,
-      cwd,
-      source: "owner",
-      ...(opts.chatId?.trim() ? { chatId: opts.chatId.trim() } : {}),
-      ...(opts.title?.trim() ? { title: opts.title.trim() } : {}),
-    });
-
     const profile = this.getProfile();
     const workRef: EhMeshWorkRef = {
       kind: EH_MESH_WORK_KIND,
       v: 1,
-      workId: item.id,
+      workId: randomUUID(),
       prompt,
       fromOwnerId: profile.owner.ownerId,
       cwd,
       ...(opts.title?.trim() ? { title: opts.title.trim() } : {}),
-      ...(item.chatId ? { chatId: item.chatId } : {}),
+      ...(opts.chatId?.trim() ? { chatId: opts.chatId.trim() } : {}),
     };
     const messageText = formatEhMeshWorkInviteMessage(workRef);
     return { workRef, messageText };
   }
 
-  async runEhMeshWorkItemNow(id: string): Promise<EhMeshWorkItem> {
+  async runEhMeshWorkItemNow(
+    id: string,
+    opts?: RunEhMeshWorkItemOpts,
+  ): Promise<EhMeshWorkItem> {
     await this._ensureEhMeshWorkStore();
+    // Reclaim disk `running` rows with no live in-process turn (restart gap).
+    await this._ehMeshWorkStore.recoverOrphanedRunning(this._ehMeshWorkFiring);
     const workId = id.trim();
-    const item = this._ehMeshWorkStore.get(workId);
+    let item = this._ehMeshWorkStore.get(workId);
+    if (!item && opts?.prompt?.trim() && opts.cwd?.trim() && opts.fromOwnerId?.trim()) {
+      const fromOwnerId = opts.fromOwnerId.trim();
+      const profile = this.getProfile();
+      if (fromOwnerId === profile.owner.ownerId) {
+        throw new Error("eh_mesh_work_not_found");
+      }
+      const trust = await this._trustStore.getTrustRecord(fromOwnerId);
+      const level = trust?.level;
+      if (!level || level === "blocked" || level === "public") {
+        throw new Error(
+          level === "blocked"
+            ? "eh_mesh_work_peer_blocked"
+            : "eh_mesh_work_peer_not_bonded",
+        );
+      }
+      const cwd = normalizeEhTaskCwd(opts.cwd);
+      if (cwd) {
+        item = await this._ehMeshWorkStore.upsertFromBondRef({
+          workId,
+          prompt: opts.prompt,
+          cwd,
+          fromOwnerId,
+          ...(opts.chatId?.trim() ? { chatId: opts.chatId.trim() } : {}),
+          ...(opts.title?.trim() ? { title: opts.title.trim() } : {}),
+        });
+      }
+    }
     if (!item) throw new Error("eh_mesh_work_not_found");
     if (item.status === "dismissed") {
       throw new Error("eh_mesh_work_dismissed");
     }
-    if (this._ehMeshWorkFiring.has(workId)) {
+    if (item.status === "running" || this._ehMeshWorkFiring.has(workId)) {
       throw new Error("eh_mesh_work_already_firing");
     }
 
     this._ehMeshWorkFiring.add(workId);
     try {
-      await this._ehMeshWorkStore.setStatus(workId, "running");
       let chatId = item.chatId;
       if (!chatId || !(await this._resolveEhChat(chatId))) {
         const created = await this.createEnvoyHarnessChat({
@@ -7575,12 +7608,42 @@ class NodeServiceImpl implements NodeService {
       if (this._ehChatRuntime.hasTurnForChat(chatId)) {
         throw new Error("eh_mesh_work_turn_busy");
       }
-      await this.startEnvoyHarnessTurn(item.prompt, { chatId });
-      const next = await this._ehMeshWorkStore.setStatus(workId, "done", {
+      await this._ehMeshWorkStore.setStatus(workId, "running", { chatId });
+      const { turnId } = await this.startEnvoyHarnessTurn(item.prompt, {
         chatId,
       });
-      return next ?? item;
+      const turn = this._ehChatRuntime.getTurn(turnId);
+      if (!turn) {
+        throw new Error("dispatch_failed");
+      }
+      const running = this._ehMeshWorkStore.get(workId) ?? item;
+      void turn.resultPromise
+        .then(async (result) => {
+          if (result.ok && result.cancelled !== true) {
+            await this._ehMeshWorkStore.setStatus(workId, "done", { chatId });
+            return;
+          }
+          const reason =
+            result.cancelled === true
+              ? "envoy_harness_cancelled"
+              : (result.error?.trim().slice(0, 200) || "dispatch_failed");
+          await this._ehMeshWorkStore.setStatus(workId, "pending", {
+            lastError: reason,
+            chatId,
+          });
+        })
+        .catch(async () => {
+          await this._ehMeshWorkStore.setStatus(workId, "pending", {
+            lastError: "dispatch_failed",
+            chatId,
+          });
+        })
+        .finally(() => {
+          this._ehMeshWorkFiring.delete(workId);
+        });
+      return { ...running, status: "running", chatId };
     } catch (err) {
+      this._ehMeshWorkFiring.delete(workId);
       const reason =
         err instanceof Error && err.message.trim()
           ? err.message.trim().slice(0, 200)
@@ -7591,8 +7654,6 @@ class NodeServiceImpl implements NodeService {
       throw Object.assign(err instanceof Error ? err : new Error(reason), {
         ehMeshWork: next,
       });
-    } finally {
-      this._ehMeshWorkFiring.delete(workId);
     }
   }
 
@@ -8482,8 +8543,9 @@ class NodeServiceImpl implements NodeService {
           shouldAskTool: (toolName, args) =>
             shouldAskAcpTool(toolName, autoRun, args),
           maxContinuationPhases,
+          // Prefer chat/session so concurrent EH chats do not share allow-lists.
           subagentAccountKey:
-            this._profile?.owner?.ownerId ?? chatId ?? sessionId,
+            chatId ?? sessionId ?? this._profile?.owner?.ownerId,
         }),
       listPeers: () => this.listEnvoyHarnessPeers(),
       ...(this._envoyHarnessPeerPool !== undefined

@@ -207,7 +207,8 @@ export const zh = mergeMessages(en, {
     meshWorkActionFailed: "操作失败，请重试。",
     meshWorkDismiss: "忽略",
     meshWorkUntitled: "Coding 协作",
-    meshWorkSourceBond: "绑定",
+    meshWorkSourceBond: "来自好友",
+    meshWorkRunning: "运行中…",
     inviteMeshWork: "向好友发送 Coding 协作",
     inviteMeshWorkTitle: "向好友发送 Coding 协作",
     inviteMeshWorkDesc:

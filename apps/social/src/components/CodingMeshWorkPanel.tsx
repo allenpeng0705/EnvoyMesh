@@ -2,7 +2,10 @@
  * FH-P2-C — pending mesh-lite Coding work tickets (bond chat + local queue).
  */
 import { useEffect, useState } from "react"
-import type { EhMeshWorkItem } from "@envoymesh/api"
+import {
+  formatEhMeshWorkUserError,
+  type EhMeshWorkItem,
+} from "@envoymesh/api"
 import { useT } from "../context/I18nContext.js"
 import { useNodeService } from "../hooks/useNodeService.js"
 import { openCoding } from "../lib/open-coding-nav.js"
@@ -53,9 +56,12 @@ export function CodingMeshWorkPanel({ onClose }: CodingMeshWorkPanelProps) {
     try {
       await action()
       await reload()
-    } catch {
+    } catch (err) {
+      await reload()
+      const raw = err instanceof Error ? err.message : String(err ?? "")
       setError(
-        t("codingView.meshWorkActionFailed", "That didn’t work. Try again."),
+        formatEhMeshWorkUserError(raw) ||
+          t("codingView.meshWorkActionFailed", "That didn’t work. Try again."),
       )
     } finally {
       setBusyId(null)
@@ -111,7 +117,9 @@ export function CodingMeshWorkPanel({ onClose }: CodingMeshWorkPanelProps) {
               </p>
             ) : (
               <ul className="coding-heartbeats-list">
-                {items.map((item) => (
+                {items.map((item) => {
+                  const rowBusy = Boolean(busyId) || item.status === "running"
+                  return (
                   <li
                     key={item.id}
                     className="coding-heartbeat-row"
@@ -124,11 +132,11 @@ export function CodingMeshWorkPanel({ onClose }: CodingMeshWorkPanelProps) {
                       </strong>
                       <span className="coding-heartbeat-row__meta">
                         {folderName(item.cwd)}
-                        {item.fromOwnerId
-                          ? ` · ${item.fromOwnerId.slice(0, 20)}…`
-                          : ""}
                         {item.source === "bond"
-                          ? ` · ${t("codingView.meshWorkSourceBond", "bond")}`
+                          ? ` · ${t("codingView.meshWorkSourceBond", "From a friend")}`
+                          : ""}
+                        {item.status === "running"
+                          ? ` · ${t("codingView.meshWorkRunning", "Running…")}`
                           : ""}
                       </span>
                       <span className="coding-heartbeat-row__meta">
@@ -137,7 +145,7 @@ export function CodingMeshWorkPanel({ onClose }: CodingMeshWorkPanelProps) {
                       </span>
                       {item.lastError ? (
                         <span className="coding-sidebar-error" role="alert">
-                          {item.lastError}
+                          {formatEhMeshWorkUserError(item.lastError)}
                         </span>
                       ) : null}
                     </div>
@@ -145,7 +153,7 @@ export function CodingMeshWorkPanel({ onClose }: CodingMeshWorkPanelProps) {
                       <button
                         type="button"
                         className="secondary"
-                        disabled={Boolean(busyId)}
+                        disabled={rowBusy}
                         onClick={() =>
                           void runAction(item.id, () =>
                             nodeService.dismissEhMeshWorkItem(item.id),
@@ -157,7 +165,7 @@ export function CodingMeshWorkPanel({ onClose }: CodingMeshWorkPanelProps) {
                       <button
                         type="button"
                         className="primary"
-                        disabled={Boolean(busyId)}
+                        disabled={rowBusy}
                         onClick={() =>
                           void runAction(item.id, async () => {
                             const next = await nodeService.runEhMeshWorkItemNow(
@@ -172,11 +180,14 @@ export function CodingMeshWorkPanel({ onClose }: CodingMeshWorkPanelProps) {
                           })
                         }
                       >
-                        {t("codingView.runMeshWork", "Run in Coding")}
+                        {item.status === "running"
+                          ? t("codingView.meshWorkRunning", "Running…")
+                          : t("codingView.runMeshWork", "Run in Coding")}
                       </button>
                     </div>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
             {error ? (

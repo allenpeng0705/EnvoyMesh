@@ -1,6 +1,7 @@
 import {
   chatMessageTextForDisplay,
   EH_MESH_WORK_MARKER,
+  formatEhMeshWorkUserError,
   parseCodingReviewRef,
   parseEhMeshWorkRef,
   stripModelThinking,
@@ -9,6 +10,7 @@ import {
 import { useT } from "../context/I18nContext.js";
 import { useNodeState } from "../context/NodeStateContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
+import { useToastOptional } from "../hooks/useToast.js";
 import { openCoding } from "../lib/open-coding-nav.js";
 import { Markdown } from "./Markdown.js";
 
@@ -32,6 +34,7 @@ export function ChatMessageText({
 }: ChatMessageTextProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const { showToast } = useToastOptional();
   const { humanProfile } = useNodeState();
   const display = chatMessageTextForDisplay(stripModelThinking(text), identity);
   const reviewRef = parseCodingReviewRef(display);
@@ -88,16 +91,41 @@ export function ChatMessageText({
             data-testid="chat-coding-work-run"
             onClick={() => {
               void nodeService
-                .runEhMeshWorkItemNow(workRef.workId)
+                .runEhMeshWorkItemNow(workRef.workId, {
+                  prompt: workRef.prompt,
+                  fromOwnerId: workRef.fromOwnerId,
+                  ...(workRef.cwd ? { cwd: workRef.cwd } : {}),
+                  ...(workRef.title ? { title: workRef.title } : {}),
+                  ...(workRef.chatId ? { chatId: workRef.chatId } : {}),
+                })
                 .then((item) => {
                   if (item.chatId) {
                     openCoding({
                       chatId: item.chatId,
                       harness: "envoy-harness",
                     });
+                    return;
                   }
+                  showToast?.(
+                    t(
+                      "codingView.meshWorkActionFailed",
+                      "That didn’t work. Try again.",
+                    ),
+                    "error",
+                  );
                 })
-                .catch(() => undefined);
+                .catch((err: unknown) => {
+                  const raw =
+                    err instanceof Error ? err.message : String(err ?? "");
+                  showToast?.(
+                    formatEhMeshWorkUserError(raw) ||
+                      t(
+                        "codingView.meshWorkActionFailed",
+                        "That didn’t work. Try again.",
+                      ),
+                    "error",
+                  );
+                });
             }}
           >
             {t("codingView.runMeshWork", "Run in Coding")}

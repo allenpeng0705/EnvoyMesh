@@ -13,6 +13,8 @@ import {
 } from "@envoymesh/api"
 
 const FILE_NAME = "eh-mesh-work.json"
+/** Keep a small dismissed tail so upserts stay idempotent; prune the rest. */
+const MAX_DISMISSED_RETAINED = 16
 
 export type EhMeshWorkStoreFile = {
   version: 1
@@ -41,6 +43,7 @@ export class EhMeshWorkStore {
   private items: EhMeshWorkItem[] = []
   private filePath: string | null = null
   private initialized = false
+  private persistChain: Promise<void> = Promise.resolve()
 
   async init(profileDir: string): Promise<void> {
     if (this.initialized && this.filePath === storePath(profileDir)) return
@@ -49,7 +52,12 @@ export class EhMeshWorkStore {
       const raw = await readFile(this.filePath, "utf8")
       const parsed = JSON.parse(raw) as EhMeshWorkStoreFile
       const list = Array.isArray(parsed?.items) ? parsed.items : []
-      this.items = list.filter(isValidItem).slice(0, MAX_EH_MESH_WORK_ITEMS)
+      this.items = list.filter(isValidItem)
+      this._pruneDismissedInMemory()
+      // In-flight turns do not survive process restart — reclaim stuck rows.
+      if (this._recoverOrphanedRunningInMemory()) {
+        await this._persist()
+      }
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
         console.warn("[eh.mesh-work] failed to load store:", err)
@@ -57,6 +65,37 @@ export class EhMeshWorkStore {
       this.items = []
     }
     this.initialized = true
+  }
+
+  /**
+   * Reclaim `running` rows that have no live in-process turn
+   * (e.g. after crash). Persists when any row changes.
+   */
+  async recoverOrphanedRunning(
+    liveWorkIds: ReadonlySet<string> = new Set(),
+  ): Promise<number> {
+    this._assertReady()
+    const n = this._resetOrphanedRunning(liveWorkIds)
+    if (n > 0) await this._persist()
+    return n
+  }
+
+  private _recoverOrphanedRunningInMemory(): boolean {
+    return this._resetOrphanedRunning(new Set()) > 0
+  }
+
+  private _resetOrphanedRunning(liveWorkIds: ReadonlySet<string>): number {
+    const now = new Date().toISOString()
+    let n = 0
+    for (const item of this.items) {
+      if (item.status !== "running") continue
+      if (liveWorkIds.has(item.id)) continue
+      item.status = "pending"
+      item.lastError = "eh_mesh_work_interrupted"
+      item.updatedAt = now
+      n++
+    }
+    return n
   }
 
   list(): EhMeshWorkItem[] {
@@ -165,9 +204,14 @@ export class EhMeshWorkStore {
     item.updatedAt = new Date().toISOString()
     if (patch?.lastError !== undefined) {
       item.lastError = patch.lastError.trim().slice(0, 200) || undefined
+    } else if (status === "running" || status === "done") {
+      item.lastError = undefined
     }
     if (patch?.chatId?.trim()) {
       item.chatId = patch.chatId.trim()
+    }
+    if (status === "dismissed") {
+      this._pruneDismissedInMemory()
     }
     await this._persist()
     return item
@@ -184,16 +228,36 @@ export class EhMeshWorkStore {
     }
   }
 
+  private _pruneDismissedInMemory(): void {
+    const dismissed = this.items
+      .filter((i) => i.status === "dismissed")
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    if (dismissed.length <= MAX_DISMISSED_RETAINED) return
+    const drop = new Set(
+      dismissed.slice(MAX_DISMISSED_RETAINED).map((i) => i.id),
+    )
+    this.items = this.items.filter((i) => !drop.has(i.id))
+  }
+
   private async _persist(): Promise<void> {
     if (!this.filePath) return
-    const dir = join(this.filePath, "..")
-    await mkdir(dir, { recursive: true })
-    const tmp = `${this.filePath}.tmp`
-    const payload: EhMeshWorkStoreFile = { version: 1, items: this.items }
-    await writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    })
-    await rename(tmp, this.filePath)
+    const path = this.filePath
+    const snapshot: EhMeshWorkStoreFile = {
+      version: 1,
+      items: this.items.map((i) => ({ ...i })),
+    }
+    this.persistChain = this.persistChain
+      .catch(() => undefined)
+      .then(async () => {
+        const dir = join(path, "..")
+        await mkdir(dir, { recursive: true })
+        const tmp = `${path}.tmp`
+        await writeFile(tmp, `${JSON.stringify(snapshot, null, 2)}\n`, {
+          encoding: "utf8",
+          mode: 0o600,
+        })
+        await rename(tmp, path)
+      })
+    await this.persistChain
   }
 }

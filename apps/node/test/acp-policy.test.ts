@@ -79,6 +79,6 @@ describe("meshEhAutoRunToAcpPolicy", () => {
     expect(meshEhAutoRunToAcpPolicy("never")).toBe("off");
     expect(meshEhAutoRunToAcpPolicy("safe-only")).toBe("safe-only");
     expect(meshEhAutoRunToAcpPolicy("always-confirm")).toBe("always-confirm");
-    expect(meshEhAutoRunToAcpPolicy("unknown")).toBe("safe-only");
+    expect(meshEhAutoRunToAcpPolicy("unknown")).toBe("always-confirm");
   });
 });

@@ -955,26 +955,67 @@ $nodeDistEntry = Join-Path $RepoRoot "apps/node/dist/src/index.js"
 $envoyHarnessDir = if ($env:ENVOY_HARNESS_DIR) { $env:ENVOY_HARNESS_DIR } else { Join-Path (Split-Path -Parent $RepoRoot) "envoy-harness" }
 
 if (-not $SkipTypecheck) {
-    Write-Info "Building peer envoy-harness (required for tsc)..."
+    # Self-contained: npm link file: peers → build sibling harness → peer check → tsc.
+    # Do not ask the operator to run these by hand; this script owns the sequence.
     if (-not (Test-Path $envoyHarnessDir)) {
         Write-Fail "Sibling envoy-harness not found at $envoyHarnessDir"
-        Write-Info "  Clone or copy it next to EnvoyMesh, then re-run:"
+        Write-Info "  Clone or copy it next to EnvoyMesh (or set `$env:ENVOY_HARNESS_DIR), then re-run this script:"
         Write-Info "    git clone <envoy-harness-url> $envoyHarnessDir"
-        Write-Info "    cd $RepoRoot ; npm ci ; npm run build:envoy-harness"
-        Write-Info "  Or set `$env:ENVOY_HARNESS_DIR to an existing checkout."
         exit 1
     }
+
+    # file: peers (envoy-harness*, agent-catalog) only appear after npm install.
+    # Stale node_modules (pre-FH catalog) is the usual Windows failure mode.
+    $peerProbePkgs = @(
+        "@envoymesh\envoy-harness",
+        "@envoymesh\agent-catalog",
+        "@envoymesh\envoy-harness-client",
+        "@envoymesh\envoy-harness-ehui"
+    )
+    $missingPeerLinks = @()
+    foreach ($pkg in $peerProbePkgs) {
+        $cand = @(
+            (Join-Path $RepoRoot "node_modules\$pkg"),
+            (Join-Path $RepoRoot "apps\social\node_modules\$pkg"),
+            (Join-Path $RepoRoot "apps\node\node_modules\$pkg")
+        )
+        $found = $cand | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+        if (-not $found) { $missingPeerLinks += $pkg }
+    }
+    if ($missingPeerLinks.Count -gt 0) {
+        Write-Info "Missing file: peer links ($($missingPeerLinks -join ', ')) — running npm install..."
+        $npmInstallExit = Invoke-ExternalQuiet npm install --no-audit --no-fund
+        if ($npmInstallExit -ne 0) {
+            Write-Fail "npm install failed (exit $npmInstallExit) while linking envoy-harness peers"
+            exit 1
+        }
+    } else {
+        Write-Info "file: peer package links present"
+    }
+
+    Write-Info "Building peer envoy-harness (required for tsc)..."
     $ehBuildExit = Invoke-ExternalQuiet npm run build:envoy-harness
     if ($ehBuildExit -ne 0) {
         Write-Fail "npm run build:envoy-harness failed (exit $ehBuildExit)"
-        Write-Info "  Needs pnpm in PATH and a built sibling at $envoyHarnessDir"
-        Write-Info "  From the repo root: npm run build:envoy-harness"
+        Write-Info "  Needs pnpm in PATH and a healthy sibling at $envoyHarnessDir"
         exit 1
     }
+
     $peerCheckExit = Invoke-ExternalQuiet npm run peer:deps:check
     if ($peerCheckExit -ne 0) {
-        Write-Fail "peer:deps:check failed -- @envoymesh/envoy-harness* not resolvable from node_modules"
-        Write-Info "  Try: cd $RepoRoot ; npm ci ; npm run build:envoy-harness"
+        # Links can still lag after package.json churn; refresh once then recheck.
+        Write-Info "peer:deps:check failed — refreshing npm links once and retrying..."
+        $npmInstallExit = Invoke-ExternalQuiet npm install --no-audit --no-fund
+        if ($npmInstallExit -ne 0) {
+            Write-Fail "npm install failed (exit $npmInstallExit) while repairing peer links"
+            exit 1
+        }
+        $peerCheckExit = Invoke-ExternalQuiet npm run peer:deps:check
+    }
+    if ($peerCheckExit -ne 0) {
+        Write-Fail "peer:deps:check still failing after npm install + build:envoy-harness"
+        Write-Info "  Sibling: $envoyHarnessDir"
+        Write-Info "  See build-logs above for (no link) vs (no built entry)"
         exit 1
     }
     Write-Ok "envoy-harness peers built and linked"
@@ -986,7 +1027,6 @@ if (-not $SkipTypecheck) {
     $tcExit = Invoke-ExternalQuiet npx tsc -b
     if ($tcExit -ne 0) {
         Write-Fail "npx tsc -b failed (exit $tcExit). The Tauri bundle requires compiled workspace packages + apps\node\dist\."
-        Write-Info "  Try: cd $RepoRoot ; npm ci ; npm run build:envoy-harness ; npx tsc -b"
         exit 1
     }
     if (-not (Test-Path $nodeDistEntry)) {

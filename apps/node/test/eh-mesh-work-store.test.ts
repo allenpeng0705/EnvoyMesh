@@ -50,4 +50,49 @@ describe("EhMeshWorkStore (FH-P2-C)", () => {
     expect(again.id).toBe(first.id)
     expect(store.list()).toHaveLength(1)
   })
+
+  it("prunes old dismissed items while retaining a short tail", async () => {
+    dir = await mkdtemp(join(tmpdir(), "eh-mesh-work-"))
+    const store = new EhMeshWorkStore()
+    await store.init(dir)
+    for (let i = 0; i < 20; i++) {
+      const row = await store.enqueue({
+        prompt: `p-${i}`,
+        cwd: "/tmp/p",
+        source: "owner",
+      })
+      await store.dismiss(row.id)
+    }
+    expect(store.list()).toHaveLength(0)
+    const raw = await import("node:fs/promises").then((fs) =>
+      fs.readFile(join(dir, "eh-mesh-work.json"), "utf8"),
+    )
+    const parsed = JSON.parse(raw) as { items: unknown[] }
+    expect(parsed.items.length).toBeLessThanOrEqual(16)
+  })
+
+  it("reclaims orphaned running rows on init and recoverOrphanedRunning", async () => {
+    dir = await mkdtemp(join(tmpdir(), "eh-mesh-work-"))
+    const store = new EhMeshWorkStore()
+    await store.init(dir)
+    const row = await store.enqueue({
+      prompt: "long turn",
+      cwd: "/tmp/p",
+      source: "owner",
+    })
+    await store.setStatus(row.id, "running", { chatId: "chat-1" })
+    expect(store.get(row.id)?.status).toBe("running")
+
+    const reloaded = new EhMeshWorkStore()
+    await reloaded.init(dir)
+    expect(reloaded.get(row.id)?.status).toBe("pending")
+    expect(reloaded.get(row.id)?.lastError).toBe("eh_mesh_work_interrupted")
+
+    await reloaded.setStatus(row.id, "running")
+    const live = new Set([row.id])
+    expect(await reloaded.recoverOrphanedRunning(live)).toBe(0)
+    expect(reloaded.get(row.id)?.status).toBe("running")
+    expect(await reloaded.recoverOrphanedRunning(new Set())).toBe(1)
+    expect(reloaded.get(row.id)?.status).toBe("pending")
+  })
 })

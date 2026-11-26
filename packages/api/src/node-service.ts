@@ -2388,6 +2388,15 @@ export interface NodeService extends CoreNodeService {
       providerHint?: string;
       costCapUsd?: number;
       chatId?: string;
+      /** Native Mode — applied via session/set_mode before the prompt. */
+      collaborationMode?: "default" | "plan" | "review";
+      /**
+       * Heartbeats / schedules — no silent continuation phases.
+       * Server-only; thin clients typically omit this.
+       */
+      unattended?: boolean;
+      /** Override attended continuation budget (0…3). */
+      continuationPhases?: number;
     },
   ): Promise<import("./eh-turn.js").StartEnvoyHarnessTurnResult>;
 
@@ -2415,7 +2424,7 @@ export interface NodeService extends CoreNodeService {
   setEnvoyHarnessCollaborationMode(
     mode: string,
     chatId?: string,
-  ): Promise<{ ok: true; mode: string }>;
+  ): Promise<{ ok: true; mode: string; applied: boolean }>;
 
   /** Load persisted chat transcript for a task (defaults to active chat). */
   getEnvoyHarnessChatHistory(
@@ -2491,6 +2500,7 @@ export interface NodeService extends CoreNodeService {
   }>;
   runEhMeshWorkItemNow(
     id: string,
+    opts?: import("./eh-mesh-work.js").RunEhMeshWorkItemOpts,
   ): Promise<import("./eh-mesh-work.js").EhMeshWorkItem>;
 
   /**

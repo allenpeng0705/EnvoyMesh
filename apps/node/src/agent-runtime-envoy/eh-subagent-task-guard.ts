@@ -1,5 +1,8 @@
 /**
  * FH-P2-B — PreToolUse gate for harness `task` (caps + allow-list parse).
+ *
+ * Parallel parent `task` calls push/pop independent batches — do not clear
+ * sibling in-flight allow-lists on PreToolUse.
  */
 import type { HookRegistry } from "@envoymesh/envoy-harness";
 import type { HookDecision, HookEvent } from "@envoymesh/envoy-harness";
@@ -10,7 +13,8 @@ import {
 } from "./eh-subagent-account.js";
 import {
   clearActiveEhTaskChildren,
-  setActiveEhTaskChildren,
+  popActiveEhTaskChildren,
+  pushActiveEhTaskChildren,
 } from "./eh-subagent-child-allow.js";
 import { parseEhTaskChildren } from "./eh-subagent-patterns.js";
 
@@ -31,7 +35,7 @@ export function installEhSubagentTaskGuard(
   hooks: HookRegistry,
   options: { accountKey: string },
 ): () => void {
-  const accountKey = options.accountKey;
+  const accountKey = options.accountKey.trim();
 
   const onPre = async (event: HookEvent): Promise<HookDecision> => {
     const parsed = payloadToolArgs(event.payload);
@@ -49,7 +53,7 @@ export function installEhSubagentTaskGuard(
     if (!slot.ok) {
       return { kind: "block", reason: slot.reason };
     }
-    setActiveEhTaskChildren(children);
+    pushActiveEhTaskChildren(accountKey, children);
     return { kind: "continue" };
   };
 
@@ -59,10 +63,10 @@ export function installEhSubagentTaskGuard(
       return { kind: "continue" };
     }
     const children = parseEhTaskChildren(parsed.args);
-    if (children.length > 0) {
-      clearActiveEhTaskChildren();
-      releaseEhSubagentSlots(accountKey, children.length);
-    }
+    if (children.length === 0) return { kind: "continue" };
+    const popped = popActiveEhTaskChildren(accountKey, children);
+    const releaseCount = popped?.length ?? children.length;
+    releaseEhSubagentSlots(accountKey, releaseCount);
     return { kind: "continue" };
   };
 
@@ -71,5 +75,7 @@ export function installEhSubagentTaskGuard(
   return () => {
     hooks.unregister("PreToolUse", onPre);
     hooks.unregister("PostToolUse", onPost);
+    const leftover = clearActiveEhTaskChildren(accountKey);
+    if (leftover > 0) releaseEhSubagentSlots(accountKey, leftover);
   };
 }

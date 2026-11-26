@@ -478,7 +478,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingMeshWorkUntitled => 'Coding 协作';
 
   @override
-  String get codingMeshWorkSourceBond => '绑定';
+  String get codingMeshWorkSourceBond => '来自好友';
+
+  @override
+  String get codingMeshWorkRunning => '运行中…';
+
+  @override
+  String get codingPermsUnavailable => '权限不可用';
 
   @override
   String get codingReviewOnlyBanner => '只读审阅 — 可查看时间线与变更；工具与还原已禁用。';

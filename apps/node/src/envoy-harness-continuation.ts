@@ -29,6 +29,6 @@ export function envoyHarnessContinuationPhasesForTurn(unattended: boolean): numb
 
 export function appendEhIncompleteContinueCue(text: string): string {
   const t = text.trimEnd();
-  if (t.toLowerCase().includes("continue")) return text;
+  if (t.includes(EH_TURN_INCOMPLETE_CONTINUE_CUE.trim())) return text;
   return t.length > 0 ? `${t}${EH_TURN_INCOMPLETE_CONTINUE_CUE}` : text;
 }

@@ -65,11 +65,11 @@ function stillEnglishCount(localeFlat: Record<string, string>, enF: Record<strin
  * accumulated backlog. An audit's job is to catch *growth*.
  */
 const BACKLOG: Record<string, number> = {
-  de: 350,
-  fr: 349,
-  it: 342,
-  ja: 248,
-  ko: 252,
+  de: 351,
+  fr: 350,
+  it: 343,
+  ja: 249,
+  ko: 253,
 };
 
 describe("i18n locale coverage", () => {

@@ -562,6 +562,7 @@ export function createRealEnvoyHarnessRuntime(
           buildSubagent: buildEhSubagentFactory({
             model,
             cwd: opts.cwd,
+            accountKey: opts.workerPeerId,
           }),
           workerPeerId: opts.workerPeerId,
         });
@@ -878,6 +879,20 @@ export function createRealEnvoyHarnessRuntime(
           });
         }
         const declaredTools = tools.list().map((tool) => tool.name);
+        const sessionSubmitter =
+          params.subagentAccountKey !== undefined
+            ? new LocalMeshSubmitter({
+                buildSubagent: buildEhSubagentFactory({
+                  model: internals.model,
+                  cwd: sessionCwd,
+                  accountKey: params.subagentAccountKey,
+                  ...(params.permissionMode !== undefined
+                    ? { permissionMode: params.permissionMode }
+                    : {}),
+                }),
+                workerPeerId: opts.workerPeerId,
+              })
+            : internals.submitter;
         const agent = new Agent({
           model: internals.model,
           tools,
@@ -891,7 +906,7 @@ export function createRealEnvoyHarnessRuntime(
             }),
           cwd: sessionCwd,
           askHandler: params.askHandler,
-          meshSubmitter: internals.submitter,
+          meshSubmitter: sessionSubmitter,
           ...(params.systemPrompt !== undefined
             ? { systemPrompt: params.systemPrompt }
             : {}),

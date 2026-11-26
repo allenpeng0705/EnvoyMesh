@@ -81,10 +81,26 @@ mixin HarnessRpcs on HomeRpcSession {
   }
 
   /// FH-P2-C — run a pending mesh work ticket → EH turn.
-  Future<Map<String, dynamic>> runEhMeshWorkItemNow(String id) async {
+  /// Optional upsert fields cover bond-invite race before ingest finishes.
+  Future<Map<String, dynamic>> runEhMeshWorkItemNow(
+    String id, {
+    String? prompt,
+    String? cwd,
+    String? fromOwnerId,
+    String? title,
+    String? chatId,
+  }) async {
     return await homeClient.call(
       'runEhMeshWorkItemNow',
-      {'id': id.trim()},
+      {
+        'id': id.trim(),
+        if (prompt != null && prompt.trim().isNotEmpty) 'prompt': prompt.trim(),
+        if (cwd != null && cwd.trim().isNotEmpty) 'cwd': cwd.trim(),
+        if (fromOwnerId != null && fromOwnerId.trim().isNotEmpty)
+          'fromOwnerId': fromOwnerId.trim(),
+        if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+        if (chatId != null && chatId.trim().isNotEmpty) 'chatId': chatId.trim(),
+      },
       const Duration(seconds: 120),
     ) as Map<String, dynamic>;
   }
