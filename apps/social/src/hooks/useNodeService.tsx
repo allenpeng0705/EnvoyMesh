@@ -267,6 +267,13 @@ export interface NodeServiceClient {
     params: import("@envoymesh/api").SendChatRoomAttachmentParams,
   ): Promise<import("@envoymesh/api").SendChatRoomAttachmentResult>;
   listAgentActivity(params?: import("@envoymesh/api").ListAgentActivityParams): Promise<import("@envoymesh/api").AgentActivityRecord[]>;
+  getAutonomyDigest(period?: "daily" | "weekly"): Promise<import("@envoymesh/api").AutonomyDigestResult>;
+  getContextMemoryStatus(): Promise<import("@envoymesh/api").ContextMemoryStatusSnapshot>;
+  listContextMemoryFacts(): Promise<import("@envoymesh/api").ContextMemoryFact[]>;
+  forgetContextMemoryFact(id: string): Promise<boolean>;
+  pinContextMemoryFact(id: string, pinned: boolean): Promise<boolean>;
+  retryContextMemoryInstall(): Promise<import("@envoymesh/api").ContextMemoryStatusSnapshot>;
+  listSocialProxySessions(): Promise<import("@envoymesh/api").SocialProxySession[]>;
   listCommerceReceipts(
     params?: import("@envoymesh/api").ListCommerceReceiptsParams,
   ): Promise<import("@envoymesh/api").CommerceReceiptRecord[]>;
@@ -1350,6 +1357,37 @@ function createWsNodeServiceClient(
     async listAgentActivity(params?: import("@envoymesh/api").ListAgentActivityParams) {
       return wsClient.rpc("listAgentActivity", (params ?? {}) as Record<string, unknown>) as Promise<
         import("@envoymesh/api").AgentActivityRecord[]
+      >;
+    },
+    async getAutonomyDigest(period?: "daily" | "weekly") {
+      return wsClient.rpc("getAutonomyDigest", { period: period ?? "daily" }) as Promise<
+        import("@envoymesh/api").AutonomyDigestResult
+      >;
+    },
+    async getContextMemoryStatus() {
+      return wsClient.rpc("getContextMemoryStatus", {}) as Promise<
+        import("@envoymesh/api").ContextMemoryStatusSnapshot
+      >;
+    },
+    async listContextMemoryFacts() {
+      return wsClient.rpc("listContextMemoryFacts", {}) as Promise<
+        import("@envoymesh/api").ContextMemoryFact[]
+      >;
+    },
+    async forgetContextMemoryFact(id: string) {
+      return wsClient.rpc("forgetContextMemoryFact", { id }) as Promise<boolean>;
+    },
+    async pinContextMemoryFact(id: string, pinned: boolean) {
+      return wsClient.rpc("pinContextMemoryFact", { id, pinned }) as Promise<boolean>;
+    }
+    async retryContextMemoryInstall() {
+      return wsClient.rpc("retryContextMemoryInstall", {}) as Promise<
+        import("@envoymesh/api").ContextMemoryStatusSnapshot
+      >;
+    },
+    async listSocialProxySessions() {
+      return wsClient.rpc("listSocialProxySessions", {}) as Promise<
+        import("@envoymesh/api").SocialProxySession[]
       >;
     },
     async listCommerceReceipts(params?: import("@envoymesh/api").ListCommerceReceiptsParams) {

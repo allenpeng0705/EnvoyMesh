@@ -1,3 +1,11 @@
+export {
+  ENVOY_TOOL_CATALOG,
+  buildOpenClawSystemPrompt,
+  buildAgentConfig,
+  type EnvoyToolDefinition,
+  type EnvoyAgentConfig,
+} from "./tool-bridge.js";
+
 /**
  * OpenClaw Runtime — Auto-discovery and process management.
  *
@@ -211,7 +219,7 @@ export class OpenClawRuntime {
       const handshake = JSON.stringify({
         type: "hello",
         protocol: "envoy-openclaw/1.0",
-        envoyVersion: "0.8.0",
+        envoyVersion: "0.9.0",
         tools: "ENVOY_TOOL_CATALOG",
         // Inherit EnvoyMesh's LLM config so user only configures once
         modelConfig: this.config.modelConfig ?? null,

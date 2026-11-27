@@ -7,6 +7,7 @@ export type {
 export * from "./model-thinking.js";
 export * from "./author-content-draft.js";
 export * from "./ai-knowledge-base.js";
+export * from "./context-memory.js";
 export * from "./embedding-presets.js";
 export * from "./ai-embedding-limits.js";
 export * from "./rag-index-status.js";
@@ -86,6 +87,8 @@ export * from "./capability-route-executor.js";
 export * from "./social-proxy-session.js";
 export * from "./document-acquisition.js";
 export * from "./friend-autopilot.js";
+export * from "./social-proxy-schedule.js";
+export * from "./bonded-resource-shortlist-schedule.js";
 export * from "./ipfs-pinning.js";
 export * from "./wan-join-invite.js";
 export * from "./company-invite.js";

@@ -704,3 +704,67 @@ describe("executeTool — tool-call firewall", () => {
     expect(result.error).toMatch(/path traversal/);
   });
 });
+
+describe("executeTool — Phase 69A local report tools + aliases", () => {
+  const minimalContext = {
+    trustStore: {} as never,
+    peerDirectoryStore: {} as never,
+    taskStore: { appendAuditEvent: async () => {} } as never,
+    agentIdentity: {} as never,
+    ownerIdentity: { ownerId: "envoy:owner:test" },
+    agentCredential: {} as never,
+  };
+
+  it("executes mesh.intelligence_report via context hook", async () => {
+    const result = await executeTool(
+      "mesh.intelligence_report",
+      {},
+      {
+        ...minimalContext,
+        generateIntelligenceReport: async () => "# Mesh report\nok",
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect((result.result as { report?: string })?.report).toContain("Mesh report");
+  });
+
+  it("executes mesh.discover_cluster via context hook", async () => {
+    const result = await executeTool(
+      "mesh.discover_cluster",
+      { seedTopics: ["rust"] },
+      {
+        ...minimalContext,
+        discoverAndCluster: async ({ seedTopics }) => `clusters for ${(seedTopics ?? []).join(",")}`,
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect((result.result as { summary?: string })?.summary).toContain("rust");
+  });
+
+  it("resolves mesh.send_hello alias and fills displayName", async () => {
+    // Without mesh, bond.send_hello fails at send — but must not be Unknown tool / missing displayName.
+    const result = await executeTool(
+      "mesh.send_hello",
+      { targetOwnerId: "envoy:owner:peer", message: "hi" },
+      {
+        ...minimalContext,
+        trustIntro: {
+          trustModeEnabled: false,
+          humanProfileSummary: { displayName: "Bob" },
+        },
+      },
+    );
+    expect(result.toolName).toBe("bond.send_hello");
+    expect(result.error ?? "").not.toMatch(/Unknown tool|displayName|not executable/i);
+  });
+
+  it("resolves mesh.task_propose alias to mesh.task.propose", async () => {
+    const result = await executeTool(
+      "mesh.task_propose",
+      { targetOwnerId: "envoy:owner:peer", objective: "review" },
+      minimalContext,
+    );
+    expect(result.toolName).toBe("mesh.task.propose");
+    expect(result.error ?? "").not.toMatch(/Unknown tool|not executable/i);
+  });
+});

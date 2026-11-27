@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   pickMeshToolForStep,
+  resolveRegistryToolName,
   resolveRouteStepExecution,
 } from "../src/capability-route-executor.js";
+
+describe("resolveRegistryToolName (Phase 69A aliases)", () => {
+  it("maps OpenClaw prompt names to ToolRegistry names", () => {
+    expect(resolveRegistryToolName("mesh.send_hello")).toBe("bond.send_hello");
+    expect(resolveRegistryToolName("mesh.task_propose")).toBe("mesh.task.propose");
+    expect(resolveRegistryToolName("mesh.task_cancel")).toBe("mesh.task.cancel");
+    expect(resolveRegistryToolName("bond.send_hello")).toBe("bond.send_hello");
+    expect(resolveRegistryToolName("mesh.task.propose")).toBe("mesh.task.propose");
+  });
+});
 
 describe("capability-route-executor", () => {
   it("picks mesh.library_discover for document discover step", () => {

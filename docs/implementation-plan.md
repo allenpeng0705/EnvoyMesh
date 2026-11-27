@@ -45,13 +45,15 @@ Maintenance: flip checkboxes when shipping; add one **Changelog** row; refresh *
 - [Phase 66 — AN fleet ops](#phase-66--agent-network-fleet-ops-join-bond-lease-office--wan)
 - [Phase 67 — AN product UX](#phase-67--agent-network-product-ux-templates-chat--job-live-progress)
 - [Phase 68 — Coding tab](#phase-68--coding-tab-social--envoygo)
+- [Phase 69 — Dual-mode EnvoyAI autonomy](#phase-69--dual-mode-envoyai-autonomy-chat--background)
+- [Phase 70 — Context Memory](#phase-70--context-memory-envoy-native--optional-openviking)
 - [Changelog](#changelog-this-document)
 
 ## Current direction
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network. Foundation through Phase 49 is **shipped** (see [archived plan](./implementation-plan-archived.md)).
 
-**Active product epic:** [Phase 64D — AN release sign-off](#phase-64--agent-network-multi-home-reliability-remote-assigner-recovery) `[~]` (human per-OS / a11y / threat; automated 64–67 evidence refresh)
+**Active product epic:** [Phase 64D — AN release sign-off](#phase-64--agent-network-multi-home-reliability-remote-assigner-recovery) `[~]` (human per-OS / a11y / threat). **Next product pull (may ship incrementally during 64D):** [Phase 69 — Dual-mode EnvoyAI autonomy](#phase-69--dual-mode-envoyai-autonomy-chat--background) `[~]`.
 
 **Last shipped:** [Phase 68 — Coding tab](#phase-68--coding-tab-social--envoygo) `[x]` — Social **C1–C7**, EnvoyGo parity, **[68-FH](#68-fh--family-harness-alignment-envoyhome--envoycoder)** P0–P2 (waves 0–4). Prior: **Phase 67** AN product UX Wave 3.
 
@@ -172,8 +174,8 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Story B — **morning report / ranked discovery UX** | Phase **7** | Morning report digest baseline in dashboard + CLI. Relay graph routing now supplies bounded relay-reachability lookup beneath higher-level discovery. | `[x]` |
 | Story C — **H2A as distinct channel** | Scenario 6 pick + Phase 8 | Phase 8A real `knowledge.query` path shipped; **Assistant** lane + local Activity on H2A turns (Phase **15C**). | `[x]` |
 | Agent stories — **interest/book/stranger/E2EE buffer** | Phase 8 + bonds/policy | Agentic next-step design **`[x]`** · direct/contact LLM workflows **`[x]`** · anonymous discovery/broadcast **`[x]`** | `[x]` |
-| **Story M — social proxy** | **Phase 16** + 12/14 | Design **`[x]`** ([EMP § EnvoyAI](./protocol-standard.md#envoyai-ai-mediated-social-mesh)) · runtime loop **`[ ]`** | `[ ]` |
-| **Story N — document acquisition** | **Phase 16** + ADB | ADB layers **`[x]`** · async orchestrator **`[ ]`** | `[~]` |
+| **Story M — social proxy** | **Phase 16** + 12/14 + **69** | Design **`[x]`** · runtime + standing mandate **`[x]`** · Phase **69B** digest/Activity + proxy sessions UI **`[x]`** | `[x]` |
+| **Story N — document acquisition** | **Phase 16** + ADB + **69** | ADB + async worker **`[x]`** · Phase **18** chat start **`[x]`** · Phase **69C** bonded shortlist **`[x]`** (Market idle still out) | `[x]` |
 | **Story O — UI disclosure** | **Phase 16D** + 13 | Honest wire **`[x]`** · badge collapse settings **`[ ]`** | `[~]` |
 | Story F — **DID-targeted LAN discovery** | Phase **4** | LAN identity match by owner-id target resolution **`[x]`**; live proofs **`[!]`** | `[~]` |
 | **Semantic firewall** (UserStory + US-F5) | Phase **6** | `evaluateSemanticFirewall` + `routeModelRequest` integration. | `[x]` |
@@ -2424,9 +2426,113 @@ Use this when adding or promoting a harness in `packages/api/src/coding-provider
 
 ---
 
+## Phase 69 — Dual-mode EnvoyAI autonomy (chat + background)
+
+**Status:** `[~]` — **69A–D1** shipped; optional C1 chat polish / Market idle still open.
+
+**Stories:** [Story P](./UserStory.md#story-p-dual-mode-autonomy) · [Epic 69 US-69-*](./scenarios.md#epic-69-dual-mode-autonomy)
+
+**Locked defaults**
+
+- Chat surfaces wave 1: OpenClaw + Phase 18 allowlist (Coding/Pi later).
+- Background resources: bonded shortlist only; no auto-start acquisition until owner approves.
+- Social: one owner-facing social autonomy (proxy primary; friend-autopilot discovery-only when proxy off).
+- Agent-started Team jobs (D): out of scope.
+
+### 69A — Honest tool surface (US-69-A1) `[x]`
+
+- `[x]` Registry aliases for prompt names (`mesh.send_hello` → `bond.send_hello`, `mesh.task_propose` → `mesh.task.propose`)
+- `[x]` Wire `mesh.discover_cluster` / `mesh.intelligence_report` through `executeTool` + `MeshToolContext` hooks
+- `[x]` Align OpenClaw system prompt + `ENVOY_TOOL_CATALOG` names with registry (`bond.send_hello`, `mesh.task.propose`)
+- `[x]` Unit tests: aliases + report/discover execute smokes
+- `[x]` Align Phase 18 `OWNER_AGENT_TOOL_ALLOWLIST` with wave-1 set (+ alias resolve in `findOwnerAgentTool`)
+- `[x]` Parity tests: catalog/allowlist ⊆ registry; wave-1 report/discover smoke
+
+### 69B — Friend autonomy visible (US-69-B1/B2) + 69D0 `[~]`
+
+- `[x]` Throttle scheduled social-proxy (`shouldRunScheduledSocialProxyPass`, default 1h; `socialProxyIntervalHours`)
+- `[x]` Serialize chat + scheduled `runSocialProxyPass` (mutex)
+- `[x]` Digest due fix (`isDigestDue` / `markDigestGenerated`); count social_proxy Activity in digest pass tally
+- `[x]` Wire `mesh.get-digest` / `mesh.get-digest-config` through `executeTool` + Activity-backed `buildAutonomyDigest`
+- `[x]` OpenClaw prompt + owner-agent allowlist for “what did you do?” → `mesh.get-digest`
+- `[x]` Social proxy session summary under Settings → AI → postures (`SocialProxySessionsPanel`)
+
+### 69C — Resource dual-mode (US-69-C1/C2) `[~]`
+
+- `[x]` Feed owner interests into connection suggester + mesh awareness; persist insights as Activity
+- `[x]` Background bonded library shortlist pass (throttled, default 24h; follows documentAcquisitionEnabled when unset)
+- `[x]` Activity kinds: `bonded_resource_shortlist`, `mesh_awareness_insight`, `connection_suggested` → digest headlines
+- `[ ]` Chat acquisition path polish (Story N) — already usable via allowlist; optional UX chips
+- `[ ]` Market idle shortlist still out (bonded-first ceiling)
+
+### 69D1 — Autonomy chrome + docs closeout `[x]`
+
+- `[x]` Activity Focus → Autonomy filter; Settings → Account digest panel (`getAutonomyDigest` RPC)
+- `[x]` EnvoyGo Me → While you were away (home digest read)
+- `[x]` Promote US-69 status; fix Story M/N coverage table drift
+
+---
+
+## Phase 70 — Context Memory (Envoy-native + optional OpenViking)
+
+**Status:** `[x]` — Waves 70A–F landed (native CM + optional OV HTTP adapter).
+
+**Design:** [`context-memory-design.md`](./context-memory-design.md)
+
+**Locked defaults**
+
+- CM default **off**; Ready-gated; full today fallback when not Ready.
+- Default backend **native** (Nebula-inspired, Envoy-owned JSONL).
+- OpenViking **optional** sidecar (`backend: "openviking"`); AGPL process boundary; not in Tauri bundle.
+- Vault stays Knowledge; `agent-identity.md` stays persona.
+
+### 70A — Design freeze `[x]`
+
+- `[x]` [`docs/context-memory-design.md`](./context-memory-design.md) — adapter, gap matrix, packing checklist
+- `[x]` Phase 70 checklist (this section)
+
+### 70B — Native store + Settings shell `[x]`
+
+- `[x]` `createContextMemoryStore` in `@envoymesh/local-store`
+- `[x]` API config types + aiSettings.contextMemory
+- `[x]` Settings → AI Context Memory toggle (default off) + status
+
+### 70C — EnvoyAI wire `[x]`
+
+- `[x]` Recall inject in `buildEnvoyMeshRetrievedContext` when Ready
+- `[x]` Post-turn `rememberFromTurn` (soft-fail)
+- `[x]` Ready/fallback guard tests
+
+### 70D — Product gaps `[x]`
+
+- `[x]` Settings list / forget / pin
+- `[x]` MEMORY.md one-shot seed
+- `[x]` Audit events; skip Memex auto-inject while Ready
+
+### 70E — Optional OpenViking `[x]`
+
+- `[x]` Thin HTTP client (`context-memory-ov-client.ts`) — session reuse (~30 min idle), search+`session_id`, find list, fs DELETE forget; pin → false
+- `[x]` BYO probe only (no false `installing`); client/session preserved across settings re-apply; Settings list/forget when Ready (pin native-only)
+- `[x]` **Wave OV-DL** — managed download-on-enable (`context-memory-ov-managed.ts`); blank endpoint → Docker/venv install; BYO when endpoint set; Settings poll + Retry
+
+### 70F — Packing `[x]`
+
+- `[x]` No OV/native sidecars in Tauri `bundle.resources`
+- `[x]` Packing checklist in design doc
+
+---
+
 ## Changelog (this document)
 | Date | Change |
 |------|--------|
+| 2026-11-27 | **Phase 70 OV-DL** — managed OpenViking download-on-enable (Docker/venv under profileDir); Settings installing poll + Retry; BYO when endpoint set. |
+| 2026-11-27 | **Phase 70 OV** — session reuse + BYO fixes (no false installing; session survive re-apply); Wave OV-DL design expanded. |
+| 2026-11-27 | **Phase 70 opened** — Context Memory design (`context-memory-design.md`); native-first + optional OV. |
+| 2026-11-27 | **Phase 69D1** — Autonomy chrome (Activity filter + digest panel + EnvoyGo summary); Story M/N coverage drift fixed. |
+| 2026-11-27 | **Phase 69C shortlist** — bonded library shortlist pass + awareness/suggester Activity persistence. |
+| 2026-11-26 | **Phase 69D0 + proxy UI** — `mesh.get-digest` Activity-backed; Social proxy sessions panel (en/zh). |
+| 2026-11-26 | **Phase 69A `[x]` + 69B throttle** — allowlist/parity; social-proxy interval + mutex; digest due fix. |
+| 2026-11-26 | **Phase 69 opened** — dual-mode EnvoyAI autonomy; Story P + Epic 69 docs; 69A implementation start. |
 | 2026-11-24 | **Phase 68 + milestone docs** — Phase header `[x]` shipped; **Current direction** active epic → **64D**; [`roadmap.md`](./roadmap.md) index synced. |
 | 2026-11-24 | **68-FH Wave 4 closeout** — P2-A–P2-D shipped; mesh-work deep-link (`openCoding` queue/run/enqueue); EnvoyGo mesh-work sheet; design Wave 4 checklist `[x]`. |
 | 2026-11-24 | **68-FH improve envoy-harness** — P2-B subagent caps/docks; P2-C mesh work store/RPC/UI; P2-D auto-compact. |

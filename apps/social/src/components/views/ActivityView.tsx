@@ -2,18 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { contactLabel } from "../../lib/display.js";
-import type {
-  AgentActivityRecord,
-  AgentActivityDomain,
-  Artifact,
-  AuditEventSummary,
-  BondRecord,
-  TaskJournalSummary,
-  TaskResultPayload,
+import {
+  isAutonomyActivityKind,
+  type AgentActivityRecord,
+  type AgentActivityDomain,
+  type Artifact,
+  type AuditEventSummary,
+  type BondRecord,
+  type TaskJournalSummary,
+  type TaskResultPayload,
 } from "@envoymesh/api";
 import { ArtifactList } from "../ArtifactRenderer.js";
 
 type DateRangePreset = "all" | "today" | "7d" | "custom";
+type FocusFilter = "all" | "autonomy";
 
 function fmtWhen(iso: string): string {
   const d = new Date(iso);
@@ -213,6 +215,7 @@ export function ActivityView({ embedded = false }: { embedded?: boolean }) {
   const [bonds, setBonds] = useState<BondRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [domainFilter, setDomainFilter] = useState<AgentActivityDomain | "all">("all");
+  const [focusFilter, setFocusFilter] = useState<FocusFilter>("all");
   const [contactFilter, setContactFilter] = useState<string>("all");
   const [datePreset, setDatePreset] = useState<DateRangePreset>("all");
   const [customDay, setCustomDay] = useState("");
@@ -255,14 +258,18 @@ export function ActivityView({ embedded = false }: { embedded?: boolean }) {
         since: dateRange.since,
         until: dateRange.until,
       });
-      setRows(list);
+      setRows(
+        focusFilter === "autonomy"
+          ? list.filter((row) => isAutonomyActivityKind(row.kind))
+          : list,
+      );
     } catch (err) {
       console.warn("[ActivityView] listAgentActivity failed:", err);
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [nodeService, domainFilter, contactFilter, dateRange.since, dateRange.until]);
+  }, [nodeService, domainFilter, focusFilter, contactFilter, dateRange.since, dateRange.until]);
 
   useEffect(() => {
     void reload();
@@ -271,13 +278,14 @@ export function ActivityView({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     const unsub = nodeService.on("agent:activity", (record: AgentActivityRecord) => {
       if (domainFilter !== "all" && record.domain !== domainFilter) return;
+      if (focusFilter === "autonomy" && !isAutonomyActivityKind(record.kind)) return;
       if (contactFilter !== "all" && record.remoteOwnerId !== contactFilter) return;
       if (dateRange.since && record.createdAt < dateRange.since) return;
       if (dateRange.until && record.createdAt >= dateRange.until) return;
       setRows((prev) => [record, ...prev.filter((row) => row.activityId !== record.activityId)]);
     });
     return unsub;
-  }, [nodeService, domainFilter, contactFilter, dateRange.since, dateRange.until]);
+  }, [nodeService, domainFilter, focusFilter, contactFilter, dateRange.since, dateRange.until]);
 
   return (
     <div className={`activity-view${embedded ? " activity-view--embedded" : ""}`}>
@@ -310,6 +318,19 @@ export function ActivityView({ embedded = false }: { embedded?: boolean }) {
                 {domainLabel(key)}
               </option>
             ))}
+          </select>
+
+          <label className="activity-filter-label" htmlFor="activity-focus-filter">
+            {t("activity.filterFocus")}
+          </label>
+          <select
+            id="activity-focus-filter"
+            className="activity-filter-select"
+            value={focusFilter}
+            onChange={(e) => setFocusFilter(e.target.value as FocusFilter)}
+          >
+            <option value="all">{t("activity.focusAll")}</option>
+            <option value="autonomy">{t("activity.focusAutonomy")}</option>
           </select>
 
           <label className="activity-filter-label" htmlFor="activity-contact-filter">

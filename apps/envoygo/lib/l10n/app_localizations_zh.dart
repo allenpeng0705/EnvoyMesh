@@ -1062,6 +1062,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get meSettings => '设置';
 
   @override
+  String get autonomySummaryTitle => '你不在时';
+
+  @override
+  String get autonomySummarySubtitle => 'EnvoyAI 在后台做了什么';
+
+  @override
+  String get autonomySummaryHint => '来自家庭节点自主摘要的要点 — 与问「你干了什么」同源。';
+
+  @override
+  String get autonomySummaryRefresh => '刷新';
+
+  @override
+  String get autonomySummaryEmpty => '今天还没有后台自主行动。';
+
+  @override
+  String get autonomySummaryOffline => '请连接家庭节点后再查看摘要。';
+
+  @override
+  String get autonomySummaryUnavailable => '摘要暂时不可用。';
+
+  @override
   String get meAiModel => 'AI 模型';
 
   @override

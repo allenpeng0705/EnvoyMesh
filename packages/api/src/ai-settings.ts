@@ -20,6 +20,7 @@ import {
   DEFAULT_AUTO_REPLY_LIMITS,
   normalizeAutoReplyLimits,
 } from "./auto-reply-limits.js";
+import { resolveContextMemorySettings } from "./context-memory.js";
 
 const DEFAULT_STATUS: AiAssistantStatus = {
   onlineAssistantEnabled: true,
@@ -40,6 +41,7 @@ export function defaultAiSettings(): AiSettings {
     profileMedia: { ...DEFAULT_PROFILE_MEDIA_POLICY },
     knowledgeBase: { ...DEFAULT_AI_KNOWLEDGE_BASE },
     autoReplyLimits: { ...DEFAULT_AUTO_REPLY_LIMITS },
+    contextMemory: resolveContextMemorySettings(undefined),
   };
 }
 
@@ -59,5 +61,6 @@ export function normalizeAiSettings(raw: AiSettings | null | undefined): AiSetti
     profileMedia: normalizeProfileMediaPolicy(raw.profileMedia),
     knowledgeBase: resolveAiKnowledgeBaseSettings(raw.knowledgeBase),
     autoReplyLimits: normalizeAutoReplyLimits(raw.autoReplyLimits),
+    contextMemory: resolveContextMemorySettings(raw.contextMemory),
   };
 }

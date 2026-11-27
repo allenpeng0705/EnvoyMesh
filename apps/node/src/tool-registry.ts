@@ -51,6 +51,7 @@ import {
   getAgentCapabilityRoute,
   matchAgentCapabilityRoutes,
   resolveAgentCapabilityRouteById,
+  resolveRegistryToolName,
 } from "@envoymesh/api";
 import { evaluateToolCallFirewall } from "@envoymesh/models";
 
@@ -1577,6 +1578,28 @@ export interface MeshToolContext {
   }) => Promise<{ ok: true; itemId: string } | { ok: false; error: string }>;
   /** Phase 48A — MCP Tool Consumer. Undefined if no consumers configured. */
   mcpConsumerManager?: import("./mcp-client-adapter.js").McpConsumerManager;
+  /** Phase 69A — local report tools wired through executeTool (not JSON-RPC only). */
+  generateIntelligenceReport?: () => Promise<string>;
+  discoverAndCluster?: (params: {
+    seedTopics?: string[];
+    seedCapabilities?: string[];
+  }) => Promise<string>;
+  /** Phase 69D0 — “what did you do?” digest from Activity. */
+  getDigest?: (params: {
+    period?: "daily" | "weekly";
+  }) => Promise<{
+    ok: boolean;
+    period: string;
+    summaryText?: string;
+    headlines?: string[];
+    digest?: unknown;
+    error?: string;
+  }>;
+  getDigestConfig?: () => Promise<{
+    ok: boolean;
+    config: unknown;
+    nextScheduledAt?: string;
+  }>;
 }
 
 /**
@@ -1588,8 +1611,9 @@ export async function executeTool(
   context: MeshToolContext,
   vaultSearchFn?: (query: string, limit?: number) => Promise<unknown>,
 ): Promise<ToolResult> {
+  const resolvedToolName = resolveRegistryToolName(toolName);
   const registry = new ToolRegistry(context.trustIntro?.trustModeEnabled ?? false);
-  const tool = registry.get(toolName);
+  const tool = registry.get(resolvedToolName);
 
   if (!tool) {
     return {
@@ -1601,8 +1625,22 @@ export async function executeTool(
     };
   }
 
+  // Dispatch and audit use the canonical registry name (aliases already resolved).
+  toolName = resolvedToolName;
+
   const correlationId = randomUUID();
   const startTime = Date.now();
+
+  // Prompt/catalog often omits displayName; fill from owner profile for bond.hello.
+  const normalizedParams: ToolParams =
+    toolName === "bond.send_hello" &&
+    (typeof rawParams.displayName !== "string" || !String(rawParams.displayName).trim())
+      ? {
+          ...rawParams,
+          displayName:
+            context.trustIntro?.humanProfileSummary?.displayName?.trim() || "Envoy user",
+        }
+      : rawParams;
 
   const firewall = evaluateToolCallFirewall({
     tool: {
@@ -1611,7 +1649,7 @@ export async function executeTool(
       sensitivityCeiling: tool.sensitivityCeiling,
       requiresApproval: tool.requiresApproval,
     },
-    params: rawParams,
+    params: normalizedParams,
     approvalGranted: context.approvalGranted === true,
   });
   if (!firewall.ok) {
@@ -2922,6 +2960,94 @@ export async function executeTool(
         ok: result.ok,
         result: result.ok ? { content: result.content, structuredContent: result.structuredContent } : undefined,
         error: result.error,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.intelligence_report") {
+      if (!context.generateIntelligenceReport) {
+        return {
+          ok: false,
+          error: "mesh.intelligence_report is not wired in this context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const report = await context.generateIntelligenceReport();
+      return {
+        ok: true,
+        result: { report },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.get-digest") {
+      if (!context.getDigest) {
+        return {
+          ok: false,
+          error: "mesh.get-digest is not wired in this context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const period =
+        params.period === "weekly" || params.period === "daily" ? params.period : "daily";
+      const digestResult = await context.getDigest({ period });
+      return {
+        ok: digestResult.ok,
+        result: digestResult.ok
+          ? {
+              period: digestResult.period,
+              summaryText: digestResult.summaryText,
+              headlines: digestResult.headlines,
+              digest: digestResult.digest,
+            }
+          : undefined,
+        error: digestResult.error,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.get-digest-config") {
+      if (!context.getDigestConfig) {
+        return {
+          ok: false,
+          error: "mesh.get-digest-config is not wired in this context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const cfg = await context.getDigestConfig();
+      return {
+        ok: cfg.ok,
+        result: { config: cfg.config, nextScheduledAt: cfg.nextScheduledAt },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.discover_cluster") {
+      if (!context.discoverAndCluster) {
+        return {
+          ok: false,
+          error: "mesh.discover_cluster is not wired in this context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const seedTopics = Array.isArray(params.seedTopics)
+        ? params.seedTopics.filter((t): t is string => typeof t === "string")
+        : undefined;
+      const seedCapabilities = Array.isArray(params.seedCapabilities)
+        ? params.seedCapabilities.filter((t): t is string => typeof t === "string")
+        : undefined;
+      const summary = await context.discoverAndCluster({ seedTopics, seedCapabilities });
+      return {
+        ok: true,
+        result: { summary },
         toolName,
         correlationId,
         latencyMs: Date.now() - startTime,

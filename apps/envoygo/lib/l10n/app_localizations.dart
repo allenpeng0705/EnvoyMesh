@@ -2118,6 +2118,48 @@ abstract class AppLocalizations {
   /// **'Settings'**
   String get meSettings;
 
+  /// No description provided for @autonomySummaryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'While you were away'**
+  String get autonomySummaryTitle;
+
+  /// No description provided for @autonomySummarySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What EnvoyAI did in the background'**
+  String get autonomySummarySubtitle;
+
+  /// No description provided for @autonomySummaryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Headlines from your home node’s autonomy digest — same facts as asking “what did you do?”'**
+  String get autonomySummaryHint;
+
+  /// No description provided for @autonomySummaryRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get autonomySummaryRefresh;
+
+  /// No description provided for @autonomySummaryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No background autonomy yet today.'**
+  String get autonomySummaryEmpty;
+
+  /// No description provided for @autonomySummaryOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect to your home node to see this summary.'**
+  String get autonomySummaryOffline;
+
+  /// No description provided for @autonomySummaryUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Digest isn’t available right now.'**
+  String get autonomySummaryUnavailable;
+
   /// No description provided for @meAiModel.
   ///
   /// In en, this message translates to:

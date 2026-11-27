@@ -21,6 +21,11 @@ export const MESH_TOOL_REGISTRY_ALIASES: Record<string, string> = {
   mesh_requestKnowledge: "knowledge.query",
   mesh_sendChat: "chat.send",
   mesh_findCapability: "mesh.match_capability_route",
+  // OpenClaw / prompt legacy names (Phase 69A) → ToolRegistry
+  "mesh.send_hello": "bond.send_hello",
+  "mesh.task_propose": "mesh.task.propose",
+  "mesh.task_cancel": "mesh.task.cancel",
+  "mesh.task_await_result": "mesh.task.await_result",
 };
 
 /** Preferred registry tool for an EMP intent when no meshTools hint exists. */

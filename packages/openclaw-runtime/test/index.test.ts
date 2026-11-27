@@ -87,8 +87,8 @@ describe("discoverOpenClaw", () => {
 // ENVOY_TOOL_CATALOG — schema validation
 // =========================================================================
 describe("ENVOY_TOOL_CATALOG", () => {
-  it("contains 12 tools", () => {
-    expect(ENVOY_TOOL_CATALOG).toHaveLength(12);
+  it("contains 13 tools", () => {
+    expect(ENVOY_TOOL_CATALOG).toHaveLength(13);
   });
 
   it("every tool has required fields", () => {
@@ -114,7 +114,7 @@ describe("ENVOY_TOOL_CATALOG", () => {
   it("includes all expected tools", () => {
     const names = ENVOY_TOOL_CATALOG.map((t) => t.name);
     expect(names).toContain("mesh.discover_cluster");
-    expect(names).toContain("mesh.send_hello");
+    expect(names).toContain("bond.send_hello");
     expect(names).toContain("mesh.library_discover");
     expect(names).toContain("mesh.library_list");
     expect(names).toContain("mesh.library_read");
@@ -123,7 +123,8 @@ describe("ENVOY_TOOL_CATALOG", () => {
     expect(names).toContain("vault.search");
     expect(names).toContain("knowledge.query");
     expect(names).toContain("mesh.intelligence_report");
-    expect(names).toContain("mesh.task_propose");
+    expect(names).toContain("mesh.get-digest");
+    expect(names).toContain("mesh.task.propose");
     expect(names).toContain("mesh.chat_rag_search");
   });
 });
@@ -180,7 +181,7 @@ describe("version negotiation", () => {
     const hello = {
       type: "hello",
       protocol: "envoy-openclaw/1.0",
-      envoyVersion: "0.8.0",
+      envoyVersion: "0.9.0",
       tools: "ENVOY_TOOL_CATALOG",
       modelConfig: null,
     };

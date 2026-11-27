@@ -6,11 +6,11 @@
  * which tool to call for each user request.
  *
  * EnvoyMesh features mapped to tools:
- *   Make friends        → mesh.send_hello, mesh.discover_cluster
+ *   Make friends        → bond.send_hello, mesh.discover_cluster
  *   Find documents      → mesh.library_discover, mesh.discover_cluster
- *   Ask for help        → mesh.intelligence_report, mesh.task_propose
- *   A2A negotiation     → mesh.task_propose, mesh.task_result, mesh.task_feedback
- *   Bond autonomy       → mesh.send_hello (auto-accept via policy)
+ *   Ask for help        → mesh.intelligence_report, mesh.task.propose
+ *   A2A negotiation     → mesh.task.propose (+ await/cancel)
+ *   Bond autonomy       → bond.send_hello (hello only; bond.accept stays human)
  *   Knowledge query     → vault.search (local), knowledge.query (peer mesh)
  *   Read vault file     → mesh.library_read
  *   Chat history search → mesh.chat_rag_search
@@ -51,12 +51,14 @@ export const ENVOY_TOOL_CATALOG: EnvoyToolDefinition[] = [
   },
 
   {
-    name: "mesh.send_hello",
-    description: "Send a bond request (hello) to a specific peer. Requires the target peer's ownerId.",
+    name: "bond.send_hello",
+    description:
+      "Send a bond request (hello) to a specific peer. Requires the target peer's ownerId. Does not accept bonds — owner must bond.accept.",
     parameters: {
       type: "object",
       properties: {
         targetOwnerId: { type: "string", description: "The peer's owner ID (envoy:owner:...)" },
+        displayName: { type: "string", description: "Your display name (optional; filled from profile)" },
         message: { type: "string", description: "Optional introduction message" },
       },
       required: ["targetOwnerId"],
@@ -210,7 +212,91 @@ export const ENVOY_TOOL_CATALOG: EnvoyToolDefinition[] = [
   },
 
   {
-    name: "mesh.task_propose",
+    name: "mesh.get-digest",
+    description:
+      "Summarize recent autonomous and agent Activity (friend finding, social proxy, document jobs). Use for 'what did you do while I was away?'",
+    parameters: {
+      type: "object",
+      properties: {
+        period: { type: "string", enum: ["daily", "weekly"], description: "Defaults to daily" },
+      },
+    },
+    useWhen: [
+      "User asks what you did while they were away / overnight / today",
+      "User asks for a digest or autonomy summary",
+      "Before claiming background work completed",
+    ],
+    resultShape: "{ summaryText, headlines[], digest }",
+  },
+
+  {
+    name: "mesh.market.search",
+    description:
+      "Search Envoy Market listings (chat-driven). Background Market idle scrape is out of wave 1 — use when the owner asks to search the market.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query" },
+        limit: { type: "number", description: "Max results" },
+      },
+    },
+    useWhen: [
+      "User asks to search the market / shop listings",
+      "User wants listings matching a topic",
+    ],
+    resultShape: "{ ok, listings[] }",
+  },
+
+  {
+    name: "mesh.market.shortlist",
+    description: "Shortlist Market listings for the owner to review (chat-driven).",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query" },
+        limit: { type: "number", description: "Max results" },
+      },
+    },
+    useWhen: [
+      "User asks for a market shortlist",
+      "User wants a shortlist of listings to review",
+    ],
+    resultShape: "{ ok, shortlist[] }",
+  },
+
+  {
+    name: "chat.send",
+    description:
+      "Send a chat message to a contact. Prefer after owner confirms who to message.",
+    parameters: {
+      type: "object",
+      properties: {
+        targetOwnerId: { type: "string", description: "Contact ownerId" },
+        text: { type: "string", description: "Message text" },
+      },
+      required: ["targetOwnerId", "text"],
+    },
+    useWhen: [
+      "User asks you to message a contact",
+      "Follow-up after discovery when owner picks someone to contact",
+    ],
+    resultShape: "{ ok: true } or { ok: false, error }",
+  },
+
+  {
+    name: "mesh.intro.run_autopilot",
+    description:
+      "Run one friend-finding / intro autopilot pass (discovery-oriented when social proxy is off).",
+    parameters: { type: "object", properties: {} },
+    useWhen: [
+      "User asks to look for people now",
+      "User wants one friend-finding pass",
+    ],
+    resultShape: "{ ok, summary }",
+  },
+
+  {
+    name: "mesh.task.propose",
     description: "Send a task proposal to a peer agent. Used for A2A negotiation — finding someone to do work.",
     parameters: {
       type: "object",
@@ -355,7 +441,7 @@ export function buildOpenClawSystemPrompt(ownerName?: string, config?: EnvoyAgen
       "• Welcome them and ask what they'd like to do.",
       "• OFFER to search the mesh: 'I can look for people who share your interests — want me to search?'",
       "  Then call `mesh.discover_cluster` with a topic from their interests.",
-      "• Guide them to Discover to say hello to someone.",
+      "• Guide them to Discover; use `bond.send_hello` when they pick someone.",
       "• Focus on getting their FIRST contact. Don't dump all features at once.",
       "• When they ask about a feature, give EXACT steps from ENVOYMESH_GUIDE.md.",
       "",
@@ -382,13 +468,17 @@ export function buildOpenClawSystemPrompt(ownerName?: string, config?: EnvoyAgen
     "=== TOOL USAGE ===",
     "When the user asks you to DO something (not just explain), use your tools:",
     "- `mesh.discover_cluster`: search the mesh for people/knowledge by topic. Works even with 0 bonds.",
-    "- `mesh.send_hello`: send a bond request to a specific peer (needs targetOwnerId).",
+    "- `bond.send_hello`: send a bond request to a specific peer (needs targetOwnerId). Never bond.accept — only the owner can.",
     "- `mesh.files_list_all` / `mesh.files_read`: browse the user's files.",
     "- `vault.search`: keyword search over vault documents.",
     "- `knowledge.query`: ask a bonded peer's agent a question.",
     "- `mesh.intelligence_report`: analyze mesh health, dormant bonds, growth.",
+    "- `mesh.get-digest`: summarize what ran while the owner was away (Activity-backed). Prefer this for 'what did you do?' questions.",
+    "- `mesh.task.propose`: propose A2A work to a peer agent (not Team jobs).",
     "- `web_search` / `tavily_search`: look up current information (if enabled).",
     "Always explain what you're about to do before calling a tool, and summarize results clearly.",
+    "Call tools by their registry names above. Legacy aliases like mesh.send_hello still resolve.",
+    "When asked what you did overnight/away: call mesh.get-digest first; answer only from tool results — never invent passes.",
     "",
   );
 
@@ -446,7 +536,7 @@ export function buildOpenClawSystemPrompt(ownerName?: string, config?: EnvoyAgen
     "Confirm using the tool's summary / cronResult schedule — do not invent delivery times.",
     "",
     "--- Concepts ---",
-    "- Bonds: trusted connections between peers. You can propose bonds via mesh.send_hello.",
+    "- Bonds: trusted connections between peers. You can propose bonds via bond.send_hello; owners accept.",
     "- Discovery: find peers by what they publish or what they can do.",
     "- Vault: each user's local document store. Shared via published libraries.",
     "- Tasks: agents can negotiate and execute tasks for each other (A2A).",

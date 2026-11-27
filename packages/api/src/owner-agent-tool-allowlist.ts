@@ -1,3 +1,4 @@
+import { resolveRegistryToolName } from "./capability-route-executor.js";
 import type { OwnerAgentDomain, OwnerAgentPostureFlags } from "./owner-agent-types.js";
 
 export type OwnerAgentToolKind = "mesh" | "job";
@@ -13,7 +14,10 @@ export interface OwnerAgentToolSpec {
   requiresPosture?: "socialProxy" | "documentAcquisition" | "capabilityProvider";
 }
 
-/** Curated owner-agent tools (Phase 18B). Mesh names must exist in ToolRegistry. */
+/**
+ * Curated owner-agent tools (Phase 18B + Phase 69A wave-1).
+ * Mesh names must exist in ToolRegistry (aliases resolve via resolveRegistryToolName).
+ */
 export const OWNER_AGENT_TOOL_ALLOWLIST: OwnerAgentToolSpec[] = [
   {
     name: "vault.search",
@@ -28,6 +32,13 @@ export const OWNER_AGENT_TOOL_ALLOWLIST: OwnerAgentToolSpec[] = [
     domain: "document",
     description: "List indexed library files on this node.",
     paramHint: "{}",
+  },
+  {
+    name: "mesh.library_read",
+    kind: "mesh",
+    domain: "document",
+    description: "Read content of a local library item by relative path.",
+    paramHint: '{ "relativePath": "string", "maxBytes"?: number }',
   },
   {
     name: "mesh.library_discover",
@@ -49,6 +60,71 @@ export const OWNER_AGENT_TOOL_ALLOWLIST: OwnerAgentToolSpec[] = [
     domain: "document",
     description: "Ask a bonded contact to share a published file via chat.",
     paramHint: '{ "targetOwnerHint": "string", "fileTitleQuery": "string" }',
+  },
+  {
+    name: "knowledge.query",
+    kind: "mesh",
+    domain: "knowledge",
+    description: "Ask a bonded contact's agent a knowledge question over the mesh.",
+    paramHint: '{ "targetOwnerId": "string", "query": "string", "requestedSensitivity"?: "public"|"friends"|"trusted"|"private" }',
+  },
+  {
+    name: "mesh.market.search",
+    kind: "mesh",
+    domain: "document",
+    description: "Search Envoy Market listings (chat-driven; background Market idle scrape is out of wave 1).",
+    paramHint: '{ "query"?: "string", "limit"?: number }',
+  },
+  {
+    name: "mesh.market.shortlist",
+    kind: "mesh",
+    domain: "document",
+    description: "Shortlist Market listings matching a query for the owner to review.",
+    paramHint: '{ "query"?: "string", "limit"?: number }',
+  },
+  {
+    name: "mesh.intelligence_report",
+    kind: "mesh",
+    domain: "knowledge",
+    description: "Generate a mesh health / growth report from local bonds and activity.",
+    paramHint: "{}",
+  },
+  {
+    name: "mesh.get-digest",
+    kind: "mesh",
+    domain: "knowledge",
+    description:
+      "Summarize what the mesh/agent did recently (autonomy digest from Activity). Use when the owner asks what you did while they were away.",
+    paramHint: '{ "period"?: "daily"|"weekly" }',
+  },
+  {
+    name: "mesh.get-digest-config",
+    kind: "mesh",
+    domain: "knowledge",
+    description: "Show digest schedule (daily/weekly/off) and next run time.",
+    paramHint: "{}",
+  },
+  {
+    name: "mesh.discover_cluster",
+    kind: "mesh",
+    domain: "social",
+    description: "Broadcast topic discovery and return clustered peer suggestions.",
+    paramHint: '{ "seedTopics"?: ["string"], "seedCapabilities"?: ["string"] }',
+  },
+  {
+    name: "bond.send_hello",
+    kind: "mesh",
+    domain: "social",
+    description:
+      "Send a bond request (hello) to a peer. Does not accept bonds — owner must bond.accept.",
+    paramHint: '{ "targetOwnerId": "string", "displayName"?: "string", "message"?: "string" }',
+  },
+  {
+    name: "chat.send",
+    kind: "mesh",
+    domain: "social",
+    description: "Send a chat message to a contact (agent-mediated when used from EnvoyAI).",
+    paramHint: '{ "targetOwnerId": "string", "text": "string" }',
   },
   {
     name: "mesh.match_capability_route",
@@ -151,6 +227,25 @@ export const OWNER_AGENT_TOOL_ALLOWLIST: OwnerAgentToolSpec[] = [
   },
 ];
 
+/** Phase 69A wave-1 tools that must stay on the allowlist (US-69-A1). */
+export const OWNER_AGENT_WAVE1_TOOL_NAMES: readonly string[] = [
+  "vault.search",
+  "mesh.library_discover",
+  "mesh.library_read",
+  "knowledge.query",
+  "mesh.market.search",
+  "mesh.market.shortlist",
+  "mesh.intelligence_report",
+  "mesh.get-digest",
+  "mesh.discover_cluster",
+  "bond.send_hello",
+  "chat.send",
+  "mesh.task.propose",
+  "mesh.intro.run_autopilot",
+  "owner.start_document_acquisition",
+  "owner.run_social_proxy_pass",
+] as const;
+
 export function filterOwnerAgentTools(
   posture: OwnerAgentPostureFlags,
 ): OwnerAgentToolSpec[] {
@@ -164,7 +259,8 @@ export function filterOwnerAgentTools(
 }
 
 export function findOwnerAgentTool(name: string): OwnerAgentToolSpec | undefined {
-  return OWNER_AGENT_TOOL_ALLOWLIST.find((t) => t.name === name);
+  const resolved = resolveRegistryToolName(name);
+  return OWNER_AGENT_TOOL_ALLOWLIST.find((t) => t.name === name || t.name === resolved);
 }
 
 export function isOwnerAgentToolAllowed(
@@ -173,5 +269,6 @@ export function isOwnerAgentToolAllowed(
 ): boolean {
   const spec = findOwnerAgentTool(toolName);
   if (!spec) return false;
-  return filterOwnerAgentTools(posture).some((t) => t.name === toolName);
+  const allowed = filterOwnerAgentTools(posture);
+  return allowed.some((t) => t.name === spec.name);
 }

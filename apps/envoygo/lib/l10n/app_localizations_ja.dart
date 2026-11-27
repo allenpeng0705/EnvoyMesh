@@ -1094,6 +1094,27 @@ class AppLocalizationsJa extends AppLocalizations {
   String get meSettings => '設定';
 
   @override
+  String get autonomySummaryTitle => '不在中の動き';
+
+  @override
+  String get autonomySummarySubtitle => 'EnvoyAI がバックグラウンドで行ったこと';
+
+  @override
+  String get autonomySummaryHint => 'ホームノードの自律ダイジェストの見出し — 「何をした？」と同じ事実です';
+
+  @override
+  String get autonomySummaryRefresh => '更新';
+
+  @override
+  String get autonomySummaryEmpty => '今日はまだバックグラウンドの自律行動はありません。';
+
+  @override
+  String get autonomySummaryOffline => 'この要約を見るにはホームノードに接続してください。';
+
+  @override
+  String get autonomySummaryUnavailable => 'ダイジェストは現在利用できません。';
+
+  @override
   String get meAiModel => 'AI モデル';
 
   @override

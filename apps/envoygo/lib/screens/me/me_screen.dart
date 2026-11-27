@@ -29,6 +29,7 @@ import '../settings/ai_engine_settings_screen.dart';
 import '../settings/ai_model_settings_screen.dart';
 import '../settings/coding_agents_settings_screen.dart';
 import '../settings/envoy_local_settings_screen.dart';
+import 'autonomy_summary_screen.dart';
 import 'node_switcher_sheet.dart';
 
 /// Profile + node management screen.
@@ -695,6 +696,21 @@ class _MeScreenState extends ConsumerState<MeScreen> {
           Card(
             child: Column(
               children: [
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome_outlined),
+                  title: Text(l10n.autonomySummaryTitle),
+                  subtitle: Text(
+                    l10n.autonomySummarySubtitle,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AutonomySummaryScreen(),
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.smart_toy_outlined),
                   title: Text(l10n.meAiModel),

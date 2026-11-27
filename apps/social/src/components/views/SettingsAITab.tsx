@@ -9,6 +9,7 @@ import {
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import { AgentSettings } from "./settings/AgentSettings.js";
 import { CodingAgentsSettings } from "./settings/CodingAgentsSettings.js";
+import { SocialProxySessionsPanel } from "./settings/SocialProxySessionsPanel.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import type {
   AiIdentityMode,
@@ -71,7 +72,10 @@ import {
   normalizeEnvoyDisclosureSettings,
   normalizeProfileMediaPolicy,
   normalizeAiBotDefinition,
+  resolveContextMemorySettings,
   type AgentIdentityDocument,
+  type ContextMemoryFact,
+  type ContextMemoryStatusSnapshot,
   type ProfileMediaPolicy,
 } from "@envoymesh/api";
 // Browser-safe subpath — does NOT pull in node:crypto / node:fs. The full
@@ -1519,6 +1523,237 @@ function AgentIdentityEditor() {
   );
 }
 
+function ContextMemorySettingsPanel({
+  aiSettings,
+  updateAiSettings,
+}: {
+  aiSettings: AiSettings;
+  updateAiSettings: (partial: Partial<AiSettings>) => Promise<void>;
+}) {
+  const t = useT();
+  const nodeService = useNodeService();
+  const cm = resolveContextMemorySettings(aiSettings.contextMemory);
+  const [status, setStatus] = useState<ContextMemoryStatusSnapshot | null>(null);
+  const [facts, setFacts] = useState<ContextMemoryFact[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const next = await nodeService.getContextMemoryStatus();
+      setStatus(next);
+      if (next.status === "ready") {
+        setFacts(await nodeService.listContextMemoryFacts());
+      } else {
+        setFacts([]);
+      }
+    } catch {
+      setStatus(null);
+      setFacts([]);
+    }
+  }, [nodeService]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh, cm.enabled, cm.backend, cm.endpoint, cm.apiKey, cm.namespace]);
+
+  // Poll while managed install is in progress.
+  useEffect(() => {
+    if (status?.status !== "installing") return;
+    const id = window.setInterval(() => {
+      void refresh();
+    }, 1500);
+    return () => window.clearInterval(id);
+  }, [status?.status, refresh]);
+
+  const patchCm = async (partial: Partial<NonNullable<AiSettings["contextMemory"]>>) => {
+    setBusy(true);
+    try {
+      await updateAiSettings({
+        contextMemory: resolveContextMemorySettings({ ...cm, ...partial }),
+      });
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retryInstall = async () => {
+    setBusy(true);
+    try {
+      const next = await nodeService.retryContextMemoryInstall();
+      setStatus(next);
+      setFacts([]);
+      // Poll effect keys off status; if Retry returns installing, kick an early refresh.
+      if (next.status === "installing") {
+        window.setTimeout(() => {
+          void refresh();
+        }, 400);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const managedHint = cm.backend === "openviking" && !cm.endpoint;
+
+  return (
+    <section className="settings-section" data-testid="context-memory-settings">
+      <h4>{t("settings.ai.contextMemory.heading")}</h4>
+      <p className="section-desc">{t("settings.ai.contextMemory.sectionDesc")}</p>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.contextMemory.enabled")}</strong>
+          <span className="toggle-desc">{t("settings.ai.contextMemory.enabledDesc")}</span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={cm.enabled}
+            disabled={busy}
+            data-testid="context-memory-enabled"
+            onChange={(e) => void patchCm({ enabled: e.target.checked })}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      {cm.enabled ? (
+        <>
+          <div className="settings-field" style={{ marginTop: 12 }}>
+            <label>{t("settings.ai.contextMemory.backend")}</label>
+            <select
+              value={cm.backend}
+              disabled={busy || status?.status === "installing"}
+              data-testid="context-memory-backend"
+              onChange={(e) =>
+                void patchCm({
+                  backend: e.target.value === "openviking" ? "openviking" : "native",
+                })
+              }
+            >
+              <option value="native">{t("settings.ai.contextMemory.backendNative")}</option>
+              <option value="openviking">{t("settings.ai.contextMemory.backendOpenviking")}</option>
+            </select>
+            <p className="section-desc">
+              {cm.backend === "openviking"
+                ? t("settings.ai.contextMemory.backendOpenvikingDesc")
+                : t("settings.ai.contextMemory.backendNativeDesc")}
+            </p>
+          </div>
+          {cm.backend === "openviking" ? (
+            <>
+              <div className="settings-field">
+                <label>{t("settings.ai.contextMemory.endpoint")}</label>
+                <input
+                  key={`cm-endpoint-${cm.endpoint ?? ""}`}
+                  type="text"
+                  defaultValue={cm.endpoint ?? ""}
+                  placeholder={t("settings.ai.contextMemory.endpointPlaceholder")}
+                  disabled={busy || status?.status === "installing"}
+                  onBlur={(e) => {
+                    const next = e.target.value.trim();
+                    if (next !== (cm.endpoint ?? "")) void patchCm({ endpoint: next || undefined });
+                  }}
+                />
+                <p className="section-desc">
+                  {managedHint
+                    ? t("settings.ai.contextMemory.managedHint")
+                    : t("settings.ai.contextMemory.byoHint")}
+                </p>
+              </div>
+              <div className="settings-field">
+                <label>{t("settings.ai.contextMemory.apiKey")}</label>
+                <input
+                  key={`cm-apikey-${cm.apiKey ?? ""}`}
+                  type="password"
+                  autoComplete="off"
+                  defaultValue={cm.apiKey ?? ""}
+                  placeholder={t("settings.ai.contextMemory.apiKeyPlaceholder")}
+                  disabled={busy || status?.status === "installing"}
+                  onBlur={(e) => {
+                    const next = e.target.value.trim();
+                    if (next !== (cm.apiKey ?? "")) void patchCm({ apiKey: next || undefined });
+                  }}
+                />
+              </div>
+            </>
+          ) : null}
+          <div className="settings-field" style={{ marginTop: 8 }}>
+            <strong>{t("settings.ai.contextMemory.status")}: </strong>
+            <span data-testid="context-memory-status">
+              {status?.summary ?? status?.status ?? "…"}
+            </span>
+            {status?.status === "installing" && typeof status.installProgress === "number" ? (
+              <span className="section-desc" style={{ marginLeft: 8 }} data-testid="context-memory-install-progress">
+                {Math.round(Math.max(0, Math.min(1, status.installProgress)) * 100)}%
+              </span>
+            ) : null}
+            <button type="button" className="btn-secondary" style={{ marginLeft: 8 }} onClick={() => void refresh()}>
+              {t("settings.ai.contextMemory.refresh")}
+            </button>
+            {status?.status === "error" && (status.managed || managedHint) ? (
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ marginLeft: 8 }}
+                disabled={busy}
+                data-testid="context-memory-retry"
+                onClick={() => void retryInstall()}
+              >
+                {t("settings.ai.contextMemory.retry")}
+              </button>
+            ) : null}
+          </div>
+          {status?.status === "needs_models" ? (
+            <p className="section-desc" data-testid="context-memory-needs-models">
+              {t("settings.ai.contextMemory.needsModelsHint")}
+            </p>
+          ) : null}
+          {status?.status === "ready" ? (
+            <div style={{ marginTop: 12 }} data-testid="context-memory-facts">
+              <strong>{t("settings.ai.contextMemory.factsHeading")}</strong>
+              {facts.length === 0 ? (
+                <p className="section-desc">{t("settings.ai.contextMemory.factsEmpty")}</p>
+              ) : (
+                <ul style={{ listStyle: "none", padding: 0 }}>
+                  {facts.slice(0, 40).map((f) => (
+                    <li key={f.id} style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                      <span style={{ flex: 1 }}>{f.text}</span>
+                      {status?.backend === "native" ? (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() =>
+                            void nodeService
+                              .pinContextMemoryFact(f.id, f.importance < 1)
+                              .then(() => refresh())
+                          }
+                        >
+                          {f.importance >= 1
+                            ? t("settings.ai.contextMemory.unpin")
+                            : t("settings.ai.contextMemory.pin")}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() =>
+                          void nodeService.forgetContextMemoryFact(f.id).then(() => refresh())
+                        }
+                      >
+                        {t("settings.ai.contextMemory.forget")}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
 function AutoReplyLimitsSettings({
   aiSettings,
   updateAiSettings,
@@ -1662,6 +1897,7 @@ function defaultAiSettings(): AiSettings {
     profileMedia: { ...DEFAULT_PROFILE_MEDIA_POLICY },
     knowledgeBase: { ...DEFAULT_AI_KNOWLEDGE_BASE },
     autoReplyLimits: { ...DEFAULT_AUTO_REPLY_LIMITS },
+    contextMemory: resolveContextMemorySettings(undefined),
   };
 }
 
@@ -1680,6 +1916,7 @@ function resolveAiSettings(raw: AiSettings | null | undefined): AiSettings {
     profileMedia: normalizeProfileMediaPolicy(raw.profileMedia),
     knowledgeBase: { ...base.knowledgeBase, ...(raw.knowledgeBase ?? {}) },
     autoReplyLimits: { ...base.autoReplyLimits, ...(raw.autoReplyLimits ?? {}) },
+    contextMemory: resolveContextMemorySettings(raw.contextMemory),
   };
 }
 
@@ -5057,6 +5294,11 @@ export function SettingsAITab() {
         <AutoReplyLimitsSettings aiSettings={aiSettings} updateAiSettings={updateAiSettings} />
       </section>
 
+      <ContextMemorySettingsPanel
+        aiSettings={aiSettings}
+        updateAiSettings={updateAiSettings}
+      />
+
       <section className="settings-section">
         <h4>{t("settings.ai.identity.heading")}</h4>
         <p className="section-desc">{t("settings.ai.identity.sectionDesc")}</p>
@@ -5138,6 +5380,31 @@ export function SettingsAITab() {
             />
             <span>{t("settings.ai.postures.socialProxy")}</span>
           </label>
+          <SocialProxySessionsPanel enabled={nodeConfig?.socialProxyEnabled === true} />
+          {nodeConfig?.socialProxyEnabled === true ? (
+            <div className="form-group" style={{ marginTop: "0.5rem" }}>
+              <label htmlFor="social-proxy-interval">
+                {t("settings.ai.postures.socialProxyInterval")}
+              </label>
+              <select
+                id="social-proxy-interval"
+                className="settings-input"
+                value={String(nodeConfig?.socialProxyIntervalHours ?? 1)}
+                onChange={async (e) => {
+                  const hours = Number(e.target.value) as 0 | 1 | 6 | 24 | 168;
+                  await nodeService.updateNodeConfig({ socialProxyIntervalHours: hours });
+                  await refreshNodeConfig();
+                }}
+              >
+                <option value="0">{t("settings.ai.postures.socialProxyIntervalOff")}</option>
+                <option value="1">{t("settings.ai.postures.socialProxyInterval1h")}</option>
+                <option value="6">{t("settings.ai.postures.socialProxyInterval6h")}</option>
+                <option value="24">{t("settings.ai.postures.socialProxyInterval24h")}</option>
+                <option value="168">{t("settings.ai.postures.socialProxyInterval168h")}</option>
+              </select>
+              <p className="settings-hint">{t("settings.ai.postures.socialProxyIntervalHint")}</p>
+            </div>
+          ) : null}
         </div>
         <div className="settings-field">
           <label className="settings-checkbox-row">
@@ -5151,6 +5418,48 @@ export function SettingsAITab() {
             />
             <span>{t("settings.ai.postures.documentAcquisition")}</span>
           </label>
+        </div>
+        <div className="settings-field">
+          <label className="settings-checkbox-row">
+            <input
+              type="checkbox"
+              checked={
+                typeof nodeConfig?.bondedResourceShortlistEnabled === "boolean"
+                  ? nodeConfig.bondedResourceShortlistEnabled
+                  : nodeConfig?.documentAcquisitionEnabled === true
+              }
+              onChange={async (e) => {
+                await nodeService.updateNodeConfig({
+                  bondedResourceShortlistEnabled: e.target.checked,
+                });
+                await refreshNodeConfig();
+              }}
+            />
+            <span>{t("settings.ai.postures.bondedShortlist")}</span>
+          </label>
+          <p className="settings-hint">{t("settings.ai.postures.bondedShortlistHint")}</p>
+          <div className="form-group" style={{ marginTop: "0.35rem" }}>
+            <label htmlFor="bonded-shortlist-interval">
+              {t("settings.ai.postures.bondedShortlistInterval")}
+            </label>
+            <select
+              id="bonded-shortlist-interval"
+              className="settings-input"
+              value={String(nodeConfig?.bondedResourceShortlistIntervalHours ?? 24)}
+              onChange={async (e) => {
+                const hours = Number(e.target.value) as 0 | 6 | 24 | 168;
+                await nodeService.updateNodeConfig({
+                  bondedResourceShortlistIntervalHours: hours,
+                });
+                await refreshNodeConfig();
+              }}
+            >
+              <option value="0">{t("settings.ai.postures.bondedShortlistIntervalOff")}</option>
+              <option value="6">{t("settings.ai.postures.bondedShortlistInterval6h")}</option>
+              <option value="24">{t("settings.ai.postures.bondedShortlistInterval24h")}</option>
+              <option value="168">{t("settings.ai.postures.bondedShortlistInterval168h")}</option>
+            </select>
+          </div>
         </div>
       </section>
 

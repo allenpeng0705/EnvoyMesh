@@ -50,6 +50,10 @@ export default defineConfig({
       "@envoymesh/node-core": resolve(rootDir, "packages/node-core/src/index.ts"),
       "@envoymesh/host-connect": resolve(rootDir, "packages/host-connect/src/index.ts"),
       "@envoymesh/reuse-host": resolve(rootDir, "packages/reuse-host/src/index.ts"),
+      "@envoymesh/openclaw-runtime/tool-bridge": resolve(
+        rootDir,
+        "packages/openclaw-runtime/src/tool-bridge.ts",
+      ),
       "@envoymesh/openclaw-runtime": resolve(rootDir, "packages/openclaw-runtime/src/index.ts"),
       // Subpath exports must precede the package root alias (prefix match).
       "@envoymesh/harness/pi-runtime": resolve(rootDir, "packages/harness/src/pi-runtime.ts"),

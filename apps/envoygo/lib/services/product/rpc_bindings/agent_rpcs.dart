@@ -403,4 +403,14 @@ mixin AgentRpcs on HomeRpcSession {
   }
 
   // -- Envoy Harness (coding chat) --
+
+  /// Phase 69D1 — Activity-backed autonomy digest from the home node.
+  Future<Map<String, dynamic>> getAutonomyDigest({String period = 'daily'}) async {
+    final result = await homeClient.call('getAutonomyDigest', {
+      'period': period,
+    });
+    if (result is Map<String, dynamic>) return result;
+    if (result is Map) return Map<String, dynamic>.from(result);
+    return {'ok': false, 'period': period, 'error': 'unexpected digest payload'};
+  }
 }

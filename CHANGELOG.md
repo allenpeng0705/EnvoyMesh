@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-27
+
+### Changed
+
+- **EnvoyMesh 0.9.0** / **EnvoyGo 1.9.0+54** — workspace version sync (`VERSION`, Tauri, packages, `ENVOYMESH_VERSION`)
+
 ### Added
+
+**Context Memory (Phase 70)**
+- Optional EnvoyAI Context Memory (default off, Ready-gated): native JSONL facts + recall/extract/compact
+- Optional OpenViking backend: BYO endpoint, or managed download-on-enable (OV-DL) under profileDir with installing → Ready UX
 
 **Coding schedules (Phase 68-C7)**
 - Home-node cron schedules that create a **new** Coding task (project cwd + harness) then run the prompt once

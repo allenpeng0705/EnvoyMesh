@@ -551,6 +551,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.listAgentActivity(params);
   }
 
+  async getAutonomyDigest(period?: Parameters<NodeService["getAutonomyDigest"]>[0]) {
+    return this._ns.getAutonomyDigest(period);
+  }
+
+  async listSocialProxySessions() {
+    return this._ns.listSocialProxySessions();
+  }
+
   async listCommerceReceipts(params?: Parameters<NodeService["listCommerceReceipts"]>[0]) {
     return this._ns.listCommerceReceipts(params);
   }
@@ -846,6 +854,26 @@ export class DirectCallClient implements NodeServiceClient {
 
   async restartPi() {
     return this._ns.restartPi();
+  }
+
+  async getContextMemoryStatus() {
+    return this._ns.getContextMemoryStatus();
+  }
+
+  async listContextMemoryFacts() {
+    return this._ns.listContextMemoryFacts();
+  }
+
+  async forgetContextMemoryFact(id: string) {
+    return this._ns.forgetContextMemoryFact(id);
+  }
+
+  async pinContextMemoryFact(id: string, pinned: boolean) {
+    return this._ns.pinContextMemoryFact(id, pinned);
+  }
+
+  async retryContextMemoryInstall() {
+    return this._ns.retryContextMemoryInstall();
   }
 
   async getEnvoyLocalStatus() {

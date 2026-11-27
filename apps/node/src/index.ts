@@ -152,7 +152,12 @@ import { parseNodeArgs, applyPersistedDiscoveryConfig, type NodeArgs } from "./a
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
 import { createInboundMessageGuard, peerIdFromRelayTarget } from "./inbound-guard.js";
-import { chatSenderActorFromEnvelope, resolveEmpSupportedCapabilities } from "@envoymesh/api";
+import {
+  chatSenderActorFromEnvelope,
+  resolveEmpSupportedCapabilities,
+  shouldRunBondedResourceShortlistPass,
+  shouldRunScheduledSocialProxyPass,
+} from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { chatWireAttachmentsToContent } from "@envoymesh/api";
@@ -736,6 +741,12 @@ const triggerStore = new TriggerStore();
 const digestGenerator = new DigestGenerator(
   createDefaultDigestConfig(join(productDir, "digests")),
 );
+void digestGenerator.hydrateLastGeneratedFromDisk().catch((err) =>
+  console.warn("[digest] hydrate lastGenerated failed:", err),
+);
+if (nodeService instanceof NodeServiceImpl) {
+  nodeService.attachDigestGenerator(digestGenerator);
+}
 const wsServer = new WsServer<RpcCallerContext>(SOCIAL_WS_PORT, "/ws", {
   onConnectionChange: (connectedCount) => {
     if (connectedCount > 0) {
@@ -1098,11 +1109,13 @@ function scheduleChatRagIndex(threadOwnerId: string, message: Parameters<typeof 
 let friendAutopilotRunInFlight = false;
 let socialProxyRunInFlight = false;
 let documentAcquisitionRunInFlight = false;
+let bondedResourceShortlistRunInFlight = false;
 let capabilityProviderRunInFlight = false;
 let bondStewardRunInFlight = false;
 let meshAwarenessRunInFlight = false;
 let connectionSuggesterRunInFlight = false;
 let proactiveAgentRunInFlight = false;
+let digestRunInFlight = false;
 // Activity tracking for online/offline detection (inbound path)
 // Note: node-service-impl.ts has its own activity tracking for outbound paths (sendChat).
 // The index.ts version tracks activity from WebSocket messages (inbound).
@@ -4158,6 +4171,7 @@ modeTransitionTimer = setInterval(() => {
     void nodeService
       .getNodeConfig()
       .then((cfg) => {
+        if (cfg.autonomousKillSwitch) return { ok: false };
         if (cfg.socialProxyEnabled) return { ok: false };
         return nodeService.runScheduledFriendAutopilot();
       })
@@ -4171,12 +4185,26 @@ modeTransitionTimer = setInterval(() => {
         friendAutopilotRunInFlight = false;
       });
   }
-  // Phase 16B — social proxy pass
+  // Phase 16B / 69B — social proxy pass (throttled; chat path stays immediate)
   if (nodeService instanceof NodeServiceImpl && !socialProxyRunInFlight) {
     socialProxyRunInFlight = true;
     void nodeService
       .getNodeConfig()
-      .then((cfg) => (cfg.socialProxyEnabled ? nodeService.runSocialProxyPass() : { ok: false }))
+      .then((cfg) => {
+        if (
+          !shouldRunScheduledSocialProxyPass({
+            socialProxyEnabled: cfg.socialProxyEnabled ?? false,
+            trustModeEnabled: cfg.trustModeEnabled ?? false,
+            autonomousKillSwitch: cfg.autonomousKillSwitch ?? false,
+            intervalHours: cfg.socialProxyIntervalHours,
+            lastPassAt: cfg.socialProxyLastPassAt,
+            now,
+          })
+        ) {
+          return { ok: false as const, skipped: true };
+        }
+        return nodeService.runSocialProxyPass();
+      })
       .then((result) => {
         if (result.ok) {
           console.log("[social-proxy] scheduled pass completed");
@@ -4195,6 +4223,36 @@ modeTransitionTimer = setInterval(() => {
       .catch((err) => console.warn("[document-acquisition] worker tick failed:", err))
       .finally(() => {
         documentAcquisitionRunInFlight = false;
+      });
+  }
+  // Phase 69C — bonded library shortlist (no auto-acquire)
+  if (nodeService instanceof NodeServiceImpl && !bondedResourceShortlistRunInFlight) {
+    bondedResourceShortlistRunInFlight = true;
+    void nodeService
+      .getNodeConfig()
+      .then((cfg) => {
+        if (
+          !shouldRunBondedResourceShortlistPass({
+            enabled: cfg.bondedResourceShortlistEnabled,
+            documentAcquisitionEnabled: cfg.documentAcquisitionEnabled ?? false,
+            autonomousKillSwitch: cfg.autonomousKillSwitch ?? false,
+            intervalHours: cfg.bondedResourceShortlistIntervalHours,
+            lastPassAt: cfg.bondedResourceShortlistLastPassAt,
+            now,
+          })
+        ) {
+          return { ok: false as const, hitCount: 0, skipped: true };
+        }
+        return nodeService.runBondedResourceShortlistPass();
+      })
+      .then((result) => {
+        if (result.ok && result.hitCount > 0) {
+          console.log(`[bonded-resource-shortlist] ${result.hitCount} hit(s)`);
+        }
+      })
+      .catch((err) => console.warn("[bonded-resource-shortlist] pass failed:", err))
+      .finally(() => {
+        bondedResourceShortlistRunInFlight = false;
       });
   }
   // Phase 16E — capability provider route executor tick
@@ -4221,11 +4279,15 @@ modeTransitionTimer = setInterval(() => {
       .catch((err) => console.warn("[bond-steward] pass failed:", err))
       .finally(() => { bondStewardRunInFlight = false; });
   }
-  // Phase 25A — mesh awareness pass
+  // Phase 25A — mesh awareness pass (paused by autonomy kill switch)
   if (nodeService instanceof NodeServiceImpl && !meshAwarenessRunInFlight) {
     meshAwarenessRunInFlight = true;
     void nodeService
-      .runMeshAwarenessPass()
+      .getNodeConfig()
+      .then((cfg) => {
+        if (cfg.autonomousKillSwitch) return [] as Awaited<ReturnType<typeof nodeService.runMeshAwarenessPass>>;
+        return nodeService.runMeshAwarenessPass();
+      })
       .then((insights) => {
         if (insights.length > 0) {
           console.log(`[mesh-awareness] ${insights.length} insight(s) generated`);
@@ -4234,11 +4296,17 @@ modeTransitionTimer = setInterval(() => {
       .catch((err) => console.warn("[mesh-awareness] pass failed:", err))
       .finally(() => { meshAwarenessRunInFlight = false; });
   }
-  // Phase 23B — connection suggestion pass
+  // Phase 23B — connection suggestion pass (paused by autonomy kill switch)
   if (nodeService instanceof NodeServiceImpl && !connectionSuggesterRunInFlight) {
     connectionSuggesterRunInFlight = true;
     void nodeService
-      .runConnectionSuggesterPass()
+      .getNodeConfig()
+      .then((cfg) => {
+        if (cfg.autonomousKillSwitch) {
+          return [] as Awaited<ReturnType<typeof nodeService.runConnectionSuggesterPass>>;
+        }
+        return nodeService.runConnectionSuggesterPass();
+      })
       .then((suggestions) => {
         if (suggestions.length > 0) {
           const msg = suggestions.map((s) => `${s.remoteDisplayName} (${s.reason})`).join("; ");
@@ -4261,11 +4329,16 @@ modeTransitionTimer = setInterval(() => {
       .catch((err) => console.warn("[proactive-agent] pass failed:", err))
       .finally(() => { proactiveAgentRunInFlight = false; });
   }
-  // Check digest schedule (Phase 9J)
+  // Check digest schedule (Phase 9J / 69B due fix + in-flight guard)
   const digestConfig = digestGenerator.getConfig();
-  if (digestConfig.frequency !== "off") {
-    const nextScheduled = digestGenerator.getNextScheduledTime();
-    if (nextScheduled && now >= nextScheduled) {
+  if (
+    !digestRunInFlight &&
+    digestConfig.frequency !== "off" &&
+    digestGenerator.isDigestDue(now)
+  ) {
+      digestRunInFlight = true;
+      // Mark early so overlapping 30s ticks cannot start a second generation.
+      digestGenerator.markDigestGenerated(now);
       console.log(`[digest] generating ${digestConfig.frequency} digest`);
       const period = digestConfig.frequency as "daily" | "weekly";
       void sessionManager.listSessions().then(async (sessions) => {
@@ -4275,7 +4348,9 @@ modeTransitionTimer = setInterval(() => {
           const { start } = getDigestPeriodDates(period);
           const rows = await nodeService.listAgentActivity({ since: start.toISOString(), limit: 5000 });
           a2aActivityCount = rows.length;
-          friendAutopilotPassCount = rows.filter((r) => r.kind === "friend_autopilot_pass").length;
+          friendAutopilotPassCount = rows.filter(
+            (r) => r.kind === "friend_autopilot_pass" || r.kind === "social_proxy_transition",
+          ).length;
         }
         return digestGenerator.generateDigest(period, {
           contactActivity: sessions.map((s) => ({
@@ -4300,6 +4375,7 @@ modeTransitionTimer = setInterval(() => {
       }).then(async (digest) => {
         try {
           const path = await digestGenerator.saveDigest(digest);
+          digestGenerator.markDigestGenerated(now);
           console.log(`[digest] saved to ${path}`);
           wsServerForEvents?.emitEvent("digest:ready", {
             digestId: digest.id,
@@ -4314,8 +4390,10 @@ modeTransitionTimer = setInterval(() => {
         } catch (err) {
           console.warn(`[digest] save failed:`, err);
         }
-      }).catch((err) => console.warn(`[digest] generation failed:`, err));
-    }
+      }).catch((err) => console.warn(`[digest] generation failed:`, err))
+        .finally(() => {
+          digestRunInFlight = false;
+        });
   }
 }, 30000);
 

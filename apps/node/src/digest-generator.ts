@@ -8,8 +8,16 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { writeFile, mkdir } from "node:fs/promises";
+import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+
+function isoWeekMondayKey(d: Date): string {
+  const tmp = new Date(d);
+  tmp.setHours(0, 0, 0, 0);
+  const day = (tmp.getDay() + 6) % 7; // Mon=0
+  tmp.setDate(tmp.getDate() - day);
+  return tmp.toISOString().slice(0, 10);
+}
 
 /**
  * Digest frequency.
@@ -195,7 +203,9 @@ export function generateSummaryText(digest: DigestSummary): string {
     lines.push(`- Agent activity (A2A): ${digest.a2aActivityCount} events`);
   }
   if (digest.friendAutopilotPassCount > 0) {
-    lines.push(`- Friend autopilot passes: ${digest.friendAutopilotPassCount}`);
+    lines.push(
+      `- Autonomy passes (friend finding / social proxy): ${digest.friendAutopilotPassCount}`,
+    );
   }
   lines.push("");
 
@@ -281,9 +291,62 @@ export function generateSummaryText(digest: DigestSummary): string {
  */
 export class DigestGenerator {
   private config: DigestConfig;
+  /** Last successful scheduled/manual generation (Phase 69B — due checks). */
+  private lastGeneratedAtMs: number | null = null;
 
   constructor(config: DigestConfig) {
     this.config = config;
+  }
+
+  /** Record that a digest was produced (scheduler must call after save). */
+  markDigestGenerated(at: Date = new Date()): void {
+    this.lastGeneratedAtMs = at.getTime();
+  }
+
+  /**
+   * Hydrate `lastGeneratedAtMs` from the newest on-disk digest so restarts
+   * after 09:00 do not immediately re-fire the same day/week slot.
+   */
+  async hydrateLastGeneratedFromDisk(): Promise<void> {
+    try {
+      const names = await readdir(this.config.outputDir);
+      let newestMs = 0;
+      for (const name of names) {
+        if (!name.endsWith(".json")) continue;
+        try {
+          const raw = await readFile(join(this.config.outputDir, name), "utf8");
+          const parsed = JSON.parse(raw) as { generatedAt?: string };
+          const ms = parsed.generatedAt ? Date.parse(parsed.generatedAt) : Number.NaN;
+          if (Number.isFinite(ms) && ms > newestMs) newestMs = ms;
+        } catch {
+          /* skip corrupt/partial files */
+        }
+      }
+      if (newestMs > 0) {
+        this.lastGeneratedAtMs = newestMs;
+      }
+    } catch {
+      /* missing dir is fine — first run */
+    }
+  }
+
+  /**
+   * Whether a scheduled digest should run now.
+   * Daily: at/after local 09:00, at most once per calendar day.
+   * Weekly: at/after Monday 09:00, at most once per ISO week (Mon–Sun).
+   */
+  isDigestDue(now: Date = new Date()): boolean {
+    if (this.config.frequency === "off") return false;
+    if (now.getHours() < 9) return false;
+
+    if (this.lastGeneratedAtMs == null) return true;
+    const last = new Date(this.lastGeneratedAtMs);
+
+    if (this.config.frequency === "daily") {
+      return last.toDateString() !== now.toDateString();
+    }
+
+    return isoWeekMondayKey(last) !== isoWeekMondayKey(now);
   }
 
   /**
@@ -389,24 +452,35 @@ export class DigestGenerator {
   /**
    * Get the next scheduled digest time.
    */
-  getNextScheduledTime(): Date | null {
+  getNextScheduledTime(now: Date = new Date()): Date | null {
     if (this.config.frequency === "off") return null;
 
-    const now = new Date();
     const next = new Date(now);
+    next.setHours(9, 0, 0, 0);
+    next.setMinutes(0, 0, 0);
 
     if (this.config.frequency === "daily") {
-      // Next day at 9am
+      // Today 9am if still upcoming and not yet generated today; else tomorrow 9am.
+      const alreadyToday =
+        this.lastGeneratedAtMs != null &&
+        new Date(this.lastGeneratedAtMs).toDateString() === now.toDateString();
+      if (now < next && !alreadyToday) return next;
       next.setDate(next.getDate() + 1);
-      next.setHours(9, 0, 0, 0);
-    } else {
-      // Weekly - next Monday at 9am
-      const daysUntilMonday = (8 - next.getDay()) % 7 || 7;
-      next.setDate(next.getDate() + daysUntilMonday);
-      next.setHours(9, 0, 0, 0);
+      return next;
     }
 
-    return next;
+    // Weekly — this week's Monday 9am while the slot is still open; else next Monday.
+    const monday = new Date(now);
+    monday.setHours(9, 0, 0, 0);
+    monday.setMinutes(0, 0, 0);
+    const dow = (monday.getDay() + 6) % 7; // Mon=0
+    monday.setDate(monday.getDate() - dow);
+    const alreadyThisWeek =
+      this.lastGeneratedAtMs != null &&
+      isoWeekMondayKey(new Date(this.lastGeneratedAtMs)) === isoWeekMondayKey(now);
+    if (!alreadyThisWeek) return monday;
+    monday.setDate(monday.getDate() + 7);
+    return monday;
   }
 }
 

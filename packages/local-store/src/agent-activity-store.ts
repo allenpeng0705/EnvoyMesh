@@ -32,7 +32,10 @@ export type AgentActivityKind =
   | "share_proposed"
   | "approval_needed"
   | "report_received"
-  | "commerce_receipt";
+  | "commerce_receipt"
+  | "mesh_awareness_insight"
+  | "connection_suggested"
+  | "bonded_resource_shortlist";
 
 export interface AgentActivityEvidence {
   type: string;

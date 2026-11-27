@@ -6,9 +6,12 @@ export function shouldRunScheduledFriendAutopilot(input: {
   trustModeEnabled: boolean;
   intervalHours: number;
   lastRunAt?: string;
+  /** Master autonomy kill switch — pauses scheduled discovery passes. */
+  autonomousKillSwitch?: boolean;
   now?: Date;
 }): boolean {
   const { friendAutopilotEnabled, trustModeEnabled, intervalHours, lastRunAt } = input;
+  if (input.autonomousKillSwitch) return false;
   if (!friendAutopilotEnabled || !trustModeEnabled || intervalHours <= 0) {
     return false;
   }

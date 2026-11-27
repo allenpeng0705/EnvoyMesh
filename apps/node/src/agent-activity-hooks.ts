@@ -44,7 +44,7 @@ export async function recordConnectionSuggestion(
   const record: AgentActivityRecord = {
     activityId: randomUUID(),
     domain: "social",
-    kind: "report_received",
+    kind: "connection_suggested",
     summary: `Suggested connection to ${input.remoteDisplayName ?? input.remoteOwnerId}: ${input.reason} (score: ${input.relevanceScore.toFixed(2)})`,
     remoteOwnerId: input.remoteOwnerId,
     createdAt: new Date().toISOString(),
@@ -112,9 +112,40 @@ export async function recordMeshAwarenessInsight(
   const record: AgentActivityRecord = {
     activityId: randomUUID(),
     domain: "research",
-    kind: "report_received",
+    kind: "mesh_awareness_insight",
     summary: input.summary,
     createdAt: new Date().toISOString(),
+    evidence: [{ type: "matched_topic", ref: input.matchedTopic }],
+  };
+  const saved = await store.append(record);
+  emit?.(saved);
+  return saved;
+}
+
+/** Phase 69C — bonded library shortlist hit (no acquisition job). */
+export async function recordBondedResourceShortlist(
+  store: LocalAgentActivityStore,
+  input: {
+    title: string;
+    remoteOwnerId: string;
+    remoteDisplayName?: string;
+    matchedTopic: string;
+    documentId?: string;
+    score: number;
+  },
+  emit?: (record: AgentActivityRecord) => void,
+): Promise<AgentActivityRecord> {
+  const who = input.remoteDisplayName ?? input.remoteOwnerId;
+  const record: AgentActivityRecord = {
+    activityId: randomUUID(),
+    domain: "knowledge",
+    kind: "bonded_resource_shortlist",
+    summary: `Found “${input.title}” from ${who} (matches “${input.matchedTopic}”)`,
+    remoteOwnerId: input.remoteOwnerId,
+    createdAt: new Date().toISOString(),
+    evidence: input.documentId
+      ? [{ type: "library_hit", ref: input.documentId }]
+      : [{ type: "matched_topic", ref: input.matchedTopic }],
   };
   const saved = await store.append(record);
   emit?.(saved);

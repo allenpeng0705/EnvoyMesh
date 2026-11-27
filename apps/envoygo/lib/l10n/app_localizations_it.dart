@@ -1112,6 +1112,30 @@ class AppLocalizationsIt extends AppLocalizations {
   String get meSettings => 'Impostazioni';
 
   @override
+  String get autonomySummaryTitle => 'Mentre eri assente';
+
+  @override
+  String get autonomySummarySubtitle => 'Cosa ha fatto EnvoyAI in background';
+
+  @override
+  String get autonomySummaryHint =>
+      'Titoli dal digest di autonomia del nodo home — gli stessi fatti di «cosa hai fatto?»';
+
+  @override
+  String get autonomySummaryRefresh => 'Aggiorna';
+
+  @override
+  String get autonomySummaryEmpty => 'Nessuna autonomia in background oggi.';
+
+  @override
+  String get autonomySummaryOffline =>
+      'Collegati al nodo home per vedere questo riepilogo.';
+
+  @override
+  String get autonomySummaryUnavailable =>
+      'Il digest non è disponibile al momento.';
+
+  @override
   String get meAiModel => 'Modello IA';
 
   @override

@@ -49,4 +49,15 @@ describe("shouldRunScheduledFriendAutopilot", () => {
       }),
     ).toBe(true);
   });
+
+  it("returns false when autonomous kill switch is on", () => {
+    expect(
+      shouldRunScheduledFriendAutopilot({
+        friendAutopilotEnabled: true,
+        trustModeEnabled: true,
+        intervalHours: 24,
+        autonomousKillSwitch: true,
+      }),
+    ).toBe(false);
+  });
 });

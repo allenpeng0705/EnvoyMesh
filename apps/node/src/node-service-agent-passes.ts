@@ -10,7 +10,7 @@
  * context dependency, sharing the bigger `AgentPassesContext` bag
  * defined below.
  */
-import { recordConnectionSuggestion } from "./agent-activity-hooks.js";
+import { recordConnectionSuggestion, recordMeshAwarenessInsight } from "./agent-activity-hooks.js";
 import type { LocalAgentActivityStore } from "@envoymesh/local-store";
 import { matchPeerInterests } from "./connection-suggester.js";
 import { generateMeshInsights } from "./mesh-awareness-worker.js";
@@ -54,34 +54,30 @@ export interface AgentPassesContext {
   getAgentActivityStore(): LocalAgentActivityStore | null;
   /** Read a contact's published topics (used by mesh awareness). */
   getContactTopicsFromLibrary(ownerId: string): Promise<string[]>;
+  /** Phase 69C — profile hobbies/knowledge + local library topics. */
+  getOwnerInterestTopics(): Promise<string[]>;
   /** Emit an event on the class's event bus. */
   emit(event: string, data: unknown): void;
 }
 
 /**
- * Connection suggester pass.
- *
- * Mirrors the pre-extraction behaviour: hardcoded `ownerTopics` is
- * always empty, so the pass early-returns `[]`. The downstream body
- * (per-bond match + activity recording) is preserved for when a
- * caller decides to wire real interest topics through the context.
+ * Connection suggester pass — match owner interests to bonded peers' library topics.
  */
 export async function runConnectionSuggesterPassViaRuntime(
   ctx: AgentPassesContext,
 ): Promise<ConnectionSuggestionRow[]> {
   if (!ctx.hasTaskStore()) return [];
 
-  // Loaded for parity with the pre-extraction code path; not consumed today.
   await ctx.loadConfig();
-  const ownerTopics: string[] = [];
+  const ownerTopics = await ctx.getOwnerInterestTopics();
   if (ownerTopics.length === 0) return [];
 
   const bonds = await ctx.getBonds();
   const results: ConnectionSuggestionRow[] = [];
 
   for (const bond of bonds) {
-    const peerTopics: string[] = [];
-    const peerCaps: string[] = []; // Capabilities from manifest (wired separately)
+    const peerTopics = await ctx.getContactTopicsFromLibrary(bond.peerOwnerId);
+    const peerCaps: string[] = [];
     const match = matchPeerInterests(ownerTopics, peerTopics, peerCaps);
 
     if (match.score > 0) {
@@ -109,17 +105,14 @@ export async function runConnectionSuggesterPassViaRuntime(
 }
 
 /**
- * Mesh awareness pass — surfaces insights the awareness worker
- * derives from owner + peer topic overlap. Emits each insight as an
- * `agent:awareness` event so the social UI can react in real time.
+ * Mesh awareness pass — topic overlap insights → Activity (+ legacy awareness event).
  */
 export async function runMeshAwarenessPassViaRuntime(
   ctx: AgentPassesContext,
 ): Promise<MeshAwarenessRow[]> {
-  const localOwnerId = ctx.getProfileOwnerId();
   const bonds = await ctx.getBonds();
   const insights = await generateMeshInsights({
-    getOwnerInterestTopics: async () => ctx.getContactTopicsFromLibrary(localOwnerId),
+    getOwnerInterestTopics: () => ctx.getOwnerInterestTopics(),
     getBondedPeerTopics: async () => {
       const out: Array<{ ownerId: string; topics: string[] }> = [];
       for (const b of bonds) {
@@ -130,8 +123,17 @@ export async function runMeshAwarenessPassViaRuntime(
     },
   });
   if (insights.length > 0) {
+    const activityStore = ctx.getAgentActivityStore();
     for (const insight of insights) {
       ctx.emit("agent:awareness", insight);
+      if (activityStore) {
+        await recordMeshAwarenessInsight(
+          activityStore,
+          insight,
+          ctx.getProfileOwnerId(),
+          (record) => ctx.emit("agent:activity", record),
+        );
+      }
     }
   }
   return insights;

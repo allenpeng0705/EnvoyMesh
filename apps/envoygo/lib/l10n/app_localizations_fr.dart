@@ -1115,6 +1115,31 @@ class AppLocalizationsFr extends AppLocalizations {
   String get meSettings => 'Paramètres';
 
   @override
+  String get autonomySummaryTitle => 'Pendant votre absence';
+
+  @override
+  String get autonomySummarySubtitle => 'Ce qu’EnvoyAI a fait en arrière-plan';
+
+  @override
+  String get autonomySummaryHint =>
+      'Titres du digest d’autonomie de votre nœud domestique — les mêmes faits qu’en demandant « qu’as-tu fait ? »';
+
+  @override
+  String get autonomySummaryRefresh => 'Actualiser';
+
+  @override
+  String get autonomySummaryEmpty =>
+      'Pas encore d’autonomie en arrière-plan aujourd’hui.';
+
+  @override
+  String get autonomySummaryOffline =>
+      'Connectez-vous à votre nœud domestique pour voir ce résumé.';
+
+  @override
+  String get autonomySummaryUnavailable =>
+      'Le digest n’est pas disponible pour le moment.';
+
+  @override
   String get meAiModel => 'Modèle IA';
 
   @override

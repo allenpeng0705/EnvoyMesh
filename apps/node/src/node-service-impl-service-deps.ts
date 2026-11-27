@@ -152,6 +152,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             loadConfig: () => host._configStore.load(),
             getAgentActivityStore: () => host._agentActivityStore,
             getContactTopicsFromLibrary: (ownerId) => host._getContactTopicsFromLibrary(ownerId),
+            getOwnerInterestTopics: () => host.getOwnerInterestTopics(),
             emit: (event, data) => host.emit?.(event as never, data as never),
           },
       continuity: {

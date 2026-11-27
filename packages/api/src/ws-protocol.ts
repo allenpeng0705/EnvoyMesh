@@ -134,6 +134,7 @@ export type ProductRpcMethods =
   | "sendChatRoomMessage"
   | "sendChatRoomAttachment"
   | "listAgentActivity"
+  | "getAutonomyDigest"
   | "listCommerceReceipts"
   | "recordCommerceReceipt"
   | "listAuditEvents"
@@ -279,6 +280,12 @@ export type ProductRpcMethods =
    | "getPiStatus"
    | "restartPi"
    | "ensurePiTerminalSession"
+   // Phase 70 — Context Memory
+   | "getContextMemoryStatus"
+   | "listContextMemoryFacts"
+   | "forgetContextMemoryFact"
+   | "pinContextMemoryFact"
+   | "retryContextMemoryInstall"
    // Phase 54 — Envoy Local (downloadable llama-server)
    | "getEnvoyLocalStatus"
    | "enableEnvoyLocal"
@@ -911,6 +918,12 @@ export interface NodeConfig {
   socialProxyEnabled?: boolean;
   socialProxyMandateId?: string;
   socialProxyLastPassAt?: string;
+  /** Hours between scheduled social-proxy passes (Phase 69B). Default 1; 0 = chat/manual only. */
+  socialProxyIntervalHours?: 0 | 1 | 6 | 24 | 168;
+  /** Phase 69C — bonded library shortlist (omit = follow documentAcquisitionEnabled). */
+  bondedResourceShortlistEnabled?: boolean;
+  bondedResourceShortlistIntervalHours?: 0 | 6 | 24 | 168;
+  bondedResourceShortlistLastPassAt?: string;
   /** Phase 16C — document acquisition orchestrator. */
   documentAcquisitionEnabled?: boolean;
   documentAcquisitionMandateId?: string;
@@ -1226,6 +1239,8 @@ export interface AiSettings {
   profileMedia?: import("./profile-media.js").ProfileMediaPolicy;
   /** Per-contact auto-reply rate limits (hourly + daily caps). */
   autoReplyLimits?: import("./auto-reply-limits.js").AutoReplyLimits;
+  /** Phase 70 — optional personal Context Memory (default off). */
+  contextMemory?: import("./context-memory.js").ContextMemorySettings;
 }
 
 export type { ProfileMediaPolicy, ProfileGalleryPhotoVisibility } from "./profile-media.js";

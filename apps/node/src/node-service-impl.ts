@@ -198,6 +198,7 @@ import {
   normalizeAgentCardMembership,
   extAgentUsesProjectPath,
   normalizeAiSettings,
+  resolveContextMemorySettings,
 } from "@envoymesh/api";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
 import type {
@@ -873,7 +874,11 @@ import {
   type PluginRegistry,
 } from "./kb-plugin-registry.js";
 import { createObsidianPlugin } from "@envoymesh/kb-obsidian";
-import { createSensitivityOverrideStore } from "@envoymesh/local-store";
+import {
+  buildContextMemoryExtractPrompt,
+  createSensitivityOverrideStore,
+  parseLlmExtractedFacts,
+} from "@envoymesh/local-store";
 import { createMcpKnowledgePlugin } from "./mcp-knowledge-plugin.js";
 import {
   getCapabilityManifestViaRuntime,
@@ -967,6 +972,17 @@ import {
   type FriendAutopilotContext,
   type SocialProxyContext,
 } from "./node-service-friend-autopilot.js";
+import {
+  ensureContextMemoryForOpenClaw,
+  forgetContextMemoryFactViaRuntime,
+  getContextMemoryStatusViaRuntime,
+  listContextMemoryFactsViaRuntime,
+  pinContextMemoryFactViaRuntime,
+  retryContextMemoryInstallViaRuntime,
+  syncContextMemoryFromConfig,
+  type ContextMemoryHost,
+} from "./node-service-context-memory.js";
+import type { ContextMemoryBackend } from "./context-memory-runtime.js";
 import {
   runSocialProxyPassViaRuntime,
   type RunSocialProxyPassContext,
@@ -1840,7 +1856,15 @@ class NodeServiceImpl implements NodeService {
   private readonly _vaultDir: string;
   private _ragService: RagService | null = null;
   private _ragServiceInit: Promise<RagService | null> | null = null;
-  
+  /** Phase 70 — Context Memory runtime (native / optional OV). */
+  _contextMemoryRuntime: ContextMemoryBackend | null = null;
+  /** Single-flight promise for CM config sync. */
+  _contextMemorySyncPromise: Promise<void> | null = null;
+  /** True while CM patchSettings persists — avoid re-entrant sync. */
+  _contextMemorySkipResync = false;
+  /** Set when sync requested while another sync is in flight. */
+  _contextMemorySyncDirty = false;
+
   private _agentGroupChatCounters: Map<string, { count: number; windowStart: number }> = new Map();
 
   // App-managed mode stores
@@ -1999,6 +2023,10 @@ class NodeServiceImpl implements NodeService {
   private readonly _multihopDiscoveryStore: MultiHopDiscoveryStore | null;
   private readonly _peerReputationStore: PeerReputationStore | null;
   private readonly _socialProxyStore: SocialProxySessionStore | null;
+  /** Phase 69B — serialize chat + scheduled social-proxy passes (no double hello). */
+  private _socialProxyPassMutex: Promise<unknown> | null = null;
+  /** Phase 69D0 — shared with composition-root scheduled digest ticker. */
+  private _digestGenerator: import("./digest-generator.js").DigestGenerator | null = null;
   private readonly _documentAcquisitionJobStore: DocumentAcquisitionJobStore | null;
   private readonly _capabilityProviderJobStore: CapabilityProviderJobStore | null;
   private readonly _circleStore: AgentCircleStore | null;
@@ -4753,17 +4781,163 @@ class NodeServiceImpl implements NodeService {
     );
   }
 
+  /** Phase 69D0 — attach the process DigestGenerator so chat tools share scheduled digests. */
+  attachDigestGenerator(generator: import("./digest-generator.js").DigestGenerator): void {
+    this._digestGenerator = generator;
+  }
+
+  async getAutonomyDigest(period: "daily" | "weekly" = "daily"): Promise<import("@envoymesh/api").AutonomyDigestResult> {
+    if (!this._digestGenerator) {
+      return { ok: false, period, error: "digest generator not attached" };
+    }
+    const { buildAutonomyDigest } = await import("./autonomy-digest.js");
+    const digest = await buildAutonomyDigest({
+      generator: this._digestGenerator,
+      period,
+      listActivity: async (sinceIso) => this.listAgentActivity({ since: sinceIso, limit: 5000 }),
+    });
+    return {
+      ok: true,
+      period,
+      summaryText: digest.summaryText,
+      headlines: digest.headlines,
+      digest,
+    };
+  }
+
+  private _contextMemoryHost(): ContextMemoryHost {
+    const svc = this;
+    return {
+      _profileDir: svc._profileDir,
+      getNodeConfig: () => svc.getNodeConfig(),
+      updateNodeConfig: (config) => svc.updateNodeConfig(config),
+      persistContextMemorySettings: async (partial) => {
+        const cfg = await svc.getNodeConfig();
+        const ai = normalizeAiSettings(cfg.aiSettings);
+        const nextCm = resolveContextMemorySettings({
+          ...ai.contextMemory,
+          ...partial,
+        });
+        // Narrow write via config store path; skipResync flag set by caller.
+        await svc.updateNodeConfig({
+          aiSettings: { ...ai, contextMemory: nextCm },
+        });
+      },
+      _appendAuditEvent: (event) => svc._appendAuditEvent(event),
+      extractContextMemoryFacts: async (input) => {
+        try {
+          const result = await runModelCall({
+            config: await svc.getEffectiveModelProviders(),
+            taskType: "context_memory.extract",
+            prompt: buildContextMemoryExtractPrompt(input),
+            temperature: 0,
+            maxTokens: 256,
+            sensitivity: "private",
+            ownerApproved: true,
+            trustedLocalAssist: true,
+            requesterPeerId: svc._mesh?.peerId ?? "",
+          });
+          return parseLlmExtractedFacts(result.text);
+        } catch {
+          return [];
+        }
+      },
+      get _contextMemoryRuntime() {
+        return svc._contextMemoryRuntime;
+      },
+      set _contextMemoryRuntime(v: ContextMemoryBackend | null | undefined) {
+        svc._contextMemoryRuntime = v ?? null;
+      },
+      get _contextMemorySyncPromise() {
+        return svc._contextMemorySyncPromise;
+      },
+      set _contextMemorySyncPromise(v: Promise<void> | null | undefined) {
+        svc._contextMemorySyncPromise = v ?? null;
+      },
+      get _contextMemorySkipResync() {
+        return svc._contextMemorySkipResync === true;
+      },
+      set _contextMemorySkipResync(v: boolean | undefined) {
+        svc._contextMemorySkipResync = v === true;
+      },
+      get _contextMemorySyncDirty() {
+        return svc._contextMemorySyncDirty === true;
+      },
+      set _contextMemorySyncDirty(v: boolean | undefined) {
+        svc._contextMemorySyncDirty = v === true;
+      },
+    };
+  }
+
+  /** Phase 70 — OpenClaw deps hook (awaits single-flight sync). */
+  async _getContextMemory() {
+    return ensureContextMemoryForOpenClaw(this._contextMemoryHost());
+  }
+
+  async getContextMemoryStatus(): Promise<import("@envoymesh/api").ContextMemoryStatusSnapshot> {
+    requireOwnerProfile("view Context Memory status");
+    return getContextMemoryStatusViaRuntime(this._contextMemoryHost());
+  }
+
+  async listContextMemoryFacts(): Promise<import("@envoymesh/api").ContextMemoryFact[]> {
+    requireOwnerProfile("list Context Memory facts");
+    return listContextMemoryFactsViaRuntime(this._contextMemoryHost());
+  }
+
+  async forgetContextMemoryFact(id: string): Promise<boolean> {
+    requireOwnerProfile("forget a Context Memory fact");
+    return forgetContextMemoryFactViaRuntime(this._contextMemoryHost(), id);
+  }
+
+  async pinContextMemoryFact(id: string, pinned: boolean): Promise<boolean> {
+    requireOwnerProfile("pin a Context Memory fact");
+    return pinContextMemoryFactViaRuntime(this._contextMemoryHost(), id, pinned);
+  }
+
+  async retryContextMemoryInstall(): Promise<import("@envoymesh/api").ContextMemoryStatusSnapshot> {
+    requireOwnerProfile("retry Context Memory setup");
+    return retryContextMemoryInstallViaRuntime(this._contextMemoryHost());
+  }
+
+  getDigestConfigSnapshot(): {
+    ok: boolean;
+    config: unknown;
+    nextScheduledAt?: string;
+  } {
+    if (!this._digestGenerator) {
+      return { ok: false, config: null };
+    }
+    const config = this._digestGenerator.getConfig();
+    const next = this._digestGenerator.getNextScheduledTime();
+    return {
+      ok: true,
+      config,
+      nextScheduledAt: next?.toISOString(),
+    };
+  }
+
   async runSocialProxyPass(input?: {
     targetOwnerId?: string;
     targetPeerId?: string;
     targetAgentPeerId?: string;
     focusSessionId?: string;
   }): Promise<{ ok: boolean; error?: string; correlationId?: string }> {
-    return runSocialProxyPassViaRuntime(this._runSocialProxyPassContext(), input) as Promise<{
-      ok: boolean;
-      error?: string;
-      correlationId?: string;
-    }>;
+    // Chat and the 30s scheduler share one mutex so concurrent passes cannot double-hello.
+    const prior = this._socialProxyPassMutex ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    this._socialProxyPassMutex = prior.then(() => gate);
+    await prior.catch(() => undefined);
+    try {
+      return (await runSocialProxyPassViaRuntime(
+        this._runSocialProxyPassContext(),
+        input,
+      )) as { ok: boolean; error?: string; correlationId?: string };
+    } finally {
+      release();
+    }
   }
 
   private _socialProxyOrchestratorDeps(config: NodeConfig) {
@@ -5035,6 +5209,68 @@ class NodeServiceImpl implements NodeService {
   // Phase 25A — Mesh awareness pass
   async runMeshAwarenessPass(): Promise<Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number; createdAt: string }>> {
     return runMeshAwarenessPassViaRuntime(this._agentPassesContext());
+  }
+
+  /** Phase 69C — hobbies/knowledge + local published-library topics. */
+  async getOwnerInterestTopics(): Promise<string[]> {
+    const topics = new Set<string>();
+    try {
+      const hp = await this._humanProfileStore.loadHumanProfile();
+      for (const h of hp?.hobbies ?? []) {
+        const t = typeof h === "string" ? h.trim() : "";
+        if (t) topics.add(t);
+      }
+      for (const k of hp?.knowledge ?? []) {
+        const t = typeof k === "string" ? k.trim() : "";
+        if (t) topics.add(t);
+      }
+    } catch {
+      /* ignore */
+    }
+    const ownerId = this._profile?.owner.ownerId;
+    if (ownerId) {
+      for (const t of await this._getContactTopicsFromLibrary(ownerId)) {
+        if (t.trim()) topics.add(t.trim());
+      }
+    }
+    return [...topics];
+  }
+
+  /**
+   * Phase 69C — bonded published-library shortlist (no acquisition job).
+   * Writes Activity rows + updates lastPassAt when anything is recorded.
+   */
+  async runBondedResourceShortlistPass(): Promise<{ ok: boolean; hitCount: number; error?: string }> {
+    const config = await this._configStore.load();
+    if (config?.autonomousKillSwitch) {
+      return { ok: false, hitCount: 0, error: "autonomous kill switch on" };
+    }
+    const { runBondedResourceShortlistPass } = await import("./bonded-resource-shortlist-pass.js");
+    const { recordBondedResourceShortlist } = await import("./agent-activity-hooks.js");
+    try {
+      const hits = await runBondedResourceShortlistPass({
+        getOwnerInterestTopics: () => this.getOwnerInterestTopics(),
+        discoverPublishedLibrary: (params) => this.discoverPublishedLibrary(params),
+      });
+      const store = this._agentActivityStore;
+      if (store) {
+        for (const hit of hits) {
+          await recordBondedResourceShortlist(store, hit, (record) => {
+            void this._publishAgentActivity(record, hit.remoteOwnerId);
+          });
+        }
+      }
+      await this.updateNodeConfig({
+        bondedResourceShortlistLastPassAt: new Date().toISOString(),
+      });
+      return { ok: true, hitCount: hits.length };
+    } catch (err) {
+      return {
+        ok: false,
+        hitCount: 0,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   private _agentPassesContext(): AgentPassesContext {
@@ -13680,6 +13916,17 @@ class NodeServiceImpl implements NodeService {
         );
       });
     }
+    if (
+      Object.prototype.hasOwnProperty.call(nodePatch, "aiSettings") &&
+      !this._contextMemorySkipResync
+    ) {
+      void syncContextMemoryFromConfig(this._contextMemoryHost()).catch((err) => {
+        console.warn(
+          "[context-memory] sync after aiSettings save failed:",
+          err instanceof Error ? err.message : err,
+        );
+      });
+    }
     // Sync the runtime relay-public-WS-URL with the persisted config so
     // the user's preference takes effect immediately. `setRelayPublicWsUrl`
     // distinguishes three cases:
@@ -14304,6 +14551,12 @@ class NodeServiceImpl implements NodeService {
           err instanceof Error ? err.message : err,
         );
       });
+      void syncContextMemoryFromConfig(this._contextMemoryHost()).catch((err) => {
+        console.warn(
+          "[context-memory] sync after startNode failed:",
+          err instanceof Error ? err.message : err,
+        );
+      });
       return;
     }
     await startNodeViaRuntime(this._startNodeContext());
@@ -14318,6 +14571,12 @@ class NodeServiceImpl implements NodeService {
     void this.ensureDefaultWebSite().catch((err) => {
       console.warn(
         "[web] ensureDefaultWebSite after startNode failed:",
+        err instanceof Error ? err.message : err,
+      );
+    });
+    void syncContextMemoryFromConfig(this._contextMemoryHost()).catch((err) => {
+      console.warn(
+        "[context-memory] sync after startNode failed:",
         err instanceof Error ? err.message : err,
       );
     });
@@ -18083,6 +18342,13 @@ class NodeServiceImpl implements NodeService {
       mcpConsumerManager: config?.mcpConsumers?.length
         ? createMcpConsumerManager(config.mcpConsumers)
         : undefined,
+      // Phase 69A — advertise local report tools as executable via bridge/OpenClaw
+      generateIntelligenceReport: () => this.generateMeshIntelligenceReport(),
+      discoverAndCluster: ({ seedTopics, seedCapabilities }) =>
+        this.discoverAndCluster(seedTopics, seedCapabilities),
+      // Phase 69D0 — “what did you do?”
+      getDigest: (params) => this.getAutonomyDigest(params.period ?? "daily"),
+      getDigestConfig: async () => this.getDigestConfigSnapshot(),
     };
   }
 

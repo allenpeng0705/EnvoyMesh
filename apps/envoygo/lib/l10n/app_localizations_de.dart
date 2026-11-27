@@ -1117,6 +1117,29 @@ class AppLocalizationsDe extends AppLocalizations {
   String get meSettings => 'Einstellungen';
 
   @override
+  String get autonomySummaryTitle => 'Während du weg warst';
+
+  @override
+  String get autonomySummarySubtitle => 'Was EnvoyAI im Hintergrund getan hat';
+
+  @override
+  String get autonomySummaryHint =>
+      'Schlagzeilen aus dem Autonomie-Digest deines Home-Knotens — dieselben Fakten wie bei „Was hast du gemacht?“';
+
+  @override
+  String get autonomySummaryRefresh => 'Aktualisieren';
+
+  @override
+  String get autonomySummaryEmpty => 'Heute noch keine Hintergrund-Autonomie.';
+
+  @override
+  String get autonomySummaryOffline =>
+      'Verbinde dich mit deinem Home-Knoten, um diese Zusammenfassung zu sehen.';
+
+  @override
+  String get autonomySummaryUnavailable => 'Digest ist gerade nicht verfügbar.';
+
+  @override
   String get meAiModel => 'KI-Modell';
 
   @override

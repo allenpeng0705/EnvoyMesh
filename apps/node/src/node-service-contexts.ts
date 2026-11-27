@@ -123,6 +123,7 @@ export interface AgentPassesContextDeps {
   loadConfig: AgentPassesContext["loadConfig"];
   getAgentActivityStore: AgentPassesContext["getAgentActivityStore"];
   getContactTopicsFromLibrary: AgentPassesContext["getContactTopicsFromLibrary"];
+  getOwnerInterestTopics: AgentPassesContext["getOwnerInterestTopics"];
   emit: AgentPassesContext["emit"];
 }
 
@@ -733,6 +734,7 @@ export function buildAgentPassesContext(deps: AgentPassesContextDeps): AgentPass
     loadConfig: () => deps.loadConfig(),
     getAgentActivityStore: () => deps.getAgentActivityStore(),
     getContactTopicsFromLibrary: (ownerId) => deps.getContactTopicsFromLibrary(ownerId),
+    getOwnerInterestTopics: () => deps.getOwnerInterestTopics(),
     emit: (event, data) => deps.emit?.(event as never, data as never),
   };
 }

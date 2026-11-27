@@ -6,6 +6,7 @@ import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import { useToast } from "../../hooks/useToast.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { ShareContactCard } from "../discover/ShareContactCard.js";
+import { AutonomyDigestPanel } from "./settings/AutonomyDigestPanel.js";
 import { PublicIcon, PrivateIcon } from "../../icons.js";
 import type { CreateHumanProfileInput } from "@envoymesh/api";
 
@@ -364,6 +365,7 @@ export function SettingsAccountTab() {
             <span className="slider" />
           </label>
         </div>
+        <AutonomyDigestPanel />
       </section>
 
       {/* Trust Mode toggle lives in Settings → Network (Trust & Matching)

@@ -616,6 +616,21 @@ export async function routeRpcMethod(
         domain: params.domain as import("@envoymesh/api").AgentActivityDomain | undefined,
         remoteOwnerId: params.remoteOwnerId as string | undefined,
       });
+    case "getAutonomyDigest": {
+      const period =
+        params.period === "weekly" || params.period === "daily" ? params.period : "daily";
+      return ns.getAutonomyDigest(period);
+    }
+    case "getContextMemoryStatus":
+      return ns.getContextMemoryStatus();
+    case "listContextMemoryFacts":
+      return ns.listContextMemoryFacts();
+    case "forgetContextMemoryFact":
+      return ns.forgetContextMemoryFact(String(params.id ?? ""));
+    case "pinContextMemoryFact":
+      return ns.pinContextMemoryFact(String(params.id ?? ""), params.pinned === true);
+    case "retryContextMemoryInstall":
+      return ns.retryContextMemoryInstall();
     case "listCommerceReceipts":
       return ns.listCommerceReceipts({
         counterpartyOwnerId: params.counterpartyOwnerId as string | undefined,

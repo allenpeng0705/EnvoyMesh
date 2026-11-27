@@ -1093,6 +1093,27 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meSettings => '설정';
 
   @override
+  String get autonomySummaryTitle => '자리를 비운 동안';
+
+  @override
+  String get autonomySummarySubtitle => 'EnvoyAI가 백그라운드에서 한 일';
+
+  @override
+  String get autonomySummaryHint => '홈 노드 자율 다이제스트의 요약 — 「뭐 했어?」와 같은 사실입니다';
+
+  @override
+  String get autonomySummaryRefresh => '새로고침';
+
+  @override
+  String get autonomySummaryEmpty => '오늘 아직 백그라운드 자율 활동이 없습니다.';
+
+  @override
+  String get autonomySummaryOffline => '이 요약을 보려면 홈 노드에 연결하세요.';
+
+  @override
+  String get autonomySummaryUnavailable => '지금은 다이제스트를 사용할 수 없습니다.';
+
+  @override
   String get meAiModel => 'AI 모델';
 
   @override

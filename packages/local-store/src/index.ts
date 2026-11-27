@@ -328,7 +328,11 @@ export type AuditEventType =
   | "coding.heartbeat.failed"
   // Phase 68-C7 — Coding schedules (a new task each fire).
   | "coding.schedule.fired"
-  | "coding.schedule.failed";
+  | "coding.schedule.failed"
+  // Phase 70 — Context Memory.
+  | "context_memory.seed"
+  | "context_memory.forget"
+  | "context_memory.pin";
 
 export type AuditDirection = "inbound" | "outbound" | "local";
 
@@ -2903,6 +2907,7 @@ export * from "./chain-reports-store.js";
 export * from "./cost-rollup-store.js";
 export * from "./chain-recipes-store.js";
 export * from "./sensitivity-overrides.js";
+export * from "./context-memory-store.js";
 
 // ─── moved out, not merely hidden ────────────────────────────────────────────
 // `family-profile-store.ts` and `session-token-store.ts` name a product concept

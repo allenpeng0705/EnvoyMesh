@@ -154,6 +154,28 @@ describe("ActivityView — Phase 13D", () => {
     });
   });
 
+  it("filters to Autonomy focus kinds (Phase 69D1)", async () => {
+    const autonomyRow: AgentActivityRecord = {
+      ...sampleRow,
+      activityId: "act-auto-1",
+      kind: "bonded_resource_shortlist",
+      summary: "Found WASM notes on a bonded library",
+    };
+    listAgentActivity.mockResolvedValue([sampleRow, autonomyRow]);
+    renderWithI18n(<ActivityView />);
+
+    await screen.findByText(sampleRow.summary);
+
+    fireEvent.change(screen.getByLabelText(/Focus/i), {
+      target: { value: "autonomy" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(autonomyRow.summary)).toBeDefined();
+      expect(screen.queryByText(sampleRow.summary)).toBeNull();
+    });
+  });
+
   it("renders audit + journal even when getTaskResult fails (Phase 34 review)", async () => {
     listAgentActivity.mockResolvedValue([sampleRow]);
     listAuditEvents.mockResolvedValue([sampleAudit]);

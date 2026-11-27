@@ -50,6 +50,7 @@ export async function runScheduledFriendAutopilotViaRuntime(
       trustModeEnabled: config.trustModeEnabled ?? false,
       intervalHours,
       lastRunAt: config.friendAutopilotLastRunAt,
+      autonomousKillSwitch: config.autonomousKillSwitch ?? false,
     })
   ) {
     return { ok: false, error: "not due" };

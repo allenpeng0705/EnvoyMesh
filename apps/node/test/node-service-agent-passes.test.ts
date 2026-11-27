@@ -1,11 +1,12 @@
 /**
  * Unit tests for the agent passes runtime module
- * (Phases 23B / 25A / 23D).
+ * (Phases 23B / 25A / 23D / 69C).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   recordConnectionSuggestion: vi.fn(async () => {}),
+  recordMeshAwarenessInsight: vi.fn(async () => {}),
   matchPeerInterests: vi.fn(
     (_ownerTopics: string[], _peerTopics: string[], _peerCaps: string[]) => ({
       score: 0,
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../src/agent-activity-hooks.js", () => ({
   recordConnectionSuggestion: mocks.recordConnectionSuggestion,
+  recordMeshAwarenessInsight: mocks.recordMeshAwarenessInsight,
 }));
 
 vi.mock("../src/connection-suggester.js", () => ({
@@ -53,6 +55,7 @@ function makeContext(overrides: Partial<AgentPassesContext> = {}): AgentPassesCo
     loadConfig: async () => ({}),
     getAgentActivityStore: () => null,
     getContactTopicsFromLibrary: async () => [],
+    getOwnerInterestTopics: async () => [],
     emit: () => {},
     ...overrides,
   };
@@ -75,13 +78,26 @@ describe("node-service-agent-passes — connection suggester", () => {
     expect(mocks.matchPeerInterests).not.toHaveBeenCalled();
   });
 
-  it("returns [] regardless of bonds (ownerTopics is hardcoded empty today)", async () => {
+  it("returns [] when owner interests are empty", async () => {
     const ctx = makeContext({ getBonds: async () => [makeBond("a"), makeBond("b")] });
     const out = await runConnectionSuggesterPassViaRuntime(ctx);
     expect(out).toEqual([]);
-    // matchPeerInterests is never reached because the hardcoded empty
-    // ownerTopics short-circuits before the per-bond loop.
     expect(mocks.matchPeerInterests).not.toHaveBeenCalled();
+  });
+
+  it("matches bonded peers using owner interests + peer library topics", async () => {
+    mocks.matchPeerInterests.mockReturnValue({ score: 0.8, matchedTopics: ["wasm"] });
+    const store = makeActivityStore();
+    const ctx = makeContext({
+      getOwnerInterestTopics: async () => ["wasm"],
+      getBonds: async () => [makeBond("a", "Alice")],
+      getContactTopicsFromLibrary: async () => ["wasm", "rust"],
+      getAgentActivityStore: () => store,
+    });
+    const out = await runConnectionSuggesterPassViaRuntime(ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.remoteDisplayName).toBe("Alice");
+    expect(mocks.recordConnectionSuggestion).toHaveBeenCalledTimes(1);
   });
 
   it("loads config for parity with the pre-extraction code path", async () => {
@@ -90,31 +106,22 @@ describe("node-service-agent-passes — connection suggester", () => {
     await runConnectionSuggesterPassViaRuntime(ctx);
     expect(loadConfig).toHaveBeenCalledTimes(1);
   });
-
-  it("does not call recordConnectionSuggestion when ownerTopics is empty", async () => {
-    const ctx = makeContext({ getAgentActivityStore: () => makeActivityStore() });
-    await runConnectionSuggesterPassViaRuntime(ctx);
-    expect(mocks.recordConnectionSuggestion).not.toHaveBeenCalled();
-  });
 });
 
 describe("node-service-agent-passes — mesh awareness", () => {
   beforeEach(() => {
     mocks.generateMeshInsights.mockReset();
     mocks.generateMeshInsights.mockResolvedValue([]);
+    mocks.recordMeshAwarenessInsight.mockReset();
   });
 
   afterEach(() => vi.clearAllMocks());
 
-  it("calls generateMeshInsights with owner + per-bond topic lookups", async () => {
-    const topicsByOwner = new Map<string, string[]>([
-      ["owner-1", ["wasm", "rust"]],
-      ["a", ["wasm"]],
-      ["b", []],
-    ]);
+  it("calls generateMeshInsights with owner interests + per-bond topic lookups", async () => {
     const ctx = makeContext({
       getBonds: async () => [makeBond("a"), makeBond("b")],
-      getContactTopicsFromLibrary: async (ownerId) => topicsByOwner.get(ownerId) ?? [],
+      getOwnerInterestTopics: async () => ["wasm", "rust"],
+      getContactTopicsFromLibrary: async (ownerId) => (ownerId === "a" ? ["wasm"] : []),
     });
     await runMeshAwarenessPassViaRuntime(ctx);
     expect(mocks.generateMeshInsights).toHaveBeenCalledTimes(1);
@@ -126,17 +133,18 @@ describe("node-service-agent-passes — mesh awareness", () => {
     expect(await deps.getBondedPeerTopics()).toEqual([{ ownerId: "a", topics: ["wasm"] }]);
   });
 
-  it("emits an agent:awareness event for each insight when insights > 0", async () => {
+  it("emits awareness + records Activity for each insight", async () => {
     mocks.generateMeshInsights.mockResolvedValueOnce([
       { kind: "topic_match", summary: "a", matchedTopic: "wasm", peerCount: 1, createdAt: "2026-06-30T00:00:00.000Z" },
       { kind: "topic_match", summary: "b", matchedTopic: "rust", peerCount: 2, createdAt: "2026-06-30T00:00:00.000Z" },
     ]);
     const emit = vi.fn();
-    const ctx = makeContext({ emit });
+    const store = makeActivityStore();
+    const ctx = makeContext({ emit, getAgentActivityStore: () => store });
     const out = await runMeshAwarenessPassViaRuntime(ctx);
-    expect(emit).toHaveBeenCalledTimes(2);
-    expect(emit).toHaveBeenNthCalledWith(1, "agent:awareness", out[0]);
-    expect(emit).toHaveBeenNthCalledWith(2, "agent:awareness", out[1]);
+    expect(emit).toHaveBeenCalledWith("agent:awareness", out[0]);
+    expect(emit).toHaveBeenCalledWith("agent:awareness", out[1]);
+    expect(mocks.recordMeshAwarenessInsight).toHaveBeenCalledTimes(2);
   });
 
   it("does not emit when insights is empty", async () => {

@@ -144,15 +144,37 @@ export async function buildEnvoyMeshRetrievedContext(input: {
   knowledgeScope?: AiKnowledgeBaseScope;
   /** When set, only include bond-chat RAG for this contact thread. */
   contactThreadOwnerId?: string;
+  /**
+   * Phase 70 — optional Context Memory. When status is ready, inject recall
+   * and skip external MCP auto-inject (prefer-CM). Soft-fail on errors.
+   */
+  contextMemory?: {
+    status: () => string;
+    recallForTurn: (query: string) => Promise<string>;
+  } | null;
 }): Promise<string> {
   const caps = OPENCLAW_RETRIEVED_CONTEXT_CAPS[input.profile ?? "cloud"];
   const knowledgeAccess = input.knowledgeAccess ?? "private";
   const knowledgeScope = input.knowledgeScope ?? "owner";
   const sections: string[] = [];
+  const cmReady = input.contextMemory?.status() === "ready";
+  let cmInjected = false;
 
   const agentIdentity = await loadAgentIdentitySection(input.agentIdentityStore);
   if (agentIdentity.trim()) {
     sections.push(`### Agent instructions\n${agentIdentity.trim()}`);
+  }
+
+  if (cmReady && input.contextMemory) {
+    try {
+      const cmSection = await input.contextMemory.recallForTurn(input.message);
+      if (cmSection.trim()) {
+        sections.push(cmSection.trim());
+        cmInjected = true;
+      }
+    } catch {
+      /* soft-fail */
+    }
   }
 
   try {
@@ -207,7 +229,8 @@ export async function buildEnvoyMeshRetrievedContext(input: {
   }
 
   // External MCP is owner-only (same gate as rag-service.getExternalKnowledgeContext).
-  if (input.ragService && knowledgeScope === "owner") {
+  // Phase 70: skip Memex auto-inject only when CM actually contributed (prefer-CM).
+  if (input.ragService && knowledgeScope === "owner" && !cmInjected) {
     try {
       const external = await input.ragService.getExternalKnowledgeContext({
         query: input.message,

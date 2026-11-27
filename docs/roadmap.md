@@ -36,6 +36,7 @@ When shipping: flip checkboxes in that phase section, add one **Changelog** row,
 | Status | Item | Design / checklist |
 |--------|------|--------------------|
 | **Active epic** | Phase 64D — AN release sign-off (automated 64–67 done; human per-OS / a11y / threat) | [`agent-network-release-checklist.md`](./agent-network-release-checklist.md) |
+| **Next pull** | Phase 69 closeout polish (optional C1 chips / Market idle later) after **69A–D1** shipped during 64D | [Story P](./UserStory.md#story-p-dual-mode-autonomy) · [Epic 69](./scenarios.md#epic-69-dual-mode-autonomy) · [Phase 69](./implementation-plan.md#phase-69--dual-mode-envoyai-autonomy-chat--background) |
 | Done | Phase 68 — Coding tab (Social **C1–C7** + EnvoyGo parity; **68-FH** waves 0–4) | [`../product_coding_tab_design.md`](../product_coding_tab_design.md) · [`implementation-plan.md` Phase 68](./implementation-plan.md#phase-68--coding-tab-social--envoygo) · [`family-harness-alignment-design.md`](./family-harness-alignment-design.md) |
 | Done | Phase 67 — AN product UX | [`implementation-plan.md` Phase 67](./implementation-plan.md#phase-67--agent-network-product-ux-templates-chat--job-live-progress) |
 | Done | Phase 66 — Fleet ops (66A/66B) | [`implementation-plan.md` Phase 66](./implementation-plan.md#phase-66--agent-network-fleet-ops-join-bond-lease-office--wan) |
@@ -76,6 +77,8 @@ When shipping: flip checkboxes in that phase section, add one **Changelog** row,
 
 | Date | Change |
 |------|--------|
+| 2026-11-27 | **Phase 69A–D1** shipped (tools, proxy digest, bonded shortlist, Autonomy chrome + EnvoyGo). Optional C polish remains. |
+| 2026-11-26 | **Phase 69** next pull — dual-mode autonomy (Story P / Epic 69); 69A tool honesty starts alongside 64D. |
 | 2026-11-24 | **Phase 68 shipped** — C0–C7 + **68-FH** P0–P2 (waves 0–4). Active epic → **64D** release sign-off. |
 | 2026-11-24 | **Family harness alignment** design (P0–P2): learnings from EnvoyHome + EnvoyCoder for Ext Agent / Coding EH. [`family-harness-alignment-design.md`](./family-harness-alignment-design.md). |
 | 2026-09-10 | **Phase 68 Coding tab** added to living plan; active epic → 68 (design locked, code not started). Design: [`product_coding_tab_design.md`](../product_coding_tab_design.md). |

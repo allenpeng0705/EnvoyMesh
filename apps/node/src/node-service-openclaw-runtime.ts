@@ -639,6 +639,15 @@ export interface OpenClawRuntimeDeps extends EnvoyAiChatContext {
   chatLogStore: LocalChatLogStore | null;
   trustStore: LocalTrustStore;
   loadConfig(): Promise<PersistedNodeConfig | undefined>;
+  /** Phase 70 — optional Context Memory backend (Ready-gated; await sync). */
+  getContextMemory?: () => Promise<{
+    status: () => string;
+    recallForTurn: (query: string) => Promise<string>;
+    rememberFromTurn: (input: {
+      userText: string;
+      assistantText?: string;
+    }) => Promise<void>;
+  } | null>;
 }
 
 export function buildOpenClawRuntimeDeps(host: any): OpenClawRuntimeDeps {
@@ -680,6 +689,8 @@ export function buildOpenClawRuntimeDeps(host: any): OpenClawRuntimeDeps {
     chatLogStore: host._chatLogStore,
     trustStore: host._trustStore,
     loadConfig: () => host._configStore.load(),
+    getContextMemory: async () =>
+      typeof host._getContextMemory === "function" ? host._getContextMemory() : null,
   };
 }
 
@@ -1224,6 +1235,7 @@ async function buildEnvoyMeshOpenClawPrompts(
           knowledgeAccess: scope?.knowledgeAccess,
           knowledgeScope: scope?.knowledgeScope,
           contactThreadOwnerId: scope?.contactThreadOwnerId,
+          contextMemory: (await deps.getContextMemory?.()) ?? null,
         }),
         OPEN_CLAW_RETRIEVED_CONTEXT_TIMEOUT_MS,
         "",
@@ -1814,9 +1826,19 @@ export async function askOpenClawViaRuntime(
   const { policyPrompt, retrievedContext } = await buildEnvoyMeshOpenClawPrompts(deps, prompt, {
     retrievedContext: context?.retrievedContext,
   });
-  return withOpenClawAskLock(state, () =>
+  const reply = await withOpenClawAskLock(state, () =>
     askOpenClawViaWebhook(state, deps, prompt, { policyPrompt, retrievedContext }),
   );
+  // Phase 70 — soft-fail Context Memory write after a successful turn.
+  try {
+    const cm = await deps.getContextMemory?.();
+    if (cm?.status() === "ready") {
+      void cm.rememberFromTurn({ userText: prompt, assistantText: reply }).catch(() => {});
+    }
+  } catch {
+    /* soft-fail */
+  }
+  return reply;
 }
 
 export async function sendToOpenClawViaRuntime(
@@ -1919,4 +1941,13 @@ export async function sendToOpenClawViaRuntime(
     approvalItems: [],
     modelUsed: "openclaw",
   }, messageId, threadKey);
+
+  try {
+    const cm = await deps.getContextMemory?.();
+    if (cm?.status() === "ready") {
+      void cm.rememberFromTurn({ userText: text, assistantText: answer }).catch(() => {});
+    }
+  } catch {
+    /* soft-fail */
+  }
 }

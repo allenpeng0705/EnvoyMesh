@@ -287,7 +287,7 @@ describe("DigestGenerator", () => {
       expect(generator.getNextScheduledTime()).toBeNull();
     });
 
-    it("returns next day for daily", () => {
+    it("returns a 9am slot for daily", () => {
       const generator = new DigestGenerator(createDefaultDigestConfig(tempDir));
       generator.updateConfig({ frequency: "daily" });
 
@@ -296,13 +296,72 @@ describe("DigestGenerator", () => {
       expect(next!.getHours()).toBe(9);
     });
 
-    it("returns next Monday for weekly", () => {
+    it("returns this week's Monday while weekly slot is still open", () => {
       const generator = new DigestGenerator(createDefaultDigestConfig(tempDir));
       generator.updateConfig({ frequency: "weekly" });
+      const wednesday = new Date("2026-05-20T15:00:00"); // Wed
+      wednesday.setHours(15, 0, 0, 0);
 
-      const next = generator.getNextScheduledTime();
+      const next = generator.getNextScheduledTime(wednesday);
       expect(next).not.toBeNull();
       expect(next!.getHours()).toBe(9);
+      expect(next!.getDay()).toBe(1); // Monday
+      // Same ISO week as Wednesday — do not jump ahead while due
+      expect(next!.getTime()).toBeLessThanOrEqual(wednesday.getTime());
+    });
+
+    it("returns next Monday after weekly digest was marked generated", () => {
+      const generator = new DigestGenerator(createDefaultDigestConfig(tempDir));
+      generator.updateConfig({ frequency: "weekly" });
+      const wednesday = new Date("2026-05-20T15:00:00");
+      wednesday.setHours(15, 0, 0, 0);
+      generator.markDigestGenerated(wednesday);
+
+      const next = generator.getNextScheduledTime(wednesday);
+      expect(next).not.toBeNull();
+      expect(next!.getDay()).toBe(1);
+      expect(next!.getTime()).toBeGreaterThan(wednesday.getTime());
+    });
+  });
+
+  describe("hydrateLastGeneratedFromDisk", () => {
+    it("loads newest generatedAt from saved digests", async () => {
+      const generator = new DigestGenerator(createDefaultDigestConfig(tempDir));
+      const afternoon = new Date();
+      afternoon.setHours(15, 0, 0, 0);
+      const digest = await generator.generateDigest("daily", {});
+      await generator.saveDigest(digest);
+      const fresh = new DigestGenerator(createDefaultDigestConfig(tempDir));
+      await fresh.hydrateLastGeneratedFromDisk();
+      expect(fresh.isDigestDue(afternoon)).toBe(false);
+    });
+  });
+
+  describe("isDigestDue (Phase 69B)", () => {
+    it("is false when frequency is off", () => {
+      const generator = new DigestGenerator(createDefaultDigestConfig(tempDir));
+      generator.updateConfig({ frequency: "off" });
+      const afternoon = new Date();
+      afternoon.setHours(15, 0, 0, 0);
+      expect(generator.isDigestDue(afternoon)).toBe(false);
+    });
+
+    it("is false before local 9am", () => {
+      const generator = new DigestGenerator(createDefaultDigestConfig(tempDir));
+      generator.updateConfig({ frequency: "daily" });
+      const morning = new Date();
+      morning.setHours(8, 0, 0, 0);
+      expect(generator.isDigestDue(morning)).toBe(false);
+    });
+
+    it("is true after 9am when never generated; false after mark", () => {
+      const generator = new DigestGenerator(createDefaultDigestConfig(tempDir));
+      generator.updateConfig({ frequency: "daily" });
+      const afternoon = new Date();
+      afternoon.setHours(15, 0, 0, 0);
+      expect(generator.isDigestDue(afternoon)).toBe(true);
+      generator.markDigestGenerated(afternoon);
+      expect(generator.isDigestDue(afternoon)).toBe(false);
     });
   });
 });

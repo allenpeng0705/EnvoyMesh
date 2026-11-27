@@ -205,9 +205,18 @@ export interface PersistedNodeConfig {
   socialProxyEnabled?: boolean;
   socialProxyMandateId?: string;
   socialProxyLastPassAt?: string;
+  /** Phase 69B — hours between scheduled social-proxy passes (default 1; 0 = chat/manual only). */
+  socialProxyIntervalHours?: 0 | 1 | 6 | 24 | 168;
   /** Phase 16C — document acquisition. */
   documentAcquisitionEnabled?: boolean;
   documentAcquisitionMandateId?: string;
+  /**
+   * Phase 69C — background bonded library shortlist (no auto-acquire).
+   * When omitted, scheduled pass follows documentAcquisitionEnabled.
+   */
+  bondedResourceShortlistEnabled?: boolean;
+  bondedResourceShortlistIntervalHours?: 0 | 6 | 24 | 168;
+  bondedResourceShortlistLastPassAt?: string;
   /** Phase 16D — capability provider (agent intent routing jobs). */
   capabilityProviderEnabled?: boolean;
   capabilityProviderMandateId?: string;

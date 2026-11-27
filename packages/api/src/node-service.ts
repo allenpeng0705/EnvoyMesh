@@ -625,7 +625,35 @@ export type AgentActivityKind =
   | "share_proposed"
   | "approval_needed"
   | "report_received"
-  | "commerce_receipt";
+  | "commerce_receipt"
+  | "mesh_awareness_insight"
+  | "connection_suggested"
+  | "bonded_resource_shortlist";
+
+/** Phase 69 — Activity kinds that feed Autonomy digest / Activity filter. */
+export const AUTONOMY_ACTIVITY_KINDS = [
+  "friend_autopilot_pass",
+  "social_proxy_transition",
+  "document_acq_stage",
+  "connection_suggested",
+  "mesh_awareness_insight",
+  "bonded_resource_shortlist",
+] as const satisfies readonly AgentActivityKind[];
+
+export type AutonomyActivityKind = (typeof AUTONOMY_ACTIVITY_KINDS)[number];
+
+export function isAutonomyActivityKind(kind: string): boolean {
+  return (AUTONOMY_ACTIVITY_KINDS as readonly string[]).includes(kind);
+}
+
+export interface AutonomyDigestResult {
+  ok: boolean;
+  period: "daily" | "weekly" | string;
+  summaryText?: string;
+  headlines?: string[];
+  digest?: unknown;
+  error?: string;
+}
 
 export interface AgentActivityEvidence {
   type: string;
@@ -2270,6 +2298,14 @@ export interface NodeService extends CoreNodeService {
     params?: import("./pi-agent.js").EnsureEnvoyTerminalParams,
   ): Promise<import("./pi-agent.js").EnsureEnvoyTerminalResult>;
 
+  // --- Phase 70: Context Memory (native default; optional OpenViking) ---
+  getContextMemoryStatus(): Promise<import("./context-memory.js").ContextMemoryStatusSnapshot>;
+  listContextMemoryFacts(): Promise<import("./context-memory.js").ContextMemoryFact[]>;
+  forgetContextMemoryFact(id: string): Promise<boolean>;
+  pinContextMemoryFact(id: string, pinned: boolean): Promise<boolean>;
+  /** Retry managed OpenViking download/start (Settings Retry). */
+  retryContextMemoryInstall(): Promise<import("./context-memory.js").ContextMemoryStatusSnapshot>;
+
   // --- Phase 54: Envoy Local (downloadable llama-server; never packaged) ---
   getEnvoyLocalStatus(): Promise<import("./envoy-local.js").EnvoyLocalStatus>;
   enableEnvoyLocal(
@@ -3036,6 +3072,9 @@ export interface NodeService extends CoreNodeService {
   listSocialProxySessions(): Promise<SocialProxySession[]>;
   runSocialProxyPass(): Promise<{ ok: boolean; error?: string; correlationId?: string }>;
   cancelSocialProxySession(sessionId: string): Promise<void>;
+
+  /** Phase 69D — Activity-backed autonomy digest for “what did you do?” UX. */
+  getAutonomyDigest(period?: "daily" | "weekly"): Promise<AutonomyDigestResult>;
 
   // ----- Phase 23A — Agent Circles -----
   listAgentCircles(): Promise<import("./agent-circle.js").AgentCircle[]>;

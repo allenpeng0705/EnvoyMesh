@@ -15,6 +15,7 @@ const refreshNodeConfig = vi.fn();
 const refreshHumanProfile = vi.fn();
 const updateNodeConfig = vi.fn();
 const clearAllUserData = vi.fn();
+const getAutonomyDigest = vi.fn();
 
 let humanProfile: Record<string, unknown> | null = {
   displayName: "Alice",
@@ -34,12 +35,14 @@ const mockNodeService = partialNodeService({
   getProfile,
   updateNodeConfig,
   clearAllUserData,
+  getAutonomyDigest,
   getCircuitReservationStatus: vi.fn().mockResolvedValue({
     state: "none",
     live: false,
     everReserved: false,
     relayPeerIds: [],
   }),
+  isConnected: true,
 });
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
@@ -77,6 +80,12 @@ beforeEach(() => {
   clearAllUserData.mockResolvedValue(undefined);
   refreshNodeConfig.mockResolvedValue(undefined);
   refreshHumanProfile.mockResolvedValue(undefined);
+  getAutonomyDigest.mockResolvedValue({
+    ok: true,
+    period: "daily",
+    summaryText: "",
+    headlines: [],
+  });
 });
 
 afterEach(() => cleanup());
