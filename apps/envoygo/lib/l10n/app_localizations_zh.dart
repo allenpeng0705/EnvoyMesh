@@ -1980,8 +1980,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get inboxIntroApproveFailed => '无法同意该介绍，请重试。';
 
   @override
-  String get inboxIntroHelloFailed =>
-      '已同意介绍，但招呼消息没发出。可在探索里再点「打招呼」。';
+  String get inboxIntroHelloFailed => '已同意介绍，但招呼消息没发出。可在探索里再点「打招呼」。';
 
   @override
   String get inboxIntroDeclineFailed => '无法拒绝该介绍，请重试。';
