@@ -25,6 +25,9 @@ fi
 codesign_macos_init
 codesign_macos_unlock_keychain
 
+# So the timestamp recovery pass can re-seal the container after nested re-signs.
+export CODESIGN_APP_BUNDLE="$APP"
+
 ENTITLEMENTS="${APP}/Contents/Entitlements.plist"
 if [ -f "$ENTITLEMENTS" ]; then
   export CODESIGN_ENTITLEMENTS="$ENTITLEMENTS"

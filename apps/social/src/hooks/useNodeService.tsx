@@ -163,6 +163,8 @@ export interface NodeServiceClient {
   isConnected: boolean;
   isReady: boolean;
   reconnectAttempts: number;
+  /** Ms until next auto-reconnect, or null when not waiting. */
+  getNextReconnectDelayMs?(): number | null;
   getLastError?(): string | null;
 
   // Identity
@@ -1117,6 +1119,9 @@ function createWsNodeServiceClient(
     get isConnected() { return connected; },
     get isReady() { return readyReceived; },
     get reconnectAttempts() { return wsClient.getReconnectAttempts(); },
+    getNextReconnectDelayMs() {
+      return wsClient.getNextReconnectDelayMs();
+    },
 
     async connect() {
       await wsClient.connect();
@@ -3252,7 +3257,10 @@ function createWsNodeServiceClient(
     async addRelay(addr: string, level?: number, region?: string) { return wsClient.rpc("addRelay", { addr, level, region }); },
     async removeRelay(relayId: string) { return wsClient.rpc("removeRelay", { relayId }); },
     async initNode(profileDir: string, options?: InitNodeOptions) { return wsClient.rpc("initNode", { profileDir, options }); },
-    async getNodeStatus() { return wsClient.rpc("getNodeStatus"); },
+    async getNodeStatus() {
+      // Keep status sync snappy after reconnect — Syncing splash uses this.
+      return wsClient.rpc("getNodeStatus", {}, { timeoutMs: 5_000 });
+    },
     async startNode() { return wsClient.rpc("startNode"); },
     async stopNode() { return wsClient.rpc("stopNode"); },
     async waitForConnection(timeoutMs?: number) { return wsClient.waitForConnection(timeoutMs); },
@@ -3281,6 +3289,9 @@ export function NodeServiceProvider({
   const [connected, setConnected] = useState(false);
   const [ready, setReady] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [nextReconnectDelayMs, setNextReconnectDelayMs] = useState<number | null>(
+    null,
+  );
   const [lastError, setLastError] = useState<string | null>(null);
   const wsClientRef = useRef<WsClientType | null>(null);
   const [connectionPrefs, setConnectionPrefs] = useState<DesktopConnectionPrefs>(() => {
@@ -3378,9 +3389,10 @@ export function NodeServiceProvider({
     const reconnectInterval = setInterval(() => {
       if (!active) return;
       setReconnectAttempts(wsClient.getReconnectAttempts());
+      setNextReconnectDelayMs(wsClient.getNextReconnectDelayMs());
       setLastError(wsClient.getLastError());
       setConnected(wsClient.isConnected());
-    }, 1000);
+    }, 500);
 
     setClient(nodeService);
 
@@ -3427,11 +3439,21 @@ export function NodeServiceProvider({
         if (prop === "isConnected") return connected;
         if (prop === "isReady") return ready;
         if (prop === "reconnectAttempts") return reconnectAttempts;
+        if (prop === "getNextReconnectDelayMs") {
+          return () => nextReconnectDelayMs;
+        }
         if (prop === "getLastError") return () => lastError;
         return Reflect.get(target, prop, receiver);
       },
     }) as NodeServiceClient;
-  }, [client, connected, ready, reconnectAttempts, lastError]);
+  }, [
+    client,
+    connected,
+    ready,
+    reconnectAttempts,
+    nextReconnectDelayMs,
+    lastError,
+  ]);
 
   if (!client) {
     return (

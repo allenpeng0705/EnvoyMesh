@@ -37,6 +37,7 @@ import type {
 import { isFamilyThreadKey, OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
 import { parseNodeStatusFromRpc } from "../lib/effective-node-status.js";
 import { isStrangerInboxCandidate } from "../lib/inbox-pending-filter.js";
+import { WS_HYDRATION_HOLD_MS } from "../lib/ws-reconnect-policy.js";
 import { NodeStateContext, type NodeStateValue } from "./node-state-context.js";
 
 export type { NodeStateValue } from "./node-state-context.js";
@@ -100,8 +101,13 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!wsTransportOpen) {
-      setNodeStatusHydrated(false);
-      return;
+      // Keep last status during short blips so the shell can stay mounted.
+      const clearHydration = window.setTimeout(() => {
+        setNodeStatusHydrated(false);
+      }, WS_HYDRATION_HOLD_MS);
+      return () => {
+        window.clearTimeout(clearHydration);
+      };
     }
 
     let cancelled = false;

@@ -17,9 +17,10 @@
 #     notify EnvoyGo). Set REQUIRE_PUSH_CREDENTIALS=0 to allow packaging
 #     without push (CI / machines without keys).
 #   - Never run this script (or stage-*.sh) with sudo. Root-owned files under
-#     apps/tauri/src-tauri/resources/ make re-stage (rm) and codesign fail.
-#     If that happens:
+#     apps/tauri/src-tauri/resources/ (or ~/.cargo after `sudo cargo`) make
+#     re-stage / codesign / Cargo cache cleanup fail. If that happens:
 #       sudo chown -R "$(whoami):staff" apps/tauri/src-tauri/resources
+#       sudo chown -R "$(whoami)" ~/.cargo/registry
 #   - EnvoyGo localization is Flutter-only (apps/envoygo) — not part of this
 #     desktop bundle; Social i18n locales are included via npm run social:build.
 #
@@ -146,6 +147,24 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUT_DIR="${OUT_DIR:-release}"
 TAURI_TARGET_ROOT="${PROJECT_DIR}/apps/tauri/src-tauri/target"
+
+# Root .npmrc carries pnpm-only keys (link-workspace-packages, …) that npm 10+
+# prints as "Unknown project config" on every invoke. Keep real errors; hush those.
+export NPM_CONFIG_LOGLEVEL="${NPM_CONFIG_LOGLEVEL:-error}"
+
+# Soften Cargo "failed to auto-clean cache" when leftover root-owned index files
+# exist (common after a past `sudo cargo`). Non-interactive sudo only.
+if [ -d "${HOME}/.cargo/registry/index" ]; then
+  if find "${HOME}/.cargo/registry/index" -path '*/.cache/*' ! -writable 2>/dev/null | head -1 | grep -q .; then
+    if sudo -n chown -R "$(whoami)" "${HOME}/.cargo/registry" 2>/dev/null; then
+      echo "Fixed ownership on ~/.cargo/registry (clears Cargo cache warnings)."
+    else
+      echo "note: Cargo cache has root-owned files — run once:"
+      echo "  sudo chown -R \"\$(whoami)\" ~/.cargo/registry"
+    fi
+    echo ""
+  fi
+fi
 
 # Keep @envoymesh/* dependency pins in lockstep with VERSION. Stale pins
 # make npm fetch the public registry and 404 on private workspace packages.

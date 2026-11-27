@@ -998,6 +998,7 @@ fn wait_for_attached_home_node(profile_dir: &Path, timeout: Duration) -> Option<
 
 /// English Task Scheduler `/FO LIST` line `Status: Running` (same rule as
 /// `parseNodeServiceStatus` in apps/node). Translated status words → false.
+#[cfg(windows)]
 fn windows_schtasks_list_is_running(stdout: &str) -> bool {
     for line in stdout.lines() {
         let lower = line.trim().to_ascii_lowercase();
@@ -2745,6 +2746,7 @@ mod tests {
         assert!(should_stop_app_child(11, Some("service"), Some(10)));
     }
 
+    #[cfg(windows)]
     #[test]
     fn windows_schtasks_list_running_matches_english_status_line() {
         assert!(windows_schtasks_list_is_running(

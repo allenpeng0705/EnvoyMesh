@@ -198,6 +198,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Root .npmrc carries pnpm-only keys that npm 10+ warns about on every invoke.
+# Keep real errors; hush the unknown-project-config noise during packaging.
+if (-not $env:NPM_CONFIG_LOGLEVEL) {
+    $env:NPM_CONFIG_LOGLEVEL = "error"
+}
+
 # -----------------------------------------------------------------------------
 # Helpers (mirror the conventions in scripts/bundle.ps1 + scripts/setup.ps1)
 # -----------------------------------------------------------------------------

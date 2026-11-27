@@ -59,6 +59,11 @@ import {
   normalizeLoopbackWsUrl,
 } from "./lib/storage.js";
 import { resolveDevLoopbackWsUrlHeal } from "./lib/discover-local-node.js";
+import {
+  shouldShowFullConnectingSplash,
+  shouldShowReconnectGraceBanner,
+  tauriRecoveryDueInMs,
+} from "./lib/ws-reconnect-policy.js";
 import { WS_LOOPBACK_URL, ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
 import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 
@@ -187,6 +192,7 @@ function shouldShowSetupWhileConnecting(
 
 function ConnectingSplash({
   reconnectAttempts,
+  nextReconnectDelayMs,
   lastError,
   isRelayUnreachable,
   onRetryConnect,
@@ -199,6 +205,7 @@ function ConnectingSplash({
   nodeBootstrapping,
 }: {
   reconnectAttempts: number;
+  nextReconnectDelayMs: number | null;
   lastError: string | null;
   isRelayUnreachable: boolean;
   onRetryConnect: () => void;
@@ -219,6 +226,19 @@ function ConnectingSplash({
       : bootstrapPhase === "gateway"
         ? t("splash.startingGateway")
         : t("splash.startingNode");
+  const retryInSec =
+    nextReconnectDelayMs != null
+      ? Math.max(1, Math.ceil(nextReconnectDelayMs / 1000))
+      : null;
+  const reconnectDetail =
+    reconnectAttempts > 0 && retryInSec != null
+      ? t("splash.reconnectAttemptIn", {
+          count: reconnectAttempts,
+          seconds: retryInSec,
+        })
+      : reconnectAttempts > 0
+        ? t("splash.reconnectAttempt", { count: reconnectAttempts })
+        : null;
   return (
     <div className="app">
       <div className="envoy-splash" role="status" aria-live="polite">
@@ -232,9 +252,7 @@ function ConnectingSplash({
               ? bootstrapDetail
               : !autoConnect && reconnectAttempts === 0
                 ? t("splash.autoConnectOff")
-                : reconnectAttempts > 0
-                  ? t("splash.reconnectAttempt", { count: reconnectAttempts })
-                  : t("splash.openingChannel", { wsUrl })}
+                : reconnectDetail ?? t("splash.openingChannel", { wsUrl })}
           </p>
           {tauriShell && nodeBootstrapping && reconnectAttempts === 0 ? (
             <p className="envoy-splash__hint">{t("splash.firstLaunchHint")}</p>
@@ -262,7 +280,10 @@ function ConnectingSplash({
               )}
             </div>
           )}
-          {(isRelayUnreachable || lastError || !autoConnect) &&
+          {(isRelayUnreachable ||
+            lastError ||
+            !autoConnect ||
+            reconnectAttempts > 0) &&
           !(tauriShell && nodeBootstrapping && reconnectAttempts < 3) ? (
             <div className="envoy-splash__error">
               <p>
@@ -362,23 +383,60 @@ export function App() {
 
   const nodeService = useNodeService();
   const reconnectAttempts = nodeService.reconnectAttempts;
-  const lastError = (nodeService as unknown as { getLastError?(): string | null }).getLastError?.() ?? null;
+  const nextReconnectDelayMs =
+    nodeService.getNextReconnectDelayMs?.() ?? null;
+  const lastError = nodeService.getLastError?.() ?? null;
   const tauriShell = isTauriShell();
   const [restartNodeBusy, setRestartNodeBusy] = useState(false);
   const [restartNodeError, setRestartNodeError] = useState<string | null>(null);
   const [nodeBootstrapping, setNodeBootstrapping] = useState(() => isTauriShell());
   const tauriBootstrapStarted = useRef(false);
+  const hadConnectedRef = useRef(false);
+  const recoveryAttemptedRef = useRef(false);
+  const [offlineSince, setOfflineSince] = useState<number | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!tauriShell || isConnected) {
+    if (isConnected) {
+      hadConnectedRef.current = true;
+      recoveryAttemptedRef.current = false;
+      setOfflineSince(null);
       setNodeBootstrapping(false);
       return;
     }
+    setOfflineSince((prev) => prev ?? Date.now());
+  }, [isConnected]);
+
+  useEffect(() => {
+    if (isConnected || offlineSince == null) return;
+    const id = window.setInterval(() => setClock(Date.now()), 500);
+    return () => window.clearInterval(id);
+  }, [isConnected, offlineSince]);
+
+  const offlineMs = offlineSince != null ? Math.max(0, clock - offlineSince) : 0;
+  const graceOffline = shouldShowReconnectGraceBanner({
+    isConnected,
+    hadConnected: hadConnectedRef.current,
+    offlineMs,
+  });
+  const showFullSplash = shouldShowFullConnectingSplash({
+    isConnected,
+    hadConnected: hadConnectedRef.current,
+    offlineMs,
+  });
+
+  // First-launch bootstrap (once).
+  useEffect(() => {
+    if (!tauriShell || isConnected) {
+      return;
+    }
+    if (hadConnectedRef.current) return;
     if (tauriBootstrapStarted.current) {
       return;
     }
     tauriBootstrapStarted.current = true;
     let cancelled = false;
+    setNodeBootstrapping(true);
     void (async () => {
       try {
         await nodeService.waitForConnection(120_000);
@@ -406,6 +464,56 @@ export function App() {
       cancelled = true;
     };
   }, [tauriShell, isConnected, nodeService]);
+
+  // Re-arm recovery after a prolonged drop (multi-hour wedge / guardian stall).
+  useEffect(() => {
+    const dueIn = tauriRecoveryDueInMs({
+      tauriShell,
+      isConnected,
+      hadConnected: hadConnectedRef.current,
+      offlineSince,
+      alreadyAttempted: recoveryAttemptedRef.current,
+    });
+    if (dueIn == null) return;
+
+    let cancelled = false;
+    const runRecovery = () => {
+      if (cancelled || recoveryAttemptedRef.current) return;
+      recoveryAttemptedRef.current = true;
+      setNodeBootstrapping(true);
+      void (async () => {
+        try {
+          await nodeService.waitForConnection(30_000);
+          if (!cancelled) await nodeService.reconnect();
+        } catch {
+          if (cancelled) return;
+          try {
+            const result = await restartTauriNodeProcess();
+            if (result.ok) {
+              await nodeService.waitForConnection(120_000);
+              if (!cancelled) await nodeService.reconnect();
+            }
+          } catch (error) {
+            console.error("[App] Tauri home node recovery failed:", error);
+          }
+        } finally {
+          if (!cancelled) setNodeBootstrapping(false);
+        }
+      })();
+    };
+
+    if (dueIn <= 0) {
+      runRecovery();
+      return () => {
+        cancelled = true;
+      };
+    }
+    const timer = window.setTimeout(runRecovery, dueIn);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [tauriShell, isConnected, offlineSince, nodeService]);
   const isLocalWs = /^ws:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(
     appSettings.wsUrl.trim() || WS_LOOPBACK_URL,
   );
@@ -702,7 +810,10 @@ export function App() {
 
   const isPublicNetwork = (nodeConfig?.bootstrapPresets ?? []).length > 0;
 
-  if (!isConnected && shouldShowSetupWhileConnecting(tauriShell, isConnected, nodeConfig, humanProfile)) {
+  if (
+    showFullSplash &&
+    shouldShowSetupWhileConnecting(tauriShell, isConnected, nodeConfig, humanProfile)
+  ) {
     return (
       <ToastProvider>
         <SetupView waitingForNode />
@@ -710,11 +821,12 @@ export function App() {
     );
   }
 
-  if (!isConnected) {
+  if (showFullSplash) {
     return (
       <ToastProvider>
         <ConnectingSplash
           reconnectAttempts={reconnectAttempts}
+          nextReconnectDelayMs={nextReconnectDelayMs}
           lastError={lastError}
           isRelayUnreachable={isRelayUnreachable}
           onRetryConnect={handleRetryConnect}
@@ -750,6 +862,24 @@ export function App() {
     <ToastProvider>
       <CallSessionProvider>
       <div className="app">
+        {graceOffline ? (
+          <div className="ws-reconnect-banner" role="status" aria-live="polite">
+            <span className="ws-reconnect-banner__text">
+              {nextReconnectDelayMs != null
+                ? t("splash.reconnectBannerIn", {
+                    seconds: Math.max(1, Math.ceil(nextReconnectDelayMs / 1000)),
+                  })
+                : t("splash.reconnectBanner")}
+            </span>
+            <button
+              type="button"
+              className="ws-reconnect-banner__retry"
+              onClick={handleRetryConnect}
+            >
+              {t("splash.retryConnection")}
+            </button>
+          </div>
+        ) : null}
         <AutoReplyPausedNotifier />
         <ErrorBoundary>
           <Header

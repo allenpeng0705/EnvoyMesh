@@ -297,6 +297,38 @@
   margin-top: var(--space-4);
 }
 
+.ws-reconnect-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--color-warning-bg, #fff7ed);
+  color: var(--color-warning-text, #9a3412);
+  border-bottom: 1px solid var(--color-warning-border, #fed7aa);
+  font-size: 0.875rem;
+  z-index: 40;
+}
+
+.ws-reconnect-banner__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-reconnect-banner__retry {
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8125rem;
+}
+
+.ws-reconnect-banner__retry:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
 .envoy-splash__actions .envoy-splash__retry {
   margin-top: 0;
 }
