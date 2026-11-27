@@ -1379,7 +1379,7 @@ function createWsNodeServiceClient(
     },
     async pinContextMemoryFact(id: string, pinned: boolean) {
       return wsClient.rpc("pinContextMemoryFact", { id, pinned }) as Promise<boolean>;
-    }
+    },
     async retryContextMemoryInstall() {
       return wsClient.rpc("retryContextMemoryInstall", {}) as Promise<
         import("@envoymesh/api").ContextMemoryStatusSnapshot

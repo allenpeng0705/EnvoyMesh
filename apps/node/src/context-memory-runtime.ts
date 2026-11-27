@@ -294,10 +294,9 @@ export function createContextMemoryRuntime(input: {
         const health = await client.probeReady();
         if (ac.signal.aborted || generation !== managedGeneration) return;
         applyProbeResult(health);
-        if (lastStatus === "ready" || lastStatus === "needs_models") {
-          installPhase = undefined;
-          installProgress = undefined;
-        }
+        // Probe finished — clear install progress regardless of Ready / needs_models / error.
+        installPhase = undefined;
+        installProgress = undefined;
       } catch (err) {
         if (ac.signal.aborted || generation !== managedGeneration || isAbortError(err)) {
           return;
