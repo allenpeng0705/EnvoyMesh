@@ -280,6 +280,7 @@ export function CodingView({ active }: CodingViewProps) {
           runMeshWorkRequest={runMeshWorkRequest}
           meshWorkEnqueueRequest={meshWorkEnqueueRequest}
           hotkeysEnabled={active}
+          viewActive={active}
           extBusySessionId={
             selected?.kind === "ext" && extStatus === "busy"
               ? selected.sessionId

@@ -189,6 +189,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codingSessionDrawerTitle => '切换任务';
 
   @override
+  String get codingMoreActions => '更多';
+
+  @override
+  String get codingViewByProject => '按项目分组';
+
+  @override
+  String get codingViewAsList => '显示为列表';
+
+  @override
+  String get meOpenCodingHint => '家用电脑上的项目与编程任务';
+
+  @override
   String get codingSectionEnvoyHarness => 'Envoy Harness';
 
   @override
@@ -1157,7 +1169,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get meFamilyProfile => '家庭档案';
 
   @override
-  String get meFamilyProfileHint => '你以家庭成员身份连接此家庭节点';
+  String get meFamilyProfileHint => '家庭成员 · 聊天与我';
 
   @override
   String get mePreferences => '偏好设置';
@@ -1865,6 +1877,114 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get connTooltipError => '连接错误';
+
+  @override
+  String get homeErrorUnauthorized => '会话已过期——请重新扫描家中节点的二维码。';
+
+  @override
+  String get homeErrorTransport => '无法连到家中电脑。请确认同一 Wi‑Fi，或家中应用正在运行。';
+
+  @override
+  String get homeErrorNoCandidates => '暂时没有可达路径。请添加公网地址，或在同一网络打开家中应用。';
+
+  @override
+  String get homeErrorOffline => '当前离线。有网络后再重连。';
+
+  @override
+  String get homeErrorGeneric => '无法连接家中节点，请稍后再试。';
+
+  @override
+  String get homeOfflineBannerTitle => '家中节点不可达';
+
+  @override
+  String get homeOfflineBannerSubtitle => '点按查看详情并重连';
+
+  @override
+  String get homeOfflineBannerReconnecting => '正在重连家中节点…';
+
+  @override
+  String get meHomeFiles => '家中文件';
+
+  @override
+  String get meHomeFilesHint => '浏览家中电脑上的文件';
+
+  @override
+  String get meSectionDailyTools => '日常工具';
+
+  @override
+  String get meSectionHomeAi => '家中与 AI';
+
+  @override
+  String get meSectionAccount => '账户';
+
+  @override
+  String get meOwnerProfileHint => '所有者 · 完整家中工具';
+
+  @override
+  String get meCodingMovedTip => '编程已从底部栏移到这里。随时可从「我」打开。';
+
+  @override
+  String get meCodingMovedTipDismiss => '知道了';
+
+  @override
+  String get meThemeLight => '浅色';
+
+  @override
+  String get meThemeDark => '深色';
+
+  @override
+  String get meThemeSystem => '跟随系统';
+
+  @override
+  String get meThemeTitle => '外观';
+
+  @override
+  String codingNotReadySummary(int count) {
+    return '另有 $count 个智能体在本机尚未就绪。';
+  }
+
+  @override
+  String get codingOpenCodingTools => '打开编程工具';
+
+  @override
+  String get codingGatedFamilyHint => '请让家中所有者在家庭设置里为你的资料开启编程。';
+
+  @override
+  String get knowledgeEmptyTitle => '还没有知识库内容';
+
+  @override
+  String get knowledgeEmptyBody => '家中节点上的笔记和资料会出现在这里。可以先新建一条笔记。';
+
+  @override
+  String get knowledgeEmptyCta => '新建笔记';
+
+  @override
+  String get termEmptyTitle => '还没有终端';
+
+  @override
+  String get termEmptyBody => '从这里打开家中电脑的 shell。编程代理在「我 → 编程」。';
+
+  @override
+  String get termEmptyCta => '新建终端';
+
+  @override
+  String get inboxIntroApprove => '同意';
+
+  @override
+  String get inboxIntroDecline => '拒绝';
+
+  @override
+  String get inboxIntroEmptyReal => '暂无待处理的介绍提议。';
+
+  @override
+  String get inboxIntroApproveFailed => '无法同意该介绍，请重试。';
+
+  @override
+  String get inboxIntroHelloFailed =>
+      '已同意介绍，但招呼消息没发出。可在探索里再点「打招呼」。';
+
+  @override
+  String get inboxIntroDeclineFailed => '无法拒绝该介绍，请重试。';
 
   @override
   String get chatsSectionAi => 'AI';

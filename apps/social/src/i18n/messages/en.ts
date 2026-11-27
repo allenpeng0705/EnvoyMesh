@@ -357,9 +357,12 @@ export const en = {
     harnessProbeUnknown: "Not ready",
     harnessUnavailable: "Not available",
     harnessCatalogHint:
-      "Only agents that are ready on this computer are listed. Install or check others in Settings → AI → Coding agents.",
+      "Ready agents can be selected. Not ready agents are summarized below — open Coding tools to install or fix PATH, then Check again.",
     harnessNoneReady:
-      "No ready agents yet. Install one in Settings → AI → Coding agents.",
+      "No ready agents yet. Open Coding tools to install one, then Check again.",
+    harnessNotReadySummary:
+      "{count} more agents aren’t ready on this computer.",
+    openCodingTools: "Open Coding tools settings",
     openInstallGuide: "Install guide",
     composerToolbarAria: "Coding composer options",
     composerModelPlaceholder: "Default model",

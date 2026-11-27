@@ -39,7 +39,11 @@ export const CODING_ALL_HARNESSES = [
 
 export type CodingHarnessId = (typeof CODING_ALL_HARNESSES)[number];
 
-/** Shown as radios on new-task; the rest live under “More agents”. */
+/**
+ * Shown as radios on new-task; the rest live under “More agents” / catalogue.
+ * DeepSeek Harness shares the CodeWhale CLI — keep CodeWhale as the featured
+ * face; DeepSeek stays in the catalogue to avoid duplicate Ready rows.
+ */
 export const CODING_FEATURED_HARNESSES = [
   "envoy-harness",
   "pi",
@@ -48,7 +52,6 @@ export const CODING_FEATURED_HARNESSES = [
   "opencode",
   "cursor",
   "codewhale",
-  "deepseek-harness",
   "minimax-code",
   "grok",
   "gemini",

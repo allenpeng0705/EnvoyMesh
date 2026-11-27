@@ -3,23 +3,41 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../models/feed_notification.dart';
-import '../../providers/contact_provider.dart';
 import '../../providers/feed_notify_provider.dart';
+import '../../providers/social_intro_provider.dart';
 import '../browser/browser_screen.dart';
 
-/// Inbox — feed.notify publish alerts + placeholder intro section.
-class InboxScreen extends ConsumerWidget {
+/// Inbox — feed.notify publish alerts + pending social intro proposals.
+class InboxScreen extends ConsumerStatefulWidget {
   const InboxScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<InboxScreen> createState() => _InboxScreenState();
+}
+
+class _InboxScreenState extends ConsumerState<InboxScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(socialIntroProvider.notifier).refresh();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final feedState = ref.watch(feedNotifyProvider);
-    final contacts = ref.watch(contactProvider).bonds;
+    final introState = ref.watch(socialIntroProvider);
     final theme = Theme.of(context);
 
     return RefreshIndicator(
-      onRefresh: () => ref.read(feedNotifyProvider.notifier).refresh(),
+      onRefresh: () async {
+        await Future.wait([
+          ref.read(feedNotifyProvider.notifier).refresh(),
+          ref.read(socialIntroProvider.notifier).refresh(),
+        ]);
+      },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
@@ -75,27 +93,84 @@ class InboxScreen extends ConsumerWidget {
               style: theme.textTheme.titleMedium,
             ),
           ),
-          if (contacts.isEmpty)
+          if (introState.loading && introState.items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (introState.items.isEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 48),
               child: Text(
-                l10n.inboxPendingEmpty,
+                l10n.inboxIntroEmptyReal,
                 style: const TextStyle(color: Colors.grey),
               ),
             )
           else
-            ...contacts.map(
-              (contact) => ListTile(
+            ...introState.items.map(
+              (proposal) => ListTile(
                 leading: CircleAvatar(
-                  child: Text((contact.displayName ?? '?')[0].toUpperCase()),
+                  child: Text(
+                    ((proposal.candidateDisplayName ??
+                                    proposal.candidateOwnerId)
+                                .isNotEmpty
+                            ? (proposal.candidateDisplayName ??
+                                proposal.candidateOwnerId)[0]
+                            : '?')
+                        .toUpperCase(),
+                  ),
                 ),
-                title: Text(contact.displayName ?? contact.ownerId),
+                title: Text(
+                  proposal.candidateDisplayName?.trim().isNotEmpty == true
+                      ? proposal.candidateDisplayName!
+                      : proposal.candidateOwnerId,
+                ),
                 subtitle: Text(l10n.inboxWantsToConnect),
-                trailing: TextButton(
-                  onPressed: () {
-                    // TODO: Accept/reject intro proposal
-                  },
-                  child: Text(l10n.commonAccept),
+                trailing: Wrap(
+                  spacing: 4,
+                  children: [
+                    TextButton(
+                      onPressed: introState.busyMessageId == proposal.messageId
+                          ? null
+                          : () async {
+                              final outcome = await ref
+                                  .read(socialIntroProvider.notifier)
+                                  .approve(proposal);
+                              if (!context.mounted) return;
+                              final message = switch (outcome) {
+                                SocialIntroApproveOutcome.success => null,
+                                SocialIntroApproveOutcome.approveFailed =>
+                                  l10n.inboxIntroApproveFailed,
+                                SocialIntroApproveOutcome.helloFailed =>
+                                  l10n.inboxIntroHelloFailed,
+                              };
+                              if (message != null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(message)),
+                                );
+                              }
+                            },
+                      child: Text(l10n.inboxIntroApprove),
+                    ),
+                    TextButton(
+                      onPressed: introState.busyMessageId == proposal.messageId
+                          ? null
+                          : () async {
+                              final ok = await ref
+                                  .read(socialIntroProvider.notifier)
+                                  .decline(proposal);
+                              if (!context.mounted) return;
+                              if (!ok) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(l10n.inboxIntroDeclineFailed),
+                                  ),
+                                );
+                              }
+                            },
+                      child: Text(l10n.inboxIntroDecline),
+                    ),
+                  ],
                 ),
               ),
             ),

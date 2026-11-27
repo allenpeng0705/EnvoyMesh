@@ -335,9 +335,11 @@ export const zh = mergeMessages(en, {
     harnessProbeUnknown: "未就绪",
     harnessUnavailable: "不可用",
     harnessCatalogHint:
-      "这里只列出本机已就绪的智能体。安装或检查其他智能体请到 设置 → AI → 编程智能体。",
+      "就绪的智能体可选。未就绪的汇总在下方——打开编程工具安装或修复 PATH，然后点重新检查。",
     harnessNoneReady:
-      "暂无就绪的智能体。请到 设置 → AI → 编程智能体 安装。",
+      "暂无就绪的智能体。请打开编程工具安装，然后点重新检查。",
+    harnessNotReadySummary: "另有 {count} 个智能体在本机尚未就绪。",
+    openCodingTools: "打开编程工具设置",
     openInstallGuide: "安装指南",
     composerToolbarAria: "编程输入选项",
     composerModelPlaceholder: "默认模型",

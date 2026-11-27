@@ -27,11 +27,9 @@ import '../../widgets/eh/eh_changes_banner.dart';
 import '../../widgets/eh/eh_subagents_banner.dart';
 import '../../widgets/eh/eh_turn_review_sheet.dart';
 import '../../widgets/eh/envoy_harness_terminal_chrome.dart';
+import '../../coding/coding_surface_nav.dart';
 import '../coding/coding_heartbeat_ui.dart';
-import '../coding/coding_session_list_sheet.dart';
 import '../coding/coding_import_session_sheet.dart';
-import '../coding/ext_agent_coding_screen.dart';
-import '../coding/pi_coding_chat_screen.dart';
 import '../files/home_file_pick_screen.dart';
 
 /// Envoy Harness coding chat — multi-turn agent thread per project folder.
@@ -1591,67 +1589,10 @@ class _EnvoyHarnessChatScreenState
                     message.text.toLowerCase().contains(transcriptQuery),
               )
               .toList();
+    final cwdPath = _status?['cwd']?.toString().trim();
     return Scaffold(
       appBar: AppBar(
-        leading: widget.readOnlyReview
-            ? null
-            : IconButton(
-                tooltip: l10n.codingSessionDrawerTitle,
-                icon: const Icon(Icons.menu),
-                onPressed: () {
-                  unawaited(
-                    showCodingSessionListSheet(
-                      context,
-                      ref,
-                      CodingSessionListHost(
-                        currentEhChatId: widget.chatId?.trim(),
-                        onNewTask: () async {
-                          if (!context.mounted) return;
-                          Navigator.of(context).popUntil((r) => r.isFirst);
-                        },
-                        onOpenEh: (t) async {
-                          final parts = t.id.split(':eh:');
-                          final chatId =
-                              parts.length > 1 ? parts[1] : null;
-                          if (chatId == widget.chatId?.trim()) return;
-                          await Navigator.of(context).pushReplacement(
-                            MaterialPageRoute<void>(
-                              builder: (_) => EnvoyHarnessChatScreen(
-                                threadId: t.id,
-                                displayName: t.displayName,
-                                chatId: chatId,
-                              ),
-                            ),
-                          );
-                        },
-                        onOpenPi: (s) async {
-                          await Navigator.of(context).pushReplacement(
-                            MaterialPageRoute<void>(
-                              builder: (_) => PiCodingChatScreen(
-                                sessionId: s.id,
-                                sessionName: s.name,
-                                cwd: s.cwd,
-                              ),
-                            ),
-                          );
-                        },
-                        onOpenExt: (s) async {
-                          await Navigator.of(context).pushReplacement(
-                            MaterialPageRoute<void>(
-                              builder: (_) => ExtAgentCodingScreen(
-                                sessionId: s.id,
-                                harness: s.harness,
-                                cwd: s.cwd,
-                                title: s.title,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  );
-                },
-              ),
+        // Keep system back — session switcher lives in actions.
         title: _searching
             ? TextField(
                 controller: _searchController,
@@ -1663,6 +1604,20 @@ class _EnvoyHarnessChatScreenState
               )
             : Text(widget.displayName),
         actions: [
+          if (!widget.readOnlyReview)
+            IconButton(
+              tooltip: l10n.codingSessionDrawerTitle,
+              icon: const Icon(Icons.view_list_outlined),
+              onPressed: () {
+                unawaited(
+                  showCodingSessionSwitcher(
+                    context,
+                    ref,
+                    currentEhChatId: widget.chatId?.trim(),
+                  ),
+                );
+              },
+            ),
           IconButton(
             tooltip: _searching ? l10n.ehSearchClose : l10n.ehSearchTranscript,
             icon: Icon(_searching ? Icons.close : Icons.search),
@@ -1671,9 +1626,16 @@ class _EnvoyHarnessChatScreenState
               if (!_searching) _searchController.clear();
             }),
           ),
+          if (!widget.readOnlyReview && _busy)
+            IconButton(
+              tooltip: l10n.codingCancelTurn,
+              icon: const Icon(Icons.stop_circle_outlined),
+              onPressed: () => unawaited(_queue?.cancelActiveTurn()),
+            ),
           if (!widget.readOnlyReview)
             PopupMenuButton<String>(
-              tooltip: l10n.ehPermsTooltip,
+              tooltip: l10n.codingMoreActions,
+              icon: const Icon(Icons.more_vert),
               onSelected: (value) {
                 if (value == 'invite-review') {
                   unawaited(_invitePeerToReview());
@@ -1724,40 +1686,26 @@ class _EnvoyHarnessChatScreenState
                   ),
                 PopupMenuItem(
                   value: 'safe-only',
-                  child: Text(l10n.ehPermsSafe),
+                  child: Text(
+                    '${l10n.ehPermsSafe}'
+                    '${_status?['autoRunPolicy']?.toString() == 'safe-only' ? ' ✓' : ''}',
+                  ),
                 ),
                 PopupMenuItem(
                   value: 'always-confirm',
-                  child: Text(l10n.ehPermsAsk),
+                  child: Text(
+                    '${l10n.ehPermsAsk}'
+                    '${_status?['autoRunPolicy']?.toString() == 'always-confirm' ? ' ✓' : ''}',
+                  ),
                 ),
                 PopupMenuItem(
                   value: 'off',
-                  child: Text(l10n.ehPermsApprove),
+                  child: Text(
+                    '${l10n.ehPermsApprove}'
+                    '${_status?['autoRunPolicy']?.toString() == 'off' ? ' ✓' : ''}',
+                  ),
                 ),
               ],
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Text(
-                  _policyLabel(l10n, _status?['autoRunPolicy']?.toString()),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-            ),
-          if (!widget.readOnlyReview && _busy)
-            IconButton(
-              tooltip: l10n.codingCancelTurn,
-              icon: const Icon(Icons.stop_circle_outlined),
-              onPressed: () => unawaited(_queue?.cancelActiveTurn()),
-            ),
-          if (_status?['cwd'] != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Center(
-                child: Text(
-                  _status!['cwd']!.toString().split(RegExp(r'[/\\]')).last,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
             ),
         ],
         bottom: _searching
@@ -1779,6 +1727,28 @@ class _EnvoyHarnessChatScreenState
       ),
       body: Column(
         children: [
+          if (cwdPath != null && cwdPath.isNotEmpty)
+            Material(
+              color: scheme.surfaceContainerLow,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    cwdPath,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontFamily: 'monospace',
+                        ),
+                  ),
+                ),
+              ),
+            ),
           if (widget.readOnlyReview)
             Material(
               color: scheme.secondaryContainer,

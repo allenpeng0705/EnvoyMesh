@@ -166,13 +166,32 @@ mixin PeopleRpcs on HomeRpcSession {
     required String targetOwnerId,
     required Map<String, dynamic> profile,
     required String message,
+    String? introProposalMessageId,
   }) async {
     return await homeClient.call('sendHello', {
           'targetOwnerId': targetOwnerId,
           'profile': profile,
           'message': message,
+          if (introProposalMessageId != null &&
+              introProposalMessageId.isNotEmpty)
+            'introProposalMessageId': introProposalMessageId,
         })
         as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> approveSocialIntroCommitment(
+    String messageId,
+  ) async {
+    return await homeClient.call('approveSocialIntroCommitment', {
+          'messageId': messageId,
+        })
+        as Map<String, dynamic>;
+  }
+
+  Future<void> declineSocialIntroProposal(String messageId) async {
+    await homeClient.call('declineSocialIntroProposal', {
+      'messageId': messageId,
+    });
   }
 
   // -- Web content (Phase 45 Content tab) --

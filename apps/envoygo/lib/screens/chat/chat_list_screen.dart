@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:envoy_mesh/envoy_mesh.dart' show phoneLocalContextId;
 import 'package:envoy_mesh/envoy_mesh_social.dart';
 
@@ -6,9 +8,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_thread.dart';
+import '../../coding/coding_surface_nav.dart';
 import '../../navigation/owner_tabs.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../providers/terminal_provider.dart';
 import '../../utils/localized_labels.dart';
 import '../../widgets/ext_agent_switcher.dart';
 import '../../widgets/thread_tile.dart';
@@ -16,7 +20,7 @@ import 'chat_detail_screen.dart';
 
 /// Unified thread list — direct chats, group chats, and AI chats.
 ///
-/// Coding (EH / Pi) lives under the Coding tab (Phase 68-C1b.3).
+/// Coding (EH / Pi) opens as a full-screen surface (not a bottom tab).
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
 
@@ -344,12 +348,36 @@ class ChatListScreen extends ConsumerWidget {
     switch (thread.type) {
       case ChatThreadType.terminal:
         // Shell terminals live under the Terminal tab (Phase 68-C1b.3).
-        ref.read(chatProvider.notifier).selectTab(OwnerTabs.terminal);
+        ref.read(chatProvider.notifier).selectTab(HomeTabId.terminal);
         return;
       case ChatThreadType.pi:
+        final parts = thread.id.split(':term:');
+        final sessionId = parts.length > 1 ? parts[1] : '';
+        final session = ref
+            .read(terminalProvider)
+            .sessions
+            .where((s) => s.id == sessionId)
+            .firstOrNull;
+        unawaited(
+          openCodingPiSession(
+            context,
+            sessionId: sessionId.isNotEmpty ? sessionId : thread.id,
+            sessionName: session?.name ?? thread.displayName,
+            cwd: session?.cwd ?? thread.description,
+          ),
+        );
+        return;
       case ChatThreadType.envoyHarness:
-        // Coding sessions live under the Coding tab (Phase 68-C1b.3).
-        ref.read(chatProvider.notifier).selectTab(OwnerTabs.coding);
+        final parts = thread.id.split(':eh:');
+        final chatId = parts.length > 1 ? parts[1] : null;
+        unawaited(
+          openCodingEhSession(
+            context,
+            threadId: thread.id,
+            displayName: thread.displayName,
+            chatId: chatId,
+          ),
+        );
         return;
       case ChatThreadType.envoyai:
       case ChatThreadType.externalAgent:

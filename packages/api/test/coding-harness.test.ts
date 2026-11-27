@@ -61,7 +61,8 @@ describe("coding-harness catalog", () => {
     expect(codingHarnessLabel("minimax-code")).toBe("MiniMax Code");
     expect(codingHarnessLabel("envoy-harness")).toBe("Envoy");
     expect(CODING_FEATURED_HARNESSES).toContain("envoy-harness");
-    expect(CODING_FEATURED_HARNESSES).toContain("deepseek-harness");
+    expect(CODING_FEATURED_HARNESSES).toContain("codewhale");
+    expect(CODING_FEATURED_HARNESSES).not.toContain("deepseek-harness");
     expect(CODING_FEATURED_HARNESSES).toContain("minimax-code");
     expect(getCodingProvider("grok")?.command[0]).toBe("grok");
     expect(getCodingProvider("minimax-code")?.command).toEqual(["mcode", "acp"]);

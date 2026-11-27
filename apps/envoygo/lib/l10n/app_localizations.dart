@@ -462,6 +462,30 @@ abstract class AppLocalizations {
   /// **'Switch task'**
   String get codingSessionDrawerTitle;
 
+  /// No description provided for @codingMoreActions.
+  ///
+  /// In en, this message translates to:
+  /// **'More'**
+  String get codingMoreActions;
+
+  /// No description provided for @codingViewByProject.
+  ///
+  /// In en, this message translates to:
+  /// **'Group by project'**
+  String get codingViewByProject;
+
+  /// No description provided for @codingViewAsList.
+  ///
+  /// In en, this message translates to:
+  /// **'Show as list'**
+  String get codingViewAsList;
+
+  /// No description provided for @meOpenCodingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Projects and coding tasks on your home computer'**
+  String get meOpenCodingHint;
+
   /// No description provided for @codingSectionEnvoyHarness.
   ///
   /// In en, this message translates to:
@@ -2301,7 +2325,7 @@ abstract class AppLocalizations {
   /// No description provided for @meFamilyProfileHint.
   ///
   /// In en, this message translates to:
-  /// **'You are on this home as a family member'**
+  /// **'Family · Chats and Me'**
   String get meFamilyProfileHint;
 
   /// No description provided for @mePreferences.
@@ -3635,6 +3659,216 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connection error'**
   String get connTooltipError;
+
+  /// No description provided for @homeErrorUnauthorized.
+  ///
+  /// In en, this message translates to:
+  /// **'Session expired — scan the home QR again.'**
+  String get homeErrorUnauthorized;
+
+  /// No description provided for @homeErrorTransport.
+  ///
+  /// In en, this message translates to:
+  /// **'Can\'t reach your home computer. Try the same Wi‑Fi, or check that the home app is running.'**
+  String get homeErrorTransport;
+
+  /// No description provided for @homeErrorNoCandidates.
+  ///
+  /// In en, this message translates to:
+  /// **'No way to reach home yet. Add a public address, or open the home app on the same network.'**
+  String get homeErrorNoCandidates;
+
+  /// No description provided for @homeErrorOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re offline. Reconnect when you have network again.'**
+  String get homeErrorOffline;
+
+  /// No description provided for @homeErrorGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t connect to home. Try again in a moment.'**
+  String get homeErrorGeneric;
+
+  /// No description provided for @homeOfflineBannerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Home is unreachable'**
+  String get homeOfflineBannerTitle;
+
+  /// No description provided for @homeOfflineBannerSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap for details and reconnect'**
+  String get homeOfflineBannerSubtitle;
+
+  /// No description provided for @homeOfflineBannerReconnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnecting to home…'**
+  String get homeOfflineBannerReconnecting;
+
+  /// No description provided for @meHomeFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Home files'**
+  String get meHomeFiles;
+
+  /// No description provided for @meHomeFilesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse files on your home computer'**
+  String get meHomeFilesHint;
+
+  /// No description provided for @meSectionDailyTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily tools'**
+  String get meSectionDailyTools;
+
+  /// No description provided for @meSectionHomeAi.
+  ///
+  /// In en, this message translates to:
+  /// **'Home & AI'**
+  String get meSectionHomeAi;
+
+  /// No description provided for @meSectionAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get meSectionAccount;
+
+  /// No description provided for @meOwnerProfileHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Owner · full home tools'**
+  String get meOwnerProfileHint;
+
+  /// No description provided for @meCodingMovedTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Coding moved here from the bottom bar. Open it anytime from Me.'**
+  String get meCodingMovedTip;
+
+  /// No description provided for @meCodingMovedTipDismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get meCodingMovedTipDismiss;
+
+  /// No description provided for @meThemeLight.
+  ///
+  /// In en, this message translates to:
+  /// **'Light'**
+  String get meThemeLight;
+
+  /// No description provided for @meThemeDark.
+  ///
+  /// In en, this message translates to:
+  /// **'Dark'**
+  String get meThemeDark;
+
+  /// No description provided for @meThemeSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get meThemeSystem;
+
+  /// No description provided for @meThemeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Appearance'**
+  String get meThemeTitle;
+
+  /// No description provided for @codingNotReadySummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} more agents aren’t ready on this computer.'**
+  String codingNotReadySummary(int count);
+
+  /// No description provided for @codingOpenCodingTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Coding tools'**
+  String get codingOpenCodingTools;
+
+  /// No description provided for @codingGatedFamilyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask the home owner to turn on Coding for your profile in Family settings.'**
+  String get codingGatedFamilyHint;
+
+  /// No description provided for @knowledgeEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No knowledge yet'**
+  String get knowledgeEmptyTitle;
+
+  /// No description provided for @knowledgeEmptyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes and library items from your home node appear here. Create a note to get started.'**
+  String get knowledgeEmptyBody;
+
+  /// No description provided for @knowledgeEmptyCta.
+  ///
+  /// In en, this message translates to:
+  /// **'New note'**
+  String get knowledgeEmptyCta;
+
+  /// No description provided for @termEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No terminals yet'**
+  String get termEmptyTitle;
+
+  /// No description provided for @termEmptyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Open a shell on your home computer from here. Coding agents live under Me → Coding.'**
+  String get termEmptyBody;
+
+  /// No description provided for @termEmptyCta.
+  ///
+  /// In en, this message translates to:
+  /// **'New terminal'**
+  String get termEmptyCta;
+
+  /// No description provided for @inboxIntroApprove.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve'**
+  String get inboxIntroApprove;
+
+  /// No description provided for @inboxIntroDecline.
+  ///
+  /// In en, this message translates to:
+  /// **'Decline'**
+  String get inboxIntroDecline;
+
+  /// No description provided for @inboxIntroEmptyReal.
+  ///
+  /// In en, this message translates to:
+  /// **'No intro proposals waiting.'**
+  String get inboxIntroEmptyReal;
+
+  /// No description provided for @inboxIntroApproveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t approve that intro. Try again.'**
+  String get inboxIntroApproveFailed;
+
+  /// No description provided for @inboxIntroHelloFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Intro approved, but the hello message didn\'t send. Try Say Hello from Explore.'**
+  String get inboxIntroHelloFailed;
+
+  /// No description provided for @inboxIntroDeclineFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t decline that intro. Try again.'**
+  String get inboxIntroDeclineFailed;
 
   /// No description provided for @chatsSectionAi.
   ///

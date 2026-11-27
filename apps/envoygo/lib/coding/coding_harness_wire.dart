@@ -4,6 +4,7 @@ library;
 const kCodingTierAHarnessIds = {'envoy-harness', 'pi'};
 
 /// Featured radios + composer snapshot (FH-P0-C); grows with Mesh catalog.
+/// DeepSeek Harness shares CodeWhale — featured face is CodeWhale only.
 const kCodingFeaturedHarnessIds = [
   'envoy-harness',
   'pi',
@@ -12,7 +13,6 @@ const kCodingFeaturedHarnessIds = [
   'opencode',
   'cursor',
   'codewhale',
-  'deepseek-harness',
   'minimax-code',
   'grok',
   'gemini',

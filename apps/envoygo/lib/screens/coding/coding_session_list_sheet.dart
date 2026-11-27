@@ -16,9 +16,13 @@ class CodingSessionListHost {
     required this.onOpenPi,
     required this.onOpenExt,
     required this.onNewTask,
+    this.currentPiSessionId,
+    this.currentExtSessionId,
   });
 
   final String? currentEhChatId;
+  final String? currentPiSessionId;
+  final String? currentExtSessionId;
   final Future<void> Function(ChatThread thread) onOpenEh;
   final Future<void> Function(TerminalSession session) onOpenPi;
   final Future<void> Function(CodingExtSession session) onOpenExt;
@@ -118,6 +122,7 @@ class _CodingSessionListSheet extends ConsumerWidget {
                         ),
                       for (final s in pi)
                         ListTile(
+                          selected: s.id == host.currentPiSessionId,
                           leading: const Icon(Icons.terminal),
                           title: Text(s.name),
                           subtitle: s.cwd != null ? Text(s.cwd!) : null,
@@ -137,6 +142,7 @@ class _CodingSessionListSheet extends ConsumerWidget {
                         ),
                       for (final s in ext)
                         ListTile(
+                          selected: s.id == host.currentExtSessionId,
                           leading: const Icon(Icons.extension),
                           title: Text(s.title),
                           subtitle: Text(s.cwd, maxLines: 1),

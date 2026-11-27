@@ -71,3 +71,19 @@ String localizeConnectionState(
       return l10n.connStateError;
   }
 }
+
+/// End-user label for [NodeState.homeNodeErrorCode] — never raw exceptions.
+String homeNodeErrorLabel(AppLocalizations l10n, String? code) {
+  switch (code) {
+    case 'unauthorized':
+      return l10n.homeErrorUnauthorized;
+    case 'no_candidates':
+      return l10n.homeErrorNoCandidates;
+    case 'transport':
+      return l10n.homeErrorTransport;
+    case 'offline':
+      return l10n.homeErrorOffline;
+    default:
+      return l10n.homeErrorGeneric;
+  }
+}

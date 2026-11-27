@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../coding/coding_composer.dart';
 import '../../coding/coding_heartbeat.dart';
+import '../../coding/coding_surface_nav.dart';
 import '../../coding/coding_transcript_store.dart';
 import '../../eh/eh_timeline.dart';
 import '../../ext_agent/agent_attachments.dart';
@@ -637,7 +638,21 @@ class _ExtAgentCodingScreenState extends ConsumerState<ExtAgentCodingScreen> {
       appBar: AppBar(
         title: Text(title),
         actions: [
+          IconButton(
+            tooltip: l10n.codingSessionDrawerTitle,
+            icon: const Icon(Icons.view_list_outlined),
+            onPressed: () {
+              unawaited(
+                showCodingSessionSwitcher(
+                  context,
+                  ref,
+                  currentExtSessionId: widget.sessionId,
+                ),
+              );
+            },
+          ),
           PopupMenuButton<String>(
+            tooltip: l10n.codingMoreActions,
             onSelected: (value) {
               if (value != 'add-heartbeat') return;
               unawaited(() async {

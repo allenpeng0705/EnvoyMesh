@@ -93,6 +93,10 @@ import {
   readyCodingHarnesses,
   type HarnessProbeBadge,
 } from "../../lib/coding-harness-probe.js";
+import {
+  OPEN_SETTINGS_EVENT,
+  type OpenSettingsDetail,
+} from "../../lib/open-settings-nav.js";
 import { CodingNewSessionSheet } from "../CodingNewSessionSheet.js";
 import { CodingCommandPalette } from "../CodingCommandPalette.js";
 import { CodingHistoryFilters } from "../CodingHistoryFilters.js";
@@ -137,6 +141,8 @@ export type CodingSidebarProps = {
   piBusySessionId?: string | null;
   /** When true, Cmd/Ctrl+K opens the Coding command palette. */
   hotkeysEnabled?: boolean;
+  /** When Coding becomes visible again, re-probe Ready / Not ready. */
+  viewActive?: boolean;
 };
 
 function formatRelativeShort(iso: string, nowMs = Date.now()): string {
@@ -219,6 +225,7 @@ export function CodingSidebar({
   extBusySessionId = null,
   piBusySessionId = null,
   hotkeysEnabled = false,
+  viewActive = true,
 }: CodingSidebarProps) {
   const t = useT();
   const nodeService = useNodeService();
@@ -507,10 +514,28 @@ export function CodingSidebar({
       window.removeEventListener(CODING_EXT_SESSIONS_CHANGED_EVENT, tick);
   }, []);
 
-  // Warm probe when connected so pickers are not empty on first open.
-  // Re-probe when any agent picker opens. Settings still lists every agent.
+  // Close Coding pickers when deep-linking to Coding tools settings.
   useEffect(() => {
-    if (!nodeService.isConnected) return;
+    const onSettings = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenSettingsDetail>).detail;
+      if (!detail?.closeCodingPickers) return;
+      setTaskSheetOpen(false);
+      setAddProjectOpen(false);
+      setDefaultsOpen(false);
+      setProjectSettingsTarget(null);
+      setTaskAgentTarget(null);
+      setScheduleModalOpen(false);
+      setSheetError(null);
+      setScheduleError(null);
+    };
+    window.addEventListener(OPEN_SETTINGS_EVENT, onSettings);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onSettings);
+  }, []);
+
+  // Warm probe when connected so pickers are not empty on first open.
+  // Re-probe when Coding becomes visible again or any agent picker opens.
+  useEffect(() => {
+    if (!nodeService.isConnected || !viewActive) return;
     let cancelled = false;
     const targets = [...CODING_ALL_HARNESSES];
     setHarnessProbe((prev) => {
@@ -539,10 +564,11 @@ export function CodingSidebar({
     return () => {
       cancelled = true;
     };
-    // Intentionally omit nodeService object identity — connection + picker open.
+    // Intentionally omit nodeService object identity — connection + visibility + picker open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     nodeService.isConnected,
+    viewActive,
     taskSheetOpen,
     addProjectOpen,
     projectSettingsTarget,

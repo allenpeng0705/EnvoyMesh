@@ -83,10 +83,6 @@ void main() {
                       label: l10n.navSocial,
                     ),
                     NavigationDestination(
-                      icon: const Icon(Icons.code_outlined),
-                      label: l10n.navCoding,
-                    ),
-                    NavigationDestination(
                       icon: const Icon(Icons.menu_book_outlined),
                       label: l10n.navKnowledge,
                     ),
@@ -108,10 +104,10 @@ void main() {
       await tester.pump();
 
       expect(find.text('Social'), findsOneWidget);
-      expect(find.text('Coding'), findsOneWidget);
       expect(find.text('Knowledge'), findsOneWidget);
       expect(find.text('Terminal'), findsOneWidget);
       expect(find.text('Me'), findsOneWidget);
+      expect(find.text('Coding'), findsNothing);
     });
 
     testWidgets('Social tab selection clears engage badges', (tester) async {

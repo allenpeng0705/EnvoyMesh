@@ -44,6 +44,7 @@ class CodingHomeScreen extends ConsumerStatefulWidget {
 
 class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
   var _refreshing = false;
+  Future<void>? _refreshInFlight;
   List<CodingExtSession> _extSessions = const [];
   List<CodingProject> _projects = const [];
   Set<String> _archivedKeys = {};
@@ -59,9 +60,11 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
       // Live openCoding while Coding home is already mounted.
       unawaited(_handleCodingOpen(detail, clearPending: true));
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_refresh());
-      unawaited(_consumePendingCodingOpen());
+    // Refresh first so startNew / mesh sheets see loaded projects.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _refresh();
+      if (!mounted) return;
+      await _consumePendingCodingOpen();
     });
   }
 
@@ -89,6 +92,7 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
     if (!mounted) return;
     final client = ref.read(nodeServiceProvider);
     final enqueue = pending.meshWorkEnqueue;
+    var openedMeshSession = false;
     if (enqueue != null && client != null) {
       try {
         await client.enqueueEhMeshWorkItem(
@@ -117,6 +121,7 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
           }
           final resolved = thread;
           if (resolved != null) {
+            openedMeshSession = true;
             await Navigator.of(context).push<void>(
               MaterialPageRoute<void>(
                 builder: (_) => EnvoyHarnessChatScreen(
@@ -126,18 +131,25 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
                 ),
               ),
             );
-            return;
           }
         }
       } catch (_) {
         // Fall through to the queue sheet.
       }
     }
-    if (pending.meshWorkQueue ||
-        enqueue != null ||
-        (runId != null && runId.isNotEmpty)) {
+    if (!openedMeshSession &&
+        (pending.meshWorkQueue ||
+            enqueue != null ||
+            (runId != null && runId.isNotEmpty))) {
       if (!mounted) return;
       await showCodingMeshWorkSheet(context);
+    }
+    // Mesh first; startNew only if we did not already push a mesh session.
+    if (pending.startNew && !openedMeshSession) {
+      if (!mounted) return;
+      await _refresh();
+      if (!mounted) return;
+      await _openNewTask();
     }
   }
 
@@ -207,7 +219,21 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
   }
 
   Future<void> _refresh() async {
-    if (_refreshing) return;
+    final inFlight = _refreshInFlight;
+    if (inFlight != null) return inFlight;
+    final done = _doRefresh();
+    _refreshInFlight = done;
+    try {
+      await done;
+    } finally {
+      if (identical(_refreshInFlight, done)) {
+        _refreshInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _doRefresh() async {
+    if (!mounted) return;
     setState(() => _refreshing = true);
     try {
       final ext = await loadCodingExtSessions();
@@ -1206,9 +1232,17 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          l10n.codingHomeEmptyProjects,
+          l10n.codingEmptyHint,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          l10n.codingHomeEmptyProjects,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
         ),
@@ -1304,75 +1338,99 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
         title: Text(l10n.navCoding),
         actions: [
           if (node.activeNode != null && mayUseCoding) ...[
-            IconButton(
-              tooltip: l10n.codingAddProjectCta,
-              icon: const Icon(Icons.create_new_folder_outlined),
-              onPressed: () => unawaited(_openAddProject()),
-            ),
-            IconButton(
-              tooltip: l10n.codingSearchTitle,
-              icon: const Icon(Icons.search),
-              onPressed: () => unawaited(
-                showCodingCommandPalette(context, ref, _paletteHost),
+            if (!showEmptyHome) ...[
+              IconButton(
+                tooltip: l10n.codingSearchTitle,
+                icon: const Icon(Icons.search),
+                onPressed: () => unawaited(
+                  showCodingCommandPalette(context, ref, _paletteHost),
+                ),
               ),
-            ),
-            IconButton(
-              tooltip: l10n.codingHistoryAllTasks,
-              icon: Icon(
-                _flatHistoryMode
-                    ? Icons.view_list
-                    : Icons.account_tree_outlined,
+              PopupMenuButton<CodingHistoryFilter>(
+                tooltip: _historyFilterLabel(l10n),
+                icon: const Icon(Icons.filter_list),
+                onSelected: (v) => unawaited(_setHistoryFilter(v)),
+                itemBuilder: (_) => [
+                  CheckedPopupMenuItem(
+                    value: CodingHistoryFilter.all,
+                    checked: _historyFilter == CodingHistoryFilter.all,
+                    child: Text(l10n.codingHistoryAll),
+                  ),
+                  CheckedPopupMenuItem(
+                    value: CodingHistoryFilter.needsYou,
+                    checked: _historyFilter == CodingHistoryFilter.needsYou,
+                    child: Text(l10n.codingHistoryNeedsYou),
+                  ),
+                  CheckedPopupMenuItem(
+                    value: CodingHistoryFilter.recent,
+                    checked: _historyFilter == CodingHistoryFilter.recent,
+                    child: Text(l10n.codingHistoryRecent),
+                  ),
+                  CheckedPopupMenuItem(
+                    value: CodingHistoryFilter.archived,
+                    checked: _historyFilter == CodingHistoryFilter.archived,
+                    child: Text(l10n.codingHistoryArchived),
+                  ),
+                ],
               ),
-              onPressed: () => unawaited(_setFlatHistoryMode(!_flatHistoryMode)),
-            ),
-            PopupMenuButton<CodingHistoryFilter>(
-              tooltip: _historyFilterLabel(l10n),
-              icon: const Icon(Icons.filter_list),
-              onSelected: (v) => unawaited(_setHistoryFilter(v)),
+            ],
+            PopupMenuButton<String>(
+              tooltip: l10n.codingMoreActions,
+              icon: const Icon(Icons.more_vert),
+              onSelected: (value) {
+                if (value == 'add-project') {
+                  unawaited(_openAddProject());
+                } else if (value == 'view-toggle') {
+                  unawaited(_setFlatHistoryMode(!_flatHistoryMode));
+                } else if (value == 'mesh-work') {
+                  unawaited(showCodingMeshWorkSheet(context));
+                } else if (value == 'scheduler') {
+                  unawaited(showCodingSchedulerSheet(context));
+                } else if (value == 'refresh') {
+                  unawaited(_refresh());
+                }
+              },
               itemBuilder: (_) => [
-                CheckedPopupMenuItem(
-                  value: CodingHistoryFilter.all,
-                  checked: _historyFilter == CodingHistoryFilter.all,
-                  child: Text(l10n.codingHistoryAll),
+                PopupMenuItem(
+                  value: 'add-project',
+                  child: Text(l10n.codingAddProjectCta),
                 ),
-                CheckedPopupMenuItem(
-                  value: CodingHistoryFilter.needsYou,
-                  checked: _historyFilter == CodingHistoryFilter.needsYou,
-                  child: Text(l10n.codingHistoryNeedsYou),
-                ),
-                CheckedPopupMenuItem(
-                  value: CodingHistoryFilter.recent,
-                  checked: _historyFilter == CodingHistoryFilter.recent,
-                  child: Text(l10n.codingHistoryRecent),
-                ),
-                CheckedPopupMenuItem(
-                  value: CodingHistoryFilter.archived,
-                  checked: _historyFilter == CodingHistoryFilter.archived,
-                  child: Text(l10n.codingHistoryArchived),
+                if (!showEmptyHome) ...[
+                  PopupMenuItem(
+                    value: 'view-toggle',
+                    child: Text(
+                      _flatHistoryMode
+                          ? l10n.codingViewByProject
+                          : l10n.codingViewAsList,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'mesh-work',
+                    child: Text(l10n.codingMeshWorkTitle),
+                  ),
+                  PopupMenuItem(
+                    value: 'scheduler',
+                    child: Text(l10n.codingSchedulerTitle),
+                  ),
+                ],
+                PopupMenuItem(
+                  value: 'refresh',
+                  enabled: !_refreshing,
+                  child: Text(l10n.commonRefresh),
                 ),
               ],
-            ),
-            IconButton(
-              tooltip: l10n.codingMeshWorkTitle,
-              icon: const Icon(Icons.hub_outlined),
-              onPressed: () => unawaited(showCodingMeshWorkSheet(context)),
-            ),
-            IconButton(
-              tooltip: l10n.codingSchedulerTitle,
-              icon: const Icon(Icons.schedule),
-              onPressed: () => unawaited(showCodingSchedulerSheet(context)),
             ),
           ],
           if (_refreshing)
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
+              padding: EdgeInsets.symmetric(horizontal: 8),
               child: SizedBox(
                 width: 18,
                 height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
-          else
+          else if (node.activeNode == null || !mayUseCoding)
             IconButton(
               tooltip: l10n.commonRefresh,
               icon: const Icon(Icons.refresh),
@@ -1396,13 +1454,34 @@ class _CodingHomeScreenState extends ConsumerState<CodingHomeScreen> {
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
-                    child: Text(
-                      l10n.codingGated,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          l10n.codingGated,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                        if (!node.isOwnerProfile) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            l10n.codingGatedFamilyHint,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
                           ),
+                        ],
+                      ],
                     ),
                   ),
                 )

@@ -4,7 +4,7 @@ export const aiSettingsMessages = {
   codingAgents: {
     heading: "Coding tools",
     intro:
-      "Envoy and Pi are built into EnvoyMesh. Other tools are CLIs on this computer — Coding just uses them. Featured tools are listed here; the full catalogue is below.",
+      "Envoy and Pi are built into EnvoyMesh. Other tools are CLIs on this computer — Coding just uses them. Not ready means the CLI isn’t on PATH yet (or needs sign-in), not that EnvoyMesh dropped support.",
     groupBuiltIn: "In EnvoyMesh · {ready}/{total} ready",
     groupExternal: "Used by Coding (featured) · {ready}/{total} ready",
     groupCatalogue: "Catalogue · {total}",
@@ -14,7 +14,7 @@ export const aiSettingsMessages = {
     browseCatalogue: "Browse the catalogue ({total})",
     hideCatalogue: "Hide catalogue",
     externalHint:
-      "Ready ones appear when you create a task or set a project default. Install and sign in here — EnvoyMesh only runs them when you pick one in Coding.",
+      "In Coding, Ready tools are selectable; Not ready ones are summarized with a link back here. Install or fix PATH, tap Check again, then pick a Ready tool for a new task. (DeepSeek uses CodeWhale — prefer the CodeWhale row.)",
     onMachine: "On this machine · {ready}/{total} ready",
     recheck: "Check again",
     recheckHint:

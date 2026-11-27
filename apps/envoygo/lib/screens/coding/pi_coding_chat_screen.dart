@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../coding/coding_composer.dart';
 import '../../coding/coding_heartbeat.dart';
+import '../../coding/coding_surface_nav.dart';
 import '../../coding/coding_transcript_store.dart';
 import '../../eh/eh_timeline.dart';
 import '../../ext_agent/agent_attachments.dart';
@@ -544,6 +545,19 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
       appBar: AppBar(
         title: Text(widget.sessionName),
         actions: [
+          IconButton(
+            tooltip: l10n.codingSessionDrawerTitle,
+            icon: const Icon(Icons.view_list_outlined),
+            onPressed: () {
+              unawaited(
+                showCodingSessionSwitcher(
+                  context,
+                  ref,
+                  currentPiSessionId: widget.sessionId,
+                ),
+              );
+            },
+          ),
           if (statusState == 'stopped' ||
               statusState == 'error' ||
               statusState == 'not-installed')
@@ -557,6 +571,7 @@ class _PiCodingChatScreenState extends ConsumerState<PiCodingChatScreen> {
               child: Text(l10n.piStartAction),
             ),
           PopupMenuButton<String>(
+            tooltip: l10n.codingMoreActions,
             onSelected: (value) {
               if (value != 'add-heartbeat') return;
               unawaited(() async {

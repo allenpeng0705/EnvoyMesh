@@ -10,10 +10,12 @@ import '../../providers/contact_provider.dart';
 import '../../providers/content_engage_provider.dart';
 import '../../providers/feed_notify_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../providers/social_intro_provider.dart';
 import '../../services/feature_flags.dart';
 import '../../widgets/connection_indicator.dart';
-import '../../widgets/phone_mesh_indicator.dart';
+import '../../widgets/home_offline_banner.dart';
 import '../../widgets/pair_required_panel.dart';
+import '../../widgets/phone_mesh_indicator.dart';
 import '../../widgets/setup_guide_button.dart';
 import '../browser/browser_screen.dart';
 import '../chat/chat_list_screen.dart';
@@ -198,7 +200,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
       viewingContent: viewingSocial,
       surfaceIndex: surface,
     );
-    final inboxBadge = feedNotify.unread.length;
+    final introCount = ref.watch(socialIntroProvider).items.length;
+    final inboxBadge = feedNotify.unread.length + introCount;
 
     Widget tabLabel(String text, int count) {
       if (count <= 0) return Tab(text: text);
@@ -289,26 +292,36 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
                 ],
         ),
       ),
-      body: TabBarView(
-        controller: controller,
-        children: paired
-            ? [
-                const ChatListScreen(),
-                const ContentFeedTab(),
-                const ContentBlogTab(),
-                MarketScreen(
-                  key: ValueKey('market-${preferShop ? 'shop' : 'browse'}'),
-                  embedded: true,
-                  initialPane:
-                      preferShop ? MarketPane.shop : MarketPane.browse,
-                ),
-                const ContentExploreTab(),
-                const BrowserScreen(embedded: true),
-              ]
-            : const [
-                ChatListScreen(),
-                ContentExploreTab(),
-              ],
+      body: Column(
+        children: [
+          const HomeOfflineBanner(),
+          Expanded(
+            child: TabBarView(
+              controller: controller,
+              children: paired
+                  ? [
+                      const ChatListScreen(),
+                      const ContentFeedTab(),
+                      const ContentBlogTab(),
+                      MarketScreen(
+                        key: ValueKey(
+                          'market-${preferShop ? 'shop' : 'browse'}',
+                        ),
+                        embedded: true,
+                        initialPane: preferShop
+                            ? MarketPane.shop
+                            : MarketPane.browse,
+                      ),
+                      const ContentExploreTab(),
+                      const BrowserScreen(embedded: true),
+                    ]
+                  : const [
+                      ChatListScreen(),
+                      ContentExploreTab(),
+                    ],
+            ),
+          ),
+        ],
       ),
     );
   }

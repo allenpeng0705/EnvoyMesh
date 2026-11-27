@@ -11,6 +11,7 @@ import '../../providers/node_provider.dart';
 import '../../widgets/pair_required_panel.dart';
 import '../../screens/chat/chat_detail_screen.dart';
 import '../../widgets/connection_indicator.dart';
+import '../../widgets/home_offline_banner.dart';
 import 'knowledge_library_screen.dart';
 
 /// Knowledge hub — Content → Knowledge (Browse+Ask | Plugins | Setup).
@@ -311,7 +312,12 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
     if (!hasHome) {
       return Scaffold(
         appBar: appBar,
-        body: const _KnowledgeNeedsHome(),
+        body: const Column(
+          children: [
+            HomeOfflineBanner(),
+            Expanded(child: _KnowledgeNeedsHome()),
+          ],
+        ),
       );
     }
     final stripText = switch (_embedKind) {
@@ -324,6 +330,7 @@ class _KnowledgeScreenState extends ConsumerState<KnowledgeScreen>
       body: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const HomeOfflineBanner(),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: Column(
@@ -626,6 +633,15 @@ class _KnowledgeBrowsePanelState extends State<_KnowledgeBrowsePanel> {
             l10n.knowledgeLibraryHeading,
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(
+            l10n.knowledgeEmptyBody,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
             ),
           ),
         ),

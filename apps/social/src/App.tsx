@@ -43,6 +43,10 @@ import { OPEN_ENVOY_AI_EVENT } from "./lib/open-envoy-ai-nav.js";
 import { OPEN_TERMINAL_EVENT } from "./lib/open-terminal-nav.js";
 import { OPEN_CODING_EVENT, openCoding } from "./lib/open-coding-nav.js";
 import {
+  OPEN_SETTINGS_EVENT,
+  type OpenSettingsDetail,
+} from "./lib/open-settings-nav.js";
+import {
   OPEN_CHAT_PEER_EVENT,
   type OpenChatPeerDetail,
 } from "./lib/open-chat-nav.js";
@@ -577,6 +581,41 @@ export function App() {
     };
     window.addEventListener(OPEN_CODING_EVENT, goCoding);
     return () => window.removeEventListener(OPEN_CODING_EVENT, goCoding);
+  }, []);
+
+  useEffect(() => {
+    const SETTINGS_TABS = new Set<SettingsTabId>([
+      "account",
+      "ai",
+      "family",
+      "network",
+      "app",
+    ]);
+    const goSettings = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenSettingsDetail>).detail ?? {};
+      const tabRaw = detail.tab?.trim();
+      const tab =
+        tabRaw && SETTINGS_TABS.has(tabRaw as SettingsTabId)
+          ? (tabRaw as SettingsTabId)
+          : "ai";
+      setSettingsTab(tab);
+      navigateTo("settings");
+      const focusTestId = detail.focusTestId?.trim();
+      if (!focusTestId) return;
+      // AI tab is heavy — retry until the target mounts.
+      const tryScroll = (attemptsLeft: number) => {
+        const el = document.querySelector(`[data-testid="${focusTestId}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        if (attemptsLeft <= 0) return;
+        window.setTimeout(() => tryScroll(attemptsLeft - 1), 100);
+      };
+      window.setTimeout(() => tryScroll(10), 40);
+    };
+    window.addEventListener(OPEN_SETTINGS_EVENT, goSettings);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, goSettings);
   }, []);
 
   useEffect(() => {

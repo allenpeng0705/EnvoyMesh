@@ -19,6 +19,7 @@ import 'contact_provider.dart';
 import 'content_engage_provider.dart';
 import 'feed_notify_provider.dart';
 import 'social_context_provider.dart';
+import 'social_intro_provider.dart';
 import 'terminal_provider.dart';
 
 /// Log a message that is always visible, even in release builds.
@@ -82,7 +83,7 @@ class HomeProductSync implements HomeConnectionHooks {
       _syncRoomsDirect(nodeService, chatNotifier);
       unawaited(chatNotifier.syncTerminals());
       unawaited(chatNotifier.syncEhChats());
-      _syncInboxDirect(nodeService, chatNotifier);
+      _syncInboxDirect();
       // Phase 45E — pull persisted feed.notify Inbox rows from home.
       _ref.read(feedNotifyProvider.notifier).refresh();
       _ref.read(contentEngageProvider.notifier).refresh();
@@ -355,27 +356,14 @@ class HomeProductSync implements HomeConnectionHooks {
     });
   }
 
-  void _syncInboxDirect(
-    NodeServiceClient nodeService,
-    ChatNotifier chatNotifier,
-  ) {
-    nodeService.listPendingSocialIntroProposals().then((result) {
-      for (final item in result) {
-        final from = item['fromOwnerId'] as String?;
-        final displayName = item['fromDisplayName'] as String?;
-        if (from != null) {
-          chatNotifier.onChatMessage({
-            'senderOwnerId': from,
-            'senderDisplayName': displayName ?? from,
-            'text': 'Wants to connect',
-            'messageId': 'intro_${from}',
-            'createdAt': DateTime.now().toIso8601String(),
-          });
-        }
-      }
-    }).catchError((e) {
-      _log('_syncInboxDirect failed: $e');
-    });
+  void _syncInboxDirect() {
+    // Real intro queue lives in [socialIntroProvider] / Inbox — do not invent
+    // fake chat rows (legacy used wrong field names and polluted Chats).
+    unawaited(
+      _ref.read(socialIntroProvider.notifier).refresh().catchError((Object e) {
+        _log('_syncInboxDirect failed: $e');
+      }),
+    );
   }
 }
 

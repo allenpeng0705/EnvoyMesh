@@ -41,6 +41,32 @@ describe("coding-harness-probe", () => {
     expect(harnessNeedsResolve(r.badge)).toBe(true);
   });
 
+  it("marks installed but unreachable as not-ready using top-level hint", async () => {
+    const client = {
+      probeExtAgent: vi.fn(async () => ({
+        installState: "installed",
+        reachable: false,
+        hint: "Run `claude auth login`",
+      })),
+    };
+    const r = await probeCodingHarness(client, "claudecode");
+    expect(r.badge).toBe("not-ready");
+    expect(r.line).toMatch(/setup/i);
+    expect(r.hint).toMatch(/claude auth login/i);
+  });
+
+  it("marks installed but unreachable as not-ready even without a hint", async () => {
+    const client = {
+      probeExtAgent: vi.fn(async () => ({
+        installState: "installed",
+        reachable: false,
+      })),
+    };
+    const r = await probeCodingHarness(client, "codex");
+    expect(r.badge).toBe("not-ready");
+    expect(r.hint).toMatch(/not ready to run/i);
+  });
+
   it("readyCodingHarnesses keeps only ready ids", () => {
     expect(
       readyCodingHarnesses(

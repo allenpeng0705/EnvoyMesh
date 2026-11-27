@@ -4,7 +4,7 @@ export const zhAiSettingsMessages = {
   codingAgents: {
     heading: "编程工具",
     intro:
-      "Envoy 与 Pi 内置在 EnvoyMesh 中。其他工具是本机上的 CLI——编程页只是调用它们。常用工具列在上方；完整目录在下方。",
+      "Envoy 与 Pi 内置在 EnvoyMesh 中。其他工具是本机上的 CLI——编程页只是调用它们。未就绪表示 CLI 尚未在 PATH 上（或需要登录），并不代表 EnvoyMesh 不支持。",
     groupBuiltIn: "EnvoyMesh 内置 · {ready}/{total} 就绪",
     groupExternal: "编程页常用（精选）· {ready}/{total} 就绪",
     groupCatalogue: "目录 · {total}",
@@ -13,7 +13,7 @@ export const zhAiSettingsMessages = {
     browseCatalogue: "浏览目录（{total}）",
     hideCatalogue: "收起目录",
     externalHint:
-      "就绪的会出现在新建任务与项目默认选择里。请在此安装并登录——EnvoyMesh 仅在编程页选中时运行。",
+      "在编程页，就绪工具可选；未就绪的会汇总并链回此处。请在此安装或修复 PATH，点重新检查，然后选择已就绪的工具。（DeepSeek 使用 CodeWhale——请优先选 CodeWhale。）",
     onMachine: "本机 · {ready}/{total} 就绪",
     recheck: "重新检查",
     recheckHint: "重新检测各工具是否在 PATH 上。不会启动智能体或安装软件包。",

@@ -21,11 +21,14 @@ class CodingOpenDetail {
     this.meshWorkQueue = false,
     this.runMeshWorkId,
     this.meshWorkEnqueue,
+    this.startNew = false,
   });
 
   final bool meshWorkQueue;
   final String? runMeshWorkId;
   final CodingMeshWorkEnqueueRequest? meshWorkEnqueue;
+  /// After Coding home mounts, open the New task sheet.
+  final bool startNew;
 }
 
 CodingOpenDetail? _pending;

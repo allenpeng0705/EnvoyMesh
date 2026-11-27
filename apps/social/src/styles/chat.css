@@ -2052,6 +2052,27 @@
   opacity: 0.72;
 }
 
+.coding-harness-open-tools {
+  margin-top: 0.35rem;
+}
+
+.coding-harness-not-ready-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.75rem;
+  margin-top: 0.55rem;
+}
+
+.coding-harness-not-ready-summary .coding-harness-catalog-hint {
+  margin: 0;
+  flex: 1 1 12rem;
+}
+
+.coding-harness-not-ready-summary .coding-harness-open-tools {
+  margin-top: 0;
+}
+
 /*
  * The options row sits **under** the field — the field, then what the message will do.
  *

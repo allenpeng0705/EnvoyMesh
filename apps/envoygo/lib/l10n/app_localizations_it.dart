@@ -197,6 +197,19 @@ class AppLocalizationsIt extends AppLocalizations {
   String get codingSessionDrawerTitle => 'Switch task';
 
   @override
+  String get codingMoreActions => 'More';
+
+  @override
+  String get codingViewByProject => 'Group by project';
+
+  @override
+  String get codingViewAsList => 'Show as list';
+
+  @override
+  String get meOpenCodingHint =>
+      'Projects and coding tasks on your home computer';
+
+  @override
   String get codingSectionEnvoyHarness => 'Envoy Harness';
 
   @override
@@ -1213,8 +1226,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get meFamilyProfile => 'Profilo famiglia';
 
   @override
-  String get meFamilyProfileHint =>
-      'Sei connesso a questa casa come membro della famiglia';
+  String get meFamilyProfileHint => 'You are on this home as a family member';
 
   @override
   String get mePreferences => 'Preferenze';
@@ -1963,6 +1975,125 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get connTooltipError => 'Errore di connessione';
+
+  @override
+  String get homeErrorUnauthorized =>
+      'Session expired — scan the home QR again.';
+
+  @override
+  String get homeErrorTransport =>
+      'Can\'t reach your home computer. Try the same Wi‑Fi, or check that the home app is running.';
+
+  @override
+  String get homeErrorNoCandidates =>
+      'No way to reach home yet. Add a public address, or open the home app on the same network.';
+
+  @override
+  String get homeErrorOffline =>
+      'You\'re offline. Reconnect when you have network again.';
+
+  @override
+  String get homeErrorGeneric =>
+      'Couldn\'t connect to home. Try again in a moment.';
+
+  @override
+  String get homeOfflineBannerTitle => 'Home is unreachable';
+
+  @override
+  String get homeOfflineBannerSubtitle => 'Tap for details and reconnect';
+
+  @override
+  String get homeOfflineBannerReconnecting => 'Reconnecting to home…';
+
+  @override
+  String get meHomeFiles => 'Home files';
+
+  @override
+  String get meHomeFilesHint => 'Browse files on your home computer';
+
+  @override
+  String get meSectionDailyTools => 'Daily tools';
+
+  @override
+  String get meSectionHomeAi => 'Home & AI';
+
+  @override
+  String get meSectionAccount => 'Account';
+
+  @override
+  String get meOwnerProfileHint => 'Owner · full home tools';
+
+  @override
+  String get meCodingMovedTip =>
+      'Coding moved here from the bottom bar. Open it anytime from Me.';
+
+  @override
+  String get meCodingMovedTipDismiss => 'Got it';
+
+  @override
+  String get meThemeLight => 'Light';
+
+  @override
+  String get meThemeDark => 'Dark';
+
+  @override
+  String get meThemeSystem => 'System';
+
+  @override
+  String get meThemeTitle => 'Appearance';
+
+  @override
+  String codingNotReadySummary(int count) {
+    return '$count more agents aren’t ready on this computer.';
+  }
+
+  @override
+  String get codingOpenCodingTools => 'Open Coding tools';
+
+  @override
+  String get codingGatedFamilyHint =>
+      'Ask the home owner to turn on Coding for your profile in Family settings.';
+
+  @override
+  String get knowledgeEmptyTitle => 'No knowledge yet';
+
+  @override
+  String get knowledgeEmptyBody =>
+      'Notes and library items from your home node appear here. Create a note to get started.';
+
+  @override
+  String get knowledgeEmptyCta => 'New note';
+
+  @override
+  String get termEmptyTitle => 'No terminals yet';
+
+  @override
+  String get termEmptyBody =>
+      'Open a shell on your home computer from here. Coding agents live under Me → Coding.';
+
+  @override
+  String get termEmptyCta => 'New terminal';
+
+  @override
+  String get inboxIntroApprove => 'Approve';
+
+  @override
+  String get inboxIntroDecline => 'Decline';
+
+  @override
+  String get inboxIntroEmptyReal => 'No intro proposals waiting.';
+
+  @override
+  String get inboxIntroApproveFailed =>
+      'Couldn\'t approve that intro. Try again.';
+
+  @override
+  String get inboxIntroHelloFailed =>
+      'Intro approved, but the hello message didn\'t send. Try Say Hello from Explore.';
+
+  @override
+  String get inboxIntroDeclineFailed =>
+      'Couldn\'t decline that intro. Try again.';
 
   @override
   String get chatsSectionAi => 'IA';

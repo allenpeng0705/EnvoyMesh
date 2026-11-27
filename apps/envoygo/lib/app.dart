@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'l10n/app_localizations.dart';
 import 'providers/locale_provider.dart';
+import 'providers/theme_provider.dart';
 import 'screens/onboarding/app_entry.dart';
 import 'theme/app_theme.dart';
 
@@ -21,6 +22,7 @@ class EnvoyGoApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final localeOverride = ref.watch(localeOverrideProvider);
+    final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp(
       title: 'EnvoyGo',
@@ -28,7 +30,7 @@ class EnvoyGoApp extends ConsumerWidget {
       navigatorKey: navigatorKey,
       theme: AppTheme.lightTheme(),
       darkTheme: AppTheme.darkTheme(),
-      themeMode: ThemeMode.system,
+      themeMode: themeMode,
       locale: localeOverride,
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: const [

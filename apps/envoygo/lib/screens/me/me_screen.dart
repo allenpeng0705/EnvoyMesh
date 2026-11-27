@@ -5,17 +5,21 @@ import 'package:envoy_thin_client/models/stored_node.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../../coding/coding_surface_nav.dart';
 import '../../knowledge/knowledge_nav.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/locale_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../providers/theme_provider.dart';
+import '../../services/coding_moved_tip.dart';
 import '../../services/feature_flags.dart';
 import '../../services/locale_preferences.dart';
 import '../../services/product/push_preferences.dart';
 import '../../utils/localized_labels.dart';
 import '../../widgets/ai_engine_section.dart';
 import '../../widgets/connection_indicator.dart';
+import '../../widgets/home_offline_banner.dart';
 import '../../widgets/phone_mesh_indicator.dart';
 import '../../widgets/profile_avatar.dart';
 import '../../widgets/setup_guide_button.dart';
@@ -47,6 +51,7 @@ class _MeScreenState extends ConsumerState<MeScreen> {
   String? _avatarColor;
   int _profileEpoch = 0;
   bool _pushEnabled = true;
+  bool _showCodingMovedTip = false;
   bool _pushToggleBusy = false;
   bool _familyProfileBusy = false;
   String? _appVersionLabel;
@@ -57,6 +62,13 @@ class _MeScreenState extends ConsumerState<MeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadProfile());
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPushPref());
     unawaited(_loadAppVersion());
+    unawaited(_loadCodingMovedTip());
+  }
+
+  Future<void> _loadCodingMovedTip() async {
+    final dismissed = await CodingMovedTip.isDismissed();
+    if (!mounted) return;
+    setState(() => _showCodingMovedTip = !dismissed);
   }
 
   Future<void> _loadAppVersion() async {
@@ -271,7 +283,11 @@ class _MeScreenState extends ConsumerState<MeScreen> {
           SizedBox(width: 4),
         ],
       ),
-      body: ListView(
+      body: Column(
+        children: [
+          const HomeOfflineBanner(),
+          Expanded(
+            child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
         const SizedBox(height: 8),
@@ -344,6 +360,16 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
+                    const SizedBox(height: 6),
+                    Text(
+                      nodeState.isOwnerProfile
+                          ? l10n.meOwnerProfileHint
+                          : l10n.meFamilyProfileHint,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: scheme.primary,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
                     if (nodeState.activeNode != null) ...[
                       const SizedBox(height: 14),
                       FilledButton.tonalIcon(
@@ -368,54 +394,47 @@ class _MeScreenState extends ConsumerState<MeScreen> {
 
         // Connected node
         _SectionHeader(title: l10n.meConnectedNode),
-        if (nodeState.activeNode != null) ...[
+        if (nodeState.activeNode != null &&
+            nodeState.connectionState == NodeConnectionState.connected) ...[
           Card(
             child: ListTile(
-              leading: Icon(
-                nodeState.connectionState == NodeConnectionState.connected
-                    ? Icons.circle
-                    : Icons.circle_outlined,
-                color:
-                    nodeState.connectionState == NodeConnectionState.connected
-                    ? Colors.green
-                    : Colors.grey,
+              leading: const Icon(
+                Icons.circle,
+                color: Colors.green,
                 size: 12,
               ),
               title: Text(nodeState.activeNode!.name),
               subtitle: Row(
                 children: [
-                  if (nodeState.connectionState ==
-                      NodeConnectionState.connected) ...[
-                    Builder(
-                      builder: (context) {
-                        final hasUpnp = nodeState.upnpAdvertisedAddr != null;
-                        final (label, color) = connectionBadge(
-                          nodeState.activeTransport,
-                          hasUpnp,
-                          l10n,
-                        );
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1,
+                  Builder(
+                    builder: (context) {
+                      final hasUpnp = nodeState.upnpAdvertisedAddr != null;
+                      final (label, color) = connectionBadge(
+                        nodeState.activeTransport,
+                        hasUpnp,
+                        l10n,
+                      );
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
                           ),
-                          decoration: BoxDecoration(
-                            color: color.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              color: color,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                  ],
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       nodeState.activeTransport != null
@@ -457,100 +476,118 @@ class _MeScreenState extends ConsumerState<MeScreen> {
               textAlign: TextAlign.center,
             ),
           ],
-        ] else if (nodeState.pairedNodes.isNotEmpty) ...[
-          // Paired but offline. The pairing record is still in
-          // local storage — the device is NOT unpaired. Show a
-          // reconnect / re-pair CTA depending on the typed error
-          // code from the most recent attempt.
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+        ] else if (nodeState.activeNode != null ||
+            nodeState.pairedNodes.isNotEmpty) ...[
+          // Paired but not connected (activeNode may still be set after a
+          // failed dial). Typed reason + Reconnect / Re-pair.
+          Builder(
+            builder: (context) {
+              final home = nodeState.activeNode ?? nodeState.pairedNodes.first;
+              final unauthorized =
+                  nodeState.homeNodeErrorCode == 'unauthorized';
+              final connecting =
+                  nodeState.connectionState == NodeConnectionState.connecting;
+              return Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        nodeState.homeNodeErrorCode == 'unauthorized'
-                            ? Icons.lock_outline
-                            : Icons.cloud_off_outlined,
-                        color: nodeState.homeNodeErrorCode == 'unauthorized'
-                            ? Colors.orange
-                            : Colors.grey,
+                      Row(
+                        children: [
+                          Icon(
+                            unauthorized
+                                ? Icons.lock_outline
+                                : connecting
+                                    ? Icons.cloud_sync_outlined
+                                    : Icons.cloud_off_outlined,
+                            color: unauthorized
+                                ? Colors.orange
+                                : connecting
+                                    ? Colors.orange
+                                    : Colors.grey,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              unauthorized
+                                  ? l10n.meSessionExpired(home.name)
+                                  : connecting
+                                      ? l10n.termReconnecting
+                                      : l10n.meDisconnectedFrom(home.name),
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          nodeState.homeNodeErrorCode == 'unauthorized'
-                              ? l10n.meSessionExpired(
-                                  nodeState.pairedNodes.first.name,
-                                )
-                              : l10n.meDisconnectedFrom(
-                                  nodeState.pairedNodes.first.name,
+                      const SizedBox(height: 4),
+                      Text(
+                        homeNodeErrorLabel(
+                          l10n,
+                          nodeState.homeNodeErrorCode,
+                        ),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      if (nodeState.lastConnectAttemptAt != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          l10n.meLastAttempt(
+                                _formatRelative(
+                                  nodeState.lastConnectAttemptAt!,
+                                  l10n,
                                 ),
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (nodeState.lastConnectAttemptAt != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      l10n.meLastAttempt(
-                        _formatRelative(nodeState.lastConnectAttemptAt!, l10n),
-                      ) +
-                          (nodeState.reconnectAttempt > 0
-                              ? ' · ${l10n.meAttemptN(nodeState.reconnectAttempt)}'
-                              : ''),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                  if (nodeState.errorMessage != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      nodeState.errorMessage!,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: Colors.grey),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      if (nodeState.homeNodeErrorCode == 'unauthorized') ...[
-                        FilledButton.icon(
-                          onPressed: () => _openPairing(context),
-                          icon: const Icon(Icons.qr_code),
-                          label: Text(l10n.meRepair),
-                        ),
-                      ] else ...[
-                        FilledButton.icon(
-                          onPressed: () => notifier.kickReconnect(),
-                          icon: const Icon(Icons.refresh),
-                          label: Text(l10n.meReconnectNow),
+                              ) +
+                              (nodeState.reconnectAttempt > 0
+                                  ? ' · ${l10n.meAttemptN(nodeState.reconnectAttempt)}'
+                                  : ''),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.grey,
+                              ),
                         ),
                       ],
-                      const SizedBox(width: 8),
-                      TextButton.icon(
-                        onPressed: () => _confirmUnpair(
-                          context,
-                          ref,
-                          notifier,
-                          nodeState.pairedNodes.first,
-                        ),
-                        icon: const Icon(Icons.link_off, color: Colors.red),
-                        label: Text(l10n.meUnpair),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.red,
-                        ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          if (unauthorized) ...[
+                            FilledButton.icon(
+                              onPressed: () => _openPairing(context),
+                              icon: const Icon(Icons.qr_code),
+                              label: Text(l10n.meRepair),
+                            ),
+                          ] else ...[
+                            FilledButton.icon(
+                              onPressed: () => notifier.kickReconnect(),
+                              icon: const Icon(Icons.refresh),
+                              label: Text(l10n.meReconnectNow),
+                            ),
+                          ],
+                          const SizedBox(width: 8),
+                          if (nodeState.pairedNodes.length > 1)
+                            TextButton(
+                              onPressed: () =>
+                                  _showNodeSwitcher(context, ref, notifier),
+                              child: Text(l10n.meSwitch),
+                            ),
+                          TextButton.icon(
+                            onPressed: () => _confirmUnpair(
+                              context,
+                              ref,
+                              notifier,
+                              home,
+                            ),
+                            icon: const Icon(Icons.link_off, color: Colors.red),
+                            label: Text(l10n.meUnpair),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.red,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         ] else ...[
           Card(
@@ -567,45 +604,92 @@ class _MeScreenState extends ConsumerState<MeScreen> {
         ],
         const SizedBox(height: 16),
 
-        // Browser / AI Engine / Team jobs / Public Access / Pair / Model+Pi
-        // are owner-only (Phase 51E). Family members keep Connected Node + Push.
-        if (nodeState.isOwnerProfile && nodeState.activeNode != null) ...[
-          _SectionHeader(title: l10n.meBrowser),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.language),
-              title: Text(l10n.meBrowser),
-              subtitle: Text(l10n.meBrowserHint),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => openSocialExplore(ref),
+        // Daily tools — Coding (owner/family) + owner Browser/Shop/Files.
+        if (nodeState.activeNode != null &&
+            (nodeState.mayUseCoding || nodeState.isOwnerProfile)) ...[
+          _SectionHeader(title: l10n.meSectionDailyTools),
+          if (_showCodingMovedTip && nodeState.mayUseCoding) ...[
+            Card(
+              color: scheme.secondaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        l10n.meCodingMovedTip,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSecondaryContainer,
+                            ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        await CodingMovedTip.dismiss();
+                        if (mounted) {
+                          setState(() => _showCodingMovedTip = false);
+                        }
+                      },
+                      child: Text(l10n.meCodingMovedTipDismiss),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
+          ],
           Card(
-            child: ListTile(
-              leading: const Icon(Icons.storefront_outlined),
-              title: Text(l10n.meMyShop),
-              subtitle: Text(l10n.meMyShopHint),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => openSocialMarket(ref, myShop: true),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.folder_open),
-              title: const Text('Home files'),
-              subtitle: const Text('Browse and preview files on your home computer'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const HomeFilesScreen()),
-                );
-              },
+            child: Column(
+              children: [
+                if (nodeState.mayUseCoding)
+                  ListTile(
+                    leading: const Icon(Icons.code),
+                    title: Text(l10n.navCoding),
+                    subtitle: Text(l10n.meOpenCodingHint),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => unawaited(openCodingHome(context)),
+                  ),
+                if (nodeState.isOwnerProfile) ...[
+                  if (nodeState.mayUseCoding) const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.language),
+                    title: Text(l10n.meBrowser),
+                    subtitle: Text(l10n.meBrowserHint),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => openSocialExplore(ref),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.storefront_outlined),
+                    title: Text(l10n.meMyShop),
+                    subtitle: Text(l10n.meMyShopHint),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => openSocialMarket(ref, myShop: true),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.folder_open),
+                    title: Text(l10n.meHomeFiles),
+                    subtitle: Text(l10n.meHomeFilesHint),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const HomeFilesScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(height: 16),
-          _SectionHeader(title: l10n.meAiEngine),
+        ],
+
+        // Home & AI — owner only (Phase 51E).
+        if (nodeState.isOwnerProfile && nodeState.activeNode != null) ...[
+          _SectionHeader(title: l10n.meSectionHomeAi),
           Card(
             child: ListTile(
               leading: const Icon(Icons.psychology),
@@ -622,55 +706,62 @@ class _MeScreenState extends ConsumerState<MeScreen> {
             ),
           ),
           const AiEngineSection(),
-          const SizedBox(height: 16),
-          _SectionHeader(title: l10n.meTeamJobs),
+          const SizedBox(height: 8),
           Card(
-            child: ListTile(
-              leading: const Icon(Icons.add_task),
-              title: Text(l10n.chainsStartTitle),
-              subtitle: Text(l10n.meStartTeamJobHint),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async {
-                final started = await Navigator.of(context).push<bool>(
-                  MaterialPageRoute(builder: (_) => const StartChainScreen()),
-                );
-                if (started == true && context.mounted) {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const ActiveChainsScreen(),
-                    ),
-                  );
-                }
-              },
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.add_task),
+                  title: Text(l10n.chainsStartTitle),
+                  subtitle: Text(l10n.meStartTeamJobHint),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    final started = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (_) => const StartChainScreen(),
+                      ),
+                    );
+                    if (started == true && context.mounted) {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ActiveChainsScreen(),
+                        ),
+                      );
+                    }
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.analytics_outlined),
+                  title: Text(l10n.meRecentTeamJobs),
+                  subtitle: Text(l10n.meRecentTeamJobsHintLong),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const RecentChainsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.pending_actions_outlined),
+                  title: Text(l10n.meActiveTeamJobs),
+                  subtitle: Text(l10n.meActiveTeamJobsHintLong),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const ActiveChainsScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.analytics_outlined),
-              title: Text(l10n.meRecentTeamJobs),
-              subtitle: Text(l10n.meRecentTeamJobsHintLong),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const RecentChainsScreen()),
-                );
-              },
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.pending_actions_outlined),
-              title: Text(l10n.meActiveTeamJobs),
-              subtitle: Text(l10n.meActiveTeamJobsHintLong),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ActiveChainsScreen()),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           _SectionHeader(title: l10n.mePublicAccess),
           Card(
             child: _PublicHostEditor(
@@ -682,7 +773,7 @@ class _MeScreenState extends ConsumerState<MeScreen> {
               },
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           Card(
             child: ListTile(
               leading: const Icon(Icons.add_link),
@@ -691,7 +782,7 @@ class _MeScreenState extends ConsumerState<MeScreen> {
               onTap: () => _openPairing(context),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           _SectionHeader(title: l10n.meSettings),
           Card(
             child: Column(
@@ -742,7 +833,7 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.code),
+                  leading: const Icon(Icons.build_outlined),
                   title: Text(l10n.mePiAgent),
                   subtitle: Text(l10n.mePiAgentHintLong),
                   trailing: const Icon(Icons.chevron_right),
@@ -758,66 +849,63 @@ class _MeScreenState extends ConsumerState<MeScreen> {
           const SizedBox(height: 16),
         ],
 
-        // Theme
-        _SectionHeader(title: l10n.mePreferences),
+        _SectionHeader(title: l10n.meSectionAccount),
         Card(
-          child: ListTile(
-            leading: const Icon(Icons.language),
-            title: Text(l10n.languageTitle),
-            subtitle: Text(_languageSubtitle(l10n, ref)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showLanguagePicker(context, ref),
-          ),
-        ),
-        Card(
-          child: SwitchListTile(
-            title: Text(l10n.meDarkMode),
-            subtitle: Text(l10n.meDarkModeHint),
-            value: Theme.of(context).brightness == Brightness.dark,
-            onChanged: (_) {
-              // TODO(31H): Theme toggle
-            },
-          ),
-        ),
-        // Mobile node (phone persona + on-device mesh). Off by default; the
-        // switch is only exposed in builds made with
-        // --dart-define=ENVOYGO_MOBILE_NODE_TOGGLE=1 so a release has no
-        // user-visible entry for an unfinished plane.
-        if (ref.watch(featureFlagsProvider).mobileNodeOverrideAvailable)
-          Card(
-            child: SwitchListTile(
-              title: Text(l10n.meMobileNode),
-              subtitle: Text(l10n.meMobileNodeHint),
-              value: ref.watch(mobileNodeEnabledProvider),
-              onChanged: (enabled) => ref
-                  .read(featureFlagsProvider.notifier)
-                  .setMobileNodeEnabled(enabled),
-            ),
-          ),
-        Card(
-          child: SwitchListTile(
-            title: Text(l10n.mePushNotifications),
-            subtitle: Text(l10n.mePushNotificationsHintLong),
-            value: _pushEnabled,
-            onChanged: _pushToggleBusy
-                ? null
-                : (enabled) => _togglePushNotifications(enabled),
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.language),
+                title: Text(l10n.languageTitle),
+                subtitle: Text(_languageSubtitle(l10n, ref)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _showLanguagePicker(context, ref),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.brightness_6_outlined),
+                title: Text(l10n.meThemeTitle),
+                subtitle: Text(_themeSubtitle(l10n, ref.watch(themeModeProvider))),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _showThemePicker(context, ref),
+              ),
+              if (ref.watch(featureFlagsProvider).mobileNodeOverrideAvailable) ...[
+                const Divider(height: 1),
+                SwitchListTile(
+                  title: Text(l10n.meMobileNode),
+                  subtitle: Text(l10n.meMobileNodeHint),
+                  value: ref.watch(mobileNodeEnabledProvider),
+                  onChanged: (enabled) => ref
+                      .read(featureFlagsProvider.notifier)
+                      .setMobileNodeEnabled(enabled),
+                ),
+              ],
+              const Divider(height: 1),
+              SwitchListTile(
+                title: Text(l10n.mePushNotifications),
+                subtitle: Text(l10n.mePushNotificationsHintLong),
+                value: _pushEnabled,
+                onChanged: _pushToggleBusy
+                    ? null
+                    : (enabled) => _togglePushNotifications(enabled),
+              ),
+              if (nodeState.activeNode != null) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.link_off, color: Colors.red),
+                  title: Text(l10n.meUnpairDevice),
+                  subtitle: Text(l10n.meUnpairDeviceHint),
+                  onTap: () => _confirmUnpair(
+                    context,
+                    ref,
+                    notifier,
+                    nodeState.activeNode!,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
         const SizedBox(height: 16),
-
-        // Unpair
-        if (nodeState.activeNode != null) ...[
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.link_off, color: Colors.red),
-              title: Text(l10n.meUnpairDevice),
-              subtitle: Text(l10n.meUnpairDeviceHint),
-              onTap: () =>
-                  _confirmUnpair(context, ref, notifier, nodeState.activeNode!),
-            ),
-          ),
-        ],
 
         // Network Debug Test — owner only
         if (nodeState.isOwnerProfile) ...[
@@ -839,6 +927,9 @@ class _MeScreenState extends ConsumerState<MeScreen> {
           const SizedBox(height: 8),
         ],
       ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -914,6 +1005,46 @@ class _MeScreenState extends ConsumerState<MeScreen> {
     if (override == null) return l10n.languageSystemDesc;
     return LocalePreferences.labels[override.languageCode] ??
         override.languageCode;
+  }
+
+  String _themeSubtitle(AppLocalizations l10n, ThemeMode mode) {
+    return switch (mode) {
+      ThemeMode.light => l10n.meThemeLight,
+      ThemeMode.dark => l10n.meThemeDark,
+      ThemeMode.system => l10n.meThemeSystem,
+    };
+  }
+
+  Future<void> _showThemePicker(BuildContext context, WidgetRef ref) async {
+    final l10n = AppLocalizations.of(context);
+    final current = ref.read(themeModeProvider);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(title: Text(l10n.meThemeTitle)),
+              for (final mode in ThemeMode.values)
+                ListTile(
+                  leading: Icon(
+                    current == mode
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off,
+                  ),
+                  title: Text(_themeSubtitle(l10n, mode)),
+                  onTap: () async {
+                    await ref.read(themeModeProvider.notifier).setMode(mode);
+                    if (ctx.mounted) Navigator.of(ctx).pop();
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _showLanguagePicker(BuildContext context, WidgetRef ref) async {

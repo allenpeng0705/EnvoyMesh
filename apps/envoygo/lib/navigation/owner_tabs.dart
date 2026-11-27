@@ -1,8 +1,8 @@
 /// Bottom-nav tab ids for [HomeScreen] (Phase 68 — id-based, not index math).
 ///
-/// Owner: Social | Knowledge | Coding | Terminal | Me
-/// Family+coding: Chats | Coding | Me
-/// Family−coding: Chats | Me
+/// Coding is a secondary tool — opened from Me / deep links, not a bottom tab.
+/// Owner: Social | Knowledge | Terminal | Me
+/// Family: Chats | Me
 abstract final class HomeTabId {
   static const social = 'social';
   static const coding = 'coding';
@@ -17,19 +17,20 @@ abstract final class HomeTabId {
 /// Tab list for the current profile. Prefer this over hard-coded indices.
 List<String> buildHomeTabIds({
   required bool isOwner,
+  // Kept for call-site stability; Coding opens from Me (gated by mayUseCoding there).
   required bool mayUseCoding,
 }) {
   if (isOwner) {
     return const [
       HomeTabId.social,
       HomeTabId.knowledge,
-      HomeTabId.coding,
       HomeTabId.terminal,
       HomeTabId.me,
     ];
   }
+  // Family: always Chats | Me. When [mayUseCoding], Me shows a Coding entry.
   if (mayUseCoding) {
-    return const [HomeTabId.chats, HomeTabId.coding, HomeTabId.me];
+    return const [HomeTabId.chats, HomeTabId.me];
   }
   return const [HomeTabId.chats, HomeTabId.me];
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'connection/phone_mesh_runtime.dart';
+import 'coding/coding_surface_nav.dart';
 import 'knowledge/knowledge_nav.dart';
 import 'l10n/app_localizations.dart';
 import 'models/chat_thread.dart';
@@ -14,11 +15,13 @@ import 'providers/content_engage_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/home_product_sync.dart';
 import 'providers/node_provider.dart';
+import 'providers/theme_provider.dart';
 import 'services/feature_flags.dart';
 import 'screens/browser/browser_screen.dart';
 import 'screens/chat/chat_detail_screen.dart';
 import 'screens/inbox/inbox_screen.dart';
 import 'services/locale_preferences.dart';
+import 'services/theme_preferences.dart';
 import 'services/product/push_notification_service.dart';
 import 'utils/localized_labels.dart';
 
@@ -27,6 +30,7 @@ void main() async {
   // Load locale override before the first frame so a saved language
   // (e.g. zh) does not flash system/English briefly.
   final initialLocaleCode = await LocalePreferences.getOverride();
+  final initialThemeMode = await ThemePreferences.getMode();
   // Resolve feature flags once, before the first frame: the mobile node must be
   // off (or on) from the very first build, not flip after async hydration, and
   // every reader shares this one value.
@@ -45,6 +49,9 @@ void main() async {
       overrides: [
         localeOverrideProvider.overrideWith(
           (ref) => LocaleOverrideNotifier.withInitial(initialLocaleCode),
+        ),
+        themeModeProvider.overrideWith(
+          (ref) => ThemeModeNotifier.withInitial(initialThemeMode),
         ),
         featureFlagsProvider.overrideWith(
           (ref) => FeatureFlagsNotifier.withInitial(initialFeatureFlags),
@@ -187,12 +194,13 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         ));
         break;
       case 'pi_proposal':
-        // Pi lives under the Coding tab (Phase 68).
-        if (!isOwner) {
+        // Coding is a full-screen surface (Me → Coding), not a bottom tab.
+        final mayUseCoding = ref.read(nodeProvider).mayUseCoding;
+        if (!isOwner && !mayUseCoding) {
           ref.read(chatProvider.notifier).selectTab(OwnerTabs.chats);
           break;
         }
-        ref.read(chatProvider.notifier).selectTab(OwnerTabs.coding);
+        unawaited(openCodingHome(nav.context));
         break;
       default:
         // Chat thread (direct, room, or Ext Agent).

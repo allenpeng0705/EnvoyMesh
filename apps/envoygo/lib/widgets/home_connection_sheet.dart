@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/node_provider.dart';
 import '../screens/pairing/pairing_scan_screen.dart';
+import '../utils/localized_labels.dart';
 import 'connection_indicator.dart';
 
 /// Bottom sheet: home connection status + pair / reconnect / unpair.
@@ -48,17 +49,15 @@ class _HomeConnectionSheet extends ConsumerWidget {
       case NodeConnectionState.connecting:
         statusIcon = Icons.cloud_sync;
         statusColor = Colors.orange;
-        statusLine = l10n.connTooltipConnecting;
+        statusLine = l10n.termReconnecting;
       case NodeConnectionState.error:
         statusIcon = Icons.cloud_off;
         statusColor = Colors.red;
-        statusLine = nodeState.errorMessage ?? l10n.connTooltipError;
+        statusLine = homeNodeErrorLabel(l10n, nodeState.homeNodeErrorCode);
       case NodeConnectionState.disconnected:
         statusIcon = Icons.cloud_outlined;
         statusColor = Colors.grey;
-        statusLine = active != null
-            ? l10n.meDisconnectedFrom(active.name)
-            : l10n.connTooltipOffline;
+        statusLine = homeNodeErrorLabel(l10n, nodeState.homeNodeErrorCode);
     }
 
     return SafeArea(
@@ -86,7 +85,25 @@ class _HomeConnectionSheet extends ConsumerWidget {
               ),
               subtitle: Text(statusLine),
             ),
-            const SizedBox(height: 8),
+            if (nodeState.connectionState != NodeConnectionState.connected &&
+                nodeState.lastConnectAttemptAt != null) ...[
+              Text(
+                l10n.meLastAttempt(
+                      _formatRelative(
+                        nodeState.lastConnectAttemptAt!,
+                        l10n,
+                      ),
+                    ) +
+                    (nodeState.reconnectAttempt > 0
+                        ? ' · ${l10n.meAttemptN(nodeState.reconnectAttempt)}'
+                        : ''),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 8),
+            ] else
+              const SizedBox(height: 8),
             if (active == null && paired.isEmpty) ...[
               Text(
                 l10n.meNotConnectedHint,
@@ -287,4 +304,13 @@ class _HomeConnectionSheet extends ConsumerWidget {
       ),
     );
   }
+}
+
+String _formatRelative(DateTime t, AppLocalizations l10n) {
+  final delta = DateTime.now().difference(t);
+  if (delta.inSeconds < 5) return l10n.meJustNow;
+  if (delta.inSeconds < 60) return l10n.meSecondsAgo(delta.inSeconds);
+  if (delta.inMinutes < 60) return l10n.meMinutesAgo(delta.inMinutes);
+  if (delta.inHours < 24) return l10n.meHoursAgo(delta.inHours);
+  return l10n.meDaysAgo(delta.inDays);
 }

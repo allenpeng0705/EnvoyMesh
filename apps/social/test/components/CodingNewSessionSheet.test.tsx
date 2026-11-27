@@ -4,6 +4,7 @@
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { CODING_FEATURED_HARNESSES } from "@envoymesh/api";
 import { CodingNewSessionSheet } from "../../src/components/CodingNewSessionSheet.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { partialNodeService } from "../helpers/node-service-mock.js";
@@ -17,7 +18,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
 describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
   afterEach(() => cleanup());
 
-  it("lists only ready harnesses in the picker", () => {
+  it("lists ready featured harnesses; not-ready ones collapse to a summary", () => {
     const onConfirm = vi.fn();
     renderWithI18n(
       <CodingNewSessionSheet
@@ -43,7 +44,12 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
 
     expect(screen.getByTestId("coding-harness-claudecode")).toBeTruthy();
     expect(screen.getByTestId("coding-harness-codex")).toBeTruthy();
+    // Not-ready featured agents are summarized, not one radio each.
     expect(screen.queryByTestId("coding-harness-opencode")).toBeNull();
+    expect(screen.getByTestId("coding-harness-not-ready-summary").textContent).toMatch(
+      /aren.?t ready|not ready|尚未就绪/i,
+    );
+    expect(screen.getByTestId("coding-open-coding-tools")).toBeTruthy();
     expect(screen.getByTestId("coding-harness-cursor")).toBeTruthy();
     expect(screen.getByTestId("coding-harness-codewhale")).toBeTruthy();
 
@@ -113,7 +119,38 @@ describe("CodingNewSessionSheet Tier B (Phase 68-C3)", () => {
       (screen.getByTestId("coding-harness-envoy-harness") as HTMLInputElement)
         .checked,
     ).toBe(true);
+    // Sticky Not-ready radio clears after snap; opencode collapses into summary.
     expect(screen.queryByTestId("coding-harness-opencode")).toBeNull();
+    expect(screen.getByTestId("coding-harness-not-ready-summary")).toBeTruthy();
+  });
+
+  it("excludes sticky Not-ready from the “N more” summary count", () => {
+    // No Ready agents yet → project default stays sticky (snap has nothing to move to).
+    renderWithI18n(
+      <CodingNewSessionSheet
+        open
+        projects={[
+          {
+            path: "/tmp/proj",
+            label: "proj",
+            addedAt: "2026-01-01T00:00:00.000Z",
+            defaultHarness: "opencode",
+          },
+        ]}
+        enabledHarnesses={[]}
+        onClose={() => {}}
+        onConfirm={() => {}}
+        onAddProject={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("coding-harness-opencode")).toBeTruthy();
+    const expectedMore = CODING_FEATURED_HARNESSES.filter(
+      (id) => id !== "opencode",
+    ).length;
+    expect(
+      screen.getByTestId("coding-harness-not-ready-summary").textContent,
+    ).toMatch(new RegExp(`${expectedMore}\\s+more`, "i"));
   });
 
   it("shows Coding defaults as fallback for Envoy and Pi", () => {

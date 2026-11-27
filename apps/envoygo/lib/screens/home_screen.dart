@@ -8,9 +8,9 @@ import '../../providers/content_engage_provider.dart';
 import '../../providers/feed_notify_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../widgets/connection_indicator.dart';
+import '../../widgets/home_offline_banner.dart';
 import '../../widgets/incoming_call_overlay.dart';
 import 'chat/chat_list_screen.dart';
-import 'coding/coding_home_screen.dart';
 import 'content/knowledge_screen.dart';
 import 'me/me_screen.dart';
 import 'social/social_screen.dart';
@@ -18,9 +18,9 @@ import 'terminals/terminal_list_screen.dart';
 
 /// Main scaffold with bottom navigation (tab **ids**, not shared int indices).
 ///
-/// Owner: Social / Knowledge / Coding / Terminal / Me.
-/// Family+coding: Chats / Coding / Me.
-/// Family−coding: Chats / Me.
+/// Owner: Social / Knowledge / Terminal / Me.
+/// Family: Chats / Me.
+/// Coding opens from Me (full-screen), not a bottom tab.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -98,10 +98,13 @@ class HomeScreen extends ConsumerWidget {
               SizedBox(width: 12),
             ],
           ),
-          body: const ChatListScreen(),
+          body: const Column(
+            children: [
+              HomeOfflineBanner(),
+              Expanded(child: ChatListScreen()),
+            ],
+          ),
         );
-      case HomeTabId.coding:
-        return const CodingHomeScreen();
       case HomeTabId.knowledge:
         return const KnowledgeScreen();
       case HomeTabId.terminal:
@@ -138,12 +141,6 @@ class HomeScreen extends ConsumerWidget {
           icon: const Icon(Icons.chat_bubble_outline),
           selectedIcon: const Icon(Icons.chat_bubble),
           label: l10n.navChats,
-        );
-      case HomeTabId.coding:
-        return NavigationDestination(
-          icon: const Icon(Icons.code_outlined),
-          selectedIcon: const Icon(Icons.code),
-          label: l10n.navCoding,
         );
       case HomeTabId.knowledge:
         return NavigationDestination(

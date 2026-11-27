@@ -1,22 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../coding/coding_surface_nav.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_thread.dart';
-import '../../navigation/owner_tabs.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../widgets/pair_required_panel.dart';
 import '../../providers/terminal_provider.dart';
 import '../../utils/localized_labels.dart';
 import '../../widgets/connection_indicator.dart';
+import '../../widgets/home_offline_banner.dart';
 import '../../widgets/thread_tile.dart';
 import 'terminal_create_actions.dart';
 import 'terminal_detail_screen.dart';
 
 /// Owner Terminal tab — shell sessions only (Phase 68-C1b.3).
 ///
-/// Pi / Envoy Harness live under the Coding tab.
+/// Coding leftovers (Pi / EH) open the Coding session surface.
 class TerminalHomeScreen extends ConsumerWidget {
   const TerminalHomeScreen({super.key});
 
@@ -63,14 +66,19 @@ class TerminalHomeScreen extends ConsumerWidget {
         title: Text(l10n.navTerminal),
         actions: const [ConnectionIndicator(), SizedBox(width: 12)],
       ),
-      body: threads.isEmpty
-          ? _EmptyTerminals(
-              hasHome: hasHome,
-              onNewTerminal: () => showCreateTerminalDialog(context, ref),
-            )
-          : ListView.builder(
-              itemCount: threads.length,
-              itemBuilder: (context, index) {
+      body: Column(
+        children: [
+          const HomeOfflineBanner(),
+          Expanded(
+            child: threads.isEmpty
+                ? _EmptyTerminals(
+                    hasHome: hasHome,
+                    onNewTerminal: () =>
+                        showCreateTerminalDialog(context, ref),
+                  )
+                : ListView.builder(
+                    itemCount: threads.length,
+                    itemBuilder: (context, index) {
                 final thread = threads[index];
                 return ThreadTile(
                   thread: thread,
@@ -82,9 +90,27 @@ class TerminalHomeScreen extends ConsumerWidget {
                     if (_isCodingRole(role) ||
                         thread.displayName.startsWith('EH ') ||
                         thread.displayName.startsWith('π')) {
-                      ref
-                          .read(chatProvider.notifier)
-                          .selectTab(OwnerTabs.coding);
+                      if (role == 'pi' ||
+                          thread.displayName.startsWith('π')) {
+                        unawaited(
+                          openCodingPiSession(
+                            context,
+                            sessionId: sessionId,
+                            sessionName: _sessionTitle(thread.displayName),
+                            cwd: session?.cwd,
+                          ),
+                        );
+                        return;
+                      }
+                      // Envoy Harness leftover titled "EH …"
+                      unawaited(
+                        openCodingEhSession(
+                          context,
+                          threadId: thread.id,
+                          displayName: thread.displayName,
+                          chatId: sessionId.isNotEmpty ? sessionId : null,
+                        ),
+                      );
                       return;
                     }
                     Navigator.of(context).push(
@@ -98,8 +124,11 @@ class TerminalHomeScreen extends ConsumerWidget {
                     );
                   },
                 );
-              },
-            ),
+                    },
+                  ),
+          ),
+        ],
+      ),
       floatingActionButton: hasHome
           ? FloatingActionButton(
               heroTag: 'terminal-compose',
@@ -137,7 +166,7 @@ class _EmptyTerminals extends StatelessWidget {
             Icon(Icons.terminal, size: 64, color: scheme.outline),
             const SizedBox(height: 16),
             Text(
-              l10n.termNone,
+              l10n.termEmptyTitle,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -145,7 +174,7 @@ class _EmptyTerminals extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              l10n.termEmptyHint,
+              l10n.termEmptyBody,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -155,7 +184,7 @@ class _EmptyTerminals extends StatelessWidget {
             FilledButton.tonalIcon(
               onPressed: onNewTerminal,
               icon: const Icon(Icons.terminal),
-              label: Text(l10n.chatsNewTerminal),
+              label: Text(l10n.termEmptyCta),
             ),
           ],
         ),

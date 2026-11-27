@@ -1,0 +1,7 @@
+EnvoyGo UX smoke (manual, Step 6)
+1. Pair → kill app → push tap opens the right thread
+2. Call notification while backgrounded
+3. Airplane mode → Me offline card + HomeOfflineBanner → Reconnect
+4. Me → Appearance persists after restart
+5. Me → Coding tip dismisses forever; Coding Ready/Not ready on New task
+6. Inbox Approve/Decline against a real intro proposal

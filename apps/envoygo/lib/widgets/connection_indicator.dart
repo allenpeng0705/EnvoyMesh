@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/node_provider.dart';
+import '../utils/localized_labels.dart';
 import 'home_connection_sheet.dart';
 
 /// Returns true if the transport avoids a relay server.
@@ -92,15 +93,15 @@ class ConnectionIndicator extends ConsumerWidget {
         case NodeConnectionState.connecting:
           icon = Icons.cloud_sync_outlined;
           color = Colors.orange;
-          tooltip = l10n.connTooltipConnecting;
+          tooltip = l10n.termReconnecting;
         case NodeConnectionState.error:
           icon = Icons.cloud_off_outlined;
           color = Colors.red;
-          tooltip = nodeState.errorMessage ?? l10n.connTooltipError;
+          tooltip = homeNodeErrorLabel(l10n, nodeState.homeNodeErrorCode);
         case NodeConnectionState.disconnected:
           icon = Icons.cloud_outlined;
           color = Colors.grey;
-          tooltip = l10n.connTooltipOffline;
+          tooltip = homeNodeErrorLabel(l10n, nodeState.homeNodeErrorCode);
       }
     }
 

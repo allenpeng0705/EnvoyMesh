@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../coding/coding_harness_probe.dart';
 import '../../coding/coding_projects.dart';
 import '../../l10n/app_localizations.dart';
+import '../settings/coding_agents_settings_screen.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
 import '../../utils/open_external_url.dart';
@@ -582,6 +583,15 @@ class _CodingNewTaskSheetState extends ConsumerState<_CodingNewTaskSheet> {
                 homeModels: _homeModels,
                 busy: _busy,
                 harnessAsRadios: true,
+                onOpenCodingTools: () {
+                  final nav = Navigator.of(context);
+                  nav.pop();
+                  nav.push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const CodingAgentsSettingsScreen(),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 8),
               Text(

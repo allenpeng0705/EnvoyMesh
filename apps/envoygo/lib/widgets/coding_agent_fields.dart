@@ -57,6 +57,7 @@ class CodingAgentFields extends StatefulWidget {
     this.harnessAsRadios = false,
     this.showHarness = true,
     this.harnessTitle,
+    this.onOpenCodingTools,
   });
 
   final CodingAgentFieldsValue value;
@@ -69,6 +70,8 @@ class CodingAgentFields extends StatefulWidget {
   final bool harnessAsRadios;
   final bool showHarness;
   final String Function(CodingHarnessChoice)? harnessTitle;
+  /// Opens Settings → Coding tools (install / PATH).
+  final VoidCallback? onOpenCodingTools;
 
   @override
   State<CodingAgentFields> createState() => _CodingAgentFieldsState();
@@ -188,10 +191,21 @@ class _CodingAgentFieldsState extends State<CodingAgentFields> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final value = widget.value;
-    final listed = <CodingHarnessChoice>[
+    final readyListed = <CodingHarnessChoice>[
       for (final h in widget.enabledHarnesses)
-        if (widget.probes[h]?.badge == CodingHarnessProbeBadge.ready ||
-            h == value.harness)
+        if (widget.probes[h]?.badge == CodingHarnessProbeBadge.ready) h,
+    ];
+    // Keep the current choice visible while Checking / Not ready (snap target).
+    final stickyCurrent =
+        readyListed.contains(value.harness) ? null : value.harness;
+    final listed = <CodingHarnessChoice>[
+      ...readyListed,
+      if (stickyCurrent != null) stickyCurrent,
+    ];
+    final notReadyOthers = <CodingHarnessChoice>[
+      for (final h in widget.enabledHarnesses)
+        if (widget.probes[h]?.badge == CodingHarnessProbeBadge.notReady &&
+            h != stickyCurrent)
           h,
     ];
     final showCompat = value.providerKind == 'openai-compatible' ||
@@ -223,22 +237,45 @@ class _CodingAgentFieldsState extends State<CodingAgentFields> {
           ),
           const SizedBox(height: 6),
           if (listed.isEmpty)
-            Text(
-              l10n.codingHarnessNoneReady,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  l10n.codingHarnessNoneReady,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                if (widget.onOpenCodingTools != null) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: widget.busy ? null : widget.onOpenCodingTools,
+                    child: Text(l10n.codingOpenCodingTools),
                   ),
+                ],
+              ],
             )
           else if (widget.harnessAsRadios)
             Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (final h in listed)
                   RadioListTile<CodingHarnessChoice>(
                     dense: true,
                     title: Text(_title(l10n, h)),
+                    subtitle: Text(
+                      widget.probes[h]?.badge == CodingHarnessProbeBadge.ready
+                          ? l10n.codingExtReady
+                          : widget.probes[h]?.badge ==
+                                  CodingHarnessProbeBadge.checking
+                              ? l10n.codingHarnessChecking
+                              : l10n.codingHarnessNotReady,
+                    ),
                     value: h,
                     groupValue: value.harness,
-                    onChanged: widget.busy
+                    onChanged: widget.busy ||
+                            widget.probes[h]?.badge !=
+                                CodingHarnessProbeBadge.ready
                         ? null
                         : (next) {
                             if (next == null) return;
@@ -253,6 +290,25 @@ class _CodingAgentFieldsState extends State<CodingAgentFields> {
                             );
                           },
                   ),
+                if (notReadyOthers.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    l10n.codingNotReadySummary(notReadyOthers.length),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  if (widget.onOpenCodingTools != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        onPressed:
+                            widget.busy ? null : widget.onOpenCodingTools,
+                        child: Text(l10n.codingOpenCodingTools),
+                      ),
+                    ),
+                ],
               ],
             )
           else

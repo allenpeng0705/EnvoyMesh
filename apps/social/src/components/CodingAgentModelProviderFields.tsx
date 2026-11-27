@@ -17,6 +17,7 @@ import {
 import {
   harnessProbeLabelKey,
 } from "../lib/coding-harness-probe.js";
+import { openCodingToolsSettings } from "../lib/open-settings-nav.js";
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
 import {
@@ -263,9 +264,15 @@ export function CodingAgentModelProviderFields({
     onChange({ ...value, ...partial });
   };
 
-  /** Ready agents, plus the current choice so an existing unready task can still be edited. */
+  /**
+   * Featured set is always known for the Not-ready summary. Ready featured +
+   * ready non-featured (+ current choice) fill the selectable list.
+   */
   const listedHarnesses = useMemo(() => {
-    const allowed = new Set<CodingHarnessId>(enabledHarnesses);
+    const allowed = new Set<CodingHarnessId>([
+      ...(CODING_FEATURED_HARNESSES as readonly CodingHarnessId[]),
+      ...enabledHarnesses,
+    ]);
     if (value.harness) allowed.add(value.harness);
     return CODING_ALL_HARNESSES.filter((id) => allowed.has(id));
   }, [enabledHarnesses, value.harness]);
@@ -273,12 +280,36 @@ export function CodingAgentModelProviderFields({
   const listedFeatured = listedHarnesses.filter((id) =>
     isCodingFeaturedHarness(id),
   );
+  const readyFeatured = listedFeatured.filter((id) =>
+    enabledHarnesses.includes(id),
+  );
+  const notReadyFeatured = listedFeatured.filter(
+    (id) => !enabledHarnesses.includes(id),
+  );
+  /** Keep a Not-ready current choice visible until snap moves off it. */
+  const stickyNotReady =
+    value.harness &&
+    isCodingFeaturedHarness(value.harness) &&
+    !enabledHarnesses.includes(value.harness)
+      ? value.harness
+      : null;
+  const radioFeatured = stickyNotReady
+    ? [
+        ...readyFeatured.filter((id) => id !== stickyNotReady),
+        stickyNotReady,
+      ]
+    : readyFeatured;
+  /** Exclude sticky radio — it is already listed, so "N more" must not count it. */
+  const summarizedNotReadyCount = stickyNotReady
+    ? notReadyFeatured.filter((id) => id !== stickyNotReady).length
+    : notReadyFeatured.length;
   const moreHarnesses = listedHarnesses.filter(
-    (id) => !isCodingFeaturedHarness(id),
+    (id) => !isCodingFeaturedHarness(id) && enabledHarnesses.includes(id),
   );
   const featuredSet = new Set<string>(CODING_FEATURED_HARNESSES);
+  const anyReady = enabledHarnesses.length > 0;
   const checking =
-    listedHarnesses.length === 0 &&
+    !anyReady &&
     Object.values(harnessProbe).some((b) => b === "checking");
 
   const probeSuffix = (id: CodingHarnessId): string => {
@@ -293,22 +324,29 @@ export function CodingAgentModelProviderFields({
 
   const catalogHint = t(
     "codingView.harnessCatalogHint",
-    "Only agents that are ready on this computer are listed. Install or check others in Settings → AI → Coding agents.",
+    "Ready agents can be selected. Not ready agents are summarized below — open Coding tools to install or fix PATH, then Check again.",
   );
 
   const renderHarnessRadio = (id: CodingHarnessId) => {
     const ready = enabledHarnesses.includes(id);
     const badge = harnessProbe[id];
     const labelKey = harnessProbeLabelKey(badge);
-    const showNotReady = !ready && labelKey !== "ready";
+    const showNotReady = !ready;
     return (
-      <label key={id} className="coding-harness-option">
+      <label
+        key={id}
+        className={
+          ready
+            ? "coding-harness-option"
+            : "coding-harness-option coding-harness-option--disabled"
+        }
+      >
         <input
           type="radio"
           name="coding-harness"
           value={id}
           checked={value.harness === id}
-          disabled={locked}
+          disabled={locked || !ready}
           onChange={() =>
             patch({
               harness: id,
@@ -341,6 +379,50 @@ export function CodingAgentModelProviderFields({
     );
   };
 
+  const notReadySummary =
+    notReadyFeatured.length > 0 ? (
+      <div
+        className="coding-harness-not-ready-summary"
+        data-testid="coding-harness-not-ready-summary"
+      >
+        {checking ? (
+          <p className="coding-harness-catalog-hint">
+            {t("codingView.harnessChecking", "Checking…")}
+          </p>
+        ) : summarizedNotReadyCount > 0 ? (
+          <p className="coding-harness-catalog-hint">
+            {t(
+              "codingView.harnessNotReadySummary",
+              "{count} more agents aren’t ready on this computer.",
+              { count: summarizedNotReadyCount },
+            )}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          className="settings-button coding-harness-open-tools"
+          data-testid="coding-open-coding-tools"
+          disabled={locked}
+          onClick={() => openCodingToolsSettings()}
+        >
+          {t("codingView.openCodingTools", "Open Coding tools settings")}
+        </button>
+      </div>
+    ) : !anyReady ? (
+      <button
+        type="button"
+        className="settings-button coding-harness-open-tools"
+        data-testid="coding-open-coding-tools"
+        disabled={locked}
+        onClick={() => openCodingToolsSettings()}
+      >
+        {t("codingView.openCodingTools", "Open Coding tools settings")}
+      </button>
+    ) : null;
+
+  const optionDisabled = (h: CodingHarnessId): boolean =>
+    !enabledHarnesses.includes(h) && value.harness !== h;
+
   const renderGroupedOptions = () => {
     const builtin = listedHarnesses.filter((h) =>
       (CODING_TIER_A_HARNESSES as readonly string[]).includes(h),
@@ -356,7 +438,7 @@ export function CodingAgentModelProviderFields({
         {builtin.length > 0 ? (
           <optgroup label={t("codingView.harnessGroupBuiltin", "Built-in")}>
             {builtin.map((h) => (
-              <option key={h} value={h}>
+              <option key={h} value={h} disabled={optionDisabled(h)}>
                 {codingHarnessLabel(h)}
                 {probeSuffix(h)}
               </option>
@@ -368,7 +450,7 @@ export function CodingAgentModelProviderFields({
             label={t("codingView.harnessGroupFeatured", "Featured CLIs")}
           >
             {featured.map((h) => (
-              <option key={h} value={h}>
+              <option key={h} value={h} disabled={optionDisabled(h)}>
                 {codingHarnessLabel(h)}
                 {probeSuffix(h)}
               </option>
@@ -378,7 +460,7 @@ export function CodingAgentModelProviderFields({
         {more.length > 0 ? (
           <optgroup label={t("codingView.harnessGroupMore", "More agents")}>
             {more.map((h) => (
-              <option key={h} value={h}>
+              <option key={h} value={h} disabled={optionDisabled(h)}>
                 {codingHarnessLabel(h)}
                 {probeSuffix(h)}
               </option>
@@ -393,7 +475,7 @@ export function CodingAgentModelProviderFields({
     ? t("codingView.harnessChecking", "Checking…")
     : t(
         "codingView.harnessNoneReady",
-        "No ready agents yet. Install one in Settings → AI → Coding agents.",
+        "No ready agents yet. Open Coding tools to install one, then Check again.",
       );
 
   return (
@@ -401,107 +483,108 @@ export function CodingAgentModelProviderFields({
       {harnessAsRadios ? (
         <fieldset className="coding-harness-fieldset" disabled={locked}>
           <legend>{t("codingView.harnessLabel", "Agent")}</legend>
-          {listedFeatured.length === 0 && moreHarnesses.length === 0 ? (
+          {!anyReady ? (
             <p
               className="coding-harness-catalog-hint"
               data-testid="coding-harness-none-ready"
             >
               {emptyHarnessMessage}
             </p>
-          ) : (
-            <>
-              {listedFeatured.map((id) => renderHarnessRadio(id))}
-              {moreHarnesses.length > 0 ? (
-                <label className="modal-field coding-harness-more">
-                  <span>{t("codingView.harnessMore", "More agents")}</span>
-                  <select
-                    value={featuredSet.has(value.harness) ? "" : value.harness}
-                    disabled={locked}
-                    data-testid="coding-harness-more"
-                    onChange={(e) => {
-                      const next = e.target.value.trim();
-                      if (!next) return;
-                      patch({
-                        harness: next as CodingHarnessId,
-                        ...(value.harness !== next
-                          ? {
-                              model: "",
-                              providerKind: "",
-                              endpoint: "",
-                              apiKey: "",
-                            }
-                          : {}),
-                      });
-                    }}
-                  >
-                    <option value="">
-                      {t(
-                        "codingView.harnessMorePlaceholder",
-                        "Choose another…",
-                      )}
-                    </option>
-                    {moreHarnesses.map((h) => (
-                      <option key={h} value={h}>
-                        {codingHarnessLabel(h)}
-                        {probeSuffix(h)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-            </>
-          )}
+          ) : null}
+          {radioFeatured.map((id) => renderHarnessRadio(id))}
+          {moreHarnesses.length > 0 ? (
+            <label className="modal-field coding-harness-more">
+              <span>{t("codingView.harnessMore", "More agents")}</span>
+              <select
+                value={featuredSet.has(value.harness) ? "" : value.harness}
+                disabled={locked}
+                data-testid="coding-harness-more"
+                onChange={(e) => {
+                  const next = e.target.value.trim();
+                  if (!next) return;
+                  patch({
+                    harness: next as CodingHarnessId,
+                    ...(value.harness !== next
+                      ? {
+                          model: "",
+                          providerKind: "",
+                          endpoint: "",
+                          apiKey: "",
+                        }
+                      : {}),
+                  });
+                }}
+              >
+                <option value="">
+                  {t(
+                    "codingView.harnessMorePlaceholder",
+                    "Choose another…",
+                  )}
+                </option>
+                {moreHarnesses.map((h) => (
+                  <option key={h} value={h}>
+                    {codingHarnessLabel(h)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <p className="coding-harness-catalog-hint">{catalogHint}</p>
         </fieldset>
-      ) : (
-        <label className="modal-field">
-          <span>
-            {scope === "task"
-              ? t("codingView.taskAgentLabel", "Agent")
-              : t(
-                  "codingView.projectDefaultHarness",
-                  "Default agent for new tasks",
-                )}
-          </span>
-          {listedHarnesses.length === 0 ? (
-            <p
-              className="coding-harness-catalog-hint"
-              data-testid="coding-harness-none-ready"
-            >
-              {emptyHarnessMessage}
-            </p>
-          ) : (
-            <select
-              value={value.harness}
-              disabled={locked}
-              data-testid={
-                scope === "defaults"
-                  ? "coding-defaults-settings-harness"
-                  : scope === "task"
-                    ? "coding-task-agent-harness"
-                    : "coding-project-settings-harness"
-              }
-              onChange={(e) => {
-                const next = e.target.value as CodingHarnessId;
-                patch({
-                  harness: next,
-                  ...(value.harness !== next
-                    ? {
-                        model: "",
-                        providerKind: "",
-                        endpoint: "",
-                        apiKey: "",
-                      }
-                    : {}),
-                });
-              }}
-            >
-              {renderGroupedOptions()}
-            </select>
-          )}
-          <span className="coding-harness-catalog-hint">{catalogHint}</span>
-        </label>
-      )}
+      ) : null}
+      {harnessAsRadios ? notReadySummary : null}
+      {!harnessAsRadios ? (
+        <div className="modal-field">
+          <label className="modal-field">
+            <span>
+              {scope === "task"
+                ? t("codingView.taskAgentLabel", "Agent")
+                : t(
+                    "codingView.projectDefaultHarness",
+                    "Default agent for new tasks",
+                  )}
+            </span>
+            {listedHarnesses.length === 0 ? (
+              <p
+                className="coding-harness-catalog-hint"
+                data-testid="coding-harness-none-ready"
+              >
+                {emptyHarnessMessage}
+              </p>
+            ) : (
+              <select
+                value={value.harness}
+                disabled={locked}
+                data-testid={
+                  scope === "defaults"
+                    ? "coding-defaults-settings-harness"
+                    : scope === "task"
+                      ? "coding-task-agent-harness"
+                      : "coding-project-settings-harness"
+                }
+                onChange={(e) => {
+                  const next = e.target.value as CodingHarnessId;
+                  patch({
+                    harness: next,
+                    ...(value.harness !== next
+                      ? {
+                          model: "",
+                          providerKind: "",
+                          endpoint: "",
+                          apiKey: "",
+                        }
+                      : {}),
+                  });
+                }}
+              >
+                {renderGroupedOptions()}
+              </select>
+            )}
+            <span className="coding-harness-catalog-hint">{catalogHint}</span>
+          </label>
+          {notReadySummary}
+        </div>
+      ) : null}
 
       <label className="modal-field">
         <span>{t("codingView.modelLabel", "Model")}</span>

@@ -58,7 +58,7 @@ describe("CodingProjectPickerModal", () => {
 
     expect(screen.getByTestId("coding-add-project-modal")).toBeTruthy();
     expect(
-      screen.getByText(/Only agents that are ready/i),
+      screen.getByText(/Ready agents can be selected/i),
     ).toBeTruthy();
     fireEvent.change(screen.getByTestId("coding-project-settings-harness"), {
       target: { value: "codex" },
@@ -75,7 +75,7 @@ describe("CodingProjectPickerModal", () => {
     });
   });
 
-  it("lists only ready agents (install others in Settings)", () => {
+  it("lists featured agents; not-ready ones are disabled with a summary CTA", () => {
     renderWithI18n(
       <CodingProjectPickerModal
         open
@@ -100,6 +100,11 @@ describe("CodingProjectPickerModal", () => {
     const values = [...select.options].map((o) => o.value);
     expect(values).toContain("opencode");
     expect(values).toContain("envoy-harness");
-    expect(values).not.toContain("codex");
+    expect(values).toContain("codex");
+    const codexOpt = [...select.options].find((o) => o.value === "codex");
+    expect(codexOpt?.disabled).toBe(true);
+    expect(codexOpt?.textContent).toMatch(/not ready/i);
+    expect(screen.getByTestId("coding-harness-not-ready-summary")).toBeTruthy();
+    expect(screen.getByTestId("coding-open-coding-tools")).toBeTruthy();
   });
 });

@@ -3,38 +3,36 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('buildHomeTabIds', () {
-    test('owner gets Social Knowledge Coding Terminal Me', () {
+    test('owner gets Social Knowledge Terminal Me (Coding is not a tab)', () {
       expect(
         buildHomeTabIds(isOwner: true, mayUseCoding: true),
         [
           HomeTabId.social,
           HomeTabId.knowledge,
-          HomeTabId.coding,
           HomeTabId.terminal,
           HomeTabId.me,
         ],
       );
-      // Owner always sees Coding regardless of mayUseCoding flag.
       expect(
         buildHomeTabIds(isOwner: true, mayUseCoding: false),
         [
           HomeTabId.social,
           HomeTabId.knowledge,
-          HomeTabId.coding,
           HomeTabId.terminal,
           HomeTabId.me,
         ],
       );
-    });
-
-    test('family+coding gets Chats Coding Me', () {
       expect(
-        buildHomeTabIds(isOwner: false, mayUseCoding: true),
-        [HomeTabId.chats, HomeTabId.coding, HomeTabId.me],
+        buildHomeTabIds(isOwner: true, mayUseCoding: true),
+        isNot(contains(HomeTabId.coding)),
       );
     });
 
-    test('family−coding gets Chats Me', () {
+    test('family gets Chats Me regardless of mayUseCoding', () {
+      expect(
+        buildHomeTabIds(isOwner: false, mayUseCoding: true),
+        [HomeTabId.chats, HomeTabId.me],
+      );
       expect(
         buildHomeTabIds(isOwner: false, mayUseCoding: false),
         [HomeTabId.chats, HomeTabId.me],
@@ -43,11 +41,11 @@ void main() {
   });
 
   group('resolveHomeTabId', () {
-    test('keeps stored id when still in tab list', () {
+    test('falls back when stored Coding tab is no longer in the list', () {
       final tabs = buildHomeTabIds(isOwner: true, mayUseCoding: true);
       expect(
         resolveHomeTabId(HomeTabId.coding, tabs, fallback: HomeTabId.social),
-        HomeTabId.coding,
+        HomeTabId.social,
       );
     });
 

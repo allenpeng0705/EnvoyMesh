@@ -77,7 +77,8 @@ const DEDICATED: readonly Row[] = [
   {
     id: "codewhale",
     title: "CodeWhale",
-    description: "Terminal coding agent for DeepSeek V4 and open models",
+    description:
+      "Terminal coding agent for DeepSeek V4 and open models (`codewhale` on PATH). Prefer this over the DeepSeek Harness catalogue alias.",
     installLink: "https://codewhale.net/",
     command: ["codewhale", "serve", "--acp"],
     sidecarKind: "codewhale",
@@ -92,7 +93,7 @@ const DEEPSEEK: readonly Row[] = [
     id: "deepseek-harness",
     title: "DeepSeek Harness",
     description:
-      "DeepSeek terminal coding agent (CodeWhale / DeepSeek V4). Same engine as CodeWhale.",
+      "Uses the CodeWhale CLI (`codewhale` on PATH) for DeepSeek V4 — same Ready check as CodeWhale.",
     installLink: "https://codewhale.net/",
     command: ["codewhale", "serve", "--acp"],
     sidecarKind: "codewhale",
@@ -102,7 +103,8 @@ const DEEPSEEK: readonly Row[] = [
   {
     id: "deepseek-tui",
     title: "DeepSeek TUI",
-    description: "Paseo-compatible alias for CodeWhale / DeepSeek V4",
+    description:
+      "Alias for CodeWhale / DeepSeek V4 — install `codewhale`, then Check again.",
     installLink: "https://codewhale.net/",
     command: ["codewhale", "serve", "--acp"],
     sidecarKind: "codewhale",

@@ -35,6 +35,8 @@ type ProbeClient = {
   }) => Promise<{
     installState?: string;
     reachable?: boolean;
+    /** Top-level setup / auth hint (used when installGuide.startHint is absent). */
+    hint?: string;
     installGuide?: {
       installed?: boolean;
       installCommand?: string;
@@ -119,7 +121,8 @@ export async function probeCodingHarness(
     const guide = r.installGuide;
     const cmd = guide?.installCommand?.trim();
     const link = guide?.installLink?.trim() || guide?.homepageUrl?.trim();
-    const startHint = guide?.startHint?.trim();
+    const topHint = r.hint?.trim() || "";
+    const startHint = guide?.startHint?.trim() || topHint || undefined;
 
     if (r.installState === "unsupported") {
       return {
@@ -145,11 +148,14 @@ export async function probeCodingHarness(
       };
     }
     if (r.installState === "installed" || r.reachable) {
-      if (r.reachable !== true && startHint) {
+      // Binary on PATH is not enough — sidecar must be reachable (auth/setup).
+      if (r.reachable !== true) {
         return {
           badge: "not-ready",
           line: "Installed — needs a short setup step.",
-          hint: startHint,
+          hint:
+            startHint ||
+            "Installed on this computer but not ready to run yet. Sign in or finish setup, then Check again.",
           installCommand: cmd,
           installLink: link,
         };
@@ -187,8 +193,9 @@ export function harnessNeedsResolve(
 }
 
 /**
- * Agents the task / project / defaults pickers may offer.
- * Only `ready` counts — install and check live in Settings → Coding agents.
+ * Agents the task / project / defaults pickers may *select*.
+ * Featured Not-ready agents can still be *listed* (disabled / summary);
+ * only `ready` is selectable. Install and check live in Settings → Coding tools.
  */
 export function readyCodingHarnesses(
   probe: Partial<Record<CodingHarnessId, HarnessProbeBadge>>,
